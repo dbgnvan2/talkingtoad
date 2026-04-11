@@ -1,0 +1,43 @@
+# Python
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+dist/
+build/
+*.so
+*.pyd
+.mypy_cache/
+.ruff_cache/
+
+# Environment
+.env
+.env.local
+*.env.local
+
+# Database
+*.sqlite
+*.sqlite3
+crawldb.sqlite
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Node / Frontend
+node_modules/
+frontend/dist/
+frontend/.env.local
+*.log
+
+# Vercel
+.vercel/
+
+# macOS
+.DS_Store
+
+# WordPress credentials (never commit)
+wp-credentials.json
+talkingtoad.db

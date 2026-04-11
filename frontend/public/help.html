@@ -1,0 +1,1492 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TalkingToad — SEO Issue Help Guide</title>
+  <style>
+    /* ─── Reset & Base ─────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --red:    #dc2626;
+      --amber:  #d97706;
+      --blue:   #2563eb;
+      --green:  #16a34a;
+      --gray50: #f9fafb;
+      --gray100:#f3f4f6;
+      --gray200:#e5e7eb;
+      --gray400:#9ca3af;
+      --gray600:#4b5563;
+      --gray700:#374151;
+      --gray900:#111827;
+      --radius: 6px;
+      --shadow: 0 1px 3px rgba(0,0,0,.10), 0 1px 2px rgba(0,0,0,.06);
+    }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      font-family: system-ui, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif;
+      font-size: 15px;
+      line-height: 1.6;
+      color: var(--gray700);
+      background: #fff;
+      max-width: 860px;
+      margin: 0 auto;
+      padding: 24px 20px 80px;
+    }
+
+    /* ─── Typography ────────────────────────────────────────────── */
+    h1 { font-size: 1.6rem; font-weight: 700; color: var(--gray900); margin-bottom: 6px; }
+    h2 { font-size: 1.15rem; font-weight: 700; color: var(--gray900);
+         margin: 40px 0 14px; padding-bottom: 8px;
+         border-bottom: 2px solid var(--gray200); }
+    h3 { font-size: 1rem; font-weight: 700; color: var(--gray900); }
+    p  { margin-bottom: 10px; }
+    a  { color: var(--blue); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    code {
+      font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+      font-size: 0.85em;
+      background: var(--gray100);
+      border: 1px solid var(--gray200);
+      border-radius: 3px;
+      padding: 1px 5px;
+    }
+
+    /* ─── Header ────────────────────────────────────────────────── */
+    .page-header { margin-bottom: 32px; }
+    .page-header p { color: var(--gray600); max-width: 640px; }
+    .version-note {
+      display: inline-block;
+      margin-top: 8px;
+      font-size: 0.8rem;
+      color: var(--gray400);
+    }
+
+    /* ─── Table of Contents ─────────────────────────────────────── */
+    .toc {
+      background: var(--gray50);
+      border: 1px solid var(--gray200);
+      border-radius: var(--radius);
+      padding: 18px 22px;
+      margin-bottom: 36px;
+    }
+    .toc h2 { margin: 0 0 10px; border: none; font-size: 1rem; }
+    .toc ul { list-style: none; columns: 2; column-gap: 32px; }
+    .toc li { margin-bottom: 4px; font-size: 0.9rem; }
+    .toc a { color: var(--gray700); }
+    .toc a:hover { color: var(--blue); }
+    @media (max-width: 520px) { .toc ul { columns: 1; } }
+
+    /* ─── Severity Badge ────────────────────────────────────────── */
+    .badge {
+      display: inline-block;
+      font-size: 0.72rem;
+      font-weight: 700;
+      letter-spacing: .04em;
+      text-transform: uppercase;
+      border-radius: 20px;
+      padding: 2px 9px;
+      vertical-align: middle;
+      margin-left: 8px;
+    }
+    .badge-critical { background: #fee2e2; color: var(--red);   border: 1px solid #fca5a5; }
+    .badge-warning  { background: #fef3c7; color: var(--amber); border: 1px solid #fcd34d; }
+    .badge-info     { background: #dbeafe; color: var(--blue);  border: 1px solid #93c5fd; }
+
+    /* ─── Issue Card ────────────────────────────────────────────── */
+    .issue-card {
+      border: 1px solid var(--gray200);
+      border-radius: var(--radius);
+      margin-bottom: 18px;
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+
+    .issue-header {
+      display: flex;
+      align-items: baseline;
+      gap: 10px;
+      padding: 12px 16px;
+      background: var(--gray50);
+      border-bottom: 1px solid var(--gray200);
+      flex-wrap: wrap;
+    }
+
+    .issue-code {
+      font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+      font-size: 0.82rem;
+      font-weight: 700;
+      color: var(--gray600);
+      background: var(--gray200);
+      border-radius: 4px;
+      padding: 2px 7px;
+      white-space: nowrap;
+    }
+
+    .issue-title {
+      font-size: 1rem;
+      font-weight: 700;
+      color: var(--gray900);
+      flex: 1;
+    }
+
+    .issue-body {
+      padding: 0;
+    }
+
+    .issue-section {
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--gray100);
+    }
+    .issue-section:last-child { border-bottom: none; }
+
+    .section-label {
+      font-size: 0.72rem;
+      font-weight: 700;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+      color: var(--gray400);
+      margin-bottom: 4px;
+    }
+
+    .section-label.what   { color: #5b21b6; }
+    .section-label.impact { color: #b45309; }
+    .section-label.fix    { color: var(--green); }
+
+    /* ─── Category Section ──────────────────────────────────────── */
+    .category-intro {
+      font-size: 0.9rem;
+      color: var(--gray600);
+      margin-bottom: 18px;
+    }
+
+    /* ─── Back-to-top link ──────────────────────────────────────── */
+    .back-top {
+      display: block;
+      text-align: right;
+      font-size: 0.8rem;
+      color: var(--gray400);
+      margin-top: 4px;
+      margin-bottom: 0;
+    }
+
+    /* ─── Print ─────────────────────────────────────────────────── */
+    @media print {
+      body { max-width: 100%; padding: 0; font-size: 11pt; }
+      .toc, .back-top { display: none; }
+      .issue-card { page-break-inside: avoid; box-shadow: none; }
+      h2 { page-break-after: avoid; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ══════════════════════════════════════════════════════════════ -->
+<!-- PAGE HEADER                                                     -->
+<!-- ══════════════════════════════════════════════════════════════ -->
+<div class="page-header">
+  <h1>TalkingToad — SEO Issue Help Guide</h1>
+  <p>
+    Plain-English explanations of every issue TalkingToad can detect on your website.
+    For each issue you will find: what it is, why it matters, and how to fix it.
+  </p>
+  <span class="version-note">Spec v1.4 &mdash; last updated April 2026</span>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════ -->
+<!-- TABLE OF CONTENTS                                               -->
+<!-- ══════════════════════════════════════════════════════════════ -->
+<nav class="toc" aria-label="Contents">
+  <h2>Contents</h2>
+  <ul>
+    <li><a href="#metadata">Metadata</a></li>
+    <li><a href="#headings">Headings</a></li>
+    <li><a href="#broken-links">Broken Links</a></li>
+    <li><a href="#redirects">Redirects</a></li>
+    <li><a href="#crawlability">Crawlability</a></li>
+    <li><a href="#sitemap">Sitemap</a></li>
+    <li><a href="#duplicates">Duplicate Content</a></li>
+    <li><a href="#security">Security</a></li>
+    <li><a href="#url-structure">URL Structure</a></li>
+    <li><a href="#images">Images (Phase 2)</a></li>
+    <li><a href="#performance">Performance (Phase 2)</a></li>
+    <li><a href="#mobile">Mobile (Phase 2)</a></li>
+    <li><a href="#schema">Schema Markup (Phase 2)</a></li>
+  </ul>
+</nav>
+
+
+<!-- ══════════════════════════════════════════════════════════════ -->
+<!-- METADATA                                                        -->
+<!-- ══════════════════════════════════════════════════════════════ -->
+<section id="metadata">
+  <h2>Metadata</h2>
+  <p class="category-intro">
+    Metadata — page titles, descriptions, and social sharing tags — tells search engines
+    what each page is about and controls how it appears in search results and when shared
+    on social media. Getting this right is one of the highest-impact SEO improvements
+    available for most nonprofit websites.
+  </p>
+
+  <!-- TITLE_MISSING -->
+  <div class="issue-card" id="TITLE_MISSING">
+    <div class="issue-header">
+      <span class="issue-code">TITLE_MISSING</span>
+      <span class="issue-title">Page title missing</span>
+      <span class="badge badge-critical">Critical</span>
+    </div>
+    <div class="issue-body">
+      <div class="issue-section">
+        <div class="section-label what">What it is</div>
+        <p>This page has no <code>&lt;title&gt;</code> tag in its HTML. Every web page should have a unique title tag in its <code>&lt;head&gt;</code> section — it is the clickable headline shown in search results and in the browser tab.</p>
+      </div>
+      <div class="issue-section">
+        <div class="section-label impact">Why it matters</div>
+        <p>Search engines won't know what to call this page in search results. Without a title, Google generates one automatically — usually by pulling text from the page, often poorly. This directly harms search visibility and the click-through rate from search results.</p>
+      </div>
+      <div class="issue-section">
+        <div class="section-label fix">How to fix it</div>
+        <p>Add a <code>&lt;title&gt;</code> tag to the page's <code>&lt;head&gt;</code> with a clear, descriptive title between 30 and 60 characters. In WordPress, most themes and SEO plugins (Yoast SEO, Rank Math) have a dedicated "SEO Title" field on each page's edit screen.</p>
+      </div>
+    </div>
+  </div>
+  <a class="back-top" href="#metadata">&uarr; Back to top of section</a>
+
+  <!-- TITLE_DUPLICATE -->
+  <div class="issue-card" id="TITLE_DUPLICATE">
+    <div class="issue-header">
+      <span class="issue-code">TITLE_DUPLICATE</span>
+      <span class="issue-title">Duplicate page title</span>
+      <span class="badge badge-warning">Warning</span>
+    </div>
+    <div class="issue-body">
+      <div class="issue-section">
+        <div class="section-label what">What it is</div>
+        <p>Two or more pages on this site share exactly the same page title. Each page should have a unique title that describes its specific content.</p>
+      </div>
+      <div class="issue-section">
+        <div class="section-label impact">Why it matters</div>
+        <p>Search engines use titles to understand what makes each page distinct. Duplicate titles make it harder to rank well for relevant searches — search engines may not be able to tell which page is most relevant, or may choose to show only one of them.</p>
+      </div>
+      <div class="issue-section">
+        <div class="section-label fix">How to fix it</div>
+        <p>Write a unique title for each affected page that clearly describes what makes that page different from the others. Include the page topic and your organisation name, e.g. <em>"Counselling for Anxiety — Living Systems"</em>.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- TITLE_TOO_SHORT -->
+  <div class="issue-card" id="TITLE_TOO_SHORT">
+    <div class="issue-header">
+      <span class="issue-code">TITLE_TOO_SHORT</span>
+      <span class="issue-title">Page title too short</span>
+      <span class="badge badge-warning">Warning</span>
+    </div>
+    <div class="issue-body">
+      <div class="issue-section">
+        <div class="section-label what">What it is</div>
+        <p>The page title is fewer than 30 characters. Short titles often lack enough context to be useful to visitors or search engines.</p>
+      </div>
+      <div class="issue-section">
+        <div class="section-label impact">Why it matters</div>
+        <p>A very short title may not include enough keywords or context for search engines to understand the page's topic, reducing the likelihood of the page appearing in relevant searches. It may also look thin or unhelpful in search results.</p>
+      </div>
+      <div class="issue-section">
+        <div class="section-label fix">How to fix it</div>
+        <p>Expand the title to between 30 and 60 characters. Include the specific topic of the page and your organisation name — for example, <em>"About Us — Living Systems Counselling Society"</em> instead of just <em>"About"</em>.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- TITLE_TOO_LONG -->
+  <div class="issue-card" id="TITLE_TOO_LONG">
+    <div class="issue-header">
+      <span class="issue-code">TITLE_TOO_LONG</span>
+      <span class="issue-title">Page title too long</span>
+      <span class="badge badge-warning">Warning</span>
+    </div>
+    <div class="issue-body">
+      <div class="issue-section">
+        <div class="section-label what">What it is</div>
+        <p>The page title exceeds 60 characters. Google typically displays around 50–60 characters in search results before cutting the title off with an ellipsis (…).</p>
+      </div>
+      <div class="issue-section">
+        <div class="section-label impact">Why it matters</div>
+        <p>The end of your title — often the most distinguishing part — will be cut off in search results, making the listing less informative and less clickable to potential visitors.</p>
+      </div>
+      <div class="issue-section">
+        <div class="section-label fix">How to fix it</div>
+        <p>Shorten the title to under 60 characters while keeping the most important keywords at the beginning. Put the specific page topic first, then the organisation name.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- META_DESC_MISSING -->
+  <div class="issue-card" id="META_DESC_MISSING">
+    <div class="issue-header">
+      <span class="issue-code">META_DESC_MISSING</span>
+      <span class="issue-title">Meta description missing</span>
+      <span class="badge badge-critical">Critical</span>
+    </div>
+    <div class="issue-body">
+      <div class="issue-section">
+        <div class="section-label what">What it is</div>
+        <p>This page has no meta description tag. The meta description is the short paragraph (typically 1–2 sentences) that appears below the page title in search engine results, helping visitors decide whether to click.</p>
+      </div>
+      <div class="issue-section">
+        <div class="section-label impact">Why it matters</div>
+        <p>Without a meta description, Google writes one automatically by pulling random text from the page. Auto-generated descriptions are often unhelpful or confusing, which reduces the likelihood that people will click through to your site from search results.</p>
+      </div>
+      <div class="issue-section">
+        <div class="section-label fix">How to fix it</div>
+        <p>Add a meta description of 70–160 characters that clearly explains what visitors will find on this page and why they should visit. In WordPress, the Yoast SEO or Rank Math plugin adds a "Meta Description" field to every page's edit screen.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- META_DESC_DUPLICATE -->
+  <div class="issue-card" id="META_DESC_DUPLICATE">
+    <div class="issue-header">
+      <span class="issue-code">META_DESC_DUPLICATE</span>
+      <span class="issue-title">Duplicate meta description</span>
+      <span class="badge badge-warning">Warning</span>
+    </div>
+    <div class="issue-body">
+      <div class="issue-section">
+        <div class="section-label what">What it is</div>
+        <p>The same meta description appears on two or more pages. Each page should have a unique description that reflects its specific content.</p>
+      </div>
+      <div class="issue-section">
+        <div class="section-label impact">Why it matters</div>
+        <p>Duplicate descriptions don't help search engines or visitors distinguish between your pages. They make each result look identical in search listings, reducing click-through rates.</p>
+      </div>
+      <div class="issue-section">
+        <div class="section-label fix">How to fix it</div>
+        <p>Write a unique meta description for each affected page that reflects its own content and purpose. Avoid generic descriptions like <em>"Welcome to our website"</em> that could apply to any page.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- META_DESC_TOO_SHORT -->
+  <div class="issue-card" id="META_DESC_TOO_SHORT">
+    <div class="issue-header">
+      <span class="issue-code">META_DESC_TOO_SHORT</span>
+      <span class="issue-title">Meta description too short</span>
+      <span class="badge badge-warning">Warning</span>
+    </div>
+    <div class="issue-body">
+      <div class="issue-section">
+        <div class="section-label what">What it is</div>
+        <p>The meta description is fewer than 70 characters. Short descriptions leave valuable space unused and provide limited context to search engines and visitors.</p>
+      </div>
+      <div class="issue-section">
+        <div class="section-label impact">Why it matters</div>
+        <p>Short descriptions give search engines less information to work with and are often less persuasive to visitors scanning search results. Google may replace them with automatically selected text from the page.</p>
+      </div>
+      <div class="issue-section">
+        <div class="section-label fix">How to fix it</div>
+        <p>Expand the description to between 70 and 160 characters. Describe what the page covers, who it is for, and what action a visitor might take — written in natural, readable language.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- META_DESC_TOO_LONG -->
+  <div class="issue-card" id="META_DESC_TOO_LONG">
+    <div class="issue-header">
+      <span class="issue-code">META_DESC_TOO_LONG</span>
+      <span class="issue-title">Meta description too long</span>
+      <span class="badge badge-warning">Warning</span>
+    </div>
+    <div class="issue-body">
+      <div class="issue-section">
+        <div class="section-label what">What it is</div>
+        <p>The meta description exceeds 160 characters. Search engines typically display around 155–160 characters before cutting the text off.</p>
+      </div>
+      <div class="issue-section">
+        <div class="section-label impact">Why it matters</div>
+        <p>The end of your description will be replaced with "…" in search results, which looks untidy and may cut off important information or calls to action.</p>
+      </div>
+      <div class="issue-section">
+        <div class="section-label fix">How to fix it</div>
+        <p>Shorten the description to under 160 characters, keeping the most important information at the beginning. Lead with what the page is about, not background context.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- OG_TITLE_MISSING -->
+  <div class="issue-card" id="OG_TITLE_MISSING">
+    <div class="issue-header">
+      <span class="issue-code">OG_TITLE_MISSING</span>
+      <span class="issue-title">Open Graph title missing</span>
+      <span class="badge badge-info">Info</span>
+    </div>
+    <div class="issue-body">
+      <div class="issue-section">
+        <div class="section-label what">What it is</div>
+        <p>This page is missing an Open Graph title tag (<code>&lt;meta property="og:title"&gt;</code>). Open Graph tags control how your page appears when someone shares a link on social media platforms like Facebook and LinkedIn.</p>
+      </div>
+      <div class="issue-section">
+        <div class="section-label impact">Why it matters</div>
+        <p>When this page is shared on social media, the platform will try to guess a title from the page content, which may be inaccurate or missing entirely. Shared links look less professional and attract fewer clicks.</p>
+      </div>
+      <div class="issue-section">
+        <div class="section-label fix">How to fix it</div>
+        <p>Add <code>&lt;meta property="og:title" content="Your Page Title"&gt;</code> to the page's <code>&lt;head&gt;</code>. Most SEO plugins (Yoast, Rank Math) manage this automatically when you fill in the SEO title field.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- OG_DESC_MISSING -->
+  <div class="issue-card" id="OG_DESC_MISSING">
+    <div class="issue-header">
+      <span class="issue-code">OG_DESC_MISSING</span>
+      <span class="issue-title">Open Graph description missing</span>
+      <span class="badge badge-info">Info</span>
+    </div>
+    <div class="issue-body">
+      <div class="issue-section">
+        <div class="section-label what">What it is</div>
+        <p>This page is missing an Open Graph description tag (<code>&lt;meta property="og:description"&gt;</code>). This controls the summary text shown when the page is shared on social media.</p>
+      </div>
+      <div class="issue-section">
+        <div class="section-label impact">Why it matters</div>
+        <p>Social media platforms will attempt to pull description text from the page body when this tag is absent, often producing unpredictable or unhelpful results in link previews.</p>
+      </div>
+      <div class="issue-section">
+        <div class="section-label fix">How to fix it</div>
+        <p>Add <code>&lt;meta property="og:description" content="Your description"&gt;</code> to the page's <code>&lt;head&gt;</code>. Most SEO plugins handle this automatically — check the social media settings section of your SEO plugin.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- CANONICAL_MISSING -->
+  <div class="issue-card" id="CANONICAL_MISSING">
+    <div class="issue-header">
+      <span class="issue-code">CANONICAL_MISSING</span>
+      <span class="issue-title">Canonical tag missing</span>
+      <span class="badge badge-warning">Warning</span>
+    </div>
+    <div class="issue-body">
+      <div class="issue-section">
+        <div class="section-label what">What it is</div>
+        <p>This page has no canonical tag, and either it has URL query parameters (like <code>?page=2</code>) or its content closely matches another page on the site. A canonical tag (<code>&lt;link rel="canonical"&gt;</code>) tells search engines which version of a page is the "official" one to index.</p>
+      </div>
+      <div class="issue-section">
+        <div class="section-label impact">Why it matters</div>
+        <p>Without a canonical tag, search engines may treat similar or parameterised URLs as separate competing pages, splitting ranking signals between them. This is called "duplicate content" and can dilute your search rankings.</p>
+      </div>
+      <div class="issue-section">
+        <div class="section-label fix">How to fix it</div>
+        <p>Add <code>&lt;link rel="canonical" href="https://yoursite.com/preferred-url/"&gt;</code> to the page's <code>&lt;head&gt;</code>, pointing to the definitive version of the URL. In WordPress, Yoast SEO handles this automatically for most pages.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- CANONICAL_EXTERNAL -->
+  <div class="issue-card" id="CANONICAL_EXTERNAL">
+    <div class="issue-header">
+      <span class="issue-code">CANONICAL_EXTERNAL</span>
+      <span class="issue-title">Canonical points to external domain</span>
+      <span class="badge badge-warning">Warning</span>
+    </div>
+    <div class="issue-body">
+      <div class="issue-section">
+        <div class="section-label what">What it is</div>
+        <p>This page has a canonical tag that points to a URL on a completely different website. This explicitly tells search engines that the authoritative version of this content exists on another domain — not yours.</p>
+      </div>
+      <div class="issue-section">
+        <div class="section-label impact">Why it matters</div>
+        <p>All search ranking credit for this page will be directed to the external site. Your page will be treated as a copy and will not rank in search results. Unless you intentionally published this content elsewhere first, this is almost certainly a configuration error.</p>
+      </div>
+      <div class="issue-section">
+        <div class="section-label fix">How to fix it</div>
+        <p>Review the canonical tag on this page. If the content originated on your site, change the canonical URL to point to this page itself (a self-referencing canonical). Confirm with your web developer if you are unsure.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- FAVICON_MISSING -->
+  <div class="issue-card" id="FAVICON_MISSING">
+    <div class="issue-header">
+      <span class="issue-code">FAVICON_MISSING</span>
+      <span class="issue-title">Favicon missing</span>
+      <span class="badge badge-info">Info</span>
+    </div>
+    <div class="issue-body">
+      <div class="issue-section">
+        <div class="section-label what">What it is</div>
+        <p>The homepage has no favicon — the small icon that appears in browser tabs, bookmarks, browser history, and search results on some devices.</p>
+      </div>
+      <div class="issue-section">
+        <div class="section-label impact">Why it matters</div>
+        <p>Favicons don't directly affect search rankings, but they reinforce your brand identity and help visitors recognise your site in a crowded list of browser tabs. A missing favicon can make a site look unfinished.</p>
+      </div>
+      <div class="issue-section">
+        <div class="section-label fix">How to fix it</div>
+        <p>Create a square image of your logo at least 32×32 pixels (512×512 recommended), save it as .ico or .png, and upload it to your site. In WordPress, go to <strong>Appearance → Customise → Site Identity → Site Icon</strong>.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- THIN_CONTENT -->
+  <div class="issue-card" id="THIN_CONTENT">
+    <div class="issue-header">
+      <span class="issue-code">THIN_CONTENT</span>
+      <span class="issue-title">Thin content — too few words</span>
+      <span class="badge badge-warning">Warning</span>
+    </div>
+    <div class="issue-body">
+      <div class="issue-section">
+        <div class="section-label what">What it is</div>
+        <p>This page has fewer than 300 words of readable body content. Thin content pages provide limited value to visitors and may be seen as low-quality by search engines.</p>
+      </div>
+      <div class="issue-section">
+        <div class="section-label impact">Why it matters</div>
+        <p>Pages with very little content are less likely to rank well in search results, as they provide little value to a visitor's query. Multiple thin-content pages can reduce the perceived quality of your entire site.</p>
+      </div>
+      <div class="issue-section">
+        <div class="section-label fix">How to fix it</div>
+        <p>Expand the page content to at least 300 words of meaningful, relevant information. If the page is intentionally brief (e.g., a contact page), consider adding more context about your organisation or services nearby.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- PAGINATION_LINKS_PRESENT -->
+  <div class="issue-card" id="PAGINATION_LINKS_PRESENT">
+    <div class="issue-header">
+      <span class="issue-code">PAGINATION_LINKS_PRESENT</span>
+      <span class="issue-title">Pagination links present</span>
+      <span class="badge badge-info">Info</span>
+    </div>
+    <div class="issue-body">
+      <div class="issue-section">
+        <div class="section-label what">What it is</div>
+        <p>This page includes <code>rel="next"</code> or <code>rel="prev"</code> link elements, signalling to search engines that it is part of a paginated series — such as a blog archive split across multiple pages.</p>
+      </div>
+      <div class="issue-section">
+        <div class="section-label impact">Why it matters</div>
+        <p>This is generally fine and helps search engines understand the relationship between paginated pages. No immediate action is required unless the pagination structure is misconfigured.</p>
+      </div>
+      <div class="issue-section">
+        <div class="section-label fix">How to fix it</div>
+        <p>No action required in most cases. Ensure the linked next/prev pages are crawlable and not blocked by robots.txt or noindex tags. Verify that pagination URLs are not generating excessive duplicate content.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- AMPHTML_BROKEN -->
+  <div class="issue-card" id="AMPHTML_BROKEN">
+    <div class="issue-header">
+      <span class="issue-code">AMPHTML_BROKEN</span>
+      <span class="issue-title">AMP version link is broken</span>
+      <span class="badge badge-warning">Warning</span>
+    </div>
+    <div class="issue-body">
+      <div class="issue-section">
+        <div class="section-label what">What it is</div>
+        <p>This page declares an AMP (Accelerated Mobile Pages) version via a <code>&lt;link rel="amphtml"&gt;</code> tag, but the AMP URL is not reachable — it returned a non-200 status code when checked.</p>
+      </div>
+      <div class="issue-section">
+        <div class="section-label impact">Why it matters</div>
+        <p>A broken AMP link means visitors accessing your content through AMP-served contexts may encounter errors. Search engines may de-prioritise or remove AMP versions if the declared URL is inaccessible.</p>
+      </div>
+      <div class="issue-section">
+        <div class="section-label fix">How to fix it</div>
+        <p>Either fix the AMP URL so it returns a 200 status, or remove the <code>rel="amphtml"</code> link element if AMP is no longer in use on your site. Search for and remove all amphtml link tags if your site has moved on from AMP.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+
+<!-- ══════════════════════════════════════════════════════════════ -->
+<!-- HEADINGS                                                        -->
+<!-- ══════════════════════════════════════════════════════════════ -->
+<section id="headings">
+  <h2>Headings</h2>
+  <p class="category-intro">Headings (H1–H6) organise the content hierarchy of a page for both visitors and search engines. A clear, logical heading structure also significantly improves accessibility for screen reader users.</p>
+
+  <div class="issue-card" id="H1_MISSING">
+    <div class="issue-header">
+      <span class="issue-code">H1_MISSING</span>
+      <span class="issue-title">H1 heading missing</span>
+      <span class="badge badge-critical">Critical</span>
+    </div>
+    <div class="issue-body">
+      <div class="issue-section">
+        <div class="section-label what">What it is</div>
+        <p>This page has no H1 heading tag. An H1 is the main heading of a page — the primary heading that introduces the main topic — and there should be exactly one on every page.</p>
+      </div>
+      <div class="issue-section">
+        <div class="section-label impact">Why it matters</div>
+        <p>Search engines use the H1 to understand the primary topic of a page. Missing H1 tags make it harder for search engines to categorise your content, and can directly reduce rankings for the search terms most relevant to that page.</p>
+      </div>
+      <div class="issue-section">
+        <div class="section-label fix">How to fix it</div>
+        <p>Add a single <code>&lt;h1&gt;</code> tag that clearly states the main topic of the page. In most CMS platforms, the page title you enter is automatically output as the H1 by the theme. If H1 tags are missing, your theme may have a bug — check with your web developer.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="issue-card" id="H1_MULTIPLE">
+    <div class="issue-header">
+      <span class="issue-code">H1_MULTIPLE</span>
+      <span class="issue-title">Multiple H1 headings</span>
+      <span class="badge badge-warning">Warning</span>
+    </div>
+    <div class="issue-body">
+      <div class="issue-section">
+        <div class="section-label what">What it is</div>
+        <p>This page has more than one H1 tag. Best practice is to use exactly one H1 per page — the primary heading that introduces the main topic.</p>
+      </div>
+      <div class="issue-section">
+        <div class="section-label impact">Why it matters</div>
+        <p>Multiple H1 tags send mixed signals to search engines about which topic is primary for the page. It also creates a confusing experience for visitors using screen readers, who rely on headings to navigate page content.</p>
+      </div>
+      <div class="issue-section">
+        <div class="section-label fix">How to fix it</div>
+        <p>Review the page and keep only one H1 that introduces the main topic. Demote additional H1 tags to H2 or H3, depending on where they fall in the content hierarchy.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="issue-card" id="HEADING_SKIP">
+    <div class="issue-header">
+      <span class="issue-code">HEADING_SKIP</span>
+      <span class="issue-title">Heading levels skipped</span>
+      <span class="badge badge-warning">Warning</span>
+    </div>
+    <div class="issue-body">
+      <div class="issue-section">
+        <div class="section-label what">What it is</div>
+        <p>The heading structure on this page skips one or more levels — for example, jumping from H1 directly to H3 with no H2 in between, or from H2 to H4.</p>
+      </div>
+      <div class="issue-section">
+        <div class="section-label impact">Why it matters</div>
+        <p>Skipped heading levels create accessibility problems: screen reader users navigate pages by heading structure, and gaps are disorienting. Search engines also interpret heading hierarchy as a signal of content organisation — a broken hierarchy suggests the content is poorly structured.</p>
+      </div>
+      <div class="issue-section">
+        <div class="section-label fix">How to fix it</div>
+        <p>Review the heading tags on this page and ensure no levels are skipped. Use H1 for the main topic, H2 for major sections, H3 for subsections within those, and so on. In WordPress, headings are set using the paragraph style selector in the block editor.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+
+<!-- ══════════════════════════════════════════════════════════════ -->
+<!-- BROKEN LINKS                                                    -->
+<!-- ══════════════════════════════════════════════════════════════ -->
+<section id="broken-links">
+  <h2>Broken Links</h2>
+  <p class="category-intro">Broken links send visitors to error pages and signal poor site maintenance to search engines. Internal broken links are particularly damaging, as they prevent search engines from fully crawling your site.</p>
+
+  <div class="issue-card" id="BROKEN_LINK_404">
+    <div class="issue-header">
+      <span class="issue-code">BROKEN_LINK_404</span>
+      <span class="issue-title">Broken link — page not found (404)</span>
+      <span class="badge badge-critical">Critical</span>
+    </div>
+    <div class="issue-body">
+      <div class="issue-section">
+        <div class="section-label what">What it is</div>
+        <p>This link points to a page that doesn't exist. The server responded with a "404 Not Found" status, meaning the destination page has either been deleted or its URL has changed.</p>
+      </div>
+      <div class="issue-section">
+        <div class="section-label impact">Why it matters</div>
+        <p>Visitors who click this link will land on an error page, creating a frustrating dead end. Search engines note broken links as a signal of poor site maintenance, which can gradually harm overall site quality scores.</p>
+      </div>
+      <div class="issue-section">
+        <div class="section-label fix">How to fix it</div>
+        <p>Find the correct current URL for the destination content and update the link. If the content has been permanently removed with no replacement, delete the link entirely. If you control the destination site, consider setting up a 301 redirect from the old URL to the new one.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="issue-card" id="BROKEN_LINK_410">
+    <div class="issue-header">
+      <span class="issue-code">BROKEN_LINK_410</span>
+      <span class="issue-title">Broken link — page permanently removed (410)</span>
+      <span class="badge badge-critical">Critical</span>
+    </div>
+    <div class="issue-body">
+      <div class="issue-section">
+        <div class="section-label what">What it is</div>
+        <p>This link points to a page that has been permanently and intentionally removed. The server returned a "410 Gone" response, which explicitly signals that the content is gone for good — unlike a 404, which might be temporary.</p>
+      </div>
+      <div class="issue-section">
+        <div class="section-label impact">Why it matters</div>
+        <p>Visitors clicking this link will see an error page. The 410 status also tells search engines to immediately remove the URL from their index. Links pointing to 410 pages waste link authority that could otherwise benefit your site.</p>
+      </div>
+      <div class="issue-section">
+        <div class="section-label fix">How to fix it</div>
+        <p>Remove the link from your site. The destination is permanently gone. If there is a relevant alternative page, update the link to point there instead.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="issue-card" id="BROKEN_LINK_5XX">
+    <div class="issue-header">
+      <span class="issue-code">BROKEN_LINK_5XX</span>
+      <span class="issue-title">Broken link — server error (5xx)</span>
+      <span class="badge badge-critical">Critical</span>
+    </div>
+    <div class="issue-body">
+      <div class="issue-section">
+        <div class="section-label what">What it is</div>
+        <p>The destination of this link is returning a server error — a 5xx status code such as 500 Internal Server Error, 502 Bad Gateway, or 503 Service Unavailable. The server is responding but failing to serve the page correctly.</p>
+      </div>
+      <div class="issue-section">
+        <div class="section-label impact">Why it matters</div>
+        <p>Visitors will see an error page rather than the expected content. This may be temporary (a transient server issue) or ongoing. Repeated 5xx errors on linked pages reduce visitor trust and signal poor reliability to search engines.</p>
+      </div>
+      <div class="issue-section">
+        <div class="section-label fix">How to fix it</div>
+        <p>Check whether the linked site is experiencing a temporary outage. If the error persists after several hours, treat the link as unreliable and either remove it or replace it with a link to an alternative resource.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+
+<!-- ══════════════════════════════════════════════════════════════ -->
+<!-- REDIRECTS                                                       -->
+<!-- ══════════════════════════════════════════════════════════════ -->
+<section id="redirects">
+  <h2>Redirects</h2>
+  <p class="category-intro">Redirects forward visitors and search engines from one URL to another. Used correctly they are harmless; used incorrectly or in chains and loops, they harm both user experience and search rankings.</p>
+
+  <div class="issue-card" id="REDIRECT_301">
+    <div class="issue-header">
+      <span class="issue-code">REDIRECT_301</span>
+      <span class="issue-title">Permanent redirect (301)</span>
+      <span class="badge badge-info">Info</span>
+    </div>
+    <div class="issue-body">
+      <div class="issue-section">
+        <div class="section-label what">What it is</div>
+        <p>This URL responds with a 301 Permanent Redirect, sending visitors and search engines to a different URL. A 301 tells search engines that this page has permanently moved and they should update their records to use the new URL.</p>
+      </div>
+      <div class="issue-section">
+        <div class="section-label impact">Why it matters</div>
+        <p>301 redirects are generally handled well by search engines and do pass ranking signals to the destination URL. However, internal links on your own site that point to redirecting URLs add a small amount of unnecessary overhead (one extra HTTP request per link).</p>
+      </div>
+      <div class="issue-section">
+        <div class="section-label fix">How to fix it</div>
+        <p>Update any internal links on your own site to point directly to the final destination URL, bypassing the redirect. This is a low-priority housekeeping task but worth addressing during regular site maintenance.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="issue-card" id="REDIRECT_302">
+    <div class="issue-header">
+      <span class="issue-code">REDIRECT_302</span>
+      <span class="issue-title">Temporary redirect (302)</span>
+      <span class="badge badge-warning">Warning</span>
+    </div>
+    <div class="issue-body">
+      <div class="issue-section">
+        <div class="section-label what">What it is</div>
+        <p>This URL responds with a 302 Temporary Redirect. A 302 is intended for genuinely temporary moves — it signals to search engines that they should keep the original URL in their index because the move may be reversed.</p>
+      </div>
+      <div class="issue-section">
+        <div class="section-label impact">Why it matters</div>
+        <p>If this redirect is actually permanent, using a 302 instead of a 301 means search engines may not fully transfer ranking signals to the new URL. The original URL may also continue to be crawled unnecessarily, harming your search rankings.</p>
+      </div>
+      <div class="issue-section">
+        <div class="section-label fix">How to fix it</div>
+        <p>If this redirect is permanent, change it to a 301 redirect. In WordPress, the Redirection plugin can help you manage this. If the redirect is genuinely temporary (e.g., a time-limited campaign page), a 302 is correct and no action is needed.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="issue-card" id="REDIRECT_CHAIN">
+    <div class="issue-header">
+      <span class="issue-code">REDIRECT_CHAIN</span>
+      <span class="issue-title">Redirect chain</span>
+      <span class="badge badge-warning">Warning</span>
+    </div>
+    <div class="issue-body">
+      <div class="issue-section">
+        <div class="section-label what">What it is</div>
+        <p>This URL redirects to another URL which itself redirects again, creating a chain of two or more hops before the visitor reaches the final destination (e.g., A → B → C, or longer).</p>
+      </div>
+      <div class="issue-section">
+        <div class="section-label impact">Why it matters</div>
+        <p>Each additional hop slows down page loading — the browser must make multiple requests before showing anything. Ranking signals also dilute slightly at each hop. Search engines may stop following chains after a certain number of hops.</p>
+      </div>
+      <div class="issue-section">
+        <div class="section-label fix">How to fix it</div>
+        <p>Update the first redirect to point directly to the final destination URL, cutting out the intermediate steps. Review your redirect plugin rules for the original URL and update the target to skip the chain.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="issue-card" id="REDIRECT_LOOP">
+    <div class="issue-header">
+      <span class="issue-code">REDIRECT_LOOP</span>
+      <span class="issue-title">Redirect loop</span>
+      <span class="badge badge-critical">Critical</span>
+    </div>
+    <div class="issue-body">
+      <div class="issue-section">
+        <div class="section-label what">What it is</div>
+        <p>This URL is part of an infinite redirect loop — it eventually redirects back to itself, creating a cycle that can never resolve. Examples: A → B → A, or A → B → C → A.</p>
+      </div>
+      <div class="issue-section">
+        <div class="section-label impact">Why it matters</div>
+        <p>The page is completely inaccessible to visitors and search engines. Browsers will display an error such as "This page isn't working — too many redirects". The URL cannot be indexed or accessed until the loop is fixed. <strong>This is an urgent issue.</strong></p>
+      </div>
+      <div class="issue-section">
+        <div class="section-label fix">How to fix it</div>
+        <p>Check your CMS permalink settings, redirect plugin rules, .htaccess file (Apache), or Nginx configuration for conflicting rules. Look for two rules that each redirect to the other. Contact your web developer or hosting provider if unsure how to locate the conflict.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="issue-card" id="META_REFRESH_REDIRECT">
+    <div class="issue-header">
+      <span class="issue-code">META_REFRESH_REDIRECT</span>
+      <span class="issue-title">Meta refresh redirect</span>
+      <span class="badge badge-warning">Warning</span>
+    </div>
+    <div class="issue-body">
+      <div class="issue-section">
+        <div class="section-label what">What it is</div>
+        <p>This page uses an HTML meta tag to automatically redirect visitors to another page after a short delay: <code>&lt;meta http-equiv="refresh" content="0; url=https://newpage.com"&gt;</code>. This is an old technique for page redirection.</p>
+      </div>
+      <div class="issue-section">
+        <div class="section-label impact">Why it matters</div>
+        <p>Meta refresh redirects do not pass ranking signals as reliably as server-side 301 redirects. They can also cause a brief visible flash of the old page before the redirect fires, creating a poor user experience. Some assistive technologies do not handle them correctly.</p>
+      </div>
+      <div class="issue-section">
+        <div class="section-label fix">How to fix it</div>
+        <p>Replace the meta refresh redirect with a server-side 301 redirect. Configure this in your .htaccess file (Apache), Nginx configuration, or through your CMS's redirect management feature (e.g., the Redirection plugin for WordPress).</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+
+<!-- ══════════════════════════════════════════════════════════════ -->
+<!-- CRAWLABILITY                                                    -->
+<!-- ══════════════════════════════════════════════════════════════ -->
+<section id="crawlability">
+  <h2>Crawlability</h2>
+  <p class="category-intro">Crawlability issues prevent search engines from discovering, accessing, or indexing pages on your site. Some are intentional (private pages), but unintentional crawlability blocks can make important pages invisible in search results.</p>
+
+  <div class="issue-card" id="LOGIN_REDIRECT">
+    <div class="issue-header">
+      <span class="issue-code">LOGIN_REDIRECT</span>
+      <span class="issue-title">Redirects to login page</span>
+      <span class="badge badge-info">Info</span>
+    </div>
+    <div class="issue-body">
+      <div class="issue-section">
+        <div class="section-label what">What it is</div>
+        <p>When the crawler tried to access this URL, it was redirected to a login or authentication page. This means the page requires a user to be logged in before it can be viewed.</p>
+      </div>
+      <div class="issue-section">
+        <div class="section-label impact">Why it matters</div>
+        <p>Search engines cannot access password-protected pages, so this page will not appear in search results. This is normal for private member areas, client portals, or staff intranets. If you intended this page to be publicly visible, the login redirect is a configuration problem.</p>
+      </div>
+      <div class="issue-section">
+        <div class="section-label fix">How to fix it</div>
+        <p>If this page should be public, review your CMS access or membership settings and remove the login requirement for this URL. If it is intentionally private, no action is needed — this is expected behaviour.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="issue-card" id="ROBOTS_BLOCKED">
+    <div class="issue-header">
+      <span class="issue-code">ROBOTS_BLOCKED</span>
+      <span class="issue-title">Blocked by robots.txt</span>
+      <span class="badge badge-warning">Warning</span>
+    </div>
+    <div class="issue-body">
+      <div class="issue-section">
+        <div class="section-label what">What it is</div>
+        <p>Your site's robots.txt file contains a rule that prevents search engine crawlers from accessing this page. The crawler found this URL by following links but cannot audit its content.</p>
+      </div>
+      <div class="issue-section">
+        <div class="section-label impact">Why it matters</div>
+        <p>Search engines cannot index this page, so it will not appear in search results. If the block is intentional (admin pages, private areas, duplicate content), this is correct. If not, the page is invisible to search engines.</p>
+      </div>
+      <div class="issue-section">
+        <div class="section-label fix">How to fix it</div>
+        <p>Open your robots.txt file (at <em>yoursite.com/robots.txt</em>) and review the Disallow rules. If you want search engines to access this page, remove or narrow the relevant rule. <strong>Take care:</strong> a broad Disallow rule can accidentally block your entire site. Test changes using Google Search Console's robots.txt tester.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="issue-card" id="NOINDEX_META">
+    <div class="issue-header">
+      <span class="issue-code">NOINDEX_META</span>
+      <span class="issue-title">Noindex meta tag present</span>
+      <span class="badge badge-warning">Warning</span>
+    </div>
+    <div class="issue-body">
+      <div class="issue-section">
+        <div class="section-label what">What it is</div>
+        <p>This page contains a meta robots tag instructing search engines not to include it in their index: <code>&lt;meta name="robots" content="noindex"&gt;</code>. Search engines will visit the page but will not store or display it in search results.</p>
+      </div>
+      <div class="issue-section">
+        <div class="section-label impact">Why it matters</div>
+        <p>This page will not appear in search results, regardless of how good its content is. If this is intentional (a thank-you page, staging content), no action is needed. If not, the page is actively being hidden from search engines.</p>
+      </div>
+      <div class="issue-section">
+        <div class="section-label fix">How to fix it</div>
+        <p>If you want this page in search results, remove the noindex directive. In WordPress with Yoast SEO, edit the page and look for the "Search Appearance" section — there is usually a toggle labelled "Allow search engines to show this post in search results". Ensure it is turned on.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="issue-card" id="NOINDEX_HEADER">
+    <div class="issue-header">
+      <span class="issue-code">NOINDEX_HEADER</span>
+      <span class="issue-title">Noindex HTTP header present</span>
+      <span class="badge badge-warning">Warning</span>
+    </div>
+    <div class="issue-body">
+      <div class="issue-section">
+        <div class="section-label what">What it is</div>
+        <p>The server is sending an HTTP response header (<code>X-Robots-Tag: noindex</code>) that instructs search engines not to index this page. This has the same effect as a noindex meta tag but is set at the server level, making it less visible.</p>
+      </div>
+      <div class="issue-section">
+        <div class="section-label impact">Why it matters</div>
+        <p>This page will not appear in search results. Because this is a server-level setting, it is easy to overlook. It may have been set intentionally (e.g., for a staging environment) and then forgotten when the site went live.</p>
+      </div>
+      <div class="issue-section">
+        <div class="section-label fix">How to fix it</div>
+        <p>Check your server configuration, hosting settings, or any SEO or caching plugins that might be adding this header. In WordPress, check <strong>Settings → Reading</strong> for the "Discourage search engines" checkbox. Staging environment settings are a common culprit after sites go live.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="issue-card" id="NOT_IN_SITEMAP">
+    <div class="issue-header">
+      <span class="issue-code">NOT_IN_SITEMAP</span>
+      <span class="issue-title">Page missing from sitemap</span>
+      <span class="badge badge-info">Info</span>
+    </div>
+    <div class="issue-body">
+      <div class="issue-section">
+        <div class="section-label what">What it is</div>
+        <p>The crawler found this page by following links, but the URL is not listed in your XML sitemap. Sitemaps act as a map for search engines, listing all the pages you consider important and want regularly crawled.</p>
+      </div>
+      <div class="issue-section">
+        <div class="section-label impact">Why it matters</div>
+        <p>Search engines are less likely to discover and regularly re-crawl pages not in the sitemap, particularly if they are not heavily linked to from other pages. This is low-urgency for well-linked pages but can cause indexing delays for others.</p>
+      </div>
+      <div class="issue-section">
+        <div class="section-label fix">How to fix it</div>
+        <p>Add this URL to your XML sitemap. If you use a sitemap plugin (Yoast SEO, Rank Math), check whether this page is excluded by a setting, a noindex tag, or an access restriction that prevents the plugin from including it.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="issue-card" id="PDF_TOO_LARGE">
+    <div class="issue-header">
+      <span class="issue-code">PDF_TOO_LARGE</span>
+      <span class="issue-title">PDF file too large</span>
+      <span class="badge badge-warning">Warning</span>
+    </div>
+    <div class="issue-body">
+      <div class="issue-section">
+        <div class="section-label what">What it is</div>
+        <p>A PDF linked from your site is larger than 5MB, as detected from the Content-Length HTTP header returned by the server.</p>
+      </div>
+      <div class="issue-section">
+        <div class="section-label impact">Why it matters</div>
+        <p>Large PDFs are slow to download, particularly for visitors on mobile or slower connections. Search engines may skip or only partially index very large PDFs. Visitors may abandon the download before it completes.</p>
+      </div>
+      <div class="issue-section">
+        <div class="section-label fix">How to fix it</div>
+        <p>Compress the PDF before uploading it. Use <strong>Adobe Acrobat</strong> (File → Reduce File Size), <strong>Smallpdf</strong> (smallpdf.com), or <strong>ilovepdf.com</strong> to reduce the file size. Remove unnecessary embedded fonts, reduce image resolution within the PDF, or split large documents into smaller, more focused files.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="issue-card" id="HIGH_CRAWL_DEPTH">
+    <div class="issue-header">
+      <span class="issue-code">HIGH_CRAWL_DEPTH</span>
+      <span class="issue-title">Page buried deep in site structure</span>
+      <span class="badge badge-warning">Warning</span>
+    </div>
+    <div class="issue-body">
+      <div class="issue-section">
+        <div class="section-label what">What it is</div>
+        <p>This page is more than 4 clicks away from your homepage — meaning a visitor (or search engine crawler) would have to follow more than 4 links in sequence to reach it, starting from your homepage.</p>
+      </div>
+      <div class="issue-section">
+        <div class="section-label impact">Why it matters</div>
+        <p>Search engines give less authority and crawl priority to pages buried deep in the site structure. Pages more than 4–5 clicks from the homepage may be crawled less frequently or given lower ranking weight. They are also harder for visitors to discover naturally.</p>
+      </div>
+      <div class="issue-section">
+        <div class="section-label fix">How to fix it</div>
+        <p>Improve your internal linking so this page can be reached in 3 clicks or fewer from the homepage. Add links to deeply buried pages from your main navigation, sidebar, or from relevant higher-level pages that are already well-linked.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+
+<!-- ══════════════════════════════════════════════════════════════ -->
+<!-- SITEMAP                                                         -->
+<!-- ══════════════════════════════════════════════════════════════ -->
+<section id="sitemap">
+  <h2>Sitemap</h2>
+  <p class="category-intro">An XML sitemap is a file that lists all the pages on your site you want search engines to know about. It is one of the most straightforward improvements you can make to a site's search discoverability.</p>
+
+  <div class="issue-card" id="SITEMAP_MISSING">
+    <div class="issue-header">
+      <span class="issue-code">SITEMAP_MISSING</span>
+      <span class="issue-title">No XML sitemap found</span>
+      <span class="badge badge-info">Info</span>
+    </div>
+    <div class="issue-body">
+      <div class="issue-section">
+        <div class="section-label what">What it is</div>
+        <p>The crawler could not find an XML sitemap for this domain. It checked the standard location (<code>/sitemap.xml</code>) and the robots.txt file for a <code>Sitemap:</code> directive, and found nothing at either location.</p>
+      </div>
+      <div class="issue-section">
+        <div class="section-label impact">Why it matters</div>
+        <p>Without a sitemap, search engines must discover all of your pages purely by following links. Pages with few or no internal links pointing to them may never be found, crawled, or indexed — effectively making them invisible in search results.</p>
+      </div>
+      <div class="issue-section">
+        <div class="section-label fix">How to fix it</div>
+        <p>Create an XML sitemap and submit it to Google Search Console. If you use WordPress, install Yoast SEO, Rank Math, or a dedicated sitemap plugin — these generate a sitemap automatically at <code>/sitemap.xml</code>. Squarespace and Wix do this automatically. Once created, add <code>Sitemap: https://yoursite.com/sitemap.xml</code> to your robots.txt file.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+
+<!-- ══════════════════════════════════════════════════════════════ -->
+<!-- DUPLICATE CONTENT                                               -->
+<!-- ══════════════════════════════════════════════════════════════ -->
+<section id="duplicates">
+  <h2>Duplicate Content</h2>
+  <p class="category-intro">Duplicate content occurs when two or more pages on your site have the same or very similar content. Search engines may struggle to determine which page to rank, potentially showing none of them well.</p>
+
+  <div class="issue-card" id="TITLE_META_DUPLICATE_PAIR">
+    <div class="issue-header">
+      <span class="issue-code">TITLE_META_DUPLICATE_PAIR</span>
+      <span class="issue-title">Title and meta description both duplicated</span>
+      <span class="badge badge-warning">Warning</span>
+    </div>
+    <div class="issue-body">
+      <div class="issue-section">
+        <div class="section-label what">What it is</div>
+        <p>This page shares both its page title AND its meta description with at least one other page on the site. Both fields are identical across multiple pages.</p>
+      </div>
+      <div class="issue-section">
+        <div class="section-label impact">Why it matters</div>
+        <p>When both the title and description are duplicated, search engines have very little to distinguish between the affected pages. They may choose to show only one of them for a given search, or rank neither well. Visitors see what appears to be the same listing repeated, reducing trust.</p>
+      </div>
+      <div class="issue-section">
+        <div class="section-label fix">How to fix it</div>
+        <p>Write unique titles and meta descriptions for every affected page. Each page's title and description should describe that page's specific content — not a generic description that could apply to multiple pages. Start with the most visited page in the group.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+
+<!-- ══════════════════════════════════════════════════════════════ -->
+<!-- SECURITY                                                        -->
+<!-- ══════════════════════════════════════════════════════════════ -->
+<section id="security">
+  <h2>Security</h2>
+  <p class="category-intro">Security issues can undermine visitor trust, expose data, and in some cases affect search rankings. HTTPS is now a baseline expectation for all websites.</p>
+
+  <div class="issue-card" id="HTTP_PAGE">
+    <div class="issue-header">
+      <span class="issue-code">HTTP_PAGE</span>
+      <span class="issue-title">Page served over HTTP (not HTTPS)</span>
+      <span class="badge badge-critical">Critical</span>
+    </div>
+    <div class="issue-body">
+      <div class="issue-section">
+        <div class="section-label what">What it is</div>
+        <p>This page is served over HTTP rather than HTTPS. HTTP does not encrypt the connection between the visitor's browser and your server, leaving all data transmitted to and from this page exposed.</p>
+      </div>
+      <div class="issue-section">
+        <div class="section-label impact">Why it matters</div>
+        <p>Modern browsers display a "Not Secure" warning for HTTP pages, which can undermine visitor trust and deter donations or contact form submissions. Search engines use HTTPS as a ranking signal — HTTP pages may rank lower. Any data submitted through forms on an HTTP page is transmitted unencrypted.</p>
+      </div>
+      <div class="issue-section">
+        <div class="section-label fix">How to fix it</div>
+        <p>Enable HTTPS on your hosting account — most hosts provide free SSL certificates via Let's Encrypt. Configure a server-side 301 redirect from all HTTP URLs to their HTTPS equivalents. Contact your hosting provider if you need assistance enabling SSL.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="issue-card" id="MIXED_CONTENT">
+    <div class="issue-header">
+      <span class="issue-code">MIXED_CONTENT</span>
+      <span class="issue-title">Mixed content — HTTP resources on HTTPS page</span>
+      <span class="badge badge-warning">Warning</span>
+    </div>
+    <div class="issue-body">
+      <div class="issue-section">
+        <div class="section-label what">What it is</div>
+        <p>This HTTPS page is loading one or more resources (images, scripts, or stylesheets) over HTTP. Although the page itself is secure, the HTTP resources create a security vulnerability known as mixed content.</p>
+      </div>
+      <div class="issue-section">
+        <div class="section-label impact">Why it matters</div>
+        <p>Browsers may block or warn about mixed content, which can break page layout or functionality. Scripts loaded over HTTP are particularly dangerous — an attacker on the network could intercept and modify them, potentially compromising your visitors' data.</p>
+      </div>
+      <div class="issue-section">
+        <div class="section-label fix">How to fix it</div>
+        <p>Update all resource URLs on this page to use HTTPS. Check for HTTP URLs in <code>img src</code>, <code>script src</code>, <code>link href</code>, and <code>iframe src</code> attributes. In WordPress, the <strong>Better Search Replace</strong> plugin can help update HTTP URLs stored in your database.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="issue-card" id="MISSING_HSTS">
+    <div class="issue-header">
+      <span class="issue-code">MISSING_HSTS</span>
+      <span class="issue-title">HSTS header missing</span>
+      <span class="badge badge-info">Info</span>
+    </div>
+    <div class="issue-body">
+      <div class="issue-section">
+        <div class="section-label what">What it is</div>
+        <p>This HTTPS page is not sending an HTTP Strict Transport Security (HSTS) header. HSTS is a security policy that instructs browsers to only access your site over HTTPS in future visits, even if the visitor types <code>http://</code> directly.</p>
+      </div>
+      <div class="issue-section">
+        <div class="section-label impact">Why it matters</div>
+        <p>Without HSTS, a visitor who types your URL without https:// could be briefly vulnerable to a downgrade attack on their first visit. HSTS eliminates this window of vulnerability for return visitors. It is a best-practice security hardening measure rather than an urgent vulnerability.</p>
+      </div>
+      <div class="issue-section">
+        <div class="section-label fix">How to fix it</div>
+        <p>Add the response header: <code>Strict-Transport-Security: max-age=31536000; includeSubDomains</code> to all HTTPS responses. This is typically configured in your web server settings (.htaccess for Apache, server block for Nginx) or through your hosting provider's control panel.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="issue-card" id="UNSAFE_CROSS_ORIGIN_LINK">
+    <div class="issue-header">
+      <span class="issue-code">UNSAFE_CROSS_ORIGIN_LINK</span>
+      <span class="issue-title">External link missing rel="noopener"</span>
+      <span class="badge badge-info">Info</span>
+    </div>
+    <div class="issue-body">
+      <div class="issue-section">
+        <div class="section-label what">What it is</div>
+        <p>This page contains one or more links to external websites that open in a new tab (<code>target="_blank"</code>) without the <code>rel="noopener"</code> or <code>rel="noreferrer"</code> attribute. Without these attributes, the opened page can access the <code>window.opener</code> JavaScript object.</p>
+      </div>
+      <div class="issue-section">
+        <div class="section-label impact">Why it matters</div>
+        <p>In older browsers, a malicious external page accessed via an unprotected <code>target="_blank"</code> link could redirect your original tab — a technique known as "tab-napping". Modern browsers have improved protections, but adding the attribute is still best practice.</p>
+      </div>
+      <div class="issue-section">
+        <div class="section-label fix">How to fix it</div>
+        <p>Add <code>rel="noopener noreferrer"</code> to all <code>&lt;a target="_blank"&gt;</code> links pointing to external URLs. For example: <code>&lt;a href="https://example.com" target="_blank" rel="noopener noreferrer"&gt;</code>. Most modern page builders in WordPress add this automatically when you check "Open in new tab".</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+
+<!-- ══════════════════════════════════════════════════════════════ -->
+<!-- URL STRUCTURE                                                   -->
+<!-- ══════════════════════════════════════════════════════════════ -->
+<section id="url-structure">
+  <h2>URL Structure</h2>
+  <p class="category-intro">Well-structured URLs are easier to read, share, and understand — for both visitors and search engines. URL issues are generally lower priority than content issues, but they are worth fixing when making other changes to a page.</p>
+
+  <div class="issue-card" id="URL_UPPERCASE">
+    <div class="issue-header">
+      <span class="issue-code">URL_UPPERCASE</span>
+      <span class="issue-title">URL contains uppercase letters</span>
+      <span class="badge badge-warning">Warning</span>
+    </div>
+    <div class="issue-body">
+      <div class="issue-section">
+        <div class="section-label what">What it is</div>
+        <p>This URL contains uppercase letters in its path — for example, <code>/About-Us</code> instead of <code>/about-us</code>. On most web servers, URLs are case-sensitive, meaning <code>/About</code> and <code>/about</code> are treated as different pages.</p>
+      </div>
+      <div class="issue-section">
+        <div class="section-label impact">Why it matters</div>
+        <p>Uppercase URL variants can create duplicate content — search engines may index both <code>/About</code> and <code>/about</code> as separate pages, splitting ranking signals between them. Visitors who type or share the URL may reach inconsistent versions depending on the case they use.</p>
+      </div>
+      <div class="issue-section">
+        <div class="section-label fix">How to fix it</div>
+        <p>Update your CMS to use lowercase-only URLs and set up 301 redirects from any existing uppercase URL variants to their lowercase equivalents. In WordPress, avoid capital letters when setting page slugs. Most CMS platforms default to lowercase automatically.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="issue-card" id="URL_HAS_SPACES">
+    <div class="issue-header">
+      <span class="issue-code">URL_HAS_SPACES</span>
+      <span class="issue-title">URL contains encoded spaces</span>
+      <span class="badge badge-warning">Warning</span>
+    </div>
+    <div class="issue-body">
+      <div class="issue-section">
+        <div class="section-label what">What it is</div>
+        <p>This URL contains spaces encoded as <code>%20</code> in the path or query string. Spaces are technically invalid in URLs and must be percent-encoded, but their presence indicates the URL was not properly formatted when created.</p>
+      </div>
+      <div class="issue-section">
+        <div class="section-label impact">Why it matters</div>
+        <p>URLs with encoded spaces are harder to read and share, look unprofessional, and can break in some email clients and messaging apps when pasted as plain text. They also suggest the page slug was set incorrectly in the CMS.</p>
+      </div>
+      <div class="issue-section">
+        <div class="section-label fix">How to fix it</div>
+        <p>Edit the URL to replace spaces with hyphens (-). In WordPress, this means editing the page slug in the page editor. After changing the URL, set up a 301 redirect from the old URL (with <code>%20</code>) to the new hyphenated version.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="issue-card" id="URL_HAS_UNDERSCORES">
+    <div class="issue-header">
+      <span class="issue-code">URL_HAS_UNDERSCORES</span>
+      <span class="issue-title">URL uses underscores instead of hyphens</span>
+      <span class="badge badge-info">Info</span>
+    </div>
+    <div class="issue-body">
+      <div class="issue-section">
+        <div class="section-label what">What it is</div>
+        <p>This URL path uses underscores (<code>_</code>) as word separators instead of hyphens (<code>-</code>). For example, <code>/about_us</code> instead of <code>/about-us</code>.</p>
+      </div>
+      <div class="issue-section">
+        <div class="section-label impact">Why it matters</div>
+        <p>Google's guidance is to prefer hyphens over underscores in URL paths. Google treats hyphens as word separators (so "about-us" = "about" + "us") but may treat underscores as word-joiners (so "about_us" could be read as "aboutus"). This can affect how the URL's keywords are weighted for search rankings.</p>
+      </div>
+      <div class="issue-section">
+        <div class="section-label fix">How to fix it</div>
+        <p>Consider updating URLs to use hyphens instead of underscores. This is a <em>low-priority</em> change — only undertake it with proper 301 redirects in place, and only for pages where search rankings matter. The effort may not be worth it on well-established pages with existing traffic and backlinks.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="issue-card" id="URL_TOO_LONG">
+    <div class="issue-header">
+      <span class="issue-code">URL_TOO_LONG</span>
+      <span class="issue-title">URL too long</span>
+      <span class="badge badge-info">Info</span>
+    </div>
+    <div class="issue-body">
+      <div class="issue-section">
+        <div class="section-label what">What it is</div>
+        <p>This URL exceeds 115 characters in total length. While there is no hard browser limit for most URLs, very long URLs are problematic in practice.</p>
+      </div>
+      <div class="issue-section">
+        <div class="section-label impact">Why it matters</div>
+        <p>Long URLs are difficult to read, share, or remember. They may be truncated in search results and some browsers, making them less useful as navigation cues. Very long URLs can also suggest the site structure or permalink settings need review.</p>
+      </div>
+      <div class="issue-section">
+        <div class="section-label fix">How to fix it</div>
+        <p>Shorten the URL slug to be more concise while still descriptive. Edit the page in your CMS and update the URL/slug field. After changing the URL, set up a 301 redirect from the old long URL to the new shorter one to preserve any existing links.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+
+<!-- ══════════════════════════════════════════════════════════════ -->
+<!-- IMAGES (Phase 2)                                               -->
+<!-- ══════════════════════════════════════════════════════════════ -->
+<section id="images">
+  <h2>Images <small style="font-weight:400;font-size:.8rem;color:#6b7280">(Phase 2)</small></h2>
+  <p class="category-intro">Image issues cover both accessibility (alt text) and performance (file size). These checks are collected during every crawl and will be displayed in the results dashboard in Phase 2 of TalkingToad.</p>
+
+  <div class="issue-card" id="IMG_ALT_MISSING">
+    <div class="issue-header">
+      <span class="issue-code">IMG_ALT_MISSING</span>
+      <span class="issue-title">Image missing alt text</span>
+      <span class="badge badge-warning">Warning</span>
+    </div>
+    <div class="issue-body">
+      <div class="issue-section">
+        <div class="section-label what">What it is</div>
+        <p>This image has no <code>alt</code> attribute at all. The alt attribute provides a text description of an image for screen readers, search engines, and situations where the image cannot be displayed.</p>
+      </div>
+      <div class="issue-section">
+        <div class="section-label impact">Why it matters</div>
+        <p>Screen reader users who are blind or have low vision will have no way to understand what this image shows — a significant accessibility barrier. Search engines also cannot "see" images and rely on alt text to understand their content.</p>
+      </div>
+      <div class="issue-section">
+        <div class="section-label fix">How to fix it</div>
+        <p>Add an <code>alt</code> attribute to the image tag that describes what the image shows in one concise sentence, e.g. <code>alt="Two counsellors meeting with a client in an office"</code>. In WordPress, set the alt text for each image in the Media Library or in the block editor's image settings panel.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="issue-card" id="IMG_ALT_EMPTY">
+    <div class="issue-header">
+      <span class="issue-code">IMG_ALT_EMPTY</span>
+      <span class="issue-title">Image has empty alt text</span>
+      <span class="badge badge-info">Info</span>
+    </div>
+    <div class="issue-body">
+      <div class="issue-section">
+        <div class="section-label what">What it is</div>
+        <p>This image has an <code>alt</code> attribute, but it is empty (<code>alt=""</code>). An empty alt attribute is the correct technique for purely decorative images that add no information — it tells screen readers to skip the image entirely.</p>
+      </div>
+      <div class="issue-section">
+        <div class="section-label impact">Why it matters</div>
+        <p>If this image conveys information, mood, or meaning — such as a photo of your team, a chart, or an illustration — the empty alt text means that information is lost to screen reader users and search engines. If the image is genuinely decorative, an empty alt is correct.</p>
+      </div>
+      <div class="issue-section">
+        <div class="section-label fix">How to fix it</div>
+        <p>Review each flagged image. If it conveys meaningful content, add a descriptive alt text. If it is purely decorative and adds no information, the empty alt is correct and can be left as-is.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="issue-card" id="IMG_OVERSIZED">
+    <div class="issue-header">
+      <span class="issue-code">IMG_OVERSIZED</span>
+      <span class="issue-title">Image file too large</span>
+      <span class="badge badge-warning">Warning</span>
+    </div>
+    <div class="issue-body">
+      <div class="issue-section">
+        <div class="section-label what">What it is</div>
+        <p>This image has a file size exceeding 200KB as reported by the server's Content-Length header. Large images are one of the most common causes of slow page loading on nonprofit websites.</p>
+      </div>
+      <div class="issue-section">
+        <div class="section-label impact">Why it matters</div>
+        <p>Oversized images significantly slow down page loading, particularly on mobile connections. Slow pages frustrate visitors and increase the likelihood they will leave before the page loads. Google uses page speed as a ranking factor, so consistently large images can harm your search rankings.</p>
+      </div>
+      <div class="issue-section">
+        <div class="section-label fix">How to fix it</div>
+        <p>Compress the image before uploading it. Tools like <strong>Squoosh</strong> (squoosh.app), <strong>TinyPNG</strong> (tinypng.com), or <strong>ImageOptim</strong> (Mac) can dramatically reduce file size with minimal visible quality loss. Aim for images under 100KB where possible. Also ensure image dimensions match the display size — a 4000px wide photo in a 300px column is wasteful regardless of compression.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+
+<!-- ══════════════════════════════════════════════════════════════ -->
+<!-- PERFORMANCE (Phase 2)                                          -->
+<!-- ══════════════════════════════════════════════════════════════ -->
+<section id="performance">
+  <h2>Performance <small style="font-weight:400;font-size:.8rem;color:#6b7280">(Phase 2)</small></h2>
+  <p class="category-intro">Performance issues cover server-side signals that affect how quickly your pages load. These checks do not require a browser — they measure the raw HTML response size and number of third-party resources declared in the page.</p>
+
+  <div class="issue-card" id="PAGE_TOO_LARGE">
+    <div class="issue-header">
+      <span class="issue-code">PAGE_TOO_LARGE</span>
+      <span class="issue-title">Page HTML too large</span>
+      <span class="badge badge-warning">Warning</span>
+    </div>
+    <div class="issue-body">
+      <div class="issue-section">
+        <div class="section-label what">What it is</div>
+        <p>The raw HTML response for this page exceeds 500KB. This measures only the HTML document itself — not images, scripts, or stylesheets — which is unusually large for a standard web page.</p>
+      </div>
+      <div class="issue-section">
+        <div class="section-label impact">Why it matters</div>
+        <p>A large HTML document takes longer to download and parse, delaying the point at which visitors can see and interact with the page. It can also indicate underlying issues such as excessive inline content, embedded images, or unminified markup.</p>
+      </div>
+      <div class="issue-section">
+        <div class="section-label fix">How to fix it</div>
+        <p>Investigate what is inflating the page's HTML. Common causes include large blocks of inline CSS or JavaScript that should be in external files, embedded images as base64 data, or CMS-generated markup that is excessively verbose. Minifying HTML output (via a caching plugin in WordPress) can also help.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="issue-card" id="EXCESSIVE_EXTERNAL_DEPS">
+    <div class="issue-header">
+      <span class="issue-code">EXCESSIVE_EXTERNAL_DEPS</span>
+      <span class="issue-title">Too many external scripts and stylesheets</span>
+      <span class="badge badge-warning">Warning</span>
+    </div>
+    <div class="issue-body">
+      <div class="issue-section">
+        <div class="section-label what">What it is</div>
+        <p>This page loads more than 10 external scripts and stylesheets combined. These are files hosted on third-party domains that the browser must request separately before the page is fully loaded.</p>
+      </div>
+      <div class="issue-section">
+        <div class="section-label impact">Why it matters</div>
+        <p>Each external resource requires a separate network request, and some block the browser from rendering the page until they have loaded. High numbers of external dependencies slow page loading and increase the risk of layout issues if a third-party server is slow or unavailable.</p>
+      </div>
+      <div class="issue-section">
+        <div class="section-label fix">How to fix it</div>
+        <p>Audit which external scripts and stylesheets are actually necessary. Remove or replace tools you no longer use (old analytics scripts, abandoned social widgets). Where possible, self-host fonts and icons rather than loading them from external CDNs. A caching or performance plugin (e.g., WP Rocket, LiteSpeed Cache) can combine and defer scripts to reduce the impact.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+
+<!-- ══════════════════════════════════════════════════════════════ -->
+<!-- MOBILE (Phase 2)                                               -->
+<!-- ══════════════════════════════════════════════════════════════ -->
+<section id="mobile">
+  <h2>Mobile <small style="font-weight:400;font-size:.8rem;color:#6b7280">(Phase 2)</small></h2>
+  <p class="category-intro">Mobile usability checks verify that your pages are configured to display correctly on smartphones and tablets. Most nonprofit website visitors are on mobile devices, and Google uses mobile-friendliness as a ranking factor.</p>
+
+  <div class="issue-card" id="NO_VIEWPORT_META">
+    <div class="issue-header">
+      <span class="issue-code">NO_VIEWPORT_META</span>
+      <span class="issue-title">Viewport meta tag missing</span>
+      <span class="badge badge-warning">Warning</span>
+    </div>
+    <div class="issue-body">
+      <div class="issue-section">
+        <div class="section-label what">What it is</div>
+        <p>This page is missing the viewport meta tag: <code>&lt;meta name="viewport" content="width=device-width, initial-scale=1"&gt;</code>. This tag tells mobile browsers how to scale and display the page on smaller screens.</p>
+      </div>
+      <div class="issue-section">
+        <div class="section-label impact">Why it matters</div>
+        <p>Without a viewport meta tag, mobile browsers will try to display the page as if it were a full desktop screen, then shrink everything down — making text tiny and buttons nearly impossible to tap. Google uses mobile-friendliness as a ranking factor, so pages without this tag may rank lower in mobile search results.</p>
+      </div>
+      <div class="issue-section">
+        <div class="section-label fix">How to fix it</div>
+        <p>Add <code>&lt;meta name="viewport" content="width=device-width, initial-scale=1"&gt;</code> to the <code>&lt;head&gt;</code> section of the page. In most CMS platforms this is part of the theme template and should appear on all pages automatically. If it is missing, your theme may need to be updated — contact your web developer.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+
+<!-- ══════════════════════════════════════════════════════════════ -->
+<!-- SCHEMA MARKUP (Phase 2)                                        -->
+<!-- ══════════════════════════════════════════════════════════════ -->
+<section id="schema">
+  <h2>Schema Markup <small style="font-weight:400;font-size:.8rem;color:#6b7280">(Phase 2)</small></h2>
+  <p class="category-intro">Schema markup (structured data) helps search engines understand your content more precisely and can unlock enhanced "rich result" listings in Google Search. It is especially useful for nonprofits that run events, provide services, or publish FAQs.</p>
+
+  <div class="issue-card" id="NO_SCHEMA">
+    <div class="issue-header">
+      <span class="issue-code">NO_SCHEMA</span>
+      <span class="issue-title">No structured data found</span>
+      <span class="badge badge-info">Info</span>
+    </div>
+    <div class="issue-body">
+      <div class="issue-section">
+        <div class="section-label what">What it is</div>
+        <p>This page contains no structured data markup — neither JSON-LD blocks (<code>&lt;script type="application/ld+json"&gt;</code>) nor microdata attributes. Structured data is a standardised way of describing your content so that search engines can display richer results (e.g., event dates, organisation details, FAQs).</p>
+      </div>
+      <div class="issue-section">
+        <div class="section-label impact">Why it matters</div>
+        <p>Without schema markup, search engines rely entirely on reading your page content to understand what your organisation does and what services you offer. Adding schema can unlock "rich results" in Google Search — more visually prominent listings that stand out from plain text results and attract more clicks.</p>
+      </div>
+      <div class="issue-section">
+        <div class="section-label fix">How to fix it</div>
+        <p>Consider adding <strong>Organisation</strong> schema to your homepage and key pages to describe your nonprofit. If you run events, add <strong>Event</strong> schema. For common questions, add <strong>FAQPage</strong> schema. Google's <a href="https://search.google.com/structured-data/helper" target="_blank" rel="noopener noreferrer">Structured Data Markup Helper</a> can generate the markup for you. WordPress plugins like Schema Pro can automate this across your site.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+
+<!-- ══════════════════════════════════════════════════════════════ -->
+<!-- FOOTER                                                          -->
+<!-- ══════════════════════════════════════════════════════════════ -->
+<footer style="margin-top:60px; padding-top:20px; border-top:1px solid #e5e7eb; font-size:0.82rem; color:#9ca3af; text-align:center;">
+  <p>TalkingToad SEO Crawler &mdash; Help Guide &mdash; Spec v1.4 &mdash; April 2026</p>
+  <p>This tool is intended for use on websites you own or have permission to audit.</p>
+</footer>
+
+</body>
+</html>

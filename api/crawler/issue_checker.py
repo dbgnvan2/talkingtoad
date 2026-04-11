@@ -1,0 +1,1096 @@
+"""
+Issue detection logic for the TalkingToad crawler.
+
+Implements all Phase 1 issue codes from spec §3.1 and §7.1.
+Per-page checks run during the crawl; cross-page duplicate checks run after.
+"""
+
+import logging
+import re
+from dataclasses import dataclass
+from urllib.parse import urlparse
+
+from api.crawler.fetcher import FetchResult
+from api.crawler.normaliser import is_same_domain, normalise_url
+from api.crawler.parser import ParsedPage
+
+logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Data types
+# ---------------------------------------------------------------------------
+
+@dataclass
+class Issue:
+    """A single SEO issue found during a crawl."""
+
+    code: str
+    category: str
+    severity: str           # critical | warning | info
+    description: str
+    recommendation: str
+    page_url: str | None = None
+    extra: dict | None = None   # optional supplementary data (e.g. redirect chain)
+    impact: int = 0             # v1.5 impact score (0–10)
+    effort: int = 0             # v1.5 effort score (0–5)
+    priority_rank: int = 0      # v1.5 priority: (impact × 10) − (effort × 2)
+    human_description: str = "" # plain-English label for nonprofit staff
+
+
+# ---------------------------------------------------------------------------
+# Issue catalogue (spec §7.1)
+# ---------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class _IssueSpec:
+    category: str
+    severity: str
+    description: str
+    recommendation: str
+    human_description: str = ""   # plain-English label for nonprofit staff
+
+
+# ---------------------------------------------------------------------------
+# v1.5 Priority scoring table (impact, effort) per issue code
+# ---------------------------------------------------------------------------
+# priority_rank = (impact × 10) − (effort × 2)
+# Impact 1–10: how badly the issue hurts SEO / UX
+# Effort  1–5: how hard it is to fix (1 = trivial, 5 = major dev work)
+
+_ISSUE_SCORING: dict[str, tuple[int, int]] = {
+    # code:                       (impact, effort)
+    "BROKEN_LINK_404":            (10, 2),
+    "BROKEN_LINK_410":            (8,  2),
+    "BROKEN_LINK_5XX":            (7,  3),
+    "BROKEN_LINK_503":            (4,  3),
+    "REDIRECT_LOOP":              (10, 4),
+    "REDIRECT_CHAIN":             (6,  3),
+    "REDIRECT_301":               (3,  2),
+    "REDIRECT_302":               (5,  2),
+    "REDIRECT_TRAILING_SLASH":    (2,  1),
+    "REDIRECT_CASE_NORMALISE":    (2,  1),
+    "TITLE_MISSING":              (9,  1),
+    "TITLE_DUPLICATE":            (5,  2),
+    "TITLE_TOO_SHORT":            (5,  1),
+    "TITLE_TOO_LONG":             (4,  1),
+    "META_DESC_MISSING":          (7,  1),
+    "META_DESC_DUPLICATE":        (4,  2),
+    "META_DESC_TOO_SHORT":        (4,  1),
+    "META_DESC_TOO_LONG":         (3,  1),
+    "OG_TITLE_MISSING":           (4,  1),
+    "OG_DESC_MISSING":            (3,  1),
+    "CANONICAL_MISSING":          (6,  2),
+    "CANONICAL_EXTERNAL":         (5,  2),
+    "TITLE_META_DUPLICATE_PAIR":  (6,  2),
+    "FAVICON_MISSING":            (3,  2),
+    "H1_MISSING":                 (8,  1),
+    "H1_MULTIPLE":                (6,  2),
+    "HEADING_SKIP":               (4,  3),
+    "NOINDEX_META":               (10, 1),
+    "NOINDEX_HEADER":             (10, 2),
+    "ROBOTS_BLOCKED":             (9,  2),
+    "NOT_IN_SITEMAP":             (4,  1),
+    "SITEMAP_MISSING":            (6,  2),
+    "HTTP_PAGE":                  (9,  2),
+    "MIXED_CONTENT":              (6,  2),
+    "MISSING_HSTS":               (4,  2),
+    "UNSAFE_CROSS_ORIGIN_LINK":   (3,  1),
+    "URL_TOO_LONG":               (2,  4),
+    "URL_UPPERCASE":              (3,  2),
+    "URL_HAS_SPACES":             (5,  3),
+    "URL_HAS_UNDERSCORES":        (2,  4),
+    "THIN_CONTENT":               (6,  4),
+    "HIGH_CRAWL_DEPTH":           (5,  3),
+    "PAGE_TIMEOUT":               (6,  3),
+    "EXTERNAL_LINK_TIMEOUT":      (3,  1),
+    "EXTERNAL_LINK_SKIPPED":      (2,  1),
+    "META_REFRESH_REDIRECT":      (5,  2),
+    "PAGINATION_LINKS_PRESENT":   (2,  2),
+    "AMPHTML_BROKEN":             (4,  3),
+    "PDF_TOO_LARGE":              (4,  2),
+    "IMG_OVERSIZED":              (5,  2),
+    "IMG_ALT_MISSING":            (5,  2),
+    "LOGIN_REDIRECT":             (2,  1),
+    "INTERNAL_REDIRECT_301":      (4,  1),
+    "ORPHAN_PAGE":                (6,  4),
+    "SCHEMA_MISSING":             (5,  2),
+    "MISSING_VIEWPORT_META":      (6,  1),
+    "IMG_BROKEN":                 (8,  2),
+    "LINK_EMPTY_ANCHOR":          (7,  2),
+    "INTERNAL_NOFOLLOW":          (5,  2),
+    "PAGE_SIZE_LARGE":            (5,  3),
+    # v1.6 new checks
+    "LANG_MISSING":               (6,  1),
+    "TITLE_H1_MISMATCH":          (6,  2),
+    "HTTPS_REDIRECT_MISSING":     (9,  2),
+    "CANONICAL_SELF_MISSING":     (5,  1),
+}
+
+
+_CATALOGUE: dict[str, _IssueSpec] = {
+    # ── Metadata ──────────────────────────────────────────────────────────
+    "TITLE_MISSING": _IssueSpec(
+        category="metadata", severity="critical",
+        description="Page has no <title> tag",
+        recommendation="Add a unique title tag between 30–60 characters that clearly describes this page.",
+        human_description="Missing Name Tag",
+    ),
+    "TITLE_DUPLICATE": _IssueSpec(
+        category="metadata", severity="warning",
+        description="Same title used on multiple pages",
+        recommendation="Make each page title unique. Describe what makes this page different from others on your site.",
+        human_description="Duplicate Page Name",
+    ),
+    "TITLE_TOO_SHORT": _IssueSpec(
+        category="metadata", severity="warning",
+        description="Title under 30 characters",
+        recommendation="Expand the title to 30–60 characters. Include your organisation name and the page topic.",
+        human_description="Too-Short Page Name",
+    ),
+    "TITLE_TOO_LONG": _IssueSpec(
+        category="metadata", severity="warning",
+        description="Title over 60 characters",
+        recommendation="Shorten the title to under 60 characters. Google truncates longer titles in search results.",
+        human_description="Too-Long Page Name",
+    ),
+    "META_DESC_MISSING": _IssueSpec(
+        category="metadata", severity="critical",
+        description="No meta description",
+        recommendation="Add a meta description of 70–160 characters summarising what visitors will find on this page.",
+        human_description="Missing Summary Snippet",
+    ),
+    "META_DESC_DUPLICATE": _IssueSpec(
+        category="metadata", severity="warning",
+        description="Same meta description on multiple pages",
+        recommendation="Write a unique meta description for this page that reflects its specific content.",
+        human_description="Duplicate Summary Snippet",
+    ),
+    "META_DESC_TOO_SHORT": _IssueSpec(
+        category="metadata", severity="warning",
+        description="Meta description under 70 characters",
+        recommendation="Expand the description to 70–160 characters to give search engines more context.",
+        human_description="Too-Short Summary Snippet",
+    ),
+    "META_DESC_TOO_LONG": _IssueSpec(
+        category="metadata", severity="warning",
+        description="Meta description over 160 characters",
+        recommendation="Shorten the description to under 160 characters. Longer descriptions are cut off in search results.",
+        human_description="Too-Long Summary Snippet",
+    ),
+    "OG_TITLE_MISSING": _IssueSpec(
+        category="metadata", severity="info",
+        description="Open Graph title tag missing",
+        recommendation="Add an og:title meta tag. This controls how your page title appears when shared on social media.",
+        human_description="Missing Social Share Title",
+    ),
+    "OG_DESC_MISSING": _IssueSpec(
+        category="metadata", severity="info",
+        description="Open Graph description tag missing",
+        recommendation="Add an og:description meta tag. This controls the description shown when your page is shared on social media.",
+        human_description="Missing Social Share Description",
+    ),
+    "CANONICAL_MISSING": _IssueSpec(
+        category="metadata", severity="warning",
+        description="No canonical tag — page has query strings or is a near-duplicate",
+        recommendation="Add a canonical tag pointing to the preferred URL for this page to prevent duplicate content issues.",
+        human_description="Ambiguous Preferred URL",
+    ),
+    "CANONICAL_EXTERNAL": _IssueSpec(
+        category="metadata", severity="warning",
+        description="Canonical points to a different domain",
+        recommendation="Review this canonical tag — it is pointing search engines to a page on a different website.",
+        human_description="External Preferred URL",
+    ),
+    "FAVICON_MISSING": _IssueSpec(
+        category="metadata", severity="info",
+        description="No favicon found (homepage only)",
+        recommendation="Add a favicon to your site. This small icon appears in browser tabs and bookmarks and reinforces your brand.",
+        human_description="Missing Website Icon",
+    ),
+    # ── Headings ──────────────────────────────────────────────────────────
+    "H1_MISSING": _IssueSpec(
+        category="heading", severity="critical",
+        description="No H1 tag found on page",
+        recommendation="Add a single H1 heading that clearly states the main topic of this page.",
+        human_description="Missing Main Heading",
+    ),
+    "H1_MULTIPLE": _IssueSpec(
+        category="heading", severity="warning",
+        description="More than one H1 on the page",
+        recommendation="Remove extra H1 tags. Each page should have exactly one H1 that introduces the main topic.",
+        human_description="Multiple Main Headings",
+    ),
+    "HEADING_SKIP": _IssueSpec(
+        category="heading", severity="warning",
+        description="Heading levels skip (e.g., H1 → H3)",
+        recommendation="Fix the heading structure so levels are not skipped. Use H1, then H2, then H3 in order.",
+        human_description="Skipped Heading Level",
+    ),
+    # ── Broken links ──────────────────────────────────────────────────────
+    "BROKEN_LINK_404": _IssueSpec(
+        category="broken_link", severity="critical",
+        description="Link destination returns 404 Not Found",
+        recommendation="Remove or update this link. The page it points to no longer exists.",
+        human_description="Dead Link",
+    ),
+    "BROKEN_LINK_410": _IssueSpec(
+        category="broken_link", severity="critical",
+        description="Link destination returns 410 Gone",
+        recommendation="Remove this link. The destination has been permanently removed.",
+        human_description="Removed Link",
+    ),
+    "BROKEN_LINK_5XX": _IssueSpec(
+        category="broken_link", severity="critical",
+        description="Link destination returns a server error",
+        recommendation="Check whether the linked site is down. If the problem persists, remove or replace the link.",
+        human_description="Broken Server Link",
+    ),
+    "BROKEN_LINK_503": _IssueSpec(
+        category="broken_link", severity="warning",
+        description="Link destination returns 503 — may be temporarily down or blocking automated checks",
+        recommendation="Visit the link manually to see if it loads for real visitors. "
+                       "If the problem persists, the destination site may be down or blocking crawlers.",
+        human_description="Temporarily Blocked Link",
+    ),
+    "EXTERNAL_LINK_SKIPPED": _IssueSpec(
+        category="broken_link", severity="info",
+        description="Link not verified — social media platforms block automated checks",
+        recommendation="Open this link in a browser to confirm it is working correctly.",
+        human_description="Unverified Social Link",
+    ),
+    "EXTERNAL_LINK_TIMEOUT": _IssueSpec(
+        category="broken_link", severity="info",
+        description="External link did not respond — destination may be slow or unavailable",
+        recommendation="Click the link to confirm it works in a browser. If it consistently fails, "
+                       "the destination site may be down or the domain may have expired.",
+        human_description="Slow External Link",
+    ),
+    # ── Redirects ─────────────────────────────────────────────────────────
+    "REDIRECT_LOOP": _IssueSpec(
+        category="redirect", severity="critical",
+        description="Redirect loop detected",
+        recommendation="Fix the redirect configuration immediately. This page cannot load and is invisible to search engines.",
+        human_description="Spinning Page",
+    ),
+    "REDIRECT_301": _IssueSpec(
+        category="redirect", severity="info",
+        description="Page returns a permanent redirect",
+        recommendation="Update any internal links pointing here to use the final destination URL directly.",
+        human_description="Permanent Redirect",
+    ),
+    "REDIRECT_302": _IssueSpec(
+        category="redirect", severity="warning",
+        description="Page returns a temporary redirect",
+        recommendation="Confirm whether this redirect is intentional. If permanent, change it to a 301 redirect.",
+        human_description="Temporary Redirect",
+    ),
+    "REDIRECT_CHAIN": _IssueSpec(
+        category="redirect", severity="warning",
+        description="Page involves a multi-hop redirect chain",
+        recommendation="Consolidate the redirect chain to a single direct redirect to the final destination.",
+        human_description="Multi-Hop Detour",
+    ),
+    "REDIRECT_TRAILING_SLASH": _IssueSpec(
+        category="redirect", severity="info",
+        description="Redirect adds or removes a trailing slash — your CMS handles this automatically",
+        recommendation="No urgent action needed. Your CMS corrects this for visitors automatically. "
+                       "To eliminate the extra round trip, update internal links to use the canonical URL "
+                       "with the trailing slash your server expects.",
+        human_description="Auto-Corrected URL (Slash)",
+    ),
+    "REDIRECT_CASE_NORMALISE": _IssueSpec(
+        category="redirect", severity="info",
+        description="Redirect normalises URL case — your web server handles this automatically",
+        recommendation="No urgent action needed. Your server redirects uppercase URLs to lowercase automatically. "
+                       "To eliminate the extra redirect, update internal links to use lowercase-only URLs.",
+        human_description="Auto-Corrected URL (Case)",
+    ),
+    "META_REFRESH_REDIRECT": _IssueSpec(
+        category="redirect", severity="warning",
+        description="Page uses a <meta http-equiv=\"refresh\"> tag to redirect users",
+        recommendation="Replace meta refresh redirects with server-side 301 redirects.",
+        human_description="HTML Redirect (Outdated)",
+    ),
+    # ── Crawlability ──────────────────────────────────────────────────────
+    "PAGE_TIMEOUT": _IssueSpec(
+        category="crawlability", severity="warning",
+        description="Page did not respond within the timeout period",
+        recommendation="Check the page manually. A persistent timeout may indicate a slow server, "
+                       "heavy page weight, or a broken URL. Consider increasing server response speed.",
+        human_description="Slow-Loading Page",
+    ),
+    "LOGIN_REDIRECT": _IssueSpec(
+        category="crawlability", severity="info",
+        description="Page redirects to a login screen",
+        recommendation="This page requires a login to access. The crawler cannot audit it. Review manually if needed.",
+        human_description="Login-Protected Page",
+    ),
+    "ROBOTS_BLOCKED": _IssueSpec(
+        category="crawlability", severity="warning",
+        description="Page blocked by robots.txt",
+        recommendation="Check whether this page should be blocked. If not, update your robots.txt file.",
+        human_description="Blocked by Crawl Rules",
+    ),
+    "NOINDEX_META": _IssueSpec(
+        category="crawlability", severity="warning",
+        description="Page has a noindex meta tag",
+        recommendation="Confirm whether this page should be excluded from search results. Remove the noindex tag if not.",
+        human_description="Hidden from Search",
+    ),
+    "NOINDEX_HEADER": _IssueSpec(
+        category="crawlability", severity="warning",
+        description="Page has a noindex HTTP header",
+        recommendation="Check your server configuration. This page is being hidden from search engines via an HTTP header.",
+        human_description="Hidden from Search (Server)",
+    ),
+    "NOT_IN_SITEMAP": _IssueSpec(
+        category="crawlability", severity="info",
+        description="Crawlable page not listed in sitemap",
+        recommendation="Add this URL to your XML sitemap so search engines can find it more reliably.",
+        human_description="Missing from Sitemap",
+    ),
+    "PDF_TOO_LARGE": _IssueSpec(
+        category="crawlability", severity="warning",
+        description="PDF file exceeds 10 MB",
+        recommendation="Reduce the PDF file size. Large PDFs are slow to download and may be skipped by crawlers.",
+        human_description="Oversized Document",
+    ),
+    "IMG_OVERSIZED": _IssueSpec(
+        category="crawlability", severity="warning",
+        description="Image file exceeds 200 KB",
+        recommendation="Compress this image. Use Squoosh, TinyPNG, or ImageOptim to reduce the file size without visible quality loss.",
+        human_description="Oversized Image",
+    ),
+    "PAGINATION_LINKS_PRESENT": _IssueSpec(
+        category="crawlability", severity="info",
+        description="Page declares rel=\"next\" or rel=\"prev\" pagination link elements",
+        recommendation="No action required. Ensure the linked pages are crawlable.",
+        human_description="Paginated Content",
+    ),
+    "THIN_CONTENT": _IssueSpec(
+        category="crawlability", severity="warning",
+        description="Page has fewer than 300 words of body content",
+        recommendation="Expand the page content to at least 300 words to provide more value to users and search engines.",
+        human_description="Low Information",
+    ),
+    "AMPHTML_BROKEN": _IssueSpec(
+        category="crawlability", severity="warning",
+        description="Page declares an AMP version via <link rel=\"amphtml\"> but the AMP URL is not reachable",
+        recommendation="Fix the AMP URL or remove the amphtml link element if AMP is no longer in use.",
+        human_description="Broken Mobile Version",
+    ),
+    "HIGH_CRAWL_DEPTH": _IssueSpec(
+        category="crawlability", severity="warning",
+        description="Page is more than 4 clicks from the homepage",
+        recommendation="Improve internal linking so this page can be reached in 3 clicks or fewer from the homepage.",
+        human_description="Hard-to-Reach Page",
+    ),
+    "ORPHAN_PAGE": _IssueSpec(
+        category="crawlability", severity="warning",
+        description="Page has no internal links pointing to it — search engines may not discover it",
+        recommendation="Add at least one internal link to this page from a navigation menu, hub page, "
+                       "or relevant content page so search engines and visitors can find it.",
+        human_description="Disconnected Page",
+    ),
+    "SCHEMA_MISSING": _IssueSpec(
+        category="crawlability", severity="info",
+        description="No structured data (schema markup) found on this page",
+        recommendation="Consider adding JSON-LD structured data to help search engines understand the page content. "
+                       "At minimum, add Organisation schema to your homepage. "
+                       "Google's Rich Results Test can validate your markup.",
+        human_description="No Structured Data",
+    ),
+    # ── Sitemap ───────────────────────────────────────────────────────────
+    "SITEMAP_MISSING": _IssueSpec(
+        category="sitemap", severity="info",
+        description="No sitemap found for this domain",
+        recommendation="Create an XML sitemap and submit it to Google Search Console. Most CMS platforms can generate one automatically.",
+        human_description="No Sitemap",
+    ),
+    # ── Duplicate content ─────────────────────────────────────────────────
+    "TITLE_META_DUPLICATE_PAIR": _IssueSpec(
+        category="duplicate", severity="warning",
+        description="Both title and meta description duplicated on another page",
+        recommendation="This page and another share identical title and meta description. Update both to be unique.",
+        human_description="Identical Title & Description",
+    ),
+    # ── Security (§E1) ────────────────────────────────────────────────────
+    "HTTP_PAGE": _IssueSpec(
+        category="security", severity="critical",
+        description="Page is served over HTTP, not HTTPS",
+        recommendation="Migrate to HTTPS and configure a server-side 301 redirect from HTTP to HTTPS.",
+        human_description="Unsecured Page",
+    ),
+    "MIXED_CONTENT": _IssueSpec(
+        category="security", severity="warning",
+        description="HTTPS page loads resources over HTTP",
+        recommendation="Update all resource URLs to use HTTPS. Check images, scripts, stylesheets, and iframes.",
+        human_description="Partially Unsecured Page",
+    ),
+    "MISSING_HSTS": _IssueSpec(
+        category="security", severity="info",
+        description="HTTPS page is missing the Strict-Transport-Security header",
+        recommendation="Add Strict-Transport-Security: max-age=31536000; includeSubDomains to all HTTPS responses.",
+        human_description="Security Header Missing",
+    ),
+    "UNSAFE_CROSS_ORIGIN_LINK": _IssueSpec(
+        category="security", severity="info",
+        description="External link opens in a new tab without rel=\"noopener\" or rel=\"noreferrer\"",
+        recommendation="Add rel=\"noopener noreferrer\" to all <a target=\"_blank\"> links pointing to external URLs.",
+        human_description="Unsafe External Link",
+    ),
+    # ── URL structure (§E2) ───────────────────────────────────────────────
+    "URL_UPPERCASE": _IssueSpec(
+        category="url_structure", severity="warning",
+        description="URL path contains uppercase characters",
+        recommendation="Use lowercase-only URLs. Most web servers will auto-redirect uppercase URLs to lowercase, "
+                       "but this creates an unnecessary extra redirect. Update internal links and page slugs "
+                       "to use lowercase only to avoid that redirect entirely.",
+        human_description="Mixed-Case Web Address",
+    ),
+    "URL_HAS_SPACES": _IssueSpec(
+        category="url_structure", severity="warning",
+        description="URL contains encoded spaces (%20)",
+        recommendation="Replace spaces in URLs with hyphens.",
+        human_description="Spaces in Web Address",
+    ),
+    "URL_HAS_UNDERSCORES": _IssueSpec(
+        category="url_structure", severity="info",
+        description="URL path uses underscores instead of hyphens",
+        recommendation="Use hyphens as word separators in URL paths. Google treats underscores as word-joiners.",
+        human_description="Underscores in Web Address",
+    ),
+    "URL_TOO_LONG": _IssueSpec(
+        category="url_structure", severity="info",
+        description="URL exceeds 200 characters",
+        recommendation="Shorten the URL slug. Long URLs are harder to share and may be truncated in search results.",
+        human_description="Overly Long Web Address",
+    ),
+    # ── v1.5 bug fixes — codes that existed in scoring but had no catalogue entry ──
+    "IMG_ALT_MISSING": _IssueSpec(
+        category="metadata", severity="warning",
+        description="One or more images are missing an alt attribute or have empty alt text",
+        recommendation="Add a descriptive alt attribute to every <img> tag. Describe what the image shows "
+                       "in plain language, e.g. alt=\"Counsellor speaking with a young person\". "
+                       "Purely decorative images should use alt=\"\" (empty string, not omitted).",
+        human_description="Images Without Description",
+    ),
+    # ── v1.5 new codes ────────────────────────────────────────────────────
+    "INTERNAL_REDIRECT_301": _IssueSpec(
+        category="redirect", severity="info",
+        description="Internal page URL redirects with a 301 — links should point to the final URL",
+        recommendation="Update all internal links pointing to this URL to use the final destination directly. "
+                       "This eliminates an unnecessary redirect for every visitor.",
+        human_description="Internal Redirect Link",
+    ),
+    "MISSING_VIEWPORT_META": _IssueSpec(
+        category="crawlability", severity="warning",
+        description="Page is missing the viewport meta tag",
+        recommendation='Add <meta name="viewport" content="width=device-width, initial-scale=1"> to the <head>. '
+                       "Without it, mobile browsers render the page at desktop width and zoom out, making it hard to use.",
+        human_description="Not Mobile-Friendly",
+    ),
+    "IMG_BROKEN": _IssueSpec(
+        category="broken_link", severity="critical",
+        description="Image src URL returns an error response (4xx/5xx)",
+        recommendation="Replace or remove the broken image. Use your CMS media library to re-upload the file "
+                       "or update the src URL to point to the correct location.",
+        human_description="Broken Image",
+    ),
+    "LINK_EMPTY_ANCHOR": _IssueSpec(
+        category="metadata", severity="warning",
+        description="Link has no visible anchor text — screen readers and search engines cannot describe its destination",
+        recommendation='Add descriptive text inside the link. If it is an icon-only link, add an aria-label attribute (e.g. aria-label="Donate now").',
+        human_description="Empty Link Text",
+    ),
+    "INTERNAL_NOFOLLOW": _IssueSpec(
+        category="crawlability", severity="warning",
+        description='Internal link carries rel="nofollow", which may prevent search engines from discovering linked pages',
+        recommendation='Remove the nofollow attribute from internal links. Reserve rel="nofollow" for links to '
+                       "external or user-generated content.",
+        human_description="Blocked Internal Link",
+    ),
+    "PAGE_SIZE_LARGE": _IssueSpec(
+        category="crawlability", severity="warning",
+        description="HTML page response is unusually large — slower to load, especially on mobile connections",
+        recommendation="Reduce page weight by removing unused HTML, lazy-loading off-screen content, and deferring "
+                       "non-critical scripts. Large pages cost more mobile data and take longer to render.",
+        human_description="Overweight Page",
+    ),
+    # ── v1.6 new codes ────────────────────────────────────────────────────────
+    "LANG_MISSING": _IssueSpec(
+        category="metadata", severity="warning",
+        description="Page is missing the lang attribute on the <html> element",
+        recommendation='Add a lang attribute to your <html> tag, e.g. <html lang="en">. '
+                       "This tells search engines and screen readers what language your content is in, "
+                       "improving accessibility and search accuracy for multilingual queries.",
+        human_description="No Language Declared",
+    ),
+    "TITLE_H1_MISMATCH": _IssueSpec(
+        category="metadata", severity="warning",
+        description="The page title and the H1 heading share no significant words",
+        recommendation="Align the page title and H1 heading so they describe the same topic. "
+                       "They do not need to be identical, but both should clearly reflect the page's main subject. "
+                       "Significant mismatch confuses users who click a search result and then see an unrelated heading.",
+        human_description="Title and Heading Disagree",
+    ),
+    "HTTPS_REDIRECT_MISSING": _IssueSpec(
+        category="security", severity="critical",
+        description="HTTP version of the site does not redirect to HTTPS",
+        recommendation="Configure a server-side 301 redirect from http:// to https:// for all URLs on your domain. "
+                       "Without this, visitors who type your address without 'https' will reach an insecure version "
+                       "of your site — and search engines treat HTTP and HTTPS as separate, competing URLs.",
+        human_description="Insecure URL Not Redirected",
+    ),
+    "CANONICAL_SELF_MISSING": _IssueSpec(
+        category="metadata", severity="info",
+        description="Indexable page has no canonical tag — consider adding a self-referencing canonical",
+        recommendation='Add <link rel="canonical" href="[this-page-url]"> to the page <head>. '
+                       "A self-referencing canonical is a best-practice signal to search engines "
+                       "confirming which URL is the preferred version of this page.",
+        human_description="No Canonical Tag",
+    ),
+}
+
+
+_STOP_WORDS: frozenset[str] = frozenset({
+    "a", "an", "the", "and", "or", "but", "in", "on", "at", "to", "for",
+    "of", "with", "by", "from", "is", "are", "was", "were", "be", "been",
+    "being", "have", "has", "had", "do", "does", "did", "will", "would",
+    "could", "should", "may", "might", "shall", "can", "not", "no",
+    "its", "it", "this", "that", "we", "our", "your", "their", "my",
+})
+
+
+def _sig_words(text: str) -> set[str]:
+    """Return significant (non-stop, length>2) lowercase words from *text*."""
+    return {
+        w.lower() for w in re.findall(r"\w+", text)
+        if len(w) > 2 and w.lower() not in _STOP_WORDS
+    }
+
+
+def _titles_mismatch(title: str, h1: str) -> bool:
+    """Return True if the page title and the H1 heading share no significant words.
+
+    Strips a common site-name suffix (text after ' | ', ' - ', ' – ') from the
+    title before comparing so that "About Us | My Charity" and "About Us" are
+    treated as matching rather than mismatching.
+    """
+    # Strip site-name suffix
+    clean_title = re.split(r"\s[|\-–]\s", title)[0].strip()
+    title_words = _sig_words(clean_title)
+    h1_words = _sig_words(h1)
+    if not title_words or not h1_words:
+        return False  # too short to compare meaningfully
+    return title_words.isdisjoint(h1_words)
+
+
+def make_issue(code: str, page_url: str | None = None, extra: dict | None = None) -> Issue:
+    """Construct an :class:`Issue` from a code in the catalogue.
+
+    Automatically populates *impact*, *effort*, and *priority_rank* from
+    :data:`_ISSUE_SCORING`.  Unknown codes get zeroes for all three.
+    """
+    spec = _CATALOGUE[code]
+    impact, effort = _ISSUE_SCORING.get(code, (0, 0))
+    priority_rank = (impact * 10) - (effort * 2)
+    return Issue(
+        code=code,
+        category=spec.category,
+        severity=spec.severity,
+        description=spec.description,
+        recommendation=spec.recommendation,
+        page_url=page_url,
+        extra=extra,
+        impact=impact,
+        effort=effort,
+        priority_rank=priority_rank,
+        human_description=spec.human_description,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Per-page checks
+# ---------------------------------------------------------------------------
+
+_DEFAULT_PAGE_SIZE_LIMIT_KB = 300
+
+
+def check_page(
+    page: ParsedPage,
+    *,
+    sitemap_urls: set[str] | None = None,
+    favicon_emitted: bool = False,
+    hsts_checked_hosts: set[str] | None = None,
+    page_size_limit_kb: int = _DEFAULT_PAGE_SIZE_LIMIT_KB,
+) -> list[Issue]:
+    """Run all per-page issue checks.
+
+    Args:
+        page: The parsed page to check.
+        sitemap_urls: Set of normalised URLs found in the sitemap (or None if no sitemap).
+        favicon_emitted: True if FAVICON_MISSING has already been emitted this job.
+        hsts_checked_hosts: Mutable set of hosts already checked for HSTS (pass the same
+            set across all pages in a job so we only emit once per host).
+
+    Returns:
+        List of issues found. Cross-page checks (duplicates, near-duplicates) are
+        not included — call :func:`check_cross_page` after all pages are crawled.
+    """
+    issues: list[Issue] = []
+    url = page.url
+
+    # Pages with noindex directives are intentionally excluded from search — skip SEO
+    # checks that would only apply to indexed pages. We still run crawlability checks
+    # (to surface the noindex issue itself) and security checks.
+    is_indexable = page.is_indexable
+
+    if is_indexable:
+        # ── Title ──────────────────────────────────────────────────────────
+        if not page.title:
+            issues.append(make_issue("TITLE_MISSING", url))
+        else:
+            length = len(page.title)
+            if length < 30:
+                issues.append(make_issue("TITLE_TOO_SHORT", url))
+            elif length > 60:
+                issues.append(make_issue("TITLE_TOO_LONG", url))
+
+        # ── Meta description ───────────────────────────────────────────────
+        if not page.meta_description:
+            issues.append(make_issue("META_DESC_MISSING", url))
+        else:
+            length = len(page.meta_description)
+            if length < 70:
+                issues.append(make_issue("META_DESC_TOO_SHORT", url))
+            elif length > 160:
+                issues.append(make_issue("META_DESC_TOO_LONG", url))
+
+        # ── OG tags ────────────────────────────────────────────────────────
+        if not page.og_title:
+            issues.append(make_issue("OG_TITLE_MISSING", url))
+        if not page.og_description:
+            issues.append(make_issue("OG_DESC_MISSING", url))
+
+        # ── Canonical tag ──────────────────────────────────────────────────
+        _check_canonical(page, issues)
+
+        # ── Canonical self (best-practice for all indexable pages) ──────────
+        # Only emit if CANONICAL_MISSING hasn't already fired — that issue is
+        # more specific and actionable; emitting both on the same page is redundant.
+        if page.canonical_url is None and not any(i.code == "CANONICAL_MISSING" for i in issues):
+            issues.append(make_issue("CANONICAL_SELF_MISSING", url))
+
+        # ── Language attribute ─────────────────────────────────────────────
+        if not page.lang_attr:
+            issues.append(make_issue("LANG_MISSING", url))
+
+        # ── Title vs H1 consistency ────────────────────────────────────────
+        if page.title and page.h1_tags:
+            if _titles_mismatch(page.title, page.h1_tags[0]):
+                issues.append(make_issue("TITLE_H1_MISMATCH", url,
+                                         extra={"title": page.title, "h1": page.h1_tags[0]}))
+
+        # ── Headings ───────────────────────────────────────────────────────
+        _check_headings(page, issues)
+
+    # ── Favicon (homepage only, once per job — checked regardless of noindex) ──
+    if page.has_favicon is False and not favicon_emitted:
+        issues.append(make_issue("FAVICON_MISSING", url))
+
+    # ── Crawlability ───────────────────────────────────────────────────────
+    _check_crawlability(page, issues)
+
+    # ── Not in sitemap (only meaningful for indexable pages) ──────────────
+    if sitemap_urls is not None and is_indexable:
+        if page.final_url not in sitemap_urls and page.url not in sitemap_urls:
+            issues.append(make_issue("NOT_IN_SITEMAP", url))
+
+    # ── Security (§E1) ────────────────────────────────────────────────────
+    _check_security(page, issues, hsts_checked_hosts=hsts_checked_hosts)
+
+    # ── Pagination links (§E3) ────────────────────────────────────────────
+    if page.pagination_next or page.pagination_prev:
+        issues.append(make_issue(
+            "PAGINATION_LINKS_PRESENT", url,
+            extra={"next": page.pagination_next, "prev": page.pagination_prev},
+        ))
+
+    # ── Meta refresh redirect (§E4) ───────────────────────────────────────
+    if page.meta_refresh_url is not None:
+        issues.append(make_issue("META_REFRESH_REDIRECT", url,
+                                 extra={"refresh_url": page.meta_refresh_url}))
+
+    # ── Thin content (§E5) ────────────────────────────────────────────────
+    if page.word_count is not None and 0 < page.word_count < 300 and page.is_indexable:
+        issues.append(make_issue("THIN_CONTENT", url, extra={"word_count": page.word_count}))
+
+    # ── Crawl depth (§E7) ────────────────────────────────────────────────
+    if page.crawl_depth is not None and page.crawl_depth > 4:
+        issues.append(make_issue("HIGH_CRAWL_DEPTH", url,
+                                 extra={"crawl_depth": page.crawl_depth}))
+
+    # ── Image alt text ────────────────────────────────────────────────────
+    if page.img_missing_alt_count > 0:
+        issues.append(make_issue("IMG_ALT_MISSING", url,
+                                 extra={"missing_alt_count": page.img_missing_alt_count}))
+
+    # ── Viewport meta (mobile-friendliness) ──────────────────────────────
+    if not page.has_viewport_meta:
+        issues.append(make_issue("MISSING_VIEWPORT_META", url))
+
+    # ── Structured data (schema.org) ──────────────────────────────────────
+    if not page.schema_types and is_indexable:
+        issues.append(make_issue("SCHEMA_MISSING", url))
+
+    # ── Empty anchor text ─────────────────────────────────────────────────
+    if page.empty_anchor_count > 0:
+        issues.append(make_issue("LINK_EMPTY_ANCHOR", url,
+                                 extra={"empty_anchor_count": page.empty_anchor_count}))
+
+    # ── Internal nofollow links ───────────────────────────────────────────
+    if page.internal_nofollow_count > 0:
+        issues.append(make_issue("INTERNAL_NOFOLLOW", url,
+                                 extra={"internal_nofollow_count": page.internal_nofollow_count}))
+
+    # ── Page size ─────────────────────────────────────────────────────────
+    _page_size_threshold = page_size_limit_kb * 1024
+    if page.response_size_bytes > _page_size_threshold:
+        issues.append(make_issue("PAGE_SIZE_LARGE", url,
+                                 extra={"size_bytes": page.response_size_bytes,
+                                        "limit_kb": page_size_limit_kb}))
+
+    return issues
+
+
+def _check_security(
+    page: ParsedPage,
+    issues: list[Issue],
+    *,
+    hsts_checked_hosts: set[str] | None,
+) -> None:
+    url = page.url
+
+    # HTTP_PAGE — non-HTTPS final URL
+    if url.startswith("http://"):
+        issues.append(make_issue("HTTP_PAGE", url))
+        return  # HTTPS-only checks below don't apply
+
+    # MIXED_CONTENT
+    if page.mixed_content_count > 0:
+        issues.append(make_issue("MIXED_CONTENT", url,
+                                 extra={"mixed_count": page.mixed_content_count}))
+
+    # MISSING_HSTS — emit once per host
+    if page.has_hsts is False:
+        host = urlparse(url).netloc
+        if hsts_checked_hosts is None or host not in hsts_checked_hosts:
+            issues.append(make_issue("MISSING_HSTS", url))
+            if hsts_checked_hosts is not None:
+                hsts_checked_hosts.add(host)
+
+    # UNSAFE_CROSS_ORIGIN_LINK
+    if page.unsafe_cross_origin_count > 0:
+        issues.append(make_issue("UNSAFE_CROSS_ORIGIN_LINK", url,
+                                 extra={"unsafe_link_count": page.unsafe_cross_origin_count}))
+
+
+def _check_canonical(page: ParsedPage, issues: list[Issue]) -> None:
+    url = page.url
+    parsed_page = urlparse(url)
+
+    if page.canonical_url is not None:
+        # Has a canonical tag
+        if not is_same_domain(page.canonical_url, url):
+            issues.append(make_issue("CANONICAL_EXTERNAL", url))
+        # Self-referencing canonical → OK, no issue
+    else:
+        # No canonical tag — check the two scoping conditions
+        # Condition 1: has query string parameters
+        if parsed_page.query:
+            issues.append(make_issue("CANONICAL_MISSING", url))
+        # Condition 2 (near-duplicate): handled in check_cross_page after all pages crawled
+
+
+def _check_headings(page: ParsedPage, issues: list[Issue]) -> None:
+    url = page.url
+    h1_count = len(page.h1_tags)
+
+    if h1_count == 0:
+        issues.append(make_issue("H1_MISSING", url))
+    elif h1_count > 1:
+        issues.append(make_issue("H1_MULTIPLE", url))
+
+    # Detect skipped heading levels
+    levels = [h["level"] for h in page.headings_outline]
+    for i in range(1, len(levels)):
+        if levels[i] > levels[i - 1] + 1:
+            issues.append(make_issue("HEADING_SKIP", url))
+            break  # Report once per page
+
+
+def _check_crawlability(page: ParsedPage, issues: list[Issue]) -> None:
+    url = page.url
+    if not page.is_indexable:
+        if page.robots_source == "header":
+            issues.append(make_issue("NOINDEX_HEADER", url))
+        else:
+            issues.append(make_issue("NOINDEX_META", url))
+
+
+# ---------------------------------------------------------------------------
+# Cross-page checks (run after all pages are crawled)
+# ---------------------------------------------------------------------------
+
+def check_cross_page(pages: list[ParsedPage], start_url: str | None = None) -> list[Issue]:
+    """Run duplicate-detection checks across all crawled pages.
+
+    Detects:
+    - TITLE_DUPLICATE: same title on multiple pages
+    - META_DESC_DUPLICATE: same meta description on multiple pages
+    - TITLE_META_DUPLICATE_PAIR: both title and meta_desc duplicated together
+    - CANONICAL_MISSING (near-duplicate condition): same title+meta_desc, no canonical
+    - ORPHAN_PAGE: page has no internal links pointing to it
+
+    Args:
+        pages: All crawled HTML pages.
+        start_url: Normalised start URL of the crawl (homepage — excluded from orphan check).
+
+    Returns a flat list of issues (one per affected URL, not per pair).
+    """
+    issues: list[Issue] = []
+
+    # Build lookup maps
+    title_map: dict[str, list[str]] = {}       # title → [urls]
+    desc_map: dict[str, list[str]] = {}        # meta_desc → [urls]
+    pair_map: dict[tuple, list[str]] = {}      # (title, desc) → [urls]
+
+    for page in pages:
+        t = page.title
+        d = page.meta_description
+
+        if t:
+            title_map.setdefault(t, []).append(page.url)
+        if d:
+            desc_map.setdefault(d, []).append(page.url)
+        if t and d:
+            pair_map.setdefault((t, d), []).append(page.url)
+
+    # TITLE_DUPLICATE
+    for title, urls in title_map.items():
+        if len(urls) > 1:
+            for url in urls:
+                issues.append(make_issue("TITLE_DUPLICATE", url))
+
+    # META_DESC_DUPLICATE
+    for desc, urls in desc_map.items():
+        if len(urls) > 1:
+            for url in urls:
+                issues.append(make_issue("META_DESC_DUPLICATE", url))
+
+    # TITLE_META_DUPLICATE_PAIR and CANONICAL_MISSING (near-duplicate condition)
+    duplicate_urls: set[str] = set()
+    for (title, desc), urls in pair_map.items():
+        if len(urls) > 1:
+            for url in urls:
+                issues.append(make_issue("TITLE_META_DUPLICATE_PAIR", url))
+                duplicate_urls.add(url)
+
+    # CANONICAL_MISSING — near-duplicate condition (spec §3.1.2 condition 2)
+    page_by_url = {p.url: p for p in pages}
+    for url in duplicate_urls:
+        page = page_by_url.get(url)
+        if page and page.canonical_url is None and not urlparse(url).query:
+            # No query string (that's condition 1, already emitted in check_page)
+            # and no canonical → emit CANONICAL_MISSING for near-duplicate condition
+            issues.append(make_issue("CANONICAL_MISSING", url))
+
+    # ORPHAN_PAGE — pages with no internal links pointing to them
+    linked_urls: set[str] = set()
+    for page in pages:
+        for link in page.links:
+            if link.is_internal:
+                try:
+                    linked_urls.add(normalise_url(link.url))
+                except Exception:
+                    pass
+
+    for page in pages:
+        try:
+            norm = normalise_url(page.url)
+        except Exception:
+            continue
+        if norm == start_url:
+            continue  # homepage is always the entry point
+        if norm not in linked_urls:
+            issues.append(make_issue("ORPHAN_PAGE", page.url))
+
+    return issues
+
+
+# ---------------------------------------------------------------------------
+# Redirect and broken-link issue helpers (called by engine)
+# ---------------------------------------------------------------------------
+
+def issue_for_status(status_code: int, url: str) -> Issue | None:
+    """Return a broken-link issue if *status_code* indicates a broken link, else None.
+
+    Only standard HTTP 4xx/5xx codes (400–599) are considered broken.
+    Non-standard codes such as LinkedIn's 999 anti-bot response are ignored.
+    503 is treated as a warning (not critical) because it is commonly returned by
+    bot-protection layers and CDNs even when the page loads fine for real visitors.
+    """
+    if status_code == 404:
+        return make_issue("BROKEN_LINK_404", url)
+    if status_code == 410:
+        return make_issue("BROKEN_LINK_410", url)
+    if status_code == 503:
+        return make_issue("BROKEN_LINK_503", url)
+    if 500 <= status_code <= 599:
+        return make_issue("BROKEN_LINK_5XX", url)
+    return None
+
+
+def _is_trailing_slash_only(url: str, final_url: str) -> bool:
+    """Return True if the only difference between *url* and *final_url* is a trailing slash."""
+    return url.rstrip("/") == final_url.rstrip("/")
+
+
+def _is_case_normalise_only(url: str, final_url: str) -> bool:
+    """Return True if the only difference is URL path casing (server auto-lowercase)."""
+    from urllib.parse import urlparse as _urlparse
+    u, f = _urlparse(url), _urlparse(final_url)
+    return (
+        u.scheme == f.scheme
+        and u.netloc.lower() == f.netloc.lower()
+        and u.path.lower() == f.path.lower()
+        and u.query == f.query
+        and u.path != f.path          # path IS different (otherwise no redirect)
+    )
+
+
+_PDF_SIZE_LIMIT   = 10 * 1024 * 1024  # 10 MB
+_IMAGE_SIZE_LIMIT_KB = 200  # default, overridable per job
+
+
+def check_asset(result: FetchResult, *, img_size_limit_kb: int = _IMAGE_SIZE_LIMIT_KB) -> list[Issue]:
+    """Run checks appropriate for a non-HTML asset (PDF, image, etc.).
+
+    HTML-specific checks (title, meta, headings) are intentionally skipped.
+    Only checks the file size using the Content-Length response header.
+
+    Args:
+        result: The fetch result for the asset.
+        img_size_limit_kb: Flag images larger than this many KB as IMG_OVERSIZED.
+    """
+    issues: list[Issue] = []
+    ct = result.content_type
+    try:
+        size = int(result.headers.get("content-length", 0) or 0)
+    except (ValueError, TypeError):
+        size = 0
+
+    img_limit_bytes = img_size_limit_kb * 1024
+
+    if "pdf" in ct and size > 0 and size > _PDF_SIZE_LIMIT:
+        issues.append(make_issue("PDF_TOO_LARGE", result.url))
+    elif ct.startswith("image/") and size > 0 and size > img_limit_bytes:
+        issue = make_issue("IMG_OVERSIZED", result.url)
+        # Override description to show the actual threshold used
+        issue.description = f"Image file exceeds {img_size_limit_kb} KB"
+        issues.append(issue)
+
+    return issues
+
+
+def check_url_structure(url: str) -> list[Issue]:
+    """Return URL structure issues for *url* (spec §E2).
+
+    These checks are pure string operations — no fetching required.
+    Called by the engine before fetching each URL.
+    """
+    issues: list[Issue] = []
+    path = urlparse(url).path
+
+    if len(url) > 200:
+        issues.append(make_issue("URL_TOO_LONG", url))
+    if any(c.isupper() for c in path):
+        issues.append(make_issue("URL_UPPERCASE", url))
+    if "%20" in urlparse(url).path:
+        issues.append(make_issue("URL_HAS_SPACES", url))
+    if "_" in path:
+        issues.append(make_issue("URL_HAS_UNDERSCORES", url))
+
+    return issues
+
+
+def check_amphtml_links(
+    pages: list[ParsedPage],
+    amp_statuses: dict[str, int],
+) -> list[Issue]:
+    """Emit AMPHTML_BROKEN for pages whose AMP URL returned a non-200 status.
+
+    Args:
+        pages: All crawled pages (only those with amphtml_url are checked).
+        amp_statuses: Mapping of {amphtml_url: status_code} from the engine's
+            post-crawl AMP HEAD requests.
+    """
+    issues: list[Issue] = []
+    for page in pages:
+        if not page.amphtml_url:
+            continue
+        status = amp_statuses.get(page.amphtml_url)
+        if status is not None and status != 200:
+            issues.append(make_issue(
+                "AMPHTML_BROKEN", page.url,
+                extra={"amphtml_url": page.amphtml_url, "amp_status": status},
+            ))
+    return issues
+
+
+def issues_for_redirect(
+    url: str,
+    first_status: int,
+    redirect_chain: list[str],
+    final_url: str | None = None,
+    base_url: str | None = None,
+) -> list[Issue]:
+    """Return redirect issues for a URL that redirected.
+
+    Args:
+        url: The original URL that was fetched.
+        first_status: HTTP status code of the first response in the chain.
+        redirect_chain: Intermediate URLs (not including the final destination).
+        final_url: The URL after all redirects have been followed (used to detect
+            auto-corrected redirects like trailing-slash and case normalisation).
+        base_url: The crawl start URL — used to distinguish internal from external
+            301 redirects. If provided and the URL is internal, INTERNAL_REDIRECT_301
+            is emitted instead of the generic REDIRECT_301.
+    """
+    result: list[Issue] = []
+
+    # Detect whether the redirect is one that CMSes and servers handle automatically,
+    # so we can flag it as informational rather than actionable.
+    if final_url and first_status == 301 and len(redirect_chain) <= 1:
+        if _is_trailing_slash_only(url, final_url):
+            result.append(make_issue("REDIRECT_TRAILING_SLASH", url))
+            # Still check for chains involving more than just the slash correction
+            return result
+        if _is_case_normalise_only(url, final_url):
+            result.append(make_issue("REDIRECT_CASE_NORMALISE", url))
+            return result
+
+    if first_status == 301:
+        if base_url and is_same_domain(url, base_url):
+            result.append(make_issue("INTERNAL_REDIRECT_301", url))
+        else:
+            result.append(make_issue("REDIRECT_301", url))
+    elif first_status == 302:
+        result.append(make_issue("REDIRECT_302", url))
+
+    if len(redirect_chain) > 1:
+        result.append(make_issue("REDIRECT_CHAIN", url))
+
+    return result
