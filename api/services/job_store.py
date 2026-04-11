@@ -156,6 +156,13 @@ class JobStore(Protocol):
 
     async def cleanup_expired_jobs(self) -> int: ...
 
+    # Fix Manager
+    async def save_fixes(self, fixes: list[dict]) -> None: ...
+    async def get_fixes(self, job_id: str) -> list[dict]: ...
+    async def get_fixes_by_id(self, fix_id: str) -> list[dict]: ...
+    async def update_fix(self, fix_id: str, **fields: Any) -> None: ...
+    async def delete_fixes(self, job_id: str) -> None: ...
+
 
 # ---------------------------------------------------------------------------
 # SQLite implementation
@@ -1170,6 +1177,68 @@ class RedisJobStore:
 
     async def cleanup_expired_jobs(self, ttl_days: int = _DEFAULT_TTL_DAYS) -> int:
         return 0  # Redis TTL handles expiry automatically
+
+    # ── Fix Manager ────────────────────────────────────────────────────────
+
+    def _fk(self, job_id: str) -> str:
+        return f"tt:job:{job_id}:fixes"
+
+    async def save_fixes(self, fixes: list[dict]) -> None:
+        if not fixes:
+            return
+        # Group by job_id (all fixes in a batch share one job_id)
+        by_job: dict[str, list[dict]] = {}
+        for fix in fixes:
+            by_job.setdefault(fix["job_id"], []).append(fix)
+        for job_id, job_fixes in by_job.items():
+            key = self._fk(job_id)
+            existing_raw = await self._r.get(key)
+            existing: list[dict] = json.loads(existing_raw) if existing_raw else []
+            existing_by_id = {f["id"]: f for f in existing}
+            for fix in job_fixes:
+                existing_by_id[fix["id"]] = fix
+                # Write secondary index: fix_id → job_id
+                await self._r.set(f"tt:fix:{fix['id']}:job", job_id)
+                await self._r.expire(f"tt:fix:{fix['id']}:job", self._JOB_TTL_S)
+            await self._r.set(key, json.dumps(list(existing_by_id.values())))
+            await self._r.expire(key, self._JOB_TTL_S)
+
+    async def get_fixes(self, job_id: str) -> list[dict]:
+        raw = await self._r.get(self._fk(job_id))
+        if not raw:
+            return []
+        fixes = json.loads(raw)
+        return sorted(fixes, key=lambda f: (f.get("page_url", ""), f.get("field", "")))
+
+    async def get_fixes_by_id(self, fix_id: str) -> list[dict]:
+        # We don't have a direct index by fix_id in Redis, so we need to scan.
+        # Fix ids are UUIDs; we store them under the job key. The router always
+        # has the job_id available via a prior lookup, but the Protocol only
+        # exposes fix_id here. We use a secondary index key for fix→job mapping.
+        job_id_raw = await self._r.get(f"tt:fix:{fix_id}:job")
+        if not job_id_raw:
+            return []
+        fixes = await self.get_fixes(job_id_raw)
+        return [f for f in fixes if f["id"] == fix_id]
+
+    async def update_fix(self, fix_id: str, **fields: object) -> None:
+        job_id_raw = await self._r.get(f"tt:fix:{fix_id}:job")
+        if not job_id_raw:
+            return
+        key = self._fk(job_id_raw)
+        raw = await self._r.get(key)
+        if not raw:
+            return
+        fixes: list[dict] = json.loads(raw)
+        for fix in fixes:
+            if fix["id"] == fix_id:
+                fix.update(fields)
+                break
+        await self._r.set(key, json.dumps(fixes))
+        await self._r.expire(key, self._JOB_TTL_S)
+
+    async def delete_fixes(self, job_id: str) -> None:
+        await self._r.delete(self._fk(job_id))
 
     # ── Private serialisation ──────────────────────────────────────────────
 
