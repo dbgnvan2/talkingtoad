@@ -23,9 +23,9 @@ function authHeader() {
   return token ? { Authorization: `Bearer ${token}` } : {}
 }
 
-async function apiFetch(path, opts = {}) {
+async function apiFetch(path, opts = {}, timeoutMs = 30_000) {
   const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), 30_000)
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
   try {
     const res = await fetch(`${API}${path}`, {
       headers: { 'Content-Type': 'application/json', ...authHeader(), ...opts.headers },
@@ -228,7 +228,7 @@ export default function FixManager({ jobId }) {
     setError(null)
     setApplyResult(null)
     try {
-      const res = await apiFetch(`/api/fixes/generate/${jobId}`, { method: 'POST' })
+      const res = await apiFetch(`/api/fixes/generate/${jobId}`, { method: 'POST' }, 120_000)
       const data = await res.json()
       if (!res.ok) {
         setError(data.error?.message || 'Failed to generate fixes.')

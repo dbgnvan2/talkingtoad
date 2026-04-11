@@ -101,9 +101,9 @@ async def generate_fixes_endpoint(
     all_issues = await store.get_all_issues(job_id)
     fixable_codes = get_fixable_codes()
     fixable_issues = [
-        {"code": i.code, "page_url": i.page_url}
+        {"code": i.issue_code, "page_url": i.page_url}
         for i in all_issues
-        if i.code in fixable_codes and i.page_url
+        if i.issue_code in fixable_codes and i.page_url
     ]
 
     if not fixable_issues:

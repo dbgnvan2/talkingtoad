@@ -8,6 +8,7 @@ fixes via the WordPress REST API.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from dataclasses import dataclass
 from urllib.parse import urlparse
@@ -205,58 +206,82 @@ async def generate_fixes(
     job_id: str,
     issues: list[dict],
     seo_plugin: str | None,
+    *,
+    concurrency: int = 5,
 ) -> tuple[list[dict], list[str]]:
     """Generate fix records from a list of issue dicts.
+
+    Resolves WP posts and fetches current values concurrently (up to
+    *concurrency* requests in flight at once) to keep latency manageable
+    on sites with many fixable issues.
 
     Returns (fixes, skipped_urls) where skipped_urls are pages whose WP post
     could not be resolved.
     """
-    fixes: list[dict] = []
-    skipped: list[str] = []
-
     # Deduplicate by (page_url, field) — only one fix per field per page
     seen: set[tuple[str, str]] = set()
+    work_items: list[tuple[str, str]] = []  # (page_url, field) pairs to process
 
     for issue in issues:
         code = issue.get("code", "")
         page_url = issue.get("page_url")
         if not page_url or code not in _CODE_TO_FIELD:
             continue
-
         field = _CODE_TO_FIELD[code]
         key = (page_url, field)
         if key in seen:
             continue
         seen.add(key)
+        work_items.append((page_url, field))
 
-        # Resolve URL → WP post
-        post_info = await find_post_by_url(wp, page_url)
-        if not post_info:
+    # Keep a mapping of page_url → issue_code for _auto_propose
+    url_to_code: dict[tuple[str, str], str] = {}
+    for issue in issues:
+        code = issue.get("code", "")
+        page_url = issue.get("page_url")
+        if page_url and code in _CODE_TO_FIELD:
+            key = (page_url, _CODE_TO_FIELD[code])
+            url_to_code.setdefault(key, code)
+
+    sem = asyncio.Semaphore(concurrency)
+
+    async def _process(page_url: str, field: str) -> dict | None:
+        async with sem:
+            post_info = await find_post_by_url(wp, page_url)
+            if not post_info:
+                return None
+            current = await get_current_value(wp, post_info, field, seo_plugin)
+            code = url_to_code.get((page_url, field), "")
+            spec = _FIELD_SPECS[field]
+            return {
+                "id": str(uuid4()),
+                "job_id": job_id,
+                "issue_code": code,
+                "page_url": page_url,
+                "wp_post_id": post_info["id"],
+                "wp_post_type": post_info["type"],
+                "field": field,
+                "label": spec.label,
+                "current_value": current,
+                "proposed_value": _auto_propose(code, current),
+                "status": "pending",
+                "error": None,
+                "applied_at": None,
+            }
+
+    results = await asyncio.gather(
+        *[_process(page_url, field) for page_url, field in work_items],
+        return_exceptions=False,
+    )
+
+    fixes: list[dict] = []
+    skipped: list[str] = []
+    for item, (page_url, _field) in zip(results, work_items):
+        if item is None:
             if page_url not in skipped:
                 skipped.append(page_url)
-            continue
-
-        # Get current value
-        current = await get_current_value(wp, post_info, field, seo_plugin)
-
-        spec = _FIELD_SPECS[field]
-        proposed = _auto_propose(code, current)
-
-        fixes.append({
-            "id": str(uuid4()),
-            "job_id": job_id,
-            "issue_code": code,
-            "page_url": page_url,
-            "wp_post_id": post_info["id"],
-            "wp_post_type": post_info["type"],
-            "field": field,
-            "label": spec.label,
-            "current_value": current,
-            "proposed_value": proposed,
-            "status": "pending",
-            "error": None,
-            "applied_at": None,
-        })
+        else:
+            fixes.append(item)
 
     return fixes, skipped
 
