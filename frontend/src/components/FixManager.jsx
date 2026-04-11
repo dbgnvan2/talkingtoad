@@ -299,7 +299,7 @@ export default function FixManager({ jobId }) {
         <div>
           <h2 className="text-lg font-bold text-gray-900">Fix Manager</h2>
           <p className="text-sm text-gray-500 mt-0.5">
-            Review and apply SEO fixes directly to WordPress.
+            Review issues found in this crawl and apply fixes directly to WordPress.
             {seoPlugin && (
               <span className="ml-2 text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full font-medium">
                 {seoPlugin === 'yoast' ? 'Yoast SEO' : 'Rank Math'}
@@ -321,7 +321,7 @@ export default function FixManager({ jobId }) {
             disabled={generating}
             className="text-sm px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 font-medium"
           >
-            {generating ? 'Connecting to WordPress…' : generated ? 'Refresh Fixes' : 'Scan for Fixes'}
+            {generating ? 'Connecting to WordPress…' : generated ? 'Refresh Fixes' : 'Load Fixes from WordPress'}
           </button>
         </div>
       </div>
@@ -372,7 +372,7 @@ export default function FixManager({ jobId }) {
       {generating && (
         <div className="text-center py-12 text-gray-500">
           <div className="inline-block w-8 h-8 border-4 border-indigo-300 border-t-indigo-600 rounded-full animate-spin mb-3" />
-          <p className="text-sm">Connecting to WordPress and scanning for fixable issues…</p>
+          <p className="text-sm">Connecting to WordPress to load current values for fixable issues…</p>
         </div>
       )}
 
@@ -389,8 +389,8 @@ export default function FixManager({ jobId }) {
         <div className="text-center py-16 text-gray-400 border-2 border-dashed border-gray-200 rounded-xl">
           <p className="text-lg font-medium mb-2">Ready to fix issues</p>
           <p className="text-sm max-w-sm mx-auto">
-            Click <strong>Scan for Fixes</strong> to connect to WordPress and generate
-            a list of SEO issues that can be fixed automatically.
+            Click <strong>Load Fixes from WordPress</strong> to connect to WordPress
+            and prepare the fixable issues from this crawl for review and one-click apply.
           </p>
         </div>
       )}
