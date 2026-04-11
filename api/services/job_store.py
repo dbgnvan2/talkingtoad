@@ -264,7 +264,8 @@ CREATE TABLE IF NOT EXISTS fixes (
     error           TEXT,
     applied_at      TEXT,
     created_at      TEXT NOT NULL DEFAULT (datetime('now')),
-    FOREIGN KEY (job_id) REFERENCES crawl_jobs(job_id)
+    FOREIGN KEY (job_id) REFERENCES crawl_jobs(job_id),
+    UNIQUE (job_id, page_url, field)
 );
 
 CREATE INDEX IF NOT EXISTS idx_issues_job_id ON issues(job_id);
@@ -722,7 +723,7 @@ class SQLiteJobStore:
         assert db is not None
         await db.executemany(
             """
-            INSERT OR REPLACE INTO fixes
+            INSERT OR IGNORE INTO fixes
                 (id, job_id, issue_code, page_url, wp_post_id, wp_post_type,
                  field, label, current_value, proposed_value, status, error, applied_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)

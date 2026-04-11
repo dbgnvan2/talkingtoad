@@ -114,6 +114,11 @@ async def generate_fixes_endpoint(
             message="No fixable issues found in this crawl.",
         )
 
+    # Build a lookup of crawled page data — used as fallback when WP returns
+    # no stored value (e.g. Yoast uses a template rather than an explicit field)
+    pages = await store.get_pages(job_id)
+    crawled: dict[str, object] = {p.url: p for p in pages}
+
     try:
         async with WPClient.from_credentials_file(_CREDS_PATH) as wp:
             seo_plugin = await detect_seo_plugin(wp)
@@ -131,6 +136,21 @@ async def generate_fixes_endpoint(
     except Exception as exc:
         logger.exception("generate_fixes_error", extra={"job_id": job_id})
         return _err("WP_ERROR", str(exc), 500)
+
+    # Fill missing current_value from crawl data.
+    # Yoast/Rank Math don't store an explicit value when using their default
+    # template — the rendered title we saw during crawl is the real current value.
+    _crawl_fallback = {"seo_title": "title", "meta_description": "meta_description"}
+    for fix in fix_dicts:
+        if fix.get("current_value") is None:
+            attr = _crawl_fallback.get(fix["field"])
+            if attr and fix["page_url"] in crawled:
+                crawled_val = getattr(crawled[fix["page_url"]], attr, None)
+                if crawled_val:
+                    fix["current_value"] = crawled_val
+                    # Re-run auto-propose now that we have a real current value
+                    from api.services.wp_fixer import _auto_propose
+                    fix["proposed_value"] = _auto_propose(fix["issue_code"], crawled_val)
 
     await store.save_fixes(fix_dicts)
 
