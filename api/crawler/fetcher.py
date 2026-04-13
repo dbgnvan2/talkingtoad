@@ -16,6 +16,7 @@ from api.crawler.normaliser import is_admin_path
 logger = logging.getLogger(__name__)
 
 _DEFAULT_TIMEOUT = float(os.getenv("CRAWL_REQUEST_TIMEOUT_S", "5"))
+_RESCAN_TIMEOUT = float(os.getenv("RESCAN_TIMEOUT_S", "20"))
 _DEFAULT_USER_AGENT = os.getenv(
     "CRAWLER_USER_AGENT",
     "NonprofitCrawler/1.0 (+https://github.com/dbgnvan2/talkingtoad)",
@@ -65,13 +66,22 @@ class FetchResult:
         return len(self.redirect_chain)
 
 
+_MAX_HTML_BYTES = 5 * 1024 * 1024  # 5 MB — refuse to parse larger HTML pages
+
+
 async def fetch_page(
     url: str,
     client: httpx.AsyncClient,
     *,
     is_head: bool = False,
+    timeout: float | None = None,
+    bypass_cache: bool = False,
 ) -> FetchResult:
     """Fetch *url* and return a :class:`FetchResult`.
+
+    Uses streaming so that non-HTML responses (PDFs, images, large binaries in
+    /wp-content/uploads/ etc.) never block the crawler waiting for a full
+    download.  Only HTML responses are read into memory, up to _MAX_HTML_BYTES.
 
     Follows redirects automatically (up to ``_MAX_REDIRECTS`` hops).
     Records the full redirect chain and detects login redirects.
@@ -80,70 +90,67 @@ async def fetch_page(
         url: The URL to fetch.
         client: A configured ``httpx.AsyncClient`` with appropriate headers.
         is_head: If True, issue a HEAD request (used for external link checking).
+        bypass_cache: If True, send Cache-Control/Pragma no-cache headers so
+            CDNs and server-side caches (Cloudflare, WP Rocket, etc.) return
+            a fresh copy.  Used during rescan to see just-applied fixes.
     """
     method = "HEAD" if is_head else "GET"
+    extra_headers: dict[str, str] = {}
+    if bypass_cache:
+        extra_headers["Cache-Control"] = "no-cache, no-store"
+        extra_headers["Pragma"] = "no-cache"
 
     try:
-        response = await client.request(
+        async with client.stream(
             method,
             url,
-            timeout=_DEFAULT_TIMEOUT,
+            timeout=timeout if timeout is not None else _DEFAULT_TIMEOUT,
             follow_redirects=True,
-        )
+            headers=extra_headers,
+        ) as response:
+            redirect_chain = [str(r.url) for r in response.history]
+            final_url = str(response.url)
+            is_login_redirect = _check_login_redirect(redirect_chain + [final_url])
+            first_status = response.history[0].status_code if response.history else response.status_code
+            content_type = response.headers.get("content-type", "").split(";")[0].strip().lower()
+
+            html: str | None = None
+            if not is_head and "html" in content_type:
+                raw = await response.aread()
+                if len(raw) <= _MAX_HTML_BYTES:
+                    html = raw.decode(response.encoding or "utf-8", errors="replace")
+                else:
+                    logger.warning(
+                        "html_too_large",
+                        extra={"url": url, "bytes": len(raw)},
+                    )
+            # Non-HTML: stream closed here without reading the body — no hang.
+
+            result = FetchResult(
+                url=url,
+                final_url=final_url,
+                status_code=response.status_code,
+                first_status_code=first_status,
+                headers=dict(response.headers),
+                html=html,
+                content_type=content_type,
+                redirect_chain=redirect_chain,
+                is_login_redirect=is_login_redirect,
+            )
+
     except httpx.TooManyRedirects:
-        logger.warning(
-            "redirect_loop_detected",
-            extra={"url": url},
-        )
-        return FetchResult(
-            url=url,
-            final_url=url,
-            status_code=0,
-            error="REDIRECT_LOOP",
-        )
+        logger.warning("redirect_loop_detected", extra={"url": url})
+        return FetchResult(url=url, final_url=url, status_code=0, error="REDIRECT_LOOP")
     except httpx.RequestError as exc:
-        logger.warning(
-            "fetch_error",
-            extra={"url": url, "error": str(exc)},
-        )
-        return FetchResult(
-            url=url,
-            final_url=url,
-            status_code=0,
-            error=str(exc),
-        )
-
-    redirect_chain = [str(r.url) for r in response.history]
-    final_url = str(response.url)
-
-    is_login_redirect = _check_login_redirect(redirect_chain + [final_url])
-
-    # first_status_code: status of the first hop (the originally requested URL)
-    first_status = response.history[0].status_code if response.history else response.status_code
-
-    content_type = response.headers.get("content-type", "").split(";")[0].strip().lower()
-    html: str | None = None
-    if not is_head and "html" in content_type:
-        html = response.text
-
-    result = FetchResult(
-        url=url,
-        final_url=final_url,
-        status_code=response.status_code,
-        first_status_code=first_status,
-        headers=dict(response.headers),
-        html=html,
-        content_type=content_type,
-        redirect_chain=redirect_chain,
-        is_login_redirect=is_login_redirect,
-    )
+        logger.warning("fetch_error", extra={"url": url, "error": str(exc)})
+        return FetchResult(url=url, final_url=url, status_code=0, error=str(exc))
 
     logger.debug(
         "page_fetched",
         extra={
             "url": url,
             "final_url": final_url,
-            "status_code": response.status_code,
+            "status_code": result.status_code,
             "redirect_count": result.redirect_count,
             "is_login_redirect": is_login_redirect,
         },

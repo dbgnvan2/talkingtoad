@@ -14,6 +14,12 @@ TalkingToad checks your nonprofit website for common SEO problems — things tha
 4. Wait for the crawl to finish (progress is shown on screen)
 5. Review the results on the **Results Dashboard**
 
+### Scanning a Single Page
+
+To check one specific page without crawling the whole site, paste its full URL into the **"or scan a single page"** box below the main form and click **Scan Page**. Results appear instantly on the Results page.
+
+This is useful for verifying that a fix worked without running a full re-crawl.
+
 ---
 
 ## Choosing What to Check
@@ -130,6 +136,11 @@ TalkingToad checks publicly accessible pages only. Password-protected areas are 
 
 **Why does it skip author pages, category pages, and tag pages?**
 WordPress automatically generates these archive pages for every author, category, and tag on your blog. They produce large volumes of repetitive, auto-generated content that creates noise in SEO audit results. TalkingToad skips them by default so you see issues with your real content pages. This behaviour can be disabled in the crawl settings.
+
+**I keep seeing "Title/H1 mismatch" on pages where the title is correct — what's wrong?**
+Some WordPress themes (Salient, Avada, Divi, and others) inject the parent-page title as a large H1 banner on every sub-page. For example, a page titled "Bowen Theory Training" might show an H1 of "Clinical Internship Programs" because that is its parent page. TalkingToad tries to detect this automatically, but for persistent false positives you have two options in **Advanced Settings**:
+- **Ignore banner H1s automatically** — tick this box and TalkingToad will skip any H1 that shares no words with the page title across the whole site.
+- **Suppress H1 text** — type the exact banner text (one per line) to ignore it on every page it appears.
 
 **The crawl found a broken link but it works in my browser — why?**
 Some websites and social platforms (LinkedIn, Facebook, Instagram) block automated requests but work fine for real visitors. These are listed as 'Unverified' rather than broken. Click the link yourself to confirm it works.

@@ -78,8 +78,10 @@ class ParsedPage:
 
     # v1.5 bug-fix / new check fields
     img_missing_alt_count: int = 0       # <img> tags missing or empty alt attribute
+    img_missing_alt_srcs: list = None   # list[str] of src URLs for images missing alt
     image_urls: list = None              # list[str] of image src URLs (for broken image checks)
     empty_anchor_count: int = 0          # <a> tags with no visible text
+    empty_anchor_hrefs: list = None      # list[str] of the offending hrefs
     internal_nofollow_count: int = 0     # internal links with rel="nofollow"
 
     # v1.6 new fields
@@ -167,8 +169,10 @@ def parse_page(
         unsafe_cross_origin_count=_count_unsafe_cross_origin(soup, page_url),
         has_hsts=_check_hsts(result.headers, page_url),
         img_missing_alt_count=_count_img_missing_alt(soup),
+        img_missing_alt_srcs=_find_img_missing_alt_srcs(soup, page_url),
         image_urls=_extract_image_urls(soup, page_url),
         empty_anchor_count=_count_empty_anchors(soup),
+        empty_anchor_hrefs=_find_empty_anchors(soup, page_url),
         internal_nofollow_count=_count_internal_nofollow(soup, page_url, base_url),
         lang_attr=_extract_lang(soup),
     )
@@ -341,6 +345,12 @@ def _collect_schema_types(data: dict, types: list[str]) -> None:
         types.append(t)
     elif isinstance(t, list):
         types.extend(v for v in t if isinstance(v, str) and v)
+    # Yoast (and other plugins) wrap all types in a @graph array
+    graph = data.get("@graph")
+    if isinstance(graph, list):
+        for node in graph:
+            if isinstance(node, dict):
+                _collect_schema_types(node, types)
 
 
 def _count_external_scripts(soup: BeautifulSoup, page_url: str) -> int:
@@ -472,13 +482,30 @@ def _check_hsts(headers: dict[str, str], page_url: str) -> bool | None:
 
 
 def _count_img_missing_alt(soup: BeautifulSoup) -> int:
-    """Count <img> tags that are missing or have an empty alt attribute."""
+    """Count <img> tags that are completely missing an alt attribute.
+
+    Images with alt="" are intentionally decorative and are NOT flagged —
+    per HTML spec and our own recommendation, empty alt is the correct way
+    to mark a decorative image.  Only a completely absent alt attribute
+    indicates the author forgot to describe the image.
+    """
     count = 0
     for tag in soup.find_all("img"):
-        alt = tag.get("alt")
-        if alt is None or alt.strip() == "":
+        if tag.get("alt") is None:
             count += 1
     return count
+
+
+def _find_img_missing_alt_srcs(soup: BeautifulSoup, page_url: str = "") -> list[str]:
+    """Return absolute src URLs of <img> tags that are completely missing an alt attribute."""
+    from urllib.parse import urljoin
+    srcs = []
+    for tag in soup.find_all("img", src=True):
+        if tag.get("alt") is None:
+            src = tag["src"].strip()
+            if src and not src.startswith("data:"):
+                srcs.append(urljoin(page_url, src) if page_url else src)
+    return srcs
 
 
 def _extract_image_urls(soup: BeautifulSoup, page_url: str) -> list[str]:
@@ -500,21 +527,31 @@ def _extract_image_urls(soup: BeautifulSoup, page_url: str) -> list[str]:
 
 def _count_empty_anchors(soup: BeautifulSoup) -> int:
     """Count <a href> tags whose visible text (and alt text of any child img) is empty."""
-    count = 0
+    return len(_find_empty_anchors(soup))
+
+
+def _find_empty_anchors(soup: BeautifulSoup, page_url: str = "") -> list[str]:
+    """Return absolute URLs of <a> tags with no visible anchor text or img alt text.
+
+    Relative hrefs (e.g. "/" or "/about") are resolved to absolute URLs using
+    *page_url* so the stored values are always actionable.
+    """
+    found: list[str] = []
     for tag in soup.find_all("a", href=True):
         href = tag["href"].strip()
         if not href or href.startswith(("#", "javascript:", "mailto:", "tel:", "data:")):
             continue
         # Check visible text
-        text = tag.get_text(strip=True)
-        if text:
+        if tag.get_text(strip=True):
             continue
         # Allow img-only links with an alt attribute as valid
         child_imgs = tag.find_all("img")
         if child_imgs and any(img.get("alt", "").strip() for img in child_imgs):
             continue
-        count += 1
-    return count
+        # Resolve relative hrefs to absolute URLs
+        absolute = urljoin(page_url, href) if page_url else href
+        found.append(absolute)
+    return found
 
 
 def _extract_lang(soup: BeautifulSoup) -> str | None:

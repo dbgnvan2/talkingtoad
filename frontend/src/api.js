@@ -6,7 +6,7 @@
 
 const TOKEN = import.meta.env.VITE_AUTH_TOKEN || ''
 
-function authHeaders(extra = {}) {
+export function authHeaders(extra = {}) {
   const h = { 'Content-Type': 'application/json', ...extra }
   if (TOKEN) h['Authorization'] = `Bearer ${TOKEN}`
   return h
@@ -80,6 +80,200 @@ export async function getPages(jobId, { page = 1, limit = 50, minSeverity } = {}
 export async function getPageIssues(jobId, url) {
   const params = new URLSearchParams({ url })
   const res = await fetch(`/api/crawl/${jobId}/pages/issues?${params}`, {
+    headers: authHeaders(),
+  })
+  return checkResponse(res)
+}
+
+export async function scanPage(url) {
+  const params = new URLSearchParams({ url })
+  const res = await fetch(`/api/crawl/scan-page?${params}`, {
+    method: 'POST',
+    headers: authHeaders(),
+  })
+  return checkResponse(res)
+}
+
+export async function rescanUrl(jobId, url) {
+  const params = new URLSearchParams({ url })
+  const res = await fetch(`/api/crawl/${jobId}/rescan-url?${params}`, {
+    method: 'POST',
+    headers: authHeaders(),
+  })
+  return checkResponse(res)
+}
+
+export async function markFixed(jobId, pageUrl, codes) {
+  const params = new URLSearchParams({ url: pageUrl, codes: codes.join(',') })
+  const res = await fetch(`/api/crawl/${jobId}/mark-fixed?${params}`, {
+    method: 'POST',
+    headers: authHeaders(),
+  })
+  return checkResponse(res)
+}
+
+export async function getFixHistory(jobId) {
+  const res = await fetch(`/api/crawl/${jobId}/fix-history`, {
+    headers: authHeaders(),
+  })
+  return checkResponse(res)
+}
+
+export async function getRecentJobs(limit = 10) {
+  const res = await fetch(`/api/crawl/recent?limit=${limit}`, {
+    headers: authHeaders(),
+  })
+  return checkResponse(res)
+}
+
+export async function getPredefinedCodes() {
+  const res = await fetch('/api/fixes/predefined-codes', { headers: authHeaders() })
+  return checkResponse(res)
+}
+
+export async function bulkTrimTitles(jobId) {
+  const params = new URLSearchParams({ job_id: jobId })
+  const res = await fetch(`/api/fixes/bulk-trim-titles?${params}`, {
+    method: 'POST',
+    headers: authHeaders(),
+  })
+  return checkResponse(res)
+}
+
+export async function trimTitleOne(pageUrl) {
+  const params = new URLSearchParams({ page_url: pageUrl })
+  const res = await fetch(`/api/fixes/trim-title-one?${params}`, {
+    method: 'POST',
+    headers: authHeaders(),
+  })
+  return checkResponse(res)
+}
+
+export async function convertHeadingToBold(pageUrl, headingText = null) {
+  const params = new URLSearchParams({ page_url: pageUrl })
+  if (headingText) params.set('heading_text', headingText)
+  const res = await fetch(`/api/fixes/heading-to-bold?${params}`, {
+    method: 'POST',
+    headers: authHeaders(),
+  })
+  return checkResponse(res)
+}
+
+export async function findHeading(jobId, headingText, level = null) {
+  const params = new URLSearchParams({ job_id: jobId, heading_text: headingText })
+  if (level != null) params.set('level', level)
+  const res = await fetch(`/api/fixes/find-heading?${params}`, { headers: authHeaders() })
+  return checkResponse(res)
+}
+
+export async function bulkReplaceHeading(jobId, headingText, fromLevel, toLevel = null) {
+  const params = new URLSearchParams({ job_id: jobId, heading_text: headingText, from_level: fromLevel })
+  if (toLevel != null) params.set('to_level', toLevel)
+  const res = await fetch(`/api/fixes/bulk-replace-heading?${params}`, {
+    method: 'POST',
+    headers: authHeaders(),
+  })
+  return checkResponse(res)
+}
+
+export async function changeHeadingLevel(pageUrl, headingText, fromLevel, toLevel) {
+  const params = new URLSearchParams({
+    page_url: pageUrl,
+    heading_text: headingText,
+    from_level: fromLevel,
+    to_level: toLevel,
+  })
+  const res = await fetch(`/api/fixes/change-heading-level?${params}`, {
+    method: 'POST',
+    headers: authHeaders(),
+  })
+  return checkResponse(res)
+}
+
+export async function getVerifiedLinks() {
+  const res = await fetch('/api/verified-links', { headers: authHeaders() })
+  return checkResponse(res)
+}
+
+export async function addVerifiedLink(url, jobId = null) {
+  const body = { url }
+  if (jobId) body.job_id = jobId
+  const res = await fetch('/api/verified-links', {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify(body),
+  })
+  return checkResponse(res)
+}
+
+export async function removeVerifiedLink(url) {
+  const params = new URLSearchParams({ url })
+  const res = await fetch(`/api/verified-links?${params}`, {
+    method: 'DELETE',
+    headers: authHeaders(),
+  })
+  return checkResponse(res)
+}
+
+export async function getSuppressedCodes() {
+  const res = await fetch('/api/suppressed-codes', { headers: authHeaders() })
+  return checkResponse(res)
+}
+
+export async function addSuppressedCode(code) {
+  const res = await fetch('/api/suppressed-codes', {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify({ code }),
+  })
+  return checkResponse(res)
+}
+
+export async function removeSuppressedCode(code) {
+  const params = new URLSearchParams({ code })
+  const res = await fetch(`/api/suppressed-codes?${params}`, {
+    method: 'DELETE',
+    headers: authHeaders(),
+  })
+  return checkResponse(res)
+}
+
+export async function getExemptAnchorUrls() {
+  const res = await fetch('/api/exempt-anchor-urls', { headers: authHeaders() })
+  return checkResponse(res)
+}
+
+export async function addExemptAnchorUrl(url, note = '') {
+  const res = await fetch('/api/exempt-anchor-urls', {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify({ url, note }),
+  })
+  return checkResponse(res)
+}
+
+export async function getImageInfo(imageUrl) {
+  const params = new URLSearchParams({ image_url: imageUrl })
+  const res = await fetch(`/api/fixes/image-info?${params}`, { headers: authHeaders() })
+  return checkResponse(res)
+}
+
+export async function updateImageMeta(imageUrl, { altText, title, caption } = {}) {
+  const params = new URLSearchParams({ image_url: imageUrl })
+  if (altText  !== undefined && altText  !== null) params.set('alt_text', altText)
+  if (title    !== undefined && title    !== null) params.set('title',    title)
+  if (caption  !== undefined && caption  !== null) params.set('caption',  caption)
+  const res = await fetch(`/api/fixes/update-image-meta?${params}`, {
+    method: 'POST',
+    headers: authHeaders(),
+  })
+  return checkResponse(res)
+}
+
+export async function removeExemptAnchorUrl(url) {
+  const params = new URLSearchParams({ url })
+  const res = await fetch(`/api/exempt-anchor-urls?${params}`, {
+    method: 'DELETE',
     headers: authHeaders(),
   })
   return checkResponse(res)

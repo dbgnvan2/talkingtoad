@@ -24,6 +24,14 @@ class CrawlSettings(BaseModel):
     enabled_analyses: list[str] | None = None
     # Image size threshold in KB — images larger than this are flagged as IMG_OVERSIZED.
     img_size_limit_kb: int = Field(default=200, ge=10, le=10_000)
+    # H1 strings to suppress from heading checks — useful for theme-injected headings
+    # (e.g. a sidebar or page-header template that repeats the same H1 on every post).
+    suppress_h1_strings: list[str] = Field(default_factory=list)
+    # When True, any H1 that shares no significant words with the page title is
+    # treated as a banner/navigation heading and ignored in all H1 checks.
+    # Handles themes (Salient, Avada, Divi, etc.) that inject a parent-page title
+    # as an H1 banner on every sub-page without requiring explicit suppress strings.
+    suppress_banner_h1: bool = False
 
 
 JobStatus = Literal["queued", "running", "complete", "failed", "cancelled"]

@@ -11,6 +11,7 @@ Used by the v2.0 WordPress Automation Engine.
 import json
 import logging
 import re
+import time
 from pathlib import Path
 
 import httpx
@@ -18,6 +19,23 @@ import httpx
 logger = logging.getLogger(__name__)
 
 _CREDENTIALS_PATH = Path("wp-credentials.json")
+
+# ---------------------------------------------------------------------------
+# In-process session cache — avoids re-authenticating on every API call.
+# Keyed by (login_url, username). WP nonces expire after 12 h by default;
+# we cache for 10 h to stay comfortably inside that window.
+# ---------------------------------------------------------------------------
+_SESSION_CACHE: dict[tuple[str, str], dict] = {}
+_CACHE_TTL = 10 * 3600  # seconds
+
+
+def _cache_key(login_url: str, username: str) -> tuple[str, str]:
+    return (login_url, username)
+
+
+def invalidate_session(login_url: str, username: str) -> None:
+    """Remove a cached session so the next request triggers a fresh login."""
+    _SESSION_CACHE.pop(_cache_key(login_url, username), None)
 
 
 class WPAuthError(Exception):
@@ -100,18 +118,33 @@ class WPClient:
     async def login(self) -> None:
         """Authenticate via the WordPress login form and retrieve a REST nonce.
 
+        Checks the in-process session cache first; only performs the full
+        login flow (3 HTTP requests) when the cache is empty or expired.
+
         Raises:
             WPAuthError: If login fails or the nonce cannot be retrieved.
         """
         client = self._client
         assert client is not None, "login() must be called within async context manager"
 
+        key = _cache_key(self.login_url, self.username)
+        cached = _SESSION_CACHE.get(key)
+        if cached and (time.monotonic() - cached["cached_at"]) < _CACHE_TTL:
+            # Restore cookies and nonce — no login round-trips needed
+            for name, value in cached["cookies"].items():
+                client.cookies.set(name, value)
+            self._nonce = cached["nonce"]
+            logger.info("wp_session_cache_hit", extra={"site_url": self.site_url})
+            return
+
+        # ── Full login flow ────────────────────────────────────────────────
+
         # Step 1: GET login page to prime the WordPress test cookie
         await client.get(self.login_url)
         client.cookies.set("wordpress_test_cookie", "WP Cookie check")
 
         # Step 2: POST credentials to the login form
-        response = await client.post(
+        await client.post(
             self.login_url,
             data={
                 "log": self.username,
@@ -141,6 +174,15 @@ class WPClient:
             )
 
         logger.info("wp_nonce_retrieved", extra={"site_url": self.site_url})
+
+        # Save session to cache so subsequent requests skip the login flow
+        cookies_dict = {c.name: c.value for c in client.cookies.jar}
+        _SESSION_CACHE[key] = {
+            "cookies": cookies_dict,
+            "nonce": self._nonce,
+            "cached_at": time.monotonic(),
+        }
+        logger.info("wp_session_cached", extra={"site_url": self.site_url})
 
     async def _fetch_nonce(self) -> str | None:
         """Return the WP REST API nonce by parsing the wp-admin page inline script.
@@ -183,29 +225,44 @@ class WPClient:
     # REST API methods
     # -------------------------------------------------------------------------
 
+    def _check_auth(self, response: httpx.Response) -> None:
+        """Invalidate the session cache if WP rejected our credentials."""
+        if response.status_code in (401, 403):
+            invalidate_session(self.login_url, self.username)
+            logger.warning(
+                "wp_session_invalidated",
+                extra={"site_url": self.site_url, "status": response.status_code},
+            )
+
     async def get(self, endpoint: str, **kwargs: object) -> httpx.Response:
         """Authenticated GET to ``/wp-json/wp/v2/{endpoint}``."""
         assert self._client is not None
-        return await self._client.get(
+        r = await self._client.get(
             f"{self.site_url}/wp-json/wp/v2/{endpoint}",
             headers=self._auth_headers,
             **kwargs,
         )
+        self._check_auth(r)
+        return r
 
     async def post(self, endpoint: str, **kwargs: object) -> httpx.Response:
         """Authenticated POST to ``/wp-json/wp/v2/{endpoint}``."""
         assert self._client is not None
-        return await self._client.post(
+        r = await self._client.post(
             f"{self.site_url}/wp-json/wp/v2/{endpoint}",
             headers=self._auth_headers,
             **kwargs,
         )
+        self._check_auth(r)
+        return r
 
     async def patch(self, endpoint: str, **kwargs: object) -> httpx.Response:
         """Authenticated PATCH to ``/wp-json/wp/v2/{endpoint}``."""
         assert self._client is not None
-        return await self._client.patch(
+        r = await self._client.patch(
             f"{self.site_url}/wp-json/wp/v2/{endpoint}",
             headers=self._auth_headers,
             **kwargs,
         )
+        self._check_auth(r)
+        return r

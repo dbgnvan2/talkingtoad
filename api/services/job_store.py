@@ -56,27 +56,41 @@ async def _compute_v15_health_score(
     job_id: str,
     by_severity: dict[str, int],
     pages_crawled: int,
+    suppressed_codes: set[str] | None = None,
 ) -> tuple[int, int]:
     """Compute v1.5 page and site health scores (spec §4.1 v1.5).
 
     Page Health = max(0, 100 − Σ(impact of all issues on that page)).
     Site Health = average of all page health scores (pages with no issues score 100).
 
+    Issues whose issue_code is in *suppressed_codes* are excluded from the score.
+
     Falls back to the density-based formula when all impact values are zero,
     which happens for jobs crawled before the v1.5 scoring data was introduced.
 
     Returns (site_health_score, page_count).
     """
-    # Sum of impacts per page that has issues
-    async with db.execute(
+    # Sum of impacts per page that has issues, excluding suppressed codes
+    if suppressed_codes:
+        placeholders = ",".join("?" * len(suppressed_codes))
+        sql = f"""
+            SELECT page_url, SUM(impact) AS total_impact
+            FROM issues
+            WHERE job_id = ? AND page_url IS NOT NULL
+              AND issue_code NOT IN ({placeholders})
+            GROUP BY page_url
         """
-        SELECT page_url, SUM(impact) AS total_impact
-        FROM issues
-        WHERE job_id = ? AND page_url IS NOT NULL
-        GROUP BY page_url
-        """,
-        (job_id,),
-    ) as cursor:
+        params: tuple = (job_id, *suppressed_codes)
+    else:
+        sql = """
+            SELECT page_url, SUM(impact) AS total_impact
+            FROM issues
+            WHERE job_id = ? AND page_url IS NOT NULL
+            GROUP BY page_url
+        """
+        params = (job_id,)
+
+    async with db.execute(sql, params) as cursor:
         impact_rows = await cursor.fetchall()
 
     # If all impacts are 0 but issues exist, this is a pre-v1.5 crawl — use fallback formula
@@ -122,10 +136,16 @@ class JobStore(Protocol):
     async def create_job(self, job: CrawlJob) -> None: ...
     async def get_job(self, job_id: str) -> CrawlJob | None: ...
     async def update_job(self, job_id: str, **fields: Any) -> None: ...
+    async def list_recent_jobs(self, limit: int = 10) -> list[CrawlJob]: ...
 
     async def save_pages(self, pages: list[CrawledPage]) -> None: ...
     async def save_issues(self, issues: list[Issue]) -> None: ...
     async def save_links(self, links: list[Link]) -> None: ...
+    async def get_links_by_target(self, job_id: str, target_url: str) -> list[dict]: ...
+    async def delete_issues_for_url(self, job_id: str, page_url: str) -> int: ...
+    async def delete_issues_by_code_and_url(self, job_id: str, issue_code: str, page_url: str) -> int: ...
+    async def delete_broken_link_issues_for_source(self, job_id: str, source_url: str) -> int: ...
+    async def get_broken_link_codes_for_source(self, job_id: str, source_url: str) -> set[str]: ...
 
     async def get_issues(
         self,
@@ -162,6 +182,18 @@ class JobStore(Protocol):
     async def get_fixes_by_id(self, fix_id: str) -> list[dict]: ...
     async def update_fix(self, fix_id: str, **fields: Any) -> None: ...
     async def delete_fixes(self, job_id: str) -> None: ...
+    async def get_wp_post_cache(self, urls: list[str]) -> dict[str, dict]: ...
+    async def save_wp_post_cache(self, entries: dict[str, dict]) -> None: ...
+
+    # Verified links
+    async def get_verified_links(self) -> list[dict]: ...
+    async def add_verified_link(self, url: str) -> str: ...
+    async def remove_verified_link(self, url: str) -> bool: ...
+    async def get_verified_link_urls(self) -> set[str]: ...
+
+    # Fix history
+    async def record_fixed_issues(self, job_id: str, page_url: str, codes: list[str]) -> None: ...
+    async def get_fix_history(self, job_id: str) -> list[dict]: ...
 
 
 # ---------------------------------------------------------------------------
@@ -233,6 +265,7 @@ CREATE TABLE IF NOT EXISTS issues (
     priority_rank        INTEGER NOT NULL DEFAULT 0,
     effort               INTEGER NOT NULL DEFAULT 0,
     human_description    TEXT NOT NULL DEFAULT '',
+    extra                TEXT,
     FOREIGN KEY (job_id) REFERENCES crawl_jobs(job_id)
 );
 
@@ -266,6 +299,38 @@ CREATE TABLE IF NOT EXISTS fixes (
     created_at      TEXT NOT NULL DEFAULT (datetime('now')),
     FOREIGN KEY (job_id) REFERENCES crawl_jobs(job_id),
     UNIQUE (job_id, page_url, field)
+);
+
+CREATE TABLE IF NOT EXISTS wp_post_cache (
+    page_url        TEXT PRIMARY KEY,
+    wp_post_id      INTEGER NOT NULL,
+    wp_post_type    TEXT NOT NULL,
+    cached_at       TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS verified_links (
+    url             TEXT PRIMARY KEY,
+    verified_at     TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS fixed_issues (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    job_id       TEXT NOT NULL,
+    page_url     TEXT NOT NULL,
+    issue_code   TEXT NOT NULL,
+    fixed_at     TEXT NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY (job_id) REFERENCES crawl_jobs(job_id)
+);
+
+CREATE TABLE IF NOT EXISTS suppressed_issue_codes (
+    issue_code   TEXT PRIMARY KEY,
+    suppressed_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS exempt_anchor_urls (
+    url          TEXT PRIMARY KEY,
+    note         TEXT,
+    added_at     TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
 CREATE INDEX IF NOT EXISTS idx_issues_job_id ON issues(job_id);
@@ -325,6 +390,7 @@ class SQLiteJobStore:
             ("priority_rank",      "INTEGER NOT NULL DEFAULT 0"),
             ("effort",             "INTEGER NOT NULL DEFAULT 0"),
             ("human_description",  "TEXT NOT NULL DEFAULT ''"),
+            ("extra",              "TEXT"),
         ]
         for col, col_type in issue_columns:
             try:
@@ -382,6 +448,14 @@ class SQLiteJobStore:
         if row is None:
             return None
         return _row_to_job(dict(row))
+
+    async def list_recent_jobs(self, limit: int = 10) -> list[CrawlJob]:
+        """Return the most recent jobs, newest first."""
+        async with self._db.execute(
+            "SELECT * FROM crawl_jobs ORDER BY started_at DESC LIMIT ?", (limit,)
+        ) as cursor:
+            rows = await cursor.fetchall()
+        return [_row_to_job(dict(r)) for r in rows]
 
     async def update_job(self, job_id: str, **fields: Any) -> None:
         """Update specific fields on a job record.
@@ -441,7 +515,7 @@ class SQLiteJobStore:
         rows = [_issue_to_row(i) for i in issues]
         await self._db.executemany(
             """
-            INSERT OR REPLACE INTO issues VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT OR REPLACE INTO issues VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             rows,
         )
@@ -513,6 +587,138 @@ class SQLiteJobStore:
         )
         await self._db.commit()
 
+    async def delete_issues_for_url(self, job_id: str, page_url: str) -> int:
+        """Delete all issues for a specific page URL and return the count deleted."""
+        async with self._db.execute(
+            "SELECT COUNT(*) FROM issues WHERE job_id = ? AND page_url = ?",
+            (job_id, page_url),
+        ) as cursor:
+            row = await cursor.fetchone()
+        count = row[0] if row else 0
+        await self._db.execute(
+            "DELETE FROM issues WHERE job_id = ? AND page_url = ?",
+            (job_id, page_url),
+        )
+        await self._db.commit()
+        return count
+
+    async def delete_issues_by_code_and_url(self, job_id: str, issue_code: str, page_url: str) -> int:
+        """Delete issues matching a specific code and page_url. Returns count deleted."""
+        async with self._db.execute(
+            "SELECT COUNT(*) FROM issues WHERE job_id = ? AND issue_code = ? AND page_url = ?",
+            (job_id, issue_code, page_url),
+        ) as cursor:
+            row = await cursor.fetchone()
+        count = row[0] if row else 0
+        await self._db.execute(
+            "DELETE FROM issues WHERE job_id = ? AND issue_code = ? AND page_url = ?",
+            (job_id, issue_code, page_url),
+        )
+        await self._db.commit()
+        return count
+
+    async def delete_broken_link_issues_for_source(self, job_id: str, source_url: str) -> int:
+        """Delete broken-link issues linked to *source_url* as the source page.
+
+        Two strategies, both needed for robustness:
+        1. issues with extra.source_url = source_url (new crawls with extra column populated)
+        2. issues with page_url IN (target_urls from links table for this source_url)
+           — covers issues from crawls before the extra column was added
+        """
+        # Strategy 1: extra.source_url match
+        async with self._db.execute(
+            """
+            SELECT COUNT(*) FROM issues
+            WHERE job_id = ?
+              AND category = 'broken_link'
+              AND json_extract(extra, '$.source_url') = ?
+            """,
+            (job_id, source_url),
+        ) as cursor:
+            row = await cursor.fetchone()
+        count = row[0] if row else 0
+        if count:
+            await self._db.execute(
+                """
+                DELETE FROM issues
+                WHERE job_id = ?
+                  AND category = 'broken_link'
+                  AND json_extract(extra, '$.source_url') = ?
+                """,
+                (job_id, source_url),
+            )
+
+        # Strategy 2: cross-reference links table (covers legacy data without extra column)
+        # Count first, then delete
+        async with self._db.execute(
+            """
+            SELECT COUNT(*) FROM issues
+            WHERE job_id = ?
+              AND category = 'broken_link'
+              AND page_url IN (
+                  SELECT target_url FROM links
+                  WHERE job_id = ? AND source_url = ?
+              )
+            """,
+            (job_id, job_id, source_url),
+        ) as cursor:
+            row2 = await cursor.fetchone()
+        count2 = row2[0] if row2 else 0
+        if count2:
+            await self._db.execute(
+                """
+                DELETE FROM issues
+                WHERE job_id = ?
+                  AND category = 'broken_link'
+                  AND page_url IN (
+                      SELECT target_url FROM links
+                      WHERE job_id = ? AND source_url = ?
+                  )
+                """,
+                (job_id, job_id, source_url),
+            )
+            count += count2
+
+        await self._db.commit()
+        return count
+
+    async def get_broken_link_codes_for_source(self, job_id: str, source_url: str) -> set[str]:
+        """Return the set of broken-link issue codes for issues linked to *source_url*.
+
+        Combines extra.source_url lookup (new data) with links-table cross-reference (legacy data).
+        """
+        async with self._db.execute(
+            """
+            SELECT DISTINCT issue_code FROM issues
+            WHERE job_id = ?
+              AND category = 'broken_link'
+              AND (
+                json_extract(extra, '$.source_url') = ?
+                OR page_url IN (
+                    SELECT target_url FROM links
+                    WHERE job_id = ? AND source_url = ?
+                )
+              )
+            """,
+            (job_id, source_url, job_id, source_url),
+        ) as cursor:
+            rows = await cursor.fetchall()
+        return {r[0] for r in rows}
+
+    async def get_links_by_target(self, job_id: str, target_url: str) -> list[dict]:
+        """Return links records where target_url matches, for a given job."""
+        async with self._db.execute(
+            """
+            SELECT source_url, target_url, link_text, link_type
+              FROM links
+             WHERE job_id = ? AND target_url = ?
+             ORDER BY source_url
+            """,
+            (job_id, target_url),
+        ) as cursor:
+            rows = await cursor.fetchall()
+        return [dict(r) for r in rows]
+
     # ── Summary ────────────────────────────────────────────────────────────
 
     async def get_summary(self, job_id: str) -> dict:
@@ -553,8 +759,10 @@ class SQLiteJobStore:
             row = await cursor.fetchone()
         pages_with_errors = row[0] if row else 0
 
+        suppressed = await self.get_suppressed_codes()
         health_score, _ = await _compute_v15_health_score(
-            self._db, job_id, by_severity, job.pages_crawled
+            self._db, job_id, by_severity, job.pages_crawled,
+            suppressed_codes=set(suppressed) if suppressed else None,
         )
 
         return {
@@ -789,6 +997,175 @@ class SQLiteJobStore:
         await db.execute("DELETE FROM fixes WHERE job_id = ?", (job_id,))
         await db.commit()
 
+    async def get_wp_post_cache(self, urls: list[str]) -> dict[str, dict]:
+        """Return cached {url: {id, type}} entries for the given URLs."""
+        if not urls:
+            return {}
+        db = self._db
+        assert db is not None
+        placeholders = ",".join("?" * len(urls))
+        async with db.execute(
+            f"SELECT page_url, wp_post_id, wp_post_type FROM wp_post_cache WHERE page_url IN ({placeholders})",
+            urls,
+        ) as cursor:
+            rows = await cursor.fetchall()
+        return {r["page_url"]: {"id": r["wp_post_id"], "type": r["wp_post_type"]} for r in rows}
+
+    async def save_wp_post_cache(self, entries: dict[str, dict]) -> None:
+        """Persist URL→post_id mappings. Safe to call repeatedly."""
+        if not entries:
+            return
+        db = self._db
+        assert db is not None
+        await db.executemany(
+            """
+            INSERT OR REPLACE INTO wp_post_cache (page_url, wp_post_id, wp_post_type)
+            VALUES (?, ?, ?)
+            """,
+            [(url, info["id"], info["type"]) for url, info in entries.items()],
+        )
+        await db.commit()
+
+    # ── Verified links ─────────────────────────────────────────────────────
+
+    async def get_verified_links(self) -> list[dict]:
+        """Return all verified link records as {url, verified_at} dicts."""
+        db = self._db
+        assert db is not None
+        async with db.execute(
+            "SELECT url, verified_at FROM verified_links ORDER BY verified_at DESC"
+        ) as cursor:
+            rows = await cursor.fetchall()
+        return [{"url": r["url"], "verified_at": r["verified_at"]} for r in rows]
+
+    async def add_verified_link(self, url: str) -> str:
+        """Mark a URL as verified. Returns the verified_at timestamp."""
+        db = self._db
+        assert db is not None
+        await db.execute(
+            "INSERT OR REPLACE INTO verified_links (url) VALUES (?)", (url,)
+        )
+        await db.commit()
+        async with db.execute(
+            "SELECT verified_at FROM verified_links WHERE url = ?", (url,)
+        ) as cursor:
+            row = await cursor.fetchone()
+        return row["verified_at"] if row else ""
+
+    async def remove_verified_link(self, url: str) -> bool:
+        """Remove a URL from the verified list. Returns True if it existed."""
+        db = self._db
+        assert db is not None
+        async with db.execute(
+            "SELECT 1 FROM verified_links WHERE url = ?", (url,)
+        ) as cursor:
+            existed = await cursor.fetchone() is not None
+        await db.execute("DELETE FROM verified_links WHERE url = ?", (url,))
+        await db.commit()
+        return existed
+
+    async def get_verified_link_urls(self) -> set[str]:
+        """Return the set of all verified URLs (for engine to check efficiently)."""
+        db = self._db
+        assert db is not None
+        async with db.execute("SELECT url FROM verified_links") as cursor:
+            rows = await cursor.fetchall()
+        return {r["url"] for r in rows}
+
+    # ── Fix history ────────────────────────────────────────────────────────
+
+    async def record_fixed_issues(self, job_id: str, page_url: str, codes: list[str]) -> None:
+        """Record that the given issue codes were resolved on page_url during a rescan."""
+        db = self._db
+        assert db is not None
+        rows = [(job_id, page_url, code) for code in codes]
+        await db.executemany(
+            "INSERT INTO fixed_issues (job_id, page_url, issue_code) VALUES (?, ?, ?)",
+            rows,
+        )
+        await db.commit()
+
+    async def get_fix_history(self, job_id: str) -> list[dict]:
+        """Return all fixed-issue records for a job, newest first."""
+        db = self._db
+        assert db is not None
+        async with db.execute(
+            "SELECT page_url, issue_code, fixed_at FROM fixed_issues "
+            "WHERE job_id = ? ORDER BY fixed_at DESC",
+            (job_id,),
+        ) as cursor:
+            rows = await cursor.fetchall()
+        return [
+            {"page_url": r["page_url"], "issue_code": r["issue_code"], "fixed_at": r["fixed_at"]}
+            for r in rows
+        ]
+
+    # ── Suppressed issue codes ─────────────────────────────────────────────
+
+    async def get_suppressed_codes(self) -> list[str]:
+        """Return all issue codes suppressed from the health score (global, not per-job)."""
+        db = self._db
+        assert db is not None
+        async with db.execute(
+            "SELECT issue_code FROM suppressed_issue_codes ORDER BY suppressed_at"
+        ) as cursor:
+            rows = await cursor.fetchall()
+        return [r[0] for r in rows]
+
+    async def add_suppressed_code(self, code: str) -> None:
+        """Add an issue code to the suppressed list (no-op if already suppressed)."""
+        db = self._db
+        assert db is not None
+        await db.execute(
+            "INSERT OR IGNORE INTO suppressed_issue_codes (issue_code) VALUES (?)",
+            (code,),
+        )
+        await db.commit()
+
+    async def remove_suppressed_code(self, code: str) -> None:
+        """Remove an issue code from the suppressed list (no-op if not present)."""
+        db = self._db
+        assert db is not None
+        await db.execute(
+            "DELETE FROM suppressed_issue_codes WHERE issue_code = ?",
+            (code,),
+        )
+        await db.commit()
+
+    # ── Exempt anchor URLs ─────────────────────────────────────────────────
+
+    async def get_exempt_anchor_urls(self) -> list[dict]:
+        """Return all URLs exempt from LINK_EMPTY_ANCHOR (global, not per-job)."""
+        db = self._db
+        assert db is not None
+        async with db.execute(
+            "SELECT url, note, added_at FROM exempt_anchor_urls ORDER BY added_at DESC"
+        ) as cursor:
+            rows = await cursor.fetchall()
+        return [{"url": r[0], "note": r[1], "added_at": r[2]} for r in rows]
+
+    async def add_exempt_anchor_url(self, url: str, note: str = "") -> None:
+        """Add a URL to the exempt list (no-op if already present)."""
+        db = self._db
+        assert db is not None
+        await db.execute(
+            "INSERT OR REPLACE INTO exempt_anchor_urls (url, note) VALUES (?, ?)",
+            (url, note),
+        )
+        await db.commit()
+
+    async def remove_exempt_anchor_url(self, url: str) -> None:
+        """Remove a URL from the exempt list (no-op if not present)."""
+        db = self._db
+        assert db is not None
+        await db.execute("DELETE FROM exempt_anchor_urls WHERE url = ?", (url,))
+        await db.commit()
+
+    async def get_exempt_anchor_url_set(self) -> set[str]:
+        """Return the exempt URLs as a set for fast lookup during crawl."""
+        rows = await self.get_exempt_anchor_urls()
+        return {r["url"] for r in rows}
+
 
 # ---------------------------------------------------------------------------
 # Row ↔ Model conversion helpers
@@ -901,10 +1278,18 @@ def _issue_to_row(i: Issue) -> tuple:
         i.priority_rank,
         i.effort,
         i.human_description,
+        json.dumps(i.extra) if i.extra else None,
     )
 
 
 def _row_to_issue(row: dict) -> Issue:
+    raw_extra = row.get("extra")
+    extra = None
+    if raw_extra:
+        try:
+            extra = json.loads(raw_extra)
+        except Exception:
+            extra = None
     return Issue(
         issue_id=row["issue_id"],
         job_id=row["job_id"],
@@ -920,6 +1305,7 @@ def _row_to_issue(row: dict) -> Issue:
         priority_rank=row.get("priority_rank") or 0,
         effort=row.get("effort") or 0,
         human_description=row.get("human_description") or "",
+        extra=extra,
     )
 
 
@@ -1013,6 +1399,9 @@ class RedisJobStore:
             return None
         return self._mapping_to_job(data)
 
+    async def list_recent_jobs(self, limit: int = 10) -> list[CrawlJob]:
+        return []  # Redis implementation tracks jobs by ID only — no index to list by date
+
     async def update_job(self, job_id: str, **fields: Any) -> None:
         if not fields:
             return
@@ -1060,6 +1449,21 @@ class RedisJobStore:
 
     async def save_links(self, links: list[Link]) -> None:
         pass  # Not needed for MVP results display
+
+    async def delete_issues_for_url(self, job_id: str, page_url: str) -> int:
+        return 0  # Not implemented for Redis MVP
+
+    async def delete_issues_by_code_and_url(self, job_id: str, issue_code: str, page_url: str) -> int:
+        return 0  # Not implemented for Redis MVP
+
+    async def delete_broken_link_issues_for_source(self, job_id: str, source_url: str) -> int:
+        return 0  # Not implemented for Redis MVP
+
+    async def get_broken_link_codes_for_source(self, job_id: str, source_url: str) -> set[str]:
+        return set()  # Not implemented for Redis MVP
+
+    async def get_links_by_target(self, job_id: str, target_url: str) -> list[dict]:
+        return []  # Links not stored in Redis MVP
 
     # ── Query helpers ──────────────────────────────────────────────────────
 
@@ -1240,6 +1644,44 @@ class RedisJobStore:
 
     async def delete_fixes(self, job_id: str) -> None:
         await self._r.delete(self._fk(job_id))
+
+    async def get_wp_post_cache(self, urls: list[str]) -> dict[str, dict]:
+        if not urls:
+            return {}
+        result = {}
+        for url in urls:
+            raw = await self._r.get(f"tt:wpcache:{url}")
+            if raw:
+                import json as _json
+                result[url] = _json.loads(raw)
+        return result
+
+    async def save_wp_post_cache(self, entries: dict[str, dict]) -> None:
+        import json as _json
+        for url, info in entries.items():
+            key = f"tt:wpcache:{url}"
+            await self._r.set(key, _json.dumps(info))
+            await self._r.expire(key, 86400 * 90)  # 90-day TTL
+
+    # ── Verified links (Redis — not implemented, returns empty) ────────────
+
+    async def get_verified_links(self) -> list[dict]:
+        return []
+
+    async def add_verified_link(self, url: str) -> str:
+        return ""
+
+    async def remove_verified_link(self, url: str) -> bool:
+        return False
+
+    async def get_verified_link_urls(self) -> set[str]:
+        return set()
+
+    async def record_fixed_issues(self, job_id: str, page_url: str, codes: list[str]) -> None:
+        pass  # Not implemented for Redis MVP
+
+    async def get_fix_history(self, job_id: str) -> list[dict]:
+        return []  # Not implemented for Redis MVP
 
     # ── Private serialisation ──────────────────────────────────────────────
 

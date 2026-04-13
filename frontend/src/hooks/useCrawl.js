@@ -16,6 +16,11 @@ export function useCrawl() {
     setError(null)
     try {
       const data = await startCrawl(targetUrl, settings)
+      localStorage.setItem('talkingtoad_last_job', JSON.stringify({
+        job_id: data.job_id,
+        target_url: targetUrl,
+        started_at: new Date().toISOString(),
+      }))
       navigate(`/progress/${data.job_id}`)
     } catch (err) {
       setError(err.message)

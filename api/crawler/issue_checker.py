@@ -564,22 +564,23 @@ _STOP_WORDS: frozenset[str] = frozenset({
 
 
 def _sig_words(text: str) -> set[str]:
-    """Return significant (non-stop, length>2) lowercase words from *text*."""
+    """Return significant (non-stop, length>=2) lowercase words from *text*."""
     return {
         w.lower() for w in re.findall(r"\w+", text)
-        if len(w) > 2 and w.lower() not in _STOP_WORDS
+        if len(w) >= 2 and w.lower() not in _STOP_WORDS
     }
 
 
 def _titles_mismatch(title: str, h1: str) -> bool:
     """Return True if the page title and the H1 heading share no significant words.
 
-    Strips a common site-name suffix (text after ' | ', ' - ', ' – ') from the
-    title before comparing so that "About Us | My Charity" and "About Us" are
-    treated as matching rather than mismatching.
+    Strips a common site-name suffix (text after ' | ', ' - ', ' – ', ' · ')
+    from the title before comparing so that "About Us | My Charity" and
+    "About Us" are treated as matching rather than mismatching.
+    The middle dot (·) is included because Yoast uses it as a common separator.
     """
-    # Strip site-name suffix
-    clean_title = re.split(r"\s[|\-–]\s", title)[0].strip()
+    # Strip site-name suffix — pipe, hyphen, en-dash, em-dash, middle dot
+    clean_title = re.split(r"\s[|·\-–—]\s", title)[0].strip()
     title_words = _sig_words(clean_title)
     h1_words = _sig_words(h1)
     if not title_words or not h1_words:
@@ -625,6 +626,9 @@ def check_page(
     favicon_emitted: bool = False,
     hsts_checked_hosts: set[str] | None = None,
     page_size_limit_kb: int = _DEFAULT_PAGE_SIZE_LIMIT_KB,
+    suppress_h1_strings: list[str] | None = None,
+    suppress_banner_h1: bool = False,
+    exempt_anchor_urls: set[str] | None = None,
 ) -> list[Issue]:
     """Run all per-page issue checks.
 
@@ -646,6 +650,43 @@ def check_page(
     # checks that would only apply to indexed pages. We still run crawlability checks
     # (to surface the noindex issue itself) and security checks.
     is_indexable = page.is_indexable
+
+    # Build effective H1 list — filter out theme-injected headings the user
+    # has explicitly suppressed (e.g. a Salient page-header banner title that
+    # repeats on every post page).
+    # Normalise both sides: strip whitespace and compare case-insensitively so
+    # that minor variations (trailing \xa0, different capitalisation) don't
+    # silently defeat the suppression.
+    _suppress_norm = {s.strip().casefold() for s in (suppress_h1_strings or [])}
+    effective_h1s = [h for h in page.h1_tags if h.strip().casefold() not in _suppress_norm]
+    effective_outline = [
+        h for h in page.headings_outline
+        if not (h["level"] == 1 and h["text"].strip().casefold() in _suppress_norm)
+    ]
+
+    # When suppress_banner_h1 is enabled, additionally filter out any H1 that
+    # shares no significant words with the page title.  These are structural /
+    # navigation headings (parent-page banners injected by themes like Salient,
+    # Avada, Divi) rather than content headings.  If removing them leaves zero
+    # H1s the page will correctly trigger H1_MISSING — the content H1 is absent.
+    if suppress_banner_h1 and page.title and effective_h1s:
+        _banner_texts = {
+            h.strip().casefold()
+            for h in effective_h1s
+            if _titles_mismatch(page.title, h)
+        }
+        if _banner_texts:
+            effective_h1s = [
+                h for h in effective_h1s
+                if h.strip().casefold() not in _banner_texts
+            ]
+            effective_outline = [
+                h for h in effective_outline
+                if not (
+                    h["level"] == 1
+                    and h.get("text", "").strip().casefold() in _banner_texts
+                )
+            ]
 
     if is_indexable:
         # ── Title ──────────────────────────────────────────────────────────
@@ -688,13 +729,28 @@ def check_page(
             issues.append(make_issue("LANG_MISSING", url))
 
         # ── Title vs H1 consistency ────────────────────────────────────────
-        if page.title and page.h1_tags:
-            if _titles_mismatch(page.title, page.h1_tags[0]):
-                issues.append(make_issue("TITLE_H1_MISMATCH", url,
-                                         extra={"title": page.title, "h1": page.h1_tags[0]}))
+        # Use effective_h1s (suppressed strings removed) so theme-injected
+        # headings don't trigger a false mismatch.
+        if page.title and effective_h1s:
+            if all(_titles_mismatch(page.title, h1) for h1 in effective_h1s):
+                # Before flagging, check whether the title matches an H2.
+                # Many WordPress themes inject the parent-page title as an H1
+                # banner on sub-pages, while the real content heading is an H2.
+                # If the title shares significant words with any H2 we treat
+                # the H1 as a structural/navigation element and skip the flag.
+                h2_texts = [
+                    h["text"] for h in (page.headings_outline or [])
+                    if h.get("level") == 2 and h.get("text")
+                ]
+                title_matches_h2 = any(
+                    not _titles_mismatch(page.title, h2) for h2 in h2_texts
+                )
+                if not title_matches_h2:
+                    issues.append(make_issue("TITLE_H1_MISMATCH", url,
+                                             extra={"title": page.title, "h1": effective_h1s[0]}))
 
         # ── Headings ───────────────────────────────────────────────────────
-        _check_headings(page, issues)
+        _check_headings(page, issues, effective_h1s=effective_h1s, effective_outline=effective_outline)
 
     # ── Favicon (homepage only, once per job — checked regardless of noindex) ──
     if page.has_favicon is False and not favicon_emitted:
@@ -704,7 +760,9 @@ def check_page(
     _check_crawlability(page, issues)
 
     # ── Not in sitemap (only meaningful for indexable pages) ──────────────
-    if sitemap_urls is not None and is_indexable:
+    # Skip pages with query strings — paginated URLs, search results, and
+    # filtered views are intentionally absent from sitemaps.
+    if sitemap_urls is not None and is_indexable and not urlparse(url).query:
         if page.final_url not in sitemap_urls and page.url not in sitemap_urls:
             issues.append(make_issue("NOT_IN_SITEMAP", url))
 
@@ -734,8 +792,18 @@ def check_page(
 
     # ── Image alt text ────────────────────────────────────────────────────
     if page.img_missing_alt_count > 0:
-        issues.append(make_issue("IMG_ALT_MISSING", url,
-                                 extra={"missing_alt_count": page.img_missing_alt_count}))
+        srcs = page.img_missing_alt_srcs or []
+        issue = make_issue("IMG_ALT_MISSING", url,
+                           extra={"missing_alt_count": page.img_missing_alt_count,
+                                  "img_missing_alt_srcs": srcs[:10]})
+        if srcs:
+            listed = ", ".join(srcs[:5])
+            suffix = f" and {len(srcs) - 5} more" if len(srcs) > 5 else ""
+            issue.description = (
+                f"{page.img_missing_alt_count} image{'s' if page.img_missing_alt_count > 1 else ''} "
+                f"missing alt text: {listed}{suffix}"
+            )
+        issues.append(issue)
 
     # ── Viewport meta (mobile-friendliness) ──────────────────────────────
     if not page.has_viewport_meta:
@@ -747,8 +815,21 @@ def check_page(
 
     # ── Empty anchor text ─────────────────────────────────────────────────
     if page.empty_anchor_count > 0:
-        issues.append(make_issue("LINK_EMPTY_ANCHOR", url,
-                                 extra={"empty_anchor_count": page.empty_anchor_count}))
+        hrefs = page.empty_anchor_hrefs or []
+        # Filter out URLs the user has explicitly exempted (e.g. social media icon links)
+        if exempt_anchor_urls:
+            hrefs = [h for h in hrefs if h not in exempt_anchor_urls]
+        if hrefs:
+            issue = make_issue("LINK_EMPTY_ANCHOR", url,
+                               extra={"empty_anchor_count": len(hrefs),
+                                      "empty_anchor_hrefs": hrefs[:10]})
+            listed = ", ".join(hrefs[:5])
+            suffix = f" and {len(hrefs) - 5} more" if len(hrefs) > 5 else ""
+            issue.description = (
+                f"{len(hrefs)} link{'s' if len(hrefs) > 1 else ''} "
+                f"with no anchor text: {listed}{suffix}"
+            )
+            issues.append(issue)
 
     # ── Internal nofollow links ───────────────────────────────────────────
     if page.internal_nofollow_count > 0:
@@ -814,17 +895,25 @@ def _check_canonical(page: ParsedPage, issues: list[Issue]) -> None:
         # Condition 2 (near-duplicate): handled in check_cross_page after all pages crawled
 
 
-def _check_headings(page: ParsedPage, issues: list[Issue]) -> None:
+def _check_headings(
+    page: ParsedPage,
+    issues: list[Issue],
+    *,
+    effective_h1s: list[str] | None = None,
+    effective_outline: list[dict] | None = None,
+) -> None:
     url = page.url
-    h1_count = len(page.h1_tags)
+    h1s = effective_h1s if effective_h1s is not None else page.h1_tags
+    outline = effective_outline if effective_outline is not None else page.headings_outline
 
+    h1_count = len(h1s)
     if h1_count == 0:
         issues.append(make_issue("H1_MISSING", url))
     elif h1_count > 1:
         issues.append(make_issue("H1_MULTIPLE", url))
 
     # Detect skipped heading levels
-    levels = [h["level"] for h in page.headings_outline]
+    levels = [h["level"] for h in outline]
     for i in range(1, len(levels)):
         if levels[i] > levels[i - 1] + 1:
             issues.append(make_issue("HEADING_SKIP", url))

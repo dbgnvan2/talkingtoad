@@ -58,6 +58,7 @@ def _page(
     img_missing_alt_count: int = 0,
     image_urls: list | None = None,
     empty_anchor_count: int = 0,
+    empty_anchor_hrefs: list | None = None,
     internal_nofollow_count: int = 0,
     # v1.6 new fields
     lang_attr: str | None = "en",
@@ -72,8 +73,8 @@ def _page(
         og_title=og_title,
         og_description=og_description,
         canonical_url=canonical_url,
-        h1_tags=h1_tags if h1_tags is not None else ["Main Heading"],
-        headings_outline=headings_outline if headings_outline is not None else [{"level": 1, "text": "Main Heading"}],
+        h1_tags=h1_tags if h1_tags is not None else ["Good Page Title"],
+        headings_outline=headings_outline if headings_outline is not None else [{"level": 1, "text": "Good Page Title"}],
         is_indexable=is_indexable,
         robots_directive=robots_directive,
         links=links or [],
@@ -94,6 +95,7 @@ def _page(
         img_missing_alt_count=img_missing_alt_count,
         image_urls=image_urls if image_urls is not None else [],
         empty_anchor_count=empty_anchor_count,
+        empty_anchor_hrefs=empty_anchor_hrefs if empty_anchor_hrefs is not None else (["https://example.com/icon"] * empty_anchor_count if empty_anchor_count else []),
         internal_nofollow_count=internal_nofollow_count,
         lang_attr=lang_attr,
     )
@@ -1175,6 +1177,99 @@ class TestTitleH1Mismatch:
             title="Contact Our Team Today",
             h1_tags=["Donate Now to Help Animals"],
             is_indexable=False,
+        )
+        codes = _codes(check_page(page))
+        assert "TITLE_H1_MISMATCH" not in codes
+
+    def test_emdash_separator_stripped_before_compare(self):
+        # Yoast uses em-dash (—) as separator; "Topic — Site Name" vs "Topic"
+        page = _page(
+            title="Bowen Family Systems Theory — Living Systems",
+            h1_tags=["Bowen Family Systems Theory"],
+        )
+        codes = _codes(check_page(page))
+        assert "TITLE_H1_MISMATCH" not in codes
+
+    def test_title_matches_h2_suppresses_mismatch(self):
+        # Theme injects parent-page title as H1; real content heading is H2
+        # e.g. title="Bowen Theory Training", H1="Clinical Internship Programs",
+        #      H2="Bowen Theory Training and Therapy"
+        page = _page(
+            title="Bowen Theory Training Program",
+            h1_tags=["Clinical Internship Programs"],
+            headings_outline=[
+                {"level": 1, "text": "Clinical Internship Programs"},
+                {"level": 2, "text": "Bowen Theory Training Program Details"},
+            ],
+        )
+        codes = _codes(check_page(page))
+        assert "TITLE_H1_MISMATCH" not in codes
+
+    def test_title_no_h2_match_still_emits_mismatch(self):
+        # H1 doesn't match title AND no H2 matches either — real mismatch
+        page = _page(
+            title="Contact Our Team Today",
+            h1_tags=["Donate Now to Help Animals"],
+            headings_outline=[
+                {"level": 1, "text": "Donate Now to Help Animals"},
+                {"level": 2, "text": "Why Donate Matters"},
+            ],
+        )
+        codes = _codes(check_page(page))
+        assert "TITLE_H1_MISMATCH" in codes
+
+
+class TestSuppressBannerH1:
+    def test_banner_h1_suppressed_when_flag_set(self):
+        # H1 is a parent-page banner, real content H1 absent — should not flag mismatch
+        page = _page(
+            title="Bowen Family Systems Theory Training",
+            h1_tags=["Clinical Internship Programs"],
+        )
+        codes = _codes(check_page(page, suppress_banner_h1=True))
+        assert "TITLE_H1_MISMATCH" not in codes
+
+    def test_banner_h1_removed_triggers_h1_missing(self):
+        # If the only H1 is a banner and suppress_banner_h1 is True, the real
+        # content H1 is absent — H1_MISSING should fire
+        page = _page(
+            title="Bowen Family Systems Theory Training",
+            h1_tags=["Clinical Internship Programs"],
+        )
+        codes = _codes(check_page(page, suppress_banner_h1=True))
+        assert "H1_MISSING" in codes
+
+    def test_content_h1_kept_banner_h1_removed(self):
+        # Page has both a banner H1 and a real content H1 — only banner removed
+        page = _page(
+            title="Bowen Family Systems Theory Training",
+            h1_tags=["Clinical Internship Programs", "Bowen Family Systems Theory Training"],
+            headings_outline=[
+                {"level": 1, "text": "Clinical Internship Programs"},
+                {"level": 1, "text": "Bowen Family Systems Theory Training"},
+            ],
+        )
+        codes = _codes(check_page(page, suppress_banner_h1=True))
+        # Banner removed, content H1 remains — no H1_MISSING, no H1_MULTIPLE, no mismatch
+        assert "H1_MISSING" not in codes
+        assert "H1_MULTIPLE" not in codes
+        assert "TITLE_H1_MISMATCH" not in codes
+
+    def test_flag_off_banner_h1_still_triggers_mismatch(self):
+        # Without the flag, the parent-page banner H1 does cause a mismatch
+        page = _page(
+            title="Bowen Family Systems Theory Training",
+            h1_tags=["Clinical Internship Programs"],
+        )
+        # No H2 match either, so H2 fallback doesn't save it
+        codes = _codes(check_page(page, suppress_banner_h1=False))
+        assert "TITLE_H1_MISMATCH" in codes
+
+    def test_two_char_word_included_in_sig_words(self):
+        # "HR" and "IT" (len==2) should be treated as significant words
+        page = _page(
+            title="HR and IT Department Services",
+            h1_tags=["HR Services"],
         )
         codes = _codes(check_page(page))
         assert "TITLE_H1_MISMATCH" not in codes

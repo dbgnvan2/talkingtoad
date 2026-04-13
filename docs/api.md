@@ -12,10 +12,12 @@ All endpoints require `Authorization: Bearer <token>`.
 | Method | Endpoint | Description |
 |---|---|---|
 | POST | `/api/crawl/start` | Submit a new crawl job. Returns `job_id`. |
+| POST | `/api/crawl/scan-page?url={url}` | Fetch and analyse a single URL synchronously. Returns `job_id` immediately. |
 | GET | `/api/crawl/{job_id}/status` | Poll job progress and status. |
 | POST | `/api/crawl/{job_id}/cancel` | Cancel a running crawl. |
 | GET | `/api/crawl/{job_id}/results` | Retrieve paginated results. |
 | GET | `/api/crawl/{job_id}/results/{category}` | Results filtered by category. |
+| POST | `/api/crawl/{job_id}/rescan-url?url={url}` | Re-fetch a single page, rerun checks, update stored issues. Sends cache-bypass headers. |
 
 ## Export
 
@@ -142,6 +144,8 @@ Error response shape:
 | `img_size_limit_kb` | int | 200 | Flag images larger than this many KB as IMG_OVERSIZED |
 | `page_size_limit_kb` | int | 300 | Flag HTML pages larger than this many KB as PAGE_SIZE_LARGE |
 | `enabled_analyses` | list\|null | null (all) | Restrict which issue categories are checked |
+| `suppress_h1_strings` | list[str] | [] | H1 text strings to ignore (exact, case-insensitive) — for theme-injected banner headings |
+| `suppress_banner_h1` | bool | false | Auto-detect and ignore H1s that share no words with the page title — handles parent-page banners injected by themes (Salient, Avada, Divi, etc.) without needing explicit strings |
 
 ### enabled_analyses groups
 

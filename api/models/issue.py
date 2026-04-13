@@ -57,3 +57,4 @@ class Issue(BaseModel):
     effort: int = 0                # v1.5: how hard it is to fix (0–5)
     priority_rank: int = 0         # v1.5: (impact × 10) − (effort × 2)
     human_description: str = ""    # plain-English label for nonprofit staff
+    extra: dict | None = None      # supplementary data (e.g. source_url for broken links)

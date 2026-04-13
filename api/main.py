@@ -28,6 +28,7 @@ from slowapi.middleware import SlowAPIMiddleware
 from api.routers import crawl as crawl_router
 from api.routers import fixes as fixes_router
 from api.routers import utility as utility_router
+from api.routers import verified as verified_router
 from api.services.job_store import SQLiteJobStore, RedisJobStore, get_job_store
 from api.services.rate_limiter import limiter
 
@@ -118,4 +119,5 @@ async def http_exception_handler(request: Request, exc: HTTPException) -> JSONRe
 
 app.include_router(crawl_router.router)
 app.include_router(fixes_router.router)
+app.include_router(verified_router.router)
 app.include_router(utility_router.router)

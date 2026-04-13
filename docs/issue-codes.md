@@ -189,13 +189,16 @@ Add `lang="en"` (or the relevant language code) to your `<html>` tag. Most WordP
 **Severity:** 🟡 warning | **Impact:** 6 | **Effort:** 2
 
 **What it is**
-The page title and the H1 heading share no significant words. A site-name suffix in the title (e.g., `| My Charity`) is stripped before comparing.
+The page title and the H1 heading share no significant words. Before comparing, the crawler strips a site-name suffix from the title (text after `|`, `-`, `–`, `—`, `·`) and removes common stop words.
 
 **Why it matters**
 Visitors click based on the title they see in search results. If the heading on the page describes something different, it creates confusion and increases bounce rates.
 
 **How to fix**
 Ensure the title and H1 both describe the same topic. They do not need to be identical — `About Us | My Charity` and `About Us` is fine. But `Contact Us | My Charity` and `Donate Today` is a problem.
+
+**False positives — theme-injected banner H1s**
+Some WordPress themes (Salient, Avada, Divi, etc.) inject the parent-page title as an H1 banner on every sub-page. For example, a page titled "Bowen Family Systems Theory" may have an H1 of "Clinical Internship Programs" from its parent page's banner. TalkingToad suppresses this flag automatically when the title matches an H2 on the same page. For full suppression across all H1 checks, enable **Ignore banner H1s** in Advanced Settings or add the banner text to the **Suppress H1 text** list.
 
 ---
 

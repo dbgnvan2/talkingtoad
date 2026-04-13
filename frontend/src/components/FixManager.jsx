@@ -197,6 +197,8 @@ function PageGroup({ pageUrl, fixes, onUpdate }) {
 
 // ── Main Fix Manager ────────────────────────────────────────────────────────
 
+const BATCH_SIZE = 20
+
 export default function FixManager({ jobId }) {
   const [fixes, setFixes] = useState([])
   const [seoPlugin, setSeoPlugin] = useState(null)
@@ -205,6 +207,9 @@ export default function FixManager({ jobId }) {
   const [applyResult, setApplyResult] = useState(null)
   const [error, setError] = useState(null)
   const [generated, setGenerated] = useState(false)
+  const [totalFixable, setTotalFixable] = useState(0)
+  const [hasMore, setHasMore] = useState(false)
+  const [loadedOffset, setLoadedOffset] = useState(0)
 
   // Load existing fixes on mount
   useEffect(() => {
@@ -223,28 +228,44 @@ export default function FixManager({ jobId }) {
     setFixes(prev => prev.map(f => f.id === updated.id ? updated : f))
   }, [])
 
-  async function handleGenerate() {
+  async function loadBatch(offset) {
     setGenerating(true)
     setError(null)
-    setApplyResult(null)
     try {
-      const res = await apiFetch(`/api/fixes/generate/${jobId}`, { method: 'POST' }, 120_000)
+      const res = await apiFetch(
+        `/api/fixes/generate/${jobId}?offset=${offset}&limit=${BATCH_SIZE}`,
+        { method: 'POST' },
+        60_000,
+      )
       const data = await res.json()
       if (!res.ok) {
-        setError(data.error?.message || 'Failed to generate fixes.')
+        setError(data.error?.message || 'Failed to load fixes.')
         return
       }
-      setFixes(data.fixes)
+      setFixes(prev => offset === 0 ? data.fixes : [...prev, ...data.fixes])
       setSeoPlugin(data.seo_plugin)
       setGenerated(true)
-      if (data.fixes.length === 0) {
-        setError(data.message)
-      }
+      setTotalFixable(data.total_fixable)
+      setHasMore(data.has_more)
+      setLoadedOffset(offset + data.fixes.length)
+      if (data.total_fixable === 0) setError(data.message)
     } catch (e) {
-      setError('Could not connect to the API.')
+      setError('Could not connect to the API — check the server is running.')
     } finally {
       setGenerating(false)
     }
+  }
+
+  function handleGenerate() {
+    setApplyResult(null)
+    setTotalFixable(0)
+    setHasMore(false)
+    setLoadedOffset(0)
+    loadBatch(0)
+  }
+
+  function handleLoadMore() {
+    loadBatch(loadedOffset)
   }
 
   async function handleApply() {
@@ -349,22 +370,36 @@ export default function FixManager({ jobId }) {
 
       {/* Stats bar */}
       {fixes.length > 0 && (
-        <div className="flex gap-4 text-sm flex-wrap">
-          <span className="text-gray-500">{fixes.length} total</span>
+        <div className="flex gap-4 text-sm flex-wrap items-center">
+          <span className="text-gray-500">
+            {totalFixable > 0
+              ? `Showing ${fixes.length} of ${totalFixable} fixable issues`
+              : `${fixes.length} total`}
+          </span>
           {pendingCount > 0 && <span className="text-gray-500">{pendingCount} pending</span>}
           {approvedCount > 0 && <span className="text-blue-600 font-medium">{approvedCount} approved</span>}
           {appliedCount > 0  && <span className="text-green-600 font-medium">{appliedCount} applied</span>}
           {failedCount > 0   && <span className="text-red-600 font-medium">{failedCount} failed</span>}
 
-          {approvedCount > 0 && (
-            <button
-              onClick={handleApply}
-              disabled={applying}
-              className="ml-auto text-sm px-4 py-1.5 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 font-medium"
-            >
-              {applying ? 'Applying…' : `Apply ${approvedCount} Approved Fix${approvedCount !== 1 ? 'es' : ''}`}
-            </button>
-          )}
+          <div className="ml-auto flex gap-2">
+            {hasMore && !generating && (
+              <button
+                onClick={handleLoadMore}
+                className="text-sm px-3 py-1.5 border border-indigo-300 text-indigo-600 rounded-lg hover:bg-indigo-50 font-medium"
+              >
+                Load next {Math.min(BATCH_SIZE, totalFixable - loadedOffset)} →
+              </button>
+            )}
+            {approvedCount > 0 && (
+              <button
+                onClick={handleApply}
+                disabled={applying}
+                className="text-sm px-4 py-1.5 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 font-medium"
+              >
+                {applying ? 'Applying…' : `Apply ${approvedCount} Approved Fix${approvedCount !== 1 ? 'es' : ''}`}
+              </button>
+            )}
+          </div>
         </div>
       )}
 
@@ -372,7 +407,11 @@ export default function FixManager({ jobId }) {
       {generating && (
         <div className="text-center py-12 text-gray-500">
           <div className="inline-block w-8 h-8 border-4 border-indigo-300 border-t-indigo-600 rounded-full animate-spin mb-3" />
-          <p className="text-sm">Connecting to WordPress to load current values for fixable issues…</p>
+          <p className="text-sm">
+            {loadedOffset > 0
+              ? `Loading fixes ${loadedOffset + 1}–${Math.min(loadedOffset + BATCH_SIZE, totalFixable)} of ${totalFixable}…`
+              : 'Connecting to WordPress to load fixable issues…'}
+          </p>
         </div>
       )}
 
