@@ -125,6 +125,13 @@ _ISSUE_SCORING: dict[str, tuple[int, int]] = {
     "TITLE_H1_MISMATCH":          (6,  2),
     "HTTPS_REDIRECT_MISSING":     (9,  2),
     "CANONICAL_SELF_MISSING":     (5,  1),
+    # v1.7 AI-Readiness Module
+    "LLMS_TXT_MISSING":           (6,  1),
+    "LLMS_TXT_INVALID":           (4,  2),
+    "SEMANTIC_DENSITY_LOW":       (5,  3),
+    "DOCUMENT_PROPS_MISSING":     (4,  2),
+    "JSON_LD_MISSING":            (7,  2),
+    "CONVERSATIONAL_H2_MISSING":  (4,  2),
 }
 
 
@@ -551,6 +558,49 @@ _CATALOGUE: dict[str, _IssueSpec] = {
                        "confirming which URL is the preferred version of this page.",
         human_description="No Canonical Tag",
     ),
+    # ── AI Readiness ──────────────────────────────────────────────────────
+    "LLMS_TXT_MISSING": _IssueSpec(
+        category="ai_readiness", severity="info",
+        description="No llms.txt found at root",
+        recommendation="Create an /llms.txt file to help LLMs and AI agents (Gemini, Perplexity) "
+                       "accurately crawl and cite your high-value content.",
+        human_description="Missing AI Instruction File",
+    ),
+    "LLMS_TXT_INVALID": _IssueSpec(
+        category="ai_readiness", severity="warning",
+        description="/llms.txt format is invalid",
+        recommendation="Ensure your /llms.txt uses text/plain MIME type and includes a Markdown-style "
+                       "H1 title, a blockquote summary, and a list of high-value URLs (max 20).",
+        human_description="Invalid AI Instruction File",
+    ),
+    "SEMANTIC_DENSITY_LOW": _IssueSpec(
+        category="ai_readiness", severity="warning",
+        description="Text-to-HTML ratio is below 10%",
+        recommendation="Clean up excessive code-bloat (styles, scripts, nested divs). "
+                       "High code-to-text ratios consume more AI tokens and confuse retrieval engines.",
+        human_description="High Code-to-Text Ratio",
+    ),
+    "DOCUMENT_PROPS_MISSING": _IssueSpec(
+        category="ai_readiness", severity="warning",
+        description="PDF is missing internal Title or Subject metadata",
+        recommendation="Update PDF document properties to include a clear Title and Subject. "
+                       "AIs use these properties for source labels and citations.",
+        human_description="Missing Document Info",
+    ),
+    "JSON_LD_MISSING": _IssueSpec(
+        category="ai_readiness", severity="warning",
+        description="No JSON-LD structured data found on this indexable page",
+        recommendation="Add <script type=\"application/ld+json\"> markup. Schema is the "
+                       "'knowledge graph' used by AI systems for RAG-based answers.",
+        human_description="Missing AI Schema",
+    ),
+    "CONVERSATIONAL_H2_MISSING": _IssueSpec(
+        category="ai_readiness", severity="info",
+        description="H2 headings do not use conversational interrogatives (How, What, Why)",
+        recommendation="Rewrite some H2 headings as questions. LLMs prefer direct question-answer "
+                       "pairings for more accurate retrieval and citing.",
+        human_description="Non-Conversational Headings",
+    ),
 }
 
 
@@ -850,6 +900,30 @@ def check_page(
         issues.append(make_issue("PAGE_SIZE_LARGE", url,
                                  extra={"size_bytes": page.response_size_bytes,
                                         "limit_kb": page_size_limit_kb}))
+
+    # ── AI Readiness (§1.7) ───────────────────────────────────────────────
+    # Semantic Density (Text-to-HTML ratio < 10%)
+    if page.text_to_html_ratio is not None and page.text_to_html_ratio < 0.10 and page.is_indexable:
+        issues.append(make_issue("SEMANTIC_DENSITY_LOW", url,
+                                 extra={"ratio": round(page.text_to_html_ratio, 4)}))
+
+    # JSON-LD Missing
+    if not page.has_json_ld and page.is_indexable and not url.endswith(".pdf"):
+        issues.append(make_issue("JSON_LD_MISSING", url))
+
+    # Conversational H2s
+    if page.is_indexable and not url.endswith(".pdf"):
+        h2s = [h["text"] for h in (page.headings_outline or []) if h.get("level") == 2]
+        if h2s:
+            interrogatives = re.compile(r"\b(how|what|why|who|where|when|which)\b", re.I)
+            if not any(interrogatives.search(h) for h in h2s):
+                issues.append(make_issue("CONVERSATIONAL_H2_MISSING", url))
+
+    # PDF Metadata
+    if url.lower().endswith(".pdf") and page.pdf_metadata is not None:
+        meta = page.pdf_metadata
+        if not meta.get("title") or not meta.get("subject"):
+            issues.append(make_issue("DOCUMENT_PROPS_MISSING", url, extra=meta))
 
     return issues
 

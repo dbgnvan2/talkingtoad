@@ -90,7 +90,8 @@ A bearer token (`Authorization: Bearer <token>`) gates all crawl endpoints. Set 
 2. Fetch and parse `robots.txt`
 3. Discover and parse XML sitemap (index files, gzip, nested sitemaps)
 4. **HTTPS redirect check** — verify `http://` version redirects to `https://`
-5. Seed the crawl queue from both the start URL and all sitemap URLs
+5. **llms.txt check** — verify `/llms.txt` presence and format (spec §2.1)
+6. Seed the crawl queue from both the start URL and all sitemap URLs
 6. For each URL in the queue:
    a. Skip if already visited, over query variant cap, admin path, or WP noise path
    b. Check `robots.txt` — flag `ROBOTS_BLOCKED`, skip
@@ -109,10 +110,20 @@ A bearer token (`Authorization: Bearer <token>`) gates all crawl endpoints. Set 
 
 ---
 
-## Phase 2 Field Strategy
+### Phase 2 Field Strategy
 
 Phase 2 fields (`has_viewport_meta`, `schema_types`, `external_script_count`, `external_stylesheet_count`) are collected during the Phase 1 crawl and stored in the database. They are surfaced in the UI from Phase 1 onwards — these are now active checks:
 - `MISSING_VIEWPORT_META` — emitted when `has_viewport_meta` is False
 - `SCHEMA_MISSING` — emitted when `schema_types` is empty on an indexable page
 
 External script and stylesheet counts are stored for future Phase 2 performance checks but not yet surfaced as issues.
+
+### AI-Readiness Module (v1.7)
+
+Extends the audit capability to evaluate how "quotable" and "crawlable" a site is for LLMs and AI agents (Gemini, Perplexity, etc.):
+- **llms.txt validation** — Checks for the presence and format of `/llms.txt` as an instruction file for AI.
+- **Semantic Density** — Audits the Text-to-HTML ratio to ensure AI tokenizers aren't overwhelmed by code-bloat.
+- **AI Schema** — Flags pages missing JSON-LD, the preferred structured data format for AI Knowledge Graphs.
+- **Conversational Headings** — Identifies subheadings that don't use interrogative words (How, What, Why), which LLMs prefer for matching natural-language queries.
+- **AI Analysis Engine** — Integrates with Gemini/OpenAI to provide automated remediation suggestions for titles, meta descriptions, and semantic alignment.
+

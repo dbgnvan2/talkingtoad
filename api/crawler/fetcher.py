@@ -52,6 +52,7 @@ class FetchResult:
     first_status_code: int = 0
     headers: dict[str, str] = field(default_factory=dict)
     html: str | None = None
+    content: bytes | None = None     # raw response body for non-HTML (e.g. PDFs)
     content_type: str = ""           # normalised value from Content-Type header
     redirect_chain: list[str] = field(default_factory=list)
     is_login_redirect: bool = False
@@ -115,16 +116,24 @@ async def fetch_page(
             content_type = response.headers.get("content-type", "").split(";")[0].strip().lower()
 
             html: str | None = None
-            if not is_head and "html" in content_type:
+            is_html = "html" in content_type
+            is_pdf = "pdf" in content_type
+
+            if not is_head and (is_html or is_pdf):
                 raw = await response.aread()
                 if len(raw) <= _MAX_HTML_BYTES:
-                    html = raw.decode(response.encoding or "utf-8", errors="replace")
+                    if is_html:
+                        html = raw.decode(response.encoding or "utf-8", errors="replace")
+                    # For PDFs, we store the raw bytes in a special attribute or just handle it.
+                    # Actually, FetchResult should probably have a 'content' attribute.
+                    result_content = raw if is_pdf else None
                 else:
                     logger.warning(
-                        "html_too_large",
-                        extra={"url": url, "bytes": len(raw)},
+                        "content_too_large",
+                        extra={"url": url, "bytes": len(raw), "type": content_type},
                     )
-            # Non-HTML: stream closed here without reading the body — no hang.
+            else:
+                result_content = None
 
             result = FetchResult(
                 url=url,
@@ -133,6 +142,7 @@ async def fetch_page(
                 first_status_code=first_status,
                 headers=dict(response.headers),
                 html=html,
+                content=result_content,
                 content_type=content_type,
                 redirect_chain=redirect_chain,
                 is_login_redirect=is_login_redirect,

@@ -89,6 +89,11 @@ class ParsedPage:
     lang_attr: str | None = None         # value of <html lang="..."> attribute
     redirect_url: str | None = None      # if page redirects, the target URL
 
+    # v1.7 AI-Readiness fields
+    text_to_html_ratio: float | None = None
+    has_json_ld: bool = False
+    pdf_metadata: dict | None = None
+
 
 def parse_page(
     result: FetchResult,
@@ -140,6 +145,18 @@ def parse_page(
 
     is_indexable, robots_directive, robots_source = _parse_robots_signals(soup, result.headers)
 
+    # Calculate text-to-html ratio
+    text_to_html_ratio = None
+    if result.html:
+        visible_text = soup.get_text()
+        if result.response_size_bytes > 0:
+            text_to_html_ratio = len(visible_text) / result.response_size_bytes
+
+    # PDF metadata
+    pdf_metadata = None
+    if "pdf" in result.content_type and result.content:
+        pdf_metadata = _extract_pdf_metadata(result.content)
+
     return ParsedPage(
         url=result.url,
         final_url=result.final_url,
@@ -176,6 +193,10 @@ def parse_page(
         empty_anchor_hrefs=_find_empty_anchors(soup, page_url),
         internal_nofollow_count=_count_internal_nofollow(soup, page_url, base_url),
         lang_attr=_extract_lang(soup),
+        # v1.7 AI-Readiness fields
+        text_to_html_ratio=text_to_html_ratio,
+        has_json_ld=_has_json_ld_script(soup),
+        pdf_metadata=pdf_metadata,
     )
 
 
@@ -562,6 +583,28 @@ def _extract_lang(soup: BeautifulSoup) -> str | None:
         return None
     lang = html_tag.get("lang", "")
     return lang.strip() if lang.strip() else None
+
+
+def _has_json_ld_script(soup: BeautifulSoup) -> bool:
+    """Return True if the page contains a <script type="application/ld+json"> tag."""
+    return soup.find("script", type="application/ld+json") is not None
+
+
+def _extract_pdf_metadata(content: bytes) -> dict | None:
+    """Extract Title and Subject from PDF binary content using pypdf."""
+    try:
+        import io
+        from pypdf import PdfReader
+        reader = PdfReader(io.BytesIO(content))
+        metadata = reader.metadata
+        if not metadata:
+            return None
+        return {
+            "title": metadata.title.strip() if metadata.title else None,
+            "subject": metadata.subject.strip() if metadata.subject else None,
+        }
+    except Exception:
+        return None
 
 
 def _count_internal_nofollow(soup: BeautifulSoup, page_url: str, base_url: str) -> int:

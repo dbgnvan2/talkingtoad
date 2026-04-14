@@ -10,6 +10,7 @@ from fastapi import APIRouter, Depends, Query
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
+from api.crawler.normaliser import is_wp_noise_path
 from api.crawler.robots import fetch_robots
 from api.crawler.sitemap import fetch_sitemap_recursive
 from api.routers.crawl import get_store
@@ -19,10 +20,59 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api")
 
 
+@router.get("/utility/generate-llms-txt")
+async def generate_llms_txt(
+    job_id: str = Query(..., description="Job ID to generate llms.txt from"),
+    store=Depends(get_store),
+):
+    """Generate an llms.txt formatted Markdown file from crawl data (spec §2.2)."""
+    pages = await store.get_pages(job_id)
+    if not pages:
+        return JSONResponse(status_code=404, content={"error": "No pages found for this job"})
+
+    # Filter out WordPress noise and non-indexable pages
+    valid_pages = [
+        p for p in pages
+        if p.is_indexable and p.status_code == 200 and not is_wp_noise_path(p.url)
+    ]
+
+    # Find homepage for summary
+    homepage = next((p for p in valid_pages if p.crawl_depth == 0), None)
+    if not homepage and valid_pages:
+        homepage = valid_pages[0]
+
+    title = homepage.title if homepage else "Website Content"
+    summary = homepage.meta_description if homepage else "A collection of high-value pages."
+
+    # Sort by crawl_depth (asc) and then by link count (desc)
+    # We want shallow pages with many links first
+    valid_pages.sort(key=lambda p: (p.crawl_depth or 99, -(len(p.h1_tags) + (p.word_count or 0) // 100)))
+
+    # Limit to top 20 high-value links as per spec
+    top_pages = valid_pages[:20]
+
+    # Format as Markdown
+    lines = [
+        f"# {title}",
+        "",
+        f"> {summary}",
+        "",
+    ]
+    for p in top_pages:
+        p_title = p.title or p.url
+        lines.append(f"- [{p_title}]({p.url})")
+
+    return {
+        "job_id": job_id,
+        "content": "\n".join(lines),
+        "filename": "llms.txt"
+    }
+
+
 @router.get("/health")
 async def health() -> dict:
     """Health check endpoint (spec §6.3)."""
-    return {"status": "ok", "version": "1.4"}
+    return {"status": "ok", "version": "1.7"}
 
 
 @router.get("/robots")

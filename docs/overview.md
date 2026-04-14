@@ -32,13 +32,20 @@ Issues are detected at three scopes:
 | Per page (post-fetch) | After parsing each page | TITLE_MISSING, H1_MISSING, LANG_MISSING |
 | Cross-page | After all pages crawled | TITLE_DUPLICATE, ORPHAN_PAGE |
 
-**Active issue categories:** metadata, heading, broken_link, redirect, crawlability, duplicate, sitemap, security, url_structure.
+**Active issue categories:** metadata, heading, broken_link, redirect, crawlability, duplicate, sitemap, security, url_structure, ai_readiness.
 
 Every issue has an **impact score** (1–10) and **effort score** (1–5). Priority is `(impact × 10) − (effort × 2)`. The top 5 highest-priority issues per crawl are surfaced in the summary tab.
 
 **Health Score** = `max(0, 100 − Σ issue impacts)` across all issues on the site. Displayed as 0–100.
 
-### 3. WordPress Fix Manager
+### 3. AI Readiness Module (v1.7)
+
+Audits how "quotable" and "crawlable" a site is for LLMs and AI agents:
+- **llms.txt validation** — Checks for the presence and format of `/llms.txt` as an instruction file for AI.
+- **llms.txt generator** — Automatically creates a curated `/llms.txt` file from high-value crawl results.
+- **AI Analysis Engine** — Uses Google Gemini or OpenAI to rewrite titles and meta descriptions for AI "quotability" and check semantic alignment of headings.
+
+### 4. WordPress Fix Manager
 
 For WordPress sites, TalkingToad can connect directly and apply fixes:
 
@@ -133,6 +140,13 @@ Any results tab can be exported as a CSV file for sharing with a developer or fi
 - Underscores in URL path (hyphens recommended)
 - URLs over 200 characters
 
+### AI Readiness
+- Missing or invalid /llms.txt instruction file
+- Low semantic density (Text-to-HTML ratio < 10%)
+- Missing internal PDF metadata (Title/Subject) for citations
+- Missing JSON-LD structured data (AI Knowledge Graph)
+- Non-conversational headings (missing question-based subheadings)
+
 ---
 
 ## Tech Stack
@@ -143,6 +157,8 @@ Any results tab can be exported as a CSV file for sharing with a developer or fi
 | Backend | Python 3.11+ + FastAPI |
 | HTTP Client | httpx (async) |
 | HTML Parser | BeautifulSoup4 + lxml |
+| PDF Parser | pypdf |
+| AI Analysis | Google Gemini / OpenAI |
 | Data Store | SQLite (dev) / Upstash Redis (prod) |
 | Hosting | Vercel (frontend SPA + Python serverless) |
 | Auth | Bearer token (`Authorization: Bearer <token>`) |

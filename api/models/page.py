@@ -59,3 +59,8 @@ class CrawledPage(BaseModel):
     mixed_content_count: int = 0
     unsafe_cross_origin_count: int = 0
     has_hsts: bool | None = None
+
+    # v1.7 AI-Readiness fields
+    text_to_html_ratio: float | None = None
+    has_json_ld: bool = False
+    pdf_metadata: dict | None = None

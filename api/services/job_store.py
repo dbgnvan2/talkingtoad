@@ -139,6 +139,7 @@ class JobStore(Protocol):
     async def list_recent_jobs(self, limit: int = 10) -> list[CrawlJob]: ...
 
     async def save_pages(self, pages: list[CrawledPage]) -> None: ...
+    async def get_pages(self, job_id: str) -> list[CrawledPage]: ...
     async def save_issues(self, issues: list[Issue]) -> None: ...
     async def save_links(self, links: list[Link]) -> None: ...
     async def get_links_by_target(self, job_id: str, target_url: str) -> list[dict]: ...
@@ -247,6 +248,9 @@ CREATE TABLE IF NOT EXISTS crawled_pages (
     mixed_content_count        INTEGER NOT NULL DEFAULT 0,
     unsafe_cross_origin_count  INTEGER NOT NULL DEFAULT 0,
     has_hsts                   INTEGER,
+    text_to_html_ratio         REAL,
+    has_json_ld                INTEGER NOT NULL DEFAULT 0,
+    pdf_metadata_json          TEXT,
     FOREIGN KEY (job_id) REFERENCES crawl_jobs(job_id)
 );
 
@@ -376,6 +380,9 @@ class SQLiteJobStore:
             ("mixed_content_count",       "INTEGER NOT NULL DEFAULT 0"),
             ("unsafe_cross_origin_count", "INTEGER NOT NULL DEFAULT 0"),
             ("has_hsts",                  "INTEGER"),
+            ("text_to_html_ratio",        "REAL"),
+            ("has_json_ld",               "INTEGER NOT NULL DEFAULT 0"),
+            ("pdf_metadata_json",         "TEXT"),
         ]
         for col, col_type in page_columns:
             try:
@@ -496,7 +503,7 @@ class SQLiteJobStore:
         await self._db.executemany(
             """
             INSERT OR REPLACE INTO crawled_pages VALUES
-              (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+              (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             rows,
         )
@@ -1221,6 +1228,9 @@ def _page_to_row(p: CrawledPage) -> tuple:
         p.mixed_content_count,
         p.unsafe_cross_origin_count,
         None if p.has_hsts is None else int(p.has_hsts),
+        p.text_to_html_ratio,
+        int(p.has_json_ld),
+        json.dumps(p.pdf_metadata) if p.pdf_metadata else None,
     )
 
 
@@ -1259,6 +1269,9 @@ def _row_to_page(row: dict) -> CrawledPage:
         mixed_content_count=row.get("mixed_content_count") or 0,
         unsafe_cross_origin_count=row.get("unsafe_cross_origin_count") or 0,
         has_hsts=None if row.get("has_hsts") is None else bool(row["has_hsts"]),
+        text_to_html_ratio=row.get("text_to_html_ratio"),
+        has_json_ld=bool(row.get("has_json_ld", 0)),
+        pdf_metadata=json.loads(row.get("pdf_metadata_json")) if row.get("pdf_metadata_json") else None,
     )
 
 
@@ -1769,6 +1782,9 @@ class RedisJobStore:
             "schema_types": p.schema_types,
             "external_script_count": p.external_script_count,
             "external_stylesheet_count": p.external_stylesheet_count,
+            "text_to_html_ratio": p.text_to_html_ratio,
+            "has_json_ld": p.has_json_ld,
+            "pdf_metadata": p.pdf_metadata,
         }
 
     def _dict_to_page(self, d: dict) -> CrawledPage:
@@ -1795,6 +1811,9 @@ class RedisJobStore:
             schema_types=d.get("schema_types", []),
             external_script_count=d.get("external_script_count"),
             external_stylesheet_count=d.get("external_stylesheet_count"),
+            text_to_html_ratio=d.get("text_to_html_ratio"),
+            has_json_ld=d.get("has_json_ld", False),
+            pdf_metadata=d.get("pdf_metadata"),
         )
 
 

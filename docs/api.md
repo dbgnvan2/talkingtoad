@@ -46,6 +46,12 @@ All endpoints require `Authorization: Bearer <token>`.
 | GET | `/api/fixes/find-heading?job_id={id}&heading_text={text}&level={n}` | Find all pages containing a specific heading. |
 | POST | `/api/fixes/bulk-replace-heading?job_id={id}&heading_text={text}&from_level={n}&to_level={n}` | Change a heading level across all pages in a crawl job. Omit `to_level` to convert to bold. |
 
+## AI Analysis (v1.7 AI-Readiness Module)
+
+| Method | Endpoint | Description |
+|---|---|---|
+| POST | `/api/ai/analyze` | Analyze a page using AI and provide remediation suggestions. |
+
 #### Heading source analysis response
 
 ```json
@@ -122,9 +128,10 @@ Only the fields you include are updated.
 
 | Method | Endpoint | Description |
 |---|---|---|
-| GET | `/api/health` | `{"status": "ok", "version": "1.4"}` |
+| GET | `/api/health` | `{"status": "ok", "version": "1.7"}` |
 | GET | `/api/robots?url={url}` | Fetch and parse robots.txt for a domain. |
 | GET | `/api/sitemap?url={url}` | Fetch and parse sitemap(s) for a domain. |
+| GET | `/api/utility/generate-llms-txt?job_id={id}` | Generate an /llms.txt file from crawl data. |
 
 ---
 
@@ -156,7 +163,7 @@ Error response shape:
 
 ## Valid Category Slugs
 
-`broken_link`, `metadata`, `heading`, `redirect`, `crawlability`, `duplicate`, `sitemap`, `security`, `url_structure`
+`broken_link`, `metadata`, `heading`, `redirect`, `crawlability`, `duplicate`, `sitemap`, `security`, `url_structure`, `ai_readiness`
 
 ---
 
@@ -198,6 +205,7 @@ Error response shape:
 | `seo_essentials` | `metadata`, `duplicate`, `url_structure` |
 | `site_structure` | `heading` |
 | `indexability` | `crawlability`, `sitemap` |
+| `ai_readiness` | `ai_readiness` |
 
 The `security` category always runs regardless of toggles.
 

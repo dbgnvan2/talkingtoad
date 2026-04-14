@@ -254,6 +254,38 @@
 
 ---
 
+## Milestone 7 — AI-Readiness Module (v1.7) (DONE)
+
+**Goal:** Extend the audit capability to evaluate site compatibility for LLMs and AI ingestion.
+
+### 7.1 llms.txt Validation & Generation
+- [x] Engine: Check for `/llms.txt` at root; validate MIME type and Markdown structure
+- [x] Engine: Flag `LLMS_TXT_MISSING` and `LLMS_TXT_INVALID` (>20 URLs)
+- [x] Utility Router: Implement `GET /api/utility/generate-llms-txt`
+- [x] Generation Logic: Filter for high-value pages, exclude WP noise, format as Markdown
+
+### 7.2 AI-Centric Issue Checks
+- [x] Parser: Extract PDF internal metadata (Title, Subject) using `pypdf`
+- [x] Parser: Calculate Text-to-HTML ratio for Semantic Density
+- [x] Parser: Detect JSON-LD script presence
+- [x] Issue Checker: `SEMANTIC_DENSITY_LOW` (< 10%)
+- [x] Issue Checker: `DOCUMENT_PROPS_MISSING` for PDFs
+- [x] Issue Checker: `JSON_LD_MISSING` on indexable pages
+- [x] Issue Checker: `CONVERSATIONAL_H2_MISSING` (question-based subheadings)
+
+### 7.3 AI Analysis Service
+- [x] AI Analyzer: Implement `api/services/ai_analyzer.py` with Prompt Library
+- [x] LLM Integration: Google Gemini (flash-1.5) and OpenAI (gpt-4o) support
+- [x] AI Router: Implement `POST /api/ai/analyze` for on-demand remediation
+- [x] Vercel: Update `vercel.json` with AI paths and increased timeout
+
+**Tests:** `tests/test_ai_readiness.py`
+- All new AI issue codes verified
+- llms.txt generator logic verified
+- PDF metadata extraction verified
+
+---
+
 ## Testing Policy
 
 - **No milestone is complete until its tests pass.**

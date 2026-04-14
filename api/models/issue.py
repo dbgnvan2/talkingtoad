@@ -25,6 +25,7 @@ IssueCategory = Literal[
     "sitemap",
     "security",
     "url_structure",
+    "ai_readiness",
     # Phase 2
     "image",
     "performance",

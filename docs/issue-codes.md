@@ -696,4 +696,94 @@ The URL exceeds 200 characters. Very long URLs are truncated in search results a
 
 ---
 
-*Last updated: April 2026 — covers all active issue codes in spec v1.4 + v1.5 + v1.6*
+---
+
+## AI READINESS
+
+---
+
+### LLMS_TXT_MISSING
+**Severity:** 🔵 info | **Impact:** 6 | **Effort:** 1
+
+**What it is**
+No `/llms.txt` file found at the site root.
+
+**Why it matters**
+`llms.txt` is a new standard for providing AI agents (Gemini, ChatGPT, Perplexity) with a curated map of your site's most important content. Without it, AI agents must crawl your entire site, which can lead to "hallucinations" or outdated information in AI summaries.
+
+**How to fix**
+Create a plain text file at `yoursite.com/llms.txt`. Use the **Generate llms.txt** utility in TalkingToad to create a curated list of high-value URLs.
+
+---
+
+### LLMS_TXT_INVALID
+**Severity:** 🟡 warning | **Impact:** 4 | **Effort:** 2
+
+**What it is**
+An `/llms.txt` file exists but does not follow the standard format. It may have the wrong MIME type (not `text/plain`), be missing Markdown structure (H1, blockquote), or contain more than 20 URLs.
+
+**Why it matters**
+AI agents may fail to parse an incorrectly formatted file. Curating more than 20 links reduces the "signal-to-noise" ratio for AI retrieval.
+
+**How to fix**
+Ensure the file is served as `text/plain` and includes a single `# H1` title, a `> blockquote` summary, and 10–20 high-value links.
+
+---
+
+### SEMANTIC_DENSITY_LOW
+**Severity:** 🟡 warning | **Impact:** 5 | **Effort:** 3
+
+**What it is**
+The Text-to-HTML ratio is below 10%. The page has significantly more code (scripts, styles, nested divs) than readable text.
+
+**Why it matters**
+High code-bloat "confuses" AI tokenizers and retrieval engines (RAG). Cleaning up unnecessary markup ensures AI agents can accurately extract and cite your content using fewer tokens.
+
+**How to fix**
+Remove unused page-builder blocks, move inline CSS/JS to external files, and simplify deeply nested HTML structures.
+
+---
+
+### DOCUMENT_PROPS_MISSING
+**Severity:** 🟡 warning | **Impact:** 4 | **Effort:** 2
+
+**What it is**
+A PDF file is missing internal `Title` or `Subject` metadata in its document properties.
+
+**Why it matters**
+AI systems use internal PDF properties (not the file name) for source labels and citations. Missing metadata results in unprofessional or generic labels in AI-generated answers.
+
+**How to fix**
+Open the PDF in a reader (Adobe Acrobat, etc.) and fill in the Title and Subject under **File → Properties**. Re-upload the file to your site.
+
+---
+
+### JSON_LD_MISSING
+**Severity:** 🟡 warning | **Impact:** 7 | **Effort:** 2
+
+**What it is**
+No JSON-LD structured data (`<script type="application/ld+json">`) found on an indexable page.
+
+**Why it matters**
+Schema is the "Knowledge Graph" for AI. While search engines can parse Microdata, AI systems prefer the structured JSON-LD format for RAG-based retrieval.
+
+**How to fix**
+Add JSON-LD markup to your pages. At minimum, ensure your homepage has `Organization` schema.
+
+---
+
+### CONVERSATIONAL_H2_MISSING
+**Severity:** 🔵 info | **Impact:** 4 | **Effort:** 2
+
+**What it is**
+H2 headings do not use interrogative words (How, What, Why, Who).
+
+**Why it matters**
+LLMs prefer direct question-answer pairings. Conversational headings make your content more "quotable" and easier for AI to match to natural-language user queries.
+
+**How to fix**
+Rewrite some subheadings as questions. For example, change `Our Impact` to `What is our impact on the community?`.
+
+---
+
+*Last updated: April 2026 — covers all active issue codes in spec v1.4 + v1.5 + v1.6 + v1.7*

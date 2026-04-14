@@ -29,6 +29,7 @@ from api.routers import crawl as crawl_router
 from api.routers import fixes as fixes_router
 from api.routers import utility as utility_router
 from api.routers import verified as verified_router
+from api.routers import ai as ai_router
 from api.services.job_store import SQLiteJobStore, RedisJobStore, get_job_store
 from api.services.rate_limiter import limiter
 
@@ -75,7 +76,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="TalkingToad",
     description="Nonprofit SEO Crawler API",
-    version="1.4",
+    version="1.7",
     lifespan=lifespan,
     docs_url="/docs",
     redoc_url="/redoc",
@@ -121,3 +122,4 @@ app.include_router(crawl_router.router)
 app.include_router(fixes_router.router)
 app.include_router(verified_router.router)
 app.include_router(utility_router.router)
+app.include_router(ai_router.router)

@@ -79,6 +79,7 @@ _ANALYSIS_CATEGORY_MAP: dict[str, frozenset[str]] = {
     "seo_essentials": frozenset({"metadata", "duplicate", "url_structure"}),
     "site_structure": frozenset({"heading"}),
     "indexability":   frozenset({"crawlability", "sitemap"}),
+    "ai_readiness":   frozenset({"ai_readiness"}),
 }
 # Categories not covered by a named group are always emitted (security).
 _UNGROUPED_CATEGORIES: frozenset[str] = frozenset({"security"})
@@ -213,6 +214,42 @@ async def run_crawl(
                     all_issues.append(make_issue("HTTPS_REDIRECT_MISSING", normalised_start))
             except Exception:
                 pass  # network error — cannot determine redirect behaviour
+
+        # ── 2.6. llms.txt check ───────────────────────────────────────────
+        # Check for /llms.txt and /llms-full.txt at the root (spec §2.1).
+        parsed_root = urlparse(normalised_start)
+        root_url = f"{parsed_root.scheme}://{parsed_root.netloc}"
+        try:
+            llms_txt_url = f"{root_url}/llms.txt"
+            llms_res = await fetch_page(llms_txt_url, client)
+            if llms_res.status_code != 200:
+                all_issues.append(make_issue("LLMS_TXT_MISSING", normalised_start))
+            else:
+                # Validation Logic:
+                # MIME Type: Must be text/plain.
+                # Structure: Verify presence of an H1 title (#), a blockquote summary (>), and a list of key URLs.
+                # Efficiency: Flag if the file contains >20 URLs.
+                content_type = llms_res.headers.get("content-type", "").lower()
+                if "text/plain" not in content_type:
+                    issue = make_issue("LLMS_TXT_INVALID", normalised_start)
+                    issue.description = f"/llms.txt must have MIME type text/plain (got {content_type})"
+                    all_issues.append(issue)
+                
+                body = llms_res.html or ""
+                has_h1 = "# " in body
+                has_blockquote = "\n> " in body or body.startswith("> ")
+                urls = re.findall(r"https?://\S+", body)
+                
+                if not has_h1 or not has_blockquote or not urls:
+                    issue = make_issue("LLMS_TXT_INVALID", normalised_start)
+                    issue.description = "/llms.txt structure is invalid. Must include H1 (#), blockquote summary (>), and URLs."
+                    all_issues.append(issue)
+                elif len(urls) > 20:
+                    issue = make_issue("LLMS_TXT_INVALID", normalised_start)
+                    issue.description = "/llms.txt contains > 20 URLs. AI cheat sheets should be curated for 10–20 high-value links."
+                    all_issues.append(issue)
+        except Exception:
+            pass
 
         # If no sitemap found, record that as an issue
         if sitemap_result.missing_issue:
