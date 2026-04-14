@@ -267,6 +267,27 @@ class WPClient:
         self._check_auth(r)
         return r
 
+    async def delete(self, endpoint: str, **kwargs: object) -> httpx.Response:
+        """Authenticated DELETE to ``/wp-json/wp/v2/{endpoint}``."""
+        assert self._client is not None
+        r = await self._client.delete(
+            f"{self.site_url}/wp-json/wp/v2/{endpoint}",
+            headers=self._auth_headers,
+            **kwargs,
+        )
+        self._check_auth(r)
+        return r
+
+    async def delete_media(self, media_id: int, force: bool = True) -> bool:
+        """Delete a media item from WordPress.
+
+        Args:
+            media_id: The ID of the media item to delete.
+            force: Whether to bypass the trash and delete permanently.
+        """
+        r = await self.delete(f"media/{media_id}?force={'true' if force else 'false'}")
+        return r.status_code == 200
+
     async def list_media(self) -> list[dict]:
         """Fetch all media items from the WordPress REST API, handling pagination.
 

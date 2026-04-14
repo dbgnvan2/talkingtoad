@@ -17,7 +17,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, Query
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 
 from api.models.fix import (
     ApplyFixesResponse,
@@ -894,3 +894,68 @@ async def get_orphaned_media(
     except Exception as exc:
         logger.error("orphaned_media_failed", extra={"job_id": job_id, "error": str(exc)})
         return _err("INTERNAL_ERROR", f"Failed to list orphaned media: {str(exc)}", 500)
+
+
+@router.delete("/media/{media_id}")
+async def delete_media_item(
+    media_id: int,
+    force: bool = Query(True),
+) -> JSONResponse:
+    """Permanently delete a media item from WordPress."""
+    try:
+        async with WPClient.from_credentials_file() as wp:
+            success = await wp.delete_media(media_id, force=force)
+            if success:
+                return JSONResponse({"message": f"Media item {media_id} deleted."})
+            else:
+                return _err("DELETE_FAILED", f"WordPress failed to delete media item {media_id}.", 500)
+    except WPAuthError as exc:
+        return _err("WP_AUTH_FAILED", str(exc), 401)
+    except Exception as exc:
+        logger.error("media_delete_failed", extra={"media_id": media_id, "error": str(exc)})
+        return _err("INTERNAL_ERROR", f"Failed to delete media: {str(exc)}", 500)
+
+
+@router.get("/orphaned-media/{job_id}/csv")
+async def export_orphaned_media_csv(
+    job_id: str,
+    store=Depends(get_store),
+):
+    """Download a CSV report of orphaned media items."""
+    job = await store.get_job(job_id)
+    if not job:
+        return _err("JOB_NOT_FOUND", f"No job with id {job_id}", 404)
+
+    try:
+        async with WPClient.from_credentials_file() as wp:
+            orphans = await find_orphaned_media(wp, job_id, store)
+            
+            import io
+            import csv
+            
+            output = io.StringIO()
+            writer = csv.writer(output)
+            writer.writerow(["ID", "Title", "URL", "MIME Type", "Date Uploaded", "Attached To (Post ID)"])
+            
+            for item in orphans:
+                writer.writerow([
+                    item["id"],
+                    item["title"],
+                    item["url"],
+                    item["mime_type"],
+                    item["date"],
+                    item["post_parent"]
+                ])
+            
+            output.seek(0)
+            filename = f"orphaned-media-{job_id[:8]}.csv"
+            return StreamingResponse(
+                iter([output.getvalue()]),
+                media_type="text/csv",
+                headers={"Content-Disposition": f"attachment; filename={filename}"}
+            )
+    except WPAuthError as exc:
+        return _err("WP_AUTH_FAILED", str(exc), 401)
+    except Exception as exc:
+        logger.error("orphaned_media_csv_failed", extra={"job_id": job_id, "error": str(exc)})
+        return _err("INTERNAL_ERROR", f"Failed to generate CSV: {str(exc)}", 500)

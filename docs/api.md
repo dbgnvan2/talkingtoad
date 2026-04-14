@@ -32,6 +32,9 @@ All endpoints require `Authorization: Bearer <token>`.
 |---|---|---|
 | POST | `/api/fixes/generate/{job_id}` | Connect to WordPress, generate proposed fixes from crawl issues. |
 | GET | `/api/fixes/{job_id}` | List all fixes for a job (pending, approved, applied, skipped, failed). |
+| DELETE | `/api/fixes/media/{media_id}?force=true` | Permanently delete a media item from WordPress. |
+| GET | `/api/fixes/orphaned-media/{job_id}` | List WordPress media items not found in the crawl. |
+| GET | `/api/fixes/orphaned-media/{job_id}/csv` | Download orphaned media list as a CSV file. |
 | PATCH | `/api/fixes/{fix_id}` | Update a single fix — change `proposed_value` or `status`. |
 | POST | `/api/fixes/apply/{job_id}` | Apply all approved fixes to WordPress. Stops on first failure. |
 | DELETE | `/api/fixes/{job_id}` | Delete all fixes for a job (to regenerate from scratch). |
