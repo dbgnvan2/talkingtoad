@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, forwardRef } from 'react'
+import { useState, useEffect, useCallback, useRef, forwardRef, useMemo } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import IssueTable from '../components/IssueTable.jsx'
 import SeverityBadge from '../components/SeverityBadge.jsx'
@@ -7,7 +7,7 @@ import FixManager from '../components/FixManager.jsx'
 import FixInlinePanel, { FIXABLE_CODES } from '../components/FixInlinePanel.jsx'
 import FixBrokenLinkPanel, { FIXABLE_LINK_CODES } from '../components/FixBrokenLinkPanel.jsx'
 import { getIssueHelp } from '../data/issueHelp.js'
-import { getResults, getResultsByCategory, getPages, getPageIssues, downloadCsv, rescanUrl, markFixed, authHeaders, getVerifiedLinks, addVerifiedLink, removeVerifiedLink, getPredefinedCodes, bulkTrimTitles, trimTitleOne, convertHeadingToBold, changeHeadingLevel, findHeading, bulkReplaceHeading, getFixHistory, getSuppressedCodes, addSuppressedCode, removeSuppressedCode, getExemptAnchorUrls, addExemptAnchorUrl, removeExemptAnchorUrl, getImageInfo, updateImageMeta } from '../api.js'
+import { getResults, getResultsByCategory, getPages, getPageIssues, downloadCsv, rescanUrl, markFixed, authHeaders, getVerifiedLinks, addVerifiedLink, removeVerifiedLink, getPredefinedCodes, bulkTrimTitles, trimTitleOne, convertHeadingToBold, changeHeadingLevel, findHeading, bulkReplaceHeading, getFixHistory, getSuppressedCodes, addSuppressedCode, removeSuppressedCode, getExemptAnchorUrls, addExemptAnchorUrl, removeExemptAnchorUrl, getImageInfo, updateImageMeta, analyzeHeadingSources } from '../api.js'
 
 const CATEGORIES = [
   { key: 'broken_link',   label: 'Broken Links' },
@@ -250,6 +250,7 @@ function SummaryTab({ summary, error, jobId, onCategoryClick, onPageClick, suppr
   const [sevIssues, setSevIssues]               = useState(null)
   const [sevLoading, setSevLoading]             = useState(false)
   const [showScoreBreakdown, setShowScoreBreakdown] = useState(false)
+  const [focusedPageUrl, setFocusedPageUrl]     = useState(null)
   const sevPanelRef   = useRef(null)
   const scorePanelRef = useRef(null)
 
@@ -283,11 +284,7 @@ function SummaryTab({ summary, error, jobId, onCategoryClick, onPageClick, suppr
   if (error) return <ErrorMsg msg={error} />
   if (!summary) return <Spinner />
 
-  const { summary: s, issues: rawTopIssues } = summary
-  // Sort by priority_rank descending so the highest-priority fix is always first
-  const topIssues = rawTopIssues
-    ? [...rawTopIssues].sort((a, b) => (b.priority_rank ?? 0) - (a.priority_rank ?? 0))
-    : rawTopIssues
+  const { summary: s } = summary
   if (!s) return <p className="text-gray-500">No summary available.</p>
 
   return (
@@ -384,60 +381,26 @@ function SummaryTab({ summary, error, jobId, onCategoryClick, onPageClick, suppr
         </div>
       </div>
 
-      {/* Top 10 pages to fix */}
-      <TopPagesPanel jobId={jobId} onPageClick={onPageClick} />
+      {/* Top 5 Priority Issue Groups */}
+      <TopPriorityGroups jobId={jobId} onPageFocus={setFocusedPageUrl} />
 
-      {/* Top 5 Priority Fixes */}
-      {topIssues && topIssues.length > 0 && (
-        <div>
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="text-base font-semibold text-gray-700">Top 5 Priority Fixes</h2>
-            <button
-              onClick={() => handleCsvDownload(null)}
-              className="text-sm text-gray-500 hover:text-gray-700 underline"
-            >
-              Export full CSV
-            </button>
-          </div>
-          <p className="text-xs text-gray-400 mb-2">Click an issue to see all issues on that page</p>
-          <div className="space-y-2">
-            {topIssues.map((issue, i) => (
-              <button
-                key={i}
-                onClick={() => issue.page_url && onPageClick(issue.page_url)}
-                disabled={!issue.page_url}
-                className="w-full text-left flex items-start gap-3 bg-white border border-gray-200 rounded-lg px-4 py-3 hover:border-green-400 hover:bg-green-50 transition-colors disabled:cursor-default disabled:hover:border-gray-200 disabled:hover:bg-white"
-              >
-                <SeverityBadge severity={issue.severity} />
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <p className="text-sm font-medium text-gray-800">{issue.issue_code}</p>
-                    {issue.priority_rank > 0 && (
-                      <span className="text-xs font-semibold px-1.5 py-0.5 rounded bg-gray-100 text-gray-500 border border-gray-200"
-                            title="Priority score">
-                        P{issue.priority_rank}
-                      </span>
-                    )}
-                  </div>
-                  <p className="text-xs text-gray-500 truncate">{issue.description}</p>
-                  {issue.page_url && (
-                    <p className="text-xs text-blue-500 truncate mt-0.5">{issue.page_url}</p>
-                  )}
-                </div>
-                {issue.page_url && (
-                  <span className="flex-shrink-0 text-xs text-gray-400 self-center">→</span>
-                )}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
+      {/* Top 10 pages to fix */}
+      <TopPagesPanel jobId={jobId} onPageClick={setFocusedPageUrl} />
 
       {s.total_issues === 0 && (
         <div className="text-center py-12 text-gray-400">
           <p className="text-4xl mb-3">🐸</p>
           <p className="font-medium">No issues found — great work!</p>
         </div>
+      )}
+
+      {/* Page focus panel — slide-over showing full page details */}
+      {focusedPageUrl && (
+        <PageFocusPanel
+          jobId={jobId}
+          pageUrl={focusedPageUrl}
+          onClose={() => setFocusedPageUrl(null)}
+        />
       )}
     </div>
   )
@@ -578,6 +541,164 @@ function TopPagesPanel({ jobId, onPageClick }) {
         </table>
       </div>
       <p className="text-xs text-gray-400 mt-2">Click a row to see all issues for that page.</p>
+    </div>
+  )
+}
+
+// Top 5 priority issue GROUPS (not individual issues)
+function TopPriorityGroups({ jobId, onPageFocus }) {
+  const [groups, setGroups] = useState(null)
+  const [expandedCode, setExpandedCode] = useState(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    // Fetch all issues to group them
+    getResults(jobId, { page: 1, limit: 500 })
+      .then(d => {
+        if (!d.issues || d.issues.length === 0) {
+          setGroups([])
+          setLoading(false)
+          return
+        }
+        // Group issues by issue_code
+        const map = new Map()
+        for (const issue of d.issues) {
+          if (!map.has(issue.issue_code)) {
+            map.set(issue.issue_code, {
+              code: issue.issue_code,
+              category: issue.category,
+              severity: issue.severity,
+              description: issue.description,
+              recommendation: issue.recommendation,
+              priority_rank: issue.priority_rank ?? 0,
+              human_description: issue.human_description ?? '',
+              pages: [],
+              extras: new Map(), // pageUrl -> extra data
+            })
+          }
+          const g = map.get(issue.issue_code)
+          if (issue.page_url && !g.pages.includes(issue.page_url)) {
+            g.pages.push(issue.page_url)
+          }
+          if (issue.extra) {
+            g.extras.set(issue.page_url, issue.extra)
+          }
+        }
+        // Sort by priority_rank descending, take top 5
+        const sorted = [...map.values()]
+          .sort((a, b) => b.priority_rank - a.priority_rank)
+          .slice(0, 5)
+        setGroups(sorted)
+        setLoading(false)
+      })
+      .catch(() => { setGroups([]); setLoading(false) })
+  }, [jobId])
+
+  if (loading) return <Spinner />
+  if (!groups || groups.length === 0) return null
+
+  const severityColors = {
+    critical: 'text-red-600 bg-red-50 border-red-200',
+    warning:  'text-amber-600 bg-amber-50 border-amber-200',
+    info:     'text-blue-600 bg-blue-50 border-blue-200',
+  }
+
+  return (
+    <div>
+      <h2 className="text-base font-semibold text-gray-700 mb-3">Top 5 Priority Fixes</h2>
+      <p className="text-xs text-gray-400 mb-2">Click to expand and see affected pages</p>
+      <div className="space-y-2">
+        {groups.map(group => {
+          const isExpanded = expandedCode === group.code
+          const badgeColor = severityColors[group.severity] ?? 'text-gray-600 bg-gray-50 border-gray-200'
+          return (
+            <div key={group.code} className="border border-gray-200 rounded-lg overflow-hidden">
+              {/* Group header - clickable to expand */}
+              <button
+                className={`w-full text-left px-4 py-3 flex items-center gap-3 transition-colors ${
+                  isExpanded ? 'bg-green-50 border-b border-green-200' : 'bg-white hover:bg-gray-50'
+                }`}
+                onClick={() => setExpandedCode(isExpanded ? null : group.code)}
+              >
+                <span className="text-gray-400 text-xs w-3 flex-shrink-0">{isExpanded ? '▼' : '▶'}</span>
+                <SeverityBadge severity={group.severity} />
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    {group.human_description ? (
+                      <span className="text-sm font-semibold text-gray-800">{group.human_description}</span>
+                    ) : (
+                      <span className="font-mono text-xs text-gray-700 font-medium">{group.code}</span>
+                    )}
+                    {group.human_description && (
+                      <span className="font-mono text-xs text-gray-400">{group.code}</span>
+                    )}
+                  </div>
+                  <p className="text-xs text-gray-500 truncate">{group.description}</p>
+                </div>
+                {group.priority_rank > 0 && (
+                  <span className="flex-shrink-0 text-xs font-semibold px-2 py-0.5 rounded bg-gray-100 text-gray-500 border border-gray-200"
+                        title={`Priority score: ${group.priority_rank}`}>
+                    P{group.priority_rank}
+                  </span>
+                )}
+                <span className={`flex-shrink-0 text-xs font-semibold px-2.5 py-1 rounded-full border ${badgeColor}`}>
+                  {group.pages.length} page{group.pages.length !== 1 ? 's' : ''}
+                </span>
+              </button>
+
+              {/* Expanded page list */}
+              {isExpanded && group.pages.length > 0 && (
+                <div className="bg-gray-50 px-4 py-2 space-y-1">
+                  {group.pages.slice(0, 20).map((pageUrl, i) => {
+                    const extra = group.extras.get(pageUrl)
+                    return (
+                      <div key={pageUrl} className="flex items-start gap-2 py-1">
+                        <span className="text-xs text-gray-400 w-5 text-right flex-shrink-0">{i + 1}.</span>
+                        <div className="flex-1 min-w-0">
+                          <button
+                            onClick={() => onPageFocus?.(pageUrl)}
+                            className="text-xs text-blue-600 hover:underline text-left break-all"
+                            title={pageUrl}
+                          >
+                            {shortenUrl(pageUrl)}
+                          </button>
+                          {/* Show extra details inline */}
+                          {extra?.title && (group.code.includes('TITLE') || group.code === 'TITLE_META_DUPLICATE_PAIR') && (
+                            <p className="text-xs text-gray-500 truncate mt-0.5">
+                              <span className="font-medium">Title:</span> "{extra.title}"
+                            </p>
+                          )}
+                          {extra?.description && (group.code.includes('META_DESC') || group.code === 'TITLE_META_DUPLICATE_PAIR') && (
+                            <p className="text-xs text-gray-500 truncate mt-0.5">
+                              <span className="font-medium">Desc:</span> "{extra.description?.slice(0, 60)}..."
+                            </p>
+                          )}
+                          {extra?.h1_tags && group.code === 'H1_MULTIPLE' && (
+                            <p className="text-xs text-gray-500 mt-0.5">
+                              <span className="font-medium">H1s:</span> {extra.h1_tags.map((h, j) => `"${h}"`).join(', ')}
+                            </p>
+                          )}
+                        </div>
+                        <button
+                          onClick={() => onPageFocus?.(pageUrl)}
+                          className="flex-shrink-0 text-xs text-indigo-600 hover:text-indigo-800"
+                        >
+                          Details →
+                        </button>
+                      </div>
+                    )
+                  })}
+                  {group.pages.length > 20 && (
+                    <p className="text-xs text-gray-400 pt-1">
+                      ...and {group.pages.length - 20} more pages
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
+          )
+        })}
+      </div>
     </div>
   )
 }
@@ -768,6 +889,12 @@ function getMissionImpactLabel(impact) {
   return                  { text: 'Best Practice',     color: 'text-blue-600 bg-blue-50 border-blue-200' }
 }
 
+// Issue codes where page_url is the source page and extra.target_url is the actual broken link
+const BROKEN_LINK_CODES = new Set([
+  'BROKEN_LINK_404', 'BROKEN_LINK_410', 'BROKEN_LINK_5XX', 'BROKEN_LINK_503',
+  'EXTERNAL_LINK_TIMEOUT', 'EXTERNAL_LINK_SKIPPED',
+])
+
 function groupIssues(issues) {
   const map = new Map()
   for (const issue of issues) {
@@ -783,15 +910,26 @@ function groupIssues(issues) {
         effort: issue.effort ?? 0,
         human_description: issue.human_description ?? '',
         pages: [],
+        // For broken link issues: collect the broken URLs separately
+        brokenUrls: [],
       })
     }
+    // For broken link issues, page_url is the source page and extra.target_url is the broken link
+    const isBrokenLink = BROKEN_LINK_CODES.has(issue.issue_code)
+    const brokenUrl = isBrokenLink ? issue.extra?.target_url : null
+
     map.get(issue.issue_code).pages.push(issue.page_url)
+    if (brokenUrl) {
+      map.get(issue.issue_code).brokenUrls.push(brokenUrl)
+    }
     // Always store per-page descriptions so every page can show its own detail
     // (e.g. LINK_EMPTY_ANCHOR embeds the offending hrefs per page)
     if (!map.get(issue.issue_code).pageDescriptions) {
       map.get(issue.issue_code).pageDescriptions = new Map()
     }
-    map.get(issue.issue_code).pageDescriptions.set(issue.page_url, issue.description)
+    // For broken links, key by the broken URL so the UI can look up descriptions
+    const descKey = brokenUrl || issue.page_url
+    map.get(issue.issue_code).pageDescriptions.set(descKey, issue.description)
     // Store extra data (e.g. TITLE_H1_MISMATCH stores {title, h1})
     if (issue.extra) {
       if (!map.get(issue.issue_code).pageExtras) {
@@ -1395,7 +1533,8 @@ function IssueGroup({ group, pageDescriptions, pageExtras, jobId, expanded, onTo
   }
 
   const visiblePages = group.pages.slice(pageOffset, pageOffset + PAGE_SIZE)
-  const totalPages = group.pages.length
+  // For broken links, show count of broken URLs; for others, show count of affected pages
+  const totalPages = isBrokenLink ? (group.brokenUrls?.length ?? 0) : group.pages.length
 
   const severityColors = {
     critical: 'text-red-600 bg-red-50 border-red-200',
@@ -1501,7 +1640,7 @@ function IssueGroup({ group, pageDescriptions, pageExtras, jobId, expanded, onTo
           {/* Page list — broken links show source pages first; others show the affected page */}
           {isBrokenLink ? (
             <BrokenLinkSourceView
-              brokenUrls={group.pages}
+              brokenUrls={group.brokenUrls}
               issueCode={group.code}
               jobId={jobId}
               fixHistory={fixHistory}
@@ -1778,6 +1917,188 @@ function PageDetailRow({ index, pageUrl, jobId, issueCode, pageDescription, page
               {!pageExtra?.title && !pageExtra?.h1 && (
                 <p className="text-xs text-gray-400 italic">Click Fix to compare title and H1</p>
               )}
+            </div>
+          )}
+          {/* TITLE_DUPLICATE: show the duplicated title and pages that share it */}
+          {issueCode === 'TITLE_DUPLICATE' && pageExtra && (
+            <div className="mt-1 p-2 bg-amber-50 border border-amber-200 rounded text-xs space-y-1">
+              {pageExtra.title && (
+                <p className="text-gray-700">
+                  <span className="font-semibold text-gray-800">Title:</span>{' '}
+                  <span className="italic">"{pageExtra.title}"</span>
+                </p>
+              )}
+              {pageExtra.duplicate_urls?.length > 0 && (
+                <div>
+                  <span className="font-semibold text-gray-800">Same title on:</span>
+                  <div className="flex flex-wrap gap-1 mt-0.5">
+                    {pageExtra.duplicate_urls.map(url => (
+                      <button
+                        key={url}
+                        onClick={() => onPageFocus?.(url)}
+                        className="text-blue-600 hover:underline hover:bg-blue-50 px-1 rounded"
+                        title={url}
+                      >
+                        {shortenUrl(url)}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+          {/* META_DESC_DUPLICATE: show the duplicated description and pages that share it */}
+          {issueCode === 'META_DESC_DUPLICATE' && pageExtra && (
+            <div className="mt-1 p-2 bg-amber-50 border border-amber-200 rounded text-xs space-y-1">
+              {pageExtra.description && (
+                <p className="text-gray-700">
+                  <span className="font-semibold text-gray-800">Description:</span>{' '}
+                  <span className="italic">"{pageExtra.description.length > 100 ? pageExtra.description.slice(0, 100) + '...' : pageExtra.description}"</span>
+                </p>
+              )}
+              {pageExtra.duplicate_urls?.length > 0 && (
+                <div>
+                  <span className="font-semibold text-gray-800">Same description on:</span>
+                  <div className="flex flex-wrap gap-1 mt-0.5">
+                    {pageExtra.duplicate_urls.map(url => (
+                      <button
+                        key={url}
+                        onClick={() => onPageFocus?.(url)}
+                        className="text-blue-600 hover:underline hover:bg-blue-50 px-1 rounded"
+                        title={url}
+                      >
+                        {shortenUrl(url)}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+          {/* TITLE_META_DUPLICATE_PAIR: show both title and description, plus pages */}
+          {issueCode === 'TITLE_META_DUPLICATE_PAIR' && pageExtra && (
+            <div className="mt-1 p-2 bg-amber-50 border border-amber-200 rounded text-xs space-y-1">
+              {pageExtra.title && (
+                <p className="text-gray-700">
+                  <span className="font-semibold text-gray-800">Title:</span>{' '}
+                  <span className="italic">"{pageExtra.title}"</span>
+                </p>
+              )}
+              {pageExtra.description && (
+                <p className="text-gray-700">
+                  <span className="font-semibold text-gray-800">Description:</span>{' '}
+                  <span className="italic">"{pageExtra.description.length > 100 ? pageExtra.description.slice(0, 100) + '...' : pageExtra.description}"</span>
+                </p>
+              )}
+              {pageExtra.duplicate_urls?.length > 0 && (
+                <div>
+                  <span className="font-semibold text-gray-800">Same title + description on:</span>
+                  <div className="flex flex-wrap gap-1 mt-0.5">
+                    {pageExtra.duplicate_urls.map(url => (
+                      <button
+                        key={url}
+                        onClick={() => onPageFocus?.(url)}
+                        className="text-blue-600 hover:underline hover:bg-blue-50 px-1 rounded"
+                        title={url}
+                      >
+                        {shortenUrl(url)}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+          {/* TITLE_TOO_SHORT / TITLE_TOO_LONG: show the actual title */}
+          {(issueCode === 'TITLE_TOO_SHORT' || issueCode === 'TITLE_TOO_LONG') && pageExtra?.title && (
+            <div className="mt-1 p-2 bg-amber-50 border border-amber-200 rounded text-xs">
+              <p className="text-gray-700">
+                <span className="font-semibold text-gray-800">Title ({pageExtra.length} chars):</span>{' '}
+                <span className="italic">"{pageExtra.title}"</span>
+              </p>
+            </div>
+          )}
+          {/* META_DESC_TOO_SHORT / META_DESC_TOO_LONG: show the actual description */}
+          {(issueCode === 'META_DESC_TOO_SHORT' || issueCode === 'META_DESC_TOO_LONG') && pageExtra?.description && (
+            <div className="mt-1 p-2 bg-amber-50 border border-amber-200 rounded text-xs">
+              <p className="text-gray-700">
+                <span className="font-semibold text-gray-800">Description ({pageExtra.length} chars):</span>{' '}
+                <span className="italic">"{pageExtra.description}"</span>
+              </p>
+            </div>
+          )}
+          {/* H1_MULTIPLE: show all H1 tags */}
+          {issueCode === 'H1_MULTIPLE' && pageExtra?.h1_tags?.length > 0 && (
+            <div className="mt-1 p-2 bg-amber-50 border border-amber-200 rounded text-xs space-y-0.5">
+              <p className="font-semibold text-gray-800">Found {pageExtra.count} H1 tags:</p>
+              {pageExtra.h1_tags.map((h1, i) => (
+                <p key={i} className="text-gray-700 pl-2">
+                  <span className="text-gray-400">{i + 1}.</span> "{h1}"
+                </p>
+              ))}
+            </div>
+          )}
+          {/* HEADING_SKIP: show the heading outline */}
+          {issueCode === 'HEADING_SKIP' && pageExtra?.outline?.length > 0 && (
+            <div className="mt-1 p-2 bg-amber-50 border border-amber-200 rounded text-xs space-y-0.5">
+              <p className="font-semibold text-gray-800">Heading outline:</p>
+              {pageExtra.outline.map((h, i) => (
+                <p key={i} className={`text-gray-700 pl-2 ${i === pageExtra.skip_at ? 'text-red-600 font-medium' : ''}`}>
+                  {h} {i === pageExtra.skip_at && '← skip here'}
+                </p>
+              ))}
+            </div>
+          )}
+          {/* REDIRECT_301/302: show where it redirects to */}
+          {(issueCode === 'REDIRECT_301' || issueCode === 'REDIRECT_302' || issueCode === 'INTERNAL_REDIRECT_301') && pageExtra?.redirect_to && (
+            <div className="mt-1 p-2 bg-amber-50 border border-amber-200 rounded text-xs">
+              <p className="text-gray-700">
+                <span className="font-semibold text-gray-800">Redirects to:</span>{' '}
+                <button
+                  onClick={() => onPageFocus?.(pageExtra.redirect_to)}
+                  className="text-blue-600 hover:underline"
+                  title={pageExtra.redirect_to}
+                >
+                  {shortenUrl(pageExtra.redirect_to)}
+                </button>
+              </p>
+            </div>
+          )}
+          {/* REDIRECT_CHAIN: show the full chain */}
+          {issueCode === 'REDIRECT_CHAIN' && pageExtra?.chain?.length > 0 && (
+            <div className="mt-1 p-2 bg-amber-50 border border-amber-200 rounded text-xs space-y-0.5">
+              <p className="font-semibold text-gray-800">Redirect chain ({pageExtra.hops} hops):</p>
+              <div className="flex flex-wrap items-center gap-1">
+                {pageExtra.chain.map((url, i) => (
+                  <span key={i} className="flex items-center gap-1">
+                    <button
+                      onClick={() => onPageFocus?.(url)}
+                      className="text-blue-600 hover:underline"
+                      title={url}
+                    >
+                      {shortenUrl(url)}
+                    </button>
+                    {i < pageExtra.chain.length - 1 && <span className="text-gray-400">→</span>}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+          {/* CANONICAL_EXTERNAL: show the canonical URL */}
+          {issueCode === 'CANONICAL_EXTERNAL' && pageExtra?.canonical_url && (
+            <div className="mt-1 p-2 bg-amber-50 border border-amber-200 rounded text-xs">
+              <p className="text-gray-700">
+                <span className="font-semibold text-gray-800">Canonical points to:</span>{' '}
+                <a
+                  href={pageExtra.canonical_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-blue-600 hover:underline"
+                  title={pageExtra.canonical_url}
+                >
+                  {pageExtra.canonical_url}
+                </a>
+              </p>
             </div>
           )}
           {pageDescription && issueCode === 'LINK_EMPTY_ANCHOR' && (() => {
@@ -3017,11 +3338,46 @@ function HeadingOutlineEditor({ headings, pageUrl, jobId, onRescanComplete }) {
   const [rescanning, setRescanning] = useState(false)
   const [rescanDone, setRescanDone] = useState(false)
 
+  // Heading source analysis
+  const [sourceAnalysis, setSourceAnalysis] = useState(null)
+  const [analyzingSource, setAnalyzingSource] = useState(false)
+  const [sourceError, setSourceError] = useState(null)
+
+  // Build a map of heading text → source info
+  const sourceMap = useMemo(() => {
+    if (!sourceAnalysis?.headings) return {}
+    const map = {}
+    for (const h of sourceAnalysis.headings) {
+      // Key by level + normalized text
+      const key = `${h.level}:${h.text.toLowerCase().trim()}`
+      map[key] = h
+    }
+    return map
+  }, [sourceAnalysis])
+
+  const getSourceInfo = h => {
+    const key = `${h.level}:${h.text.toLowerCase().trim()}`
+    return sourceMap[key] || null
+  }
+
   // Merge h4States (for bold conversion) into display
   const getState = h => headingStates[h.text] || h4States?.[h.text] || null
 
   const anySuccess = Object.values(headingStates).some(s => s?.success)
     || Object.values(h4States || {}).some(s => s?.success)
+
+  async function analyzeSource() {
+    setAnalyzingSource(true)
+    setSourceError(null)
+    try {
+      const result = await analyzeHeadingSources(pageUrl, jobId)
+      setSourceAnalysis(result)
+    } catch (e) {
+      setSourceError(e.message)
+    } finally {
+      setAnalyzingSource(false)
+    }
+  }
 
   async function applyLevelChange(h, toLevel) {
     const key = h.text
@@ -3038,7 +3394,7 @@ function HeadingOutlineEditor({ headings, pageUrl, jobId, onRescanComplete }) {
     const key = h.text
     setH4States(s => ({ ...s, [key]: 'converting' }))
     try {
-      const r = await convertHeadingToBold(pageUrl, h.text)
+      const r = await convertHeadingToBold(pageUrl, h.text, h.level)
       setH4States(s => ({ ...s, [key]: r }))
     } catch (e) {
       setH4States(s => ({ ...s, [key]: { success: false, error: e.message } }))
@@ -3058,14 +3414,77 @@ function HeadingOutlineEditor({ headings, pageUrl, jobId, onRescanComplete }) {
     }
   }
 
+  // Source label helper
+  const getSourceLabel = source => {
+    switch (source) {
+      case 'post_content': return { label: 'Post', color: 'text-green-600', fixable: true }
+      case 'reusable_block': return { label: 'Block', color: 'text-blue-600', fixable: true }
+      case 'widget': return { label: 'Widget', color: 'text-amber-600', fixable: false }
+      case 'acf_field': return { label: 'ACF', color: 'text-purple-600', fixable: false }
+      default: return { label: 'Theme/Plugin', color: 'text-gray-500', fixable: false }
+    }
+  }
+
   return (
     <div className="border-t border-purple-100 pt-3 mt-3">
       <div className="flex items-center justify-between mb-2">
         <p className="text-xs font-semibold text-purple-700 uppercase tracking-wide">
           ✏️ Edit Headings
         </p>
-        <span className="text-xs text-gray-400">Use the dropdown on each row to change its level or convert to bold</span>
+        <div className="flex items-center gap-3">
+          {!sourceAnalysis && !analyzingSource && (
+            <button
+              onClick={analyzeSource}
+              className="text-xs text-blue-600 hover:text-blue-800 underline"
+              title="Check where each heading is stored (post content, widget, theme, etc.)"
+            >
+              Analyze sources
+            </button>
+          )}
+          {analyzingSource && <span className="text-xs text-gray-400">Analyzing...</span>}
+          {sourceError && <span className="text-xs text-red-500" title={sourceError}>Analysis failed</span>}
+          <span className="text-xs text-gray-400">Use the dropdown on each row to change its level or convert to bold</span>
+        </div>
       </div>
+
+      {/* Debug panel - shows analysis details */}
+      {sourceAnalysis?._debug && (
+        <details className="mb-2 text-xs bg-gray-50 border border-gray-200 rounded p-2">
+          <summary className="cursor-pointer text-gray-600 font-medium">Debug: Analysis Details</summary>
+          <div className="mt-2 space-y-2 text-gray-500">
+            <p><strong>Post found:</strong> {sourceAnalysis._debug.post_found ? 'Yes' : 'No'}</p>
+            <p><strong>Raw content length:</strong> {sourceAnalysis._debug.raw_content_length} chars</p>
+            {sourceAnalysis._debug.h_tags_in_raw_content?.length > 0 && (
+              <div>
+                <strong>H-tags found in raw HTML ({sourceAnalysis._debug.h_tags_in_raw_content.length}):</strong>
+                <ul className="ml-4 mt-1 font-mono text-[10px] break-all">
+                  {sourceAnalysis._debug.h_tags_in_raw_content.map((tag, i) => (
+                    <li key={i}>{tag}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            <div>
+              <strong>Headings found in post content ({sourceAnalysis._debug.headings_in_post_content?.length || 0}):</strong>
+              <ul className="ml-4 mt-1">
+                {sourceAnalysis._debug.headings_in_post_content?.map((h, i) => (
+                  <li key={i} className="font-mono">H{h.level}: "{h.text}" → "{h.normalized}"</li>
+                ))}
+                {!sourceAnalysis._debug.headings_in_post_content?.length && <li className="italic">None</li>}
+              </ul>
+            </div>
+            <div>
+              <strong>Crawled headings ({sourceAnalysis._debug.crawled_headings_normalized?.length || 0}):</strong>
+              <ul className="ml-4 mt-1">
+                {sourceAnalysis._debug.crawled_headings_normalized?.map((h, i) => (
+                  <li key={i} className="font-mono">H{h.level}: "{h.text}" → "{h.normalized}"</li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        </details>
+      )}
+
       <div className="space-y-1">
         {headings.map((h, i) => {
           const state = getState(h)
@@ -3074,6 +3493,11 @@ function HeadingOutlineEditor({ headings, pageUrl, jobId, onRescanComplete }) {
           const hasError = state?.error
           const effectiveLevel = isDone && state.newLevel ? state.newLevel : h.level
           const indent = Math.max(0, (effectiveLevel - 1) * 12)
+
+          // Source analysis info
+          const srcInfo = getSourceInfo(h)
+          const srcLabel = srcInfo ? getSourceLabel(srcInfo.source) : null
+          const isFixable = !srcInfo || srcInfo.fixable  // assume fixable if not analyzed
 
           return (
             <div
@@ -3089,6 +3513,16 @@ function HeadingOutlineEditor({ headings, pageUrl, jobId, onRescanComplete }) {
               }`}>
                 H{effectiveLevel}
               </span>
+
+              {/* Source badge (if analyzed) */}
+              {srcLabel && (
+                <span
+                  className={`flex-shrink-0 text-[10px] font-medium px-1.5 py-0.5 rounded ${srcLabel.color} bg-gray-100`}
+                  title={srcInfo.source_details?.note || `Source: ${srcInfo.source}`}
+                >
+                  {srcLabel.label}
+                </span>
+              )}
 
               {/* Heading text + status — wraps freely */}
               <span className={`flex-1 min-w-0 break-words leading-snug ${isDone ? 'text-gray-400 line-through' : 'text-gray-700'}`}>
@@ -3120,8 +3554,8 @@ function HeadingOutlineEditor({ headings, pageUrl, jobId, onRescanComplete }) {
                     : <span className="text-red-500 text-xs text-right" title={state.error}>⚠ {state.error}</span>
                 )}
 
-                {/* Level selector — only when not done */}
-                {!isDone && !isApplying && (
+                {/* Level selector — only when not done and fixable */}
+                {!isDone && !isApplying && isFixable && (
                   <select
                     defaultValue=""
                     onChange={e => {
@@ -3140,6 +3574,16 @@ function HeadingOutlineEditor({ headings, pageUrl, jobId, onRescanComplete }) {
                     ))}
                     <option value="bold">→ Bold (remove heading)</option>
                   </select>
+                )}
+
+                {/* Non-fixable indicator */}
+                {!isDone && !isApplying && !isFixable && srcInfo && (
+                  <span
+                    className="text-xs text-gray-400 italic"
+                    title={srcInfo.source_details?.note || `This heading is in a ${srcLabel?.label} and cannot be edited via API`}
+                  >
+                    Edit in WP Admin
+                  </span>
                 )}
 
                 {isApplying && (

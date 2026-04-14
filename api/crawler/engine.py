@@ -454,8 +454,10 @@ async def run_crawl(
             if _is_bot_blocking_domain(target):
                 # If the user has verified this URL, skip the notice entirely.
                 if target not in settings.verified_link_urls:
-                    issue = make_issue("EXTERNAL_LINK_SKIPPED", target)
-                    issue.extra = {"source_url": ext["source_url"]}
+                    # page_url = source page (internal), target_url in extra = external link
+                    issue = make_issue("EXTERNAL_LINK_SKIPPED", ext["source_url"])
+                    issue.extra = {"target_url": target}
+                    issue.description = f"Link to {target} was skipped — the site may block bots"
                     all_issues.append(issue)
                 external_checked += 1
                 continue
@@ -464,18 +466,25 @@ async def run_crawl(
             external_checked += 1
 
             if result is not None:
+                source_url = ext["source_url"]
                 if result.status_code == 0 and result.error:
                     # Timeout or connection failure — report as an info notice
-                    issue = make_issue("EXTERNAL_LINK_TIMEOUT", target)
-                    issue.extra = {"source_url": ext["source_url"]}
+                    # page_url = source page (internal), target_url in extra = broken link
+                    issue = make_issue("EXTERNAL_LINK_TIMEOUT", source_url)
+                    issue.extra = {"target_url": target}
+                    issue.description = f"Link to {target} did not respond — destination may be slow or unavailable"
                     all_issues.append(issue)
-                    broken_link_sources.append((target, ext["source_url"], ext.get("link_text")))
+                    broken_link_sources.append((target, source_url, ext.get("link_text")))
                 else:
                     issue = issue_for_status(result.status_code, target)
                     if issue:
-                        issue.extra = {"source_url": ext["source_url"]}
+                        # page_url = source page (internal), target_url in extra = broken link
+                        issue.page_url = source_url
+                        issue.extra = {"target_url": target}
+                        # Update description to include the broken URL
+                        issue.description = f"Link to {target} returns {result.status_code}"
                         all_issues.append(issue)
-                        broken_link_sources.append((target, ext["source_url"], ext.get("link_text")))
+                        broken_link_sources.append((target, source_url, ext.get("link_text")))
 
         # ── 5.5 Broken image checking ─────────────────────────────────────
         for img in image_url_queue:

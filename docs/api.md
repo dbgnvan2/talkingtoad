@@ -36,6 +36,49 @@ All endpoints require `Authorization: Bearer <token>`.
 | POST | `/api/fixes/apply/{job_id}` | Apply all approved fixes to WordPress. Stops on first failure. |
 | DELETE | `/api/fixes/{job_id}` | Delete all fixes for a job (to regenerate from scratch). |
 
+### Heading Fix Endpoints
+
+| Method | Endpoint | Description |
+|---|---|---|
+| GET | `/api/fixes/analyze-heading-sources?page_url={url}&job_id={id}` | Identify where each heading lives (post content, widget, theme, etc.) |
+| POST | `/api/fixes/heading-to-bold?page_url={url}&heading_text={text}&level={n}` | Convert a heading to bold text. Level 1-6, default 4. |
+| POST | `/api/fixes/change-heading-level?page_url={url}&heading_text={text}&from_level={n}&to_level={n}` | Change a heading from one level to another (H1-H6). |
+| GET | `/api/fixes/find-heading?job_id={id}&heading_text={text}&level={n}` | Find all pages containing a specific heading. |
+| POST | `/api/fixes/bulk-replace-heading?job_id={id}&heading_text={text}&from_level={n}&to_level={n}` | Change a heading level across all pages in a crawl job. Omit `to_level` to convert to bold. |
+
+#### Heading source analysis response
+
+```json
+{
+  "page_url": "https://example.com/about",
+  "post_id": 123,
+  "post_type": "page",
+  "headings": [
+    {
+      "level": 2,
+      "text": "Our Mission",
+      "source": "post_content",
+      "fixable": true,
+      "source_details": { "post_id": 123, "post_type": "page" }
+    },
+    {
+      "level": 1,
+      "text": "About Us",
+      "source": "unknown",
+      "fixable": false,
+      "source_details": { "note": "May be in theme template or plugin output" }
+    }
+  ]
+}
+```
+
+Heading sources:
+- `post_content` — In main post/page content (fixable via API)
+- `reusable_block` — In a reusable block/pattern (fixable via API)
+- `widget` — In a WordPress widget (edit in WP Admin)
+- `acf_field` — In an Advanced Custom Fields field (edit in WP Admin)
+- `unknown` — Theme template, plugin output, or shortcode (edit in WP Admin)
+
 ### Fix statuses
 
 | Status | Meaning |

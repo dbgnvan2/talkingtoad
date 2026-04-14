@@ -34,6 +34,7 @@ from api.models.fix import (
 from api.services.auth import require_auth
 from api.services.wp_client import WPClient, WPAuthError
 from api.services.wp_fixer import (
+    analyze_heading_sources,
     apply_fix,
     bulk_trim_titles,
     change_heading_level,
@@ -472,23 +473,92 @@ async def trim_title_one_endpoint(
 @router.post("/heading-to-bold", response_model=None)
 async def heading_to_bold_endpoint(
     page_url: str = Query(..., description="URL of the page to edit"),
-    heading_text: str | None = Query(None, description="Exact text of the H4 to convert; omit to convert all H4s"),
+    heading_text: str | None = Query(None, description="Exact text of the heading to convert; omit to convert all at this level"),
+    level: int = Query(4, ge=1, le=6, description="Heading level to convert (1-6, default 4)"),
 ) -> dict | JSONResponse:
-    """Convert H4 headings to bold paragraphs in WordPress post content.
+    """Convert headings to bold paragraphs in WordPress post content.
 
     Handles both Gutenberg block syntax and classic editor HTML.
-    If heading_text is provided, only that specific H4 is converted.
+    If heading_text is provided, only that specific heading is converted.
     """
     if not _CREDS_PATH.exists():
         return _err("NO_CREDENTIALS", "wp-credentials.json not found.", 400)
 
     try:
         async with WPClient.from_credentials_file(_CREDS_PATH) as wp:
-            result = await convert_heading_to_bold(wp, page_url, heading_text)
+            result = await convert_heading_to_bold(wp, page_url, heading_text, level)
     except WPAuthError as exc:
         return _err("WP_AUTH_FAILED", str(exc), 400)
     except Exception as exc:
         logger.exception("heading_to_bold_error", extra={"page_url": page_url})
+        return _err("WP_ERROR", str(exc), 500)
+
+    return result
+
+
+@router.get("/analyze-heading-sources", response_model=None)
+async def analyze_heading_sources_endpoint(
+    page_url: str = Query(..., description="URL of the page to analyze"),
+    job_id:   str | None = Query(None, description="Optional crawl job ID to get heading list from"),
+    store=Depends(get_store),
+) -> dict | JSONResponse:
+    """Analyze where each heading on a page comes from.
+
+    Identifies whether headings are in:
+    - post_content: Main WordPress post/page content (fixable)
+    - widget: WordPress widget (not directly fixable via this API)
+    - acf_field: Advanced Custom Fields (not directly fixable via this API)
+    - reusable_block: Reusable block/pattern (fixable)
+    - unknown: Theme template, plugin output, or shortcode
+
+    If job_id is provided, uses the crawler's heading list. Otherwise fetches
+    the page and extracts headings from rendered HTML.
+    """
+    if not _CREDS_PATH.exists():
+        return _err("NO_CREDENTIALS", "wp-credentials.json not found.", 400)
+
+    # Get crawled headings if job_id provided
+    crawled_headings = []
+    if job_id:
+        job = await store.get_job(job_id)
+        if job is None:
+            return _err("JOB_NOT_FOUND", "No crawl job found with the given ID.", 404)
+
+        pages = await store.get_pages(job_id)
+        for p in pages:
+            if p.url == page_url:
+                crawled_headings = p.headings_outline or []
+                break
+
+    # If no job_id or page not found in crawl, fetch and parse the page
+    if not crawled_headings:
+        import httpx
+        try:
+            async with httpx.AsyncClient(timeout=15.0) as client:
+                resp = await client.get(page_url, follow_redirects=True)
+                if resp.status_code == 200:
+                    from bs4 import BeautifulSoup
+                    soup = BeautifulSoup(resp.text, "lxml")
+                    for tag in soup.find_all(["h1", "h2", "h3", "h4", "h5", "h6"]):
+                        level = int(tag.name[1])
+                        text = tag.get_text(strip=True)
+                        if text:
+                            crawled_headings.append({"level": level, "text": text})
+        except Exception as exc:
+            logger.warning("analyze_heading_sources_fetch_error", extra={
+                "page_url": page_url, "error": str(exc)
+            })
+
+    if not crawled_headings:
+        return _err("NO_HEADINGS", "No headings found on page.", 404)
+
+    try:
+        async with WPClient.from_credentials_file(_CREDS_PATH) as wp:
+            result = await analyze_heading_sources(wp, page_url, crawled_headings)
+    except WPAuthError as exc:
+        return _err("WP_AUTH_FAILED", str(exc), 400)
+    except Exception as exc:
+        logger.exception("analyze_heading_sources_error", extra={"page_url": page_url})
         return _err("WP_ERROR", str(exc), 500)
 
     return result
@@ -569,7 +639,7 @@ async def bulk_replace_heading_endpoint(
                 if to_level is not None:
                     r = await change_heading_level(wp, url, heading_text, from_level, to_level)
                 else:
-                    r = await convert_heading_to_bold(wp, url, heading_text)
+                    r = await convert_heading_to_bold(wp, url, heading_text, from_level)
                 results.append({"url": url, **r})
     except WPAuthError as exc:
         return _err("WP_AUTH_FAILED", str(exc), 400)

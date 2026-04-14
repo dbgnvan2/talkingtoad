@@ -149,8 +149,8 @@ export async function trimTitleOne(pageUrl) {
   return checkResponse(res)
 }
 
-export async function convertHeadingToBold(pageUrl, headingText = null) {
-  const params = new URLSearchParams({ page_url: pageUrl })
+export async function convertHeadingToBold(pageUrl, headingText = null, level = 4) {
+  const params = new URLSearchParams({ page_url: pageUrl, level })
   if (headingText) params.set('heading_text', headingText)
   const res = await fetch(`/api/fixes/heading-to-bold?${params}`, {
     method: 'POST',
@@ -163,6 +163,13 @@ export async function findHeading(jobId, headingText, level = null) {
   const params = new URLSearchParams({ job_id: jobId, heading_text: headingText })
   if (level != null) params.set('level', level)
   const res = await fetch(`/api/fixes/find-heading?${params}`, { headers: authHeaders() })
+  return checkResponse(res)
+}
+
+export async function analyzeHeadingSources(pageUrl, jobId = null) {
+  const params = new URLSearchParams({ page_url: pageUrl })
+  if (jobId) params.set('job_id', jobId)
+  const res = await fetch(`/api/fixes/analyze-heading-sources?${params}`, { headers: authHeaders() })
   return checkResponse(res)
 }
 

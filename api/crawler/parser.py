@@ -87,6 +87,7 @@ class ParsedPage:
     # v1.6 new fields
     robots_source: str = "meta"          # "header" | "meta" — where the directive came from
     lang_attr: str | None = None         # value of <html lang="..."> attribute
+    redirect_url: str | None = None      # if page redirects, the target URL
 
 
 def parse_page(

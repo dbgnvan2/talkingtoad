@@ -695,9 +695,13 @@ def check_page(
         else:
             length = len(page.title)
             if length < 30:
-                issues.append(make_issue("TITLE_TOO_SHORT", url))
+                issue = make_issue("TITLE_TOO_SHORT", url)
+                issue.extra = {"title": page.title, "length": length}
+                issues.append(issue)
             elif length > 60:
-                issues.append(make_issue("TITLE_TOO_LONG", url))
+                issue = make_issue("TITLE_TOO_LONG", url)
+                issue.extra = {"title": page.title, "length": length}
+                issues.append(issue)
 
         # ── Meta description ───────────────────────────────────────────────
         if not page.meta_description:
@@ -705,9 +709,13 @@ def check_page(
         else:
             length = len(page.meta_description)
             if length < 70:
-                issues.append(make_issue("META_DESC_TOO_SHORT", url))
+                issue = make_issue("META_DESC_TOO_SHORT", url)
+                issue.extra = {"description": page.meta_description, "length": length}
+                issues.append(issue)
             elif length > 160:
-                issues.append(make_issue("META_DESC_TOO_LONG", url))
+                issue = make_issue("META_DESC_TOO_LONG", url)
+                issue.extra = {"description": page.meta_description, "length": length}
+                issues.append(issue)
 
         # ── OG tags ────────────────────────────────────────────────────────
         if not page.og_title:
@@ -885,7 +893,9 @@ def _check_canonical(page: ParsedPage, issues: list[Issue]) -> None:
     if page.canonical_url is not None:
         # Has a canonical tag
         if not is_same_domain(page.canonical_url, url):
-            issues.append(make_issue("CANONICAL_EXTERNAL", url))
+            issue = make_issue("CANONICAL_EXTERNAL", url)
+            issue.extra = {"canonical_url": page.canonical_url}
+            issues.append(issue)
         # Self-referencing canonical → OK, no issue
     else:
         # No canonical tag — check the two scoping conditions
@@ -910,13 +920,21 @@ def _check_headings(
     if h1_count == 0:
         issues.append(make_issue("H1_MISSING", url))
     elif h1_count > 1:
-        issues.append(make_issue("H1_MULTIPLE", url))
+        issue = make_issue("H1_MULTIPLE", url)
+        issue.extra = {"h1_tags": h1s, "count": h1_count}
+        issues.append(issue)
 
     # Detect skipped heading levels
     levels = [h["level"] for h in outline]
     for i in range(1, len(levels)):
         if levels[i] > levels[i - 1] + 1:
-            issues.append(make_issue("HEADING_SKIP", url))
+            issue = make_issue("HEADING_SKIP", url)
+            # Include the heading outline so user can see the skip
+            issue.extra = {
+                "outline": [f"H{h['level']}: {h['text']}" for h in outline],
+                "skip_at": i,  # Index where skip occurred
+            }
+            issues.append(issue)
             break  # Report once per page
 
 
@@ -951,12 +969,16 @@ def check_cross_page(pages: list[ParsedPage], start_url: str | None = None) -> l
     """
     issues: list[Issue] = []
 
-    # Build lookup maps
+    # Build lookup maps — skip redirect pages (3xx status or has redirect_url)
     title_map: dict[str, list[str]] = {}       # title → [urls]
     desc_map: dict[str, list[str]] = {}        # meta_desc → [urls]
     pair_map: dict[tuple, list[str]] = {}      # (title, desc) → [urls]
 
     for page in pages:
+        # Skip redirects — they shouldn't be flagged as duplicates
+        if page.redirect_url or (300 <= page.status_code < 400):
+            continue
+
         t = page.title
         d = page.meta_description
 
@@ -971,20 +993,39 @@ def check_cross_page(pages: list[ParsedPage], start_url: str | None = None) -> l
     for title, urls in title_map.items():
         if len(urls) > 1:
             for url in urls:
-                issues.append(make_issue("TITLE_DUPLICATE", url))
+                other_urls = [u for u in urls if u != url]
+                issue = make_issue("TITLE_DUPLICATE", url)
+                issue.extra = {
+                    "title": title,  # The actual duplicated title
+                    "duplicate_urls": other_urls,  # Other pages with same title
+                }
+                issues.append(issue)
 
     # META_DESC_DUPLICATE
     for desc, urls in desc_map.items():
         if len(urls) > 1:
             for url in urls:
-                issues.append(make_issue("META_DESC_DUPLICATE", url))
+                other_urls = [u for u in urls if u != url]
+                issue = make_issue("META_DESC_DUPLICATE", url)
+                issue.extra = {
+                    "description": desc,  # The actual duplicated description
+                    "duplicate_urls": other_urls,  # Other pages with same description
+                }
+                issues.append(issue)
 
     # TITLE_META_DUPLICATE_PAIR and CANONICAL_MISSING (near-duplicate condition)
     duplicate_urls: set[str] = set()
     for (title, desc), urls in pair_map.items():
         if len(urls) > 1:
             for url in urls:
-                issues.append(make_issue("TITLE_META_DUPLICATE_PAIR", url))
+                other_urls = [u for u in urls if u != url]
+                issue = make_issue("TITLE_META_DUPLICATE_PAIR", url)
+                issue.extra = {
+                    "title": title,  # The actual duplicated title
+                    "description": desc,  # The actual duplicated description
+                    "duplicate_urls": other_urls,  # Other pages with same pair
+                }
+                issues.append(issue)
                 duplicate_urls.add(url)
 
     # CANONICAL_MISSING — near-duplicate condition (spec §3.1.2 condition 2)
@@ -1173,13 +1214,21 @@ def issues_for_redirect(
 
     if first_status == 301:
         if base_url and is_same_domain(url, base_url):
-            result.append(make_issue("INTERNAL_REDIRECT_301", url))
+            issue = make_issue("INTERNAL_REDIRECT_301", url)
         else:
-            result.append(make_issue("REDIRECT_301", url))
+            issue = make_issue("REDIRECT_301", url)
+        issue.extra = {"redirect_to": final_url or (redirect_chain[0] if redirect_chain else None)}
+        result.append(issue)
     elif first_status == 302:
-        result.append(make_issue("REDIRECT_302", url))
+        issue = make_issue("REDIRECT_302", url)
+        issue.extra = {"redirect_to": final_url or (redirect_chain[0] if redirect_chain else None)}
+        result.append(issue)
 
     if len(redirect_chain) > 1:
-        result.append(make_issue("REDIRECT_CHAIN", url))
+        issue = make_issue("REDIRECT_CHAIN", url)
+        # Build full chain: original → intermediates → final
+        full_chain = [url] + redirect_chain + ([final_url] if final_url else [])
+        issue.extra = {"chain": full_chain, "hops": len(redirect_chain)}
+        result.append(issue)
 
     return result

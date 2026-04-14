@@ -62,11 +62,13 @@ def _page(
     internal_nofollow_count: int = 0,
     # v1.6 new fields
     lang_attr: str | None = "en",
+    redirect_url: str | None = None,
 ) -> ParsedPage:
     return ParsedPage(
         url=url,
         final_url=url,
         status_code=status_code,
+        redirect_url=redirect_url,
         response_size_bytes=response_size_bytes,
         title=title,
         meta_description=meta_description,
@@ -489,6 +491,37 @@ class TestCrossPageDuplicates:
         pages = [_page(url="https://example.com/")]
         issues = check_cross_page(pages, start_url="https://example.com/")
         assert issues == []
+
+    def test_redirect_pages_excluded_from_duplicate_detection(self):
+        """Redirect pages (3xx status) should not be flagged as duplicates."""
+        pages = [
+            _page(url="https://example.com/a", title="Same Title Here", status_code=200),
+            _page(url="https://example.com/b", title="Same Title Here", status_code=301, redirect_url="https://example.com/a"),
+        ]
+        issues = check_cross_page(pages)
+        dup_issues = [i for i in issues if i.code == "TITLE_DUPLICATE"]
+        # Only one page should remain after filtering redirects, so no duplicate
+        assert len(dup_issues) == 0
+
+    def test_redirect_with_redirect_url_excluded_from_duplicates(self):
+        """Pages with redirect_url set should not be flagged as duplicates."""
+        pages = [
+            _page(url="https://example.com/a", title="Same Title Here", status_code=200),
+            _page(url="https://example.com/b", title="Same Title Here", status_code=200, redirect_url="https://example.com/a"),
+        ]
+        issues = check_cross_page(pages)
+        dup_issues = [i for i in issues if i.code == "TITLE_DUPLICATE"]
+        assert len(dup_issues) == 0
+
+    def test_non_redirect_duplicates_still_detected(self):
+        """Normal 200 pages with same title should still be flagged."""
+        pages = [
+            _page(url="https://example.com/a", title="Same Title Here", status_code=200),
+            _page(url="https://example.com/b", title="Same Title Here", status_code=200),
+        ]
+        issues = check_cross_page(pages)
+        dup_issues = [i for i in issues if i.code == "TITLE_DUPLICATE"]
+        assert len(dup_issues) == 2
 
 
 # ---------------------------------------------------------------------------
