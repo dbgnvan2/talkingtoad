@@ -44,7 +44,7 @@ router = APIRouter(prefix="/api/crawl", dependencies=[Depends(require_auth)])
 # Valid category slugs for the filtered results endpoint
 _VALID_CATEGORIES: frozenset[str] = frozenset(
     ["broken_link", "metadata", "heading", "redirect",
-     "crawlability", "duplicate", "sitemap", "security", "url_structure"]
+     "crawlability", "duplicate", "sitemap", "security", "url_structure", "ai_readiness"]
 )
 
 # Per-job cancel events (job_id → asyncio.Event)
@@ -105,6 +105,10 @@ def _engine_page_to_model(page: EngPage, job_id: str) -> CrawledPage:
         mixed_content_count=page.mixed_content_count,
         unsafe_cross_origin_count=page.unsafe_cross_origin_count,
         has_hsts=page.has_hsts,
+        text_to_html_ratio=page.text_to_html_ratio,
+        has_json_ld=page.has_json_ld,
+        pdf_metadata=page.pdf_metadata,
+        image_urls=page.image_urls or [],
     )
 
 

@@ -64,3 +64,6 @@ class CrawledPage(BaseModel):
     text_to_html_ratio: float | None = None
     has_json_ld: bool = False
     pdf_metadata: dict | None = None
+
+    # v1.7.1 media audit
+    image_urls: list[str] = Field(default_factory=list)

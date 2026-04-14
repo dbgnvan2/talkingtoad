@@ -17,6 +17,7 @@ from urllib.parse import urlparse
 from uuid import uuid4
 
 from api.services.wp_client import WPClient
+from api.services.job_store import SQLiteJobStore, RedisJobStore
 
 logger = logging.getLogger(__name__)
 
@@ -124,6 +125,64 @@ async def detect_seo_plugin(wp: WPClient) -> str | None:
 # ---------------------------------------------------------------------------
 # URL → WP post resolution
 # ---------------------------------------------------------------------------
+
+async def find_orphaned_media(
+    wp: WPClient,
+    job_id: str,
+    store: SQLiteJobStore | RedisJobStore
+) -> list[dict]:
+    """Return a list of media items from WordPress not found in the crawl.
+
+    Args:
+        wp: Authenticated WordPress client.
+        job_id: ID of the crawl job to compare against.
+        store: Job store to retrieve crawled pages.
+    """
+    # 1. Fetch all media from WordPress
+    wp_media = await wp.list_media()
+    if not wp_media:
+        return []
+
+    # 2. Fetch all image URLs found during the crawl
+    pages = await store.get_pages(job_id)
+    crawled_image_urls = set()
+    for p in pages:
+        for img_url in p.image_urls:
+            # Normalise: strip query params and trailing slash for comparison
+            u = urlparse(img_url)
+            norm = f"{u.scheme}://{u.netloc}{u.path}".rstrip("/")
+            crawled_image_urls.add(norm)
+
+    # 3. Identify orphaned media
+    orphans = []
+    for item in wp_media:
+        source_url = item.get("source_url", "")
+        if not source_url:
+            continue
+
+        u = urlparse(source_url)
+        norm_wp = f"{u.scheme}://{u.netloc}{u.path}".rstrip("/")
+
+        is_linked = norm_wp in crawled_image_urls
+        # Also check common WordPress resized versions (e.g. -150x150.jpg)
+        if not is_linked:
+            # Pattern: -[width]x[height].[ext]
+            base_norm = re.sub(r"-\d+x\d+(\.[a-zA-Z0-9]+)$", r"\1", norm_wp)
+            is_linked = base_norm in crawled_image_urls
+
+        if not is_linked:
+            orphans.append({
+                "id": item.get("id"),
+                "title": item.get("title", {}).get("rendered", "Untitled"),
+                "url": source_url,
+                "alt_text": item.get("alt_text"),
+                "post_parent": item.get("post"), # 0 means unattached
+                "mime_type": item.get("mime_type"),
+                "date": item.get("date"),
+            })
+
+    return orphans
+
 
 async def find_post_by_url(wp: WPClient, page_url: str) -> dict | None:
     """Return {id, type} for the WP post/page matching *page_url*, or None.

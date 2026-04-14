@@ -266,3 +266,28 @@ class WPClient:
         )
         self._check_auth(r)
         return r
+
+    async def list_media(self) -> list[dict]:
+        """Fetch all media items from the WordPress REST API, handling pagination.
+
+        Returns:
+            A list of dicts representing media items.
+        """
+        all_media = []
+        page = 1
+        per_page = 100
+
+        while True:
+            r = await self.get(f"media?page={page}&per_page={per_page}")
+            if r.status_code == 400:  # Page out of range
+                break
+            r.raise_for_status()
+            data = r.json()
+            if not data:
+                break
+            all_media.extend(data)
+            if len(data) < per_page:
+                break
+            page += 1
+
+        return all_media

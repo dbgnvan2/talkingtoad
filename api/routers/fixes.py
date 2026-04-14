@@ -40,6 +40,7 @@ from api.services.wp_fixer import (
     change_heading_level,
     convert_heading_to_bold,
     detect_seo_plugin,
+    find_orphaned_media,
     find_post_by_url,
     generate_fixes,
     get_attachment_info,
@@ -868,3 +869,28 @@ async def delete_fixes(
 
     await store.delete_fixes(job_id)
     return JSONResponse({"message": "Fixes cleared."})
+
+
+@router.get("/orphaned-media/{job_id}")
+async def get_orphaned_media(
+    job_id: str,
+    store=Depends(get_store),
+):
+    """List media items in WordPress that were not linked to from any crawled page."""
+    job = await store.get_job(job_id)
+    if not job:
+        return _err("JOB_NOT_FOUND", f"No job with id {job_id}", 404)
+
+    try:
+        async with WPClient.from_credentials_file() as wp:
+            orphans = await find_orphaned_media(wp, job_id, store)
+            return {
+                "job_id": job_id,
+                "count": len(orphans),
+                "orphaned_media": orphans
+            }
+    except WPAuthError as exc:
+        return _err("WP_AUTH_FAILED", str(exc), 401)
+    except Exception as exc:
+        logger.error("orphaned_media_failed", extra={"job_id": job_id, "error": str(exc)})
+        return _err("INTERNAL_ERROR", f"Failed to list orphaned media: {str(exc)}", 500)

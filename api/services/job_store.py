@@ -251,6 +251,7 @@ CREATE TABLE IF NOT EXISTS crawled_pages (
     text_to_html_ratio         REAL,
     has_json_ld                INTEGER NOT NULL DEFAULT 0,
     pdf_metadata_json          TEXT,
+    image_urls_json            TEXT,
     FOREIGN KEY (job_id) REFERENCES crawl_jobs(job_id)
 );
 
@@ -383,6 +384,7 @@ class SQLiteJobStore:
             ("text_to_html_ratio",        "REAL"),
             ("has_json_ld",               "INTEGER NOT NULL DEFAULT 0"),
             ("pdf_metadata_json",         "TEXT"),
+            ("image_urls_json",           "TEXT"),
         ]
         for col, col_type in page_columns:
             try:
@@ -503,7 +505,7 @@ class SQLiteJobStore:
         await self._db.executemany(
             """
             INSERT OR REPLACE INTO crawled_pages VALUES
-              (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+              (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             rows,
         )
@@ -1231,6 +1233,7 @@ def _page_to_row(p: CrawledPage) -> tuple:
         p.text_to_html_ratio,
         int(p.has_json_ld),
         json.dumps(p.pdf_metadata) if p.pdf_metadata else None,
+        json.dumps(p.image_urls),
     )
 
 
@@ -1272,6 +1275,7 @@ def _row_to_page(row: dict) -> CrawledPage:
         text_to_html_ratio=row.get("text_to_html_ratio"),
         has_json_ld=bool(row.get("has_json_ld", 0)),
         pdf_metadata=json.loads(row.get("pdf_metadata_json")) if row.get("pdf_metadata_json") else None,
+        image_urls=json.loads(row.get("image_urls_json") or "[]"),
     )
 
 
