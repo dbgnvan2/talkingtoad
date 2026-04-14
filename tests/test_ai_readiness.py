@@ -49,10 +49,20 @@ def _page(
         response_size_bytes=1000,
         title="Valid Title",
         meta_description="Valid Description",
+        og_title="OG Title",
+        og_description="OG Description",
+        canonical_url=None,
         h1_tags=["Main Heading"],
         headings_outline=headings_outline or [{"level": 1, "text": "Main Heading"}, {"level": 2, "text": "How it works"}],
         is_indexable=is_indexable,
+        robots_directive=None,
         links=[],
+        has_favicon=None,
+        has_viewport_meta=True,
+        schema_types=[],
+        external_script_count=0,
+        external_stylesheet_count=0,
+        # v1.7 AI-Readiness fields
         text_to_html_ratio=text_to_html_ratio,
         has_json_ld=has_json_ld,
         pdf_metadata=pdf_metadata,
@@ -114,6 +124,22 @@ class TestAiReadinessIssues:
         page = _page(url="https://example.com/doc.pdf", pdf_metadata={"title": "Report", "subject": "Summary"})
         codes = _codes(check_page(page))
         assert "DOCUMENT_PROPS_MISSING" not in codes
+
+
+class TestAssetIssues:
+    def test_img_oversized_description_includes_kb(self):
+        from api.crawler.fetcher import FetchResult
+        from api.crawler.issue_checker import check_asset
+        
+        res = FetchResult(
+            url="https://a.com/i.png", final_url="https://a.com/i.png",
+            status_code=200, content_type="image/png",
+            headers={"content-length": str(300 * 1024)} # 300 KB
+        )
+        issues = check_asset(res, img_size_limit_kb=200)
+        issue = issues[0]
+        assert "300.0 KB" in issue.description
+        assert "200 KB limit" in issue.description
 
 
 # ---------------------------------------------------------------------------

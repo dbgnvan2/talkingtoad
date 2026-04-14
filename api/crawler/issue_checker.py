@@ -897,9 +897,13 @@ def check_page(
     # ── Page size ─────────────────────────────────────────────────────────
     _page_size_threshold = page_size_limit_kb * 1024
     if page.response_size_bytes > _page_size_threshold:
-        issues.append(make_issue("PAGE_SIZE_LARGE", url,
-                                 extra={"size_bytes": page.response_size_bytes,
-                                        "limit_kb": page_size_limit_kb}))
+        size_kb = round(page.response_size_bytes / 1024, 1)
+        issue = make_issue("PAGE_SIZE_LARGE", url,
+                           extra={"size_bytes": page.response_size_bytes,
+                                  "size_kb": size_kb,
+                                  "limit_kb": page_size_limit_kb})
+        issue.description = f"Page HTML is {size_kb} KB (exceeds {page_size_limit_kb} KB limit)"
+        issues.append(issue)
 
     # ── AI Readiness (§1.7) ───────────────────────────────────────────────
     # Semantic Density (Text-to-HTML ratio < 10%)
@@ -1199,11 +1203,17 @@ def check_asset(result: FetchResult, *, img_size_limit_kb: int = _IMAGE_SIZE_LIM
     img_limit_bytes = img_size_limit_kb * 1024
 
     if "pdf" in ct and size > 0 and size > _PDF_SIZE_LIMIT:
-        issues.append(make_issue("PDF_TOO_LARGE", result.url))
+        size_kb = round(size / 1024, 1)
+        issue = make_issue("PDF_TOO_LARGE", result.url)
+        issue.description = f"PDF file is {size_kb} KB (exceeds 10 MB limit)"
+        issue.extra = {"size_kb": size_kb, "limit_kb": _PDF_SIZE_LIMIT // 1024}
+        issues.append(issue)
     elif ct.startswith("image/") and size > 0 and size > img_limit_bytes:
         issue = make_issue("IMG_OVERSIZED", result.url)
         # Override description to show the actual threshold used
-        issue.description = f"Image file exceeds {img_size_limit_kb} KB"
+        size_kb = round(size / 1024, 1)
+        issue.description = f"Image file is {size_kb} KB (exceeds {img_size_limit_kb} KB limit)"
+        issue.extra = {"size_kb": size_kb, "limit_kb": img_size_limit_kb}
         issues.append(issue)
 
     return issues
