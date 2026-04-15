@@ -56,6 +56,7 @@ class FetchResult:
     content_type: str = ""           # normalised value from Content-Type header
     redirect_chain: list[str] = field(default_factory=list)
     is_login_redirect: bool = False
+    response_size_bytes: int = 0
     error: str | None = None
 
     @property
@@ -118,22 +119,27 @@ async def fetch_page(
             html: str | None = None
             is_html = "html" in content_type
             is_pdf = "pdf" in content_type
+            result_size = 0
 
             if not is_head and (is_html or is_pdf):
                 raw = await response.aread()
+                result_size = len(raw)
                 if len(raw) <= _MAX_HTML_BYTES:
                     if is_html:
                         html = raw.decode(response.encoding or "utf-8", errors="replace")
-                    # For PDFs, we store the raw bytes in a special attribute or just handle it.
-                    # Actually, FetchResult should probably have a 'content' attribute.
                     result_content = raw if is_pdf else None
                 else:
                     logger.warning(
                         "content_too_large",
                         extra={"url": url, "bytes": len(raw), "type": content_type},
                     )
+                    result_content = None
             else:
                 result_content = None
+                try:
+                    result_size = int(response.headers.get("content-length", 0))
+                except (ValueError, TypeError):
+                    result_size = 0
 
             result = FetchResult(
                 url=url,
@@ -146,6 +152,7 @@ async def fetch_page(
                 content_type=content_type,
                 redirect_chain=redirect_chain,
                 is_login_redirect=is_login_redirect,
+                response_size_bytes=result_size,
             )
 
     except httpx.TooManyRedirects:

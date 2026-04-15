@@ -32,6 +32,9 @@ class CrawlSettings(BaseModel):
     # Handles themes (Salient, Avada, Divi, etc.) that inject a parent-page title
     # as an H1 banner on every sub-page without requiring explicit suppress strings.
     suppress_banner_h1: bool = False
+    # Report customization
+    client_name: str = ""
+    prepared_by: str = ""
 
 
 JobStatus = Literal["queued", "running", "complete", "failed", "cancelled"]

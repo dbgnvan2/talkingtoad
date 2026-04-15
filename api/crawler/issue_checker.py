@@ -36,6 +36,10 @@ class Issue:
     effort: int = 0             # v1.5 effort score (0–5)
     priority_rank: int = 0      # v1.5 priority: (impact × 10) − (effort × 2)
     human_description: str = "" # plain-English label for nonprofit staff
+    # Expanded help for PDF reports
+    what_it_is: str = ""
+    impact_desc: str = ""
+    how_to_fix: str = ""
 
 
 # ---------------------------------------------------------------------------
@@ -49,6 +53,9 @@ class _IssueSpec:
     description: str
     recommendation: str
     human_description: str = ""   # plain-English label for nonprofit staff
+    what_it_is: str = ""
+    impact_desc: str = ""
+    how_to_fix: str = ""
 
 
 # ---------------------------------------------------------------------------
@@ -142,6 +149,9 @@ _CATALOGUE: dict[str, _IssueSpec] = {
         description="Page has no <title> tag",
         recommendation="Add a unique title tag between 30–60 characters that clearly describes this page.",
         human_description="Missing Name Tag",
+        what_it_is="The title tag is the most important on-page SEO element. It tells search engines and users what the page is about and appears as the clickable headline in search results.",
+        impact_desc="Without a title tag, search engines may not index your page correctly, and users won't see a relevant headline in search results, significantly reducing your click-through rate.",
+        how_to_fix="Add a <title> tag to the <head> section of your HTML. In WordPress, you can typically set this using your SEO plugin (Yoast, Rank Math) or the page editor.",
     ),
     "TITLE_DUPLICATE": _IssueSpec(
         category="metadata", severity="warning",
@@ -166,6 +176,9 @@ _CATALOGUE: dict[str, _IssueSpec] = {
         description="No meta description",
         recommendation="Add a meta description of 70–160 characters summarising what visitors will find on this page.",
         human_description="Missing Summary Snippet",
+        what_it_is="A meta description is a brief summary of a page's content that appears under the title in search results. It helps users decide whether to click on your link.",
+        impact_desc="While not a direct ranking factor, a missing description forces search engines to pick random text from your page, which often looks unappealing and reduces click-through rates.",
+        how_to_fix="Add a <meta name='description'> tag to your page. Use your SEO plugin to write a compelling summary that includes your primary keywords.",
     ),
     "META_DESC_DUPLICATE": _IssueSpec(
         category="metadata", severity="warning",
@@ -659,6 +672,9 @@ def make_issue(code: str, page_url: str | None = None, extra: dict | None = None
         effort=effort,
         priority_rank=priority_rank,
         human_description=spec.human_description,
+        what_it_is=spec.what_it_is,
+        impact_desc=spec.impact_desc,
+        how_to_fix=spec.how_to_fix,
     )
 
 

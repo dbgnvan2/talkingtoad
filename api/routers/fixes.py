@@ -46,6 +46,7 @@ from api.services.wp_fixer import (
     get_attachment_info,
     get_current_value,
     get_fixable_codes,
+    optimize_media_item,
     replace_link_in_post,
     trim_title_one,
     update_image_metadata,
@@ -959,3 +960,34 @@ async def export_orphaned_media_csv(
     except Exception as exc:
         logger.error("orphaned_media_csv_failed", extra={"job_id": job_id, "error": str(exc)})
         return _err("INTERNAL_ERROR", f"Failed to generate CSV: {str(exc)}", 500)
+
+
+@router.post("/optimize-image", response_model=None)
+async def optimize_image_endpoint(
+    image_url: str = Query(..., description="Absolute URL of the image to optimize"),
+    job_id:    str = Query(..., description="Crawl job ID (to find pages using the image)"),
+    target_width: int | None = Query(None, description="Optional target width in pixels"),
+    new_filename: str | None = Query(None, description="Optional new filename for the image"),
+    store=Depends(get_store),
+) -> dict | JSONResponse:
+    """Download, resize/compress, and replace an image in WordPress.
+
+    Automates the full optimization pipeline: downloads the original,
+    runs the Image Intelligence Engine, uploads the result, replaces
+    references in content, and deletes the heavy original.
+    """
+    if not _CREDS_PATH.exists():
+        return _err("NO_CREDENTIALS", "wp-credentials.json not found.", 400)
+    try:
+        async with WPClient.from_credentials_file(_CREDS_PATH) as wp:
+            result = await optimize_media_item(
+                wp, image_url, target_width=target_width, new_filename=new_filename, job_id=job_id, store=store
+            )
+            if not result.get("success"):
+                return _err("OPTIMIZATION_FAILED", result.get("error", "Unknown error"), 500)
+            return result
+    except WPAuthError as exc:
+        return _err("WP_AUTH_FAILED", str(exc), 400)
+    except Exception as exc:
+        logger.exception("optimize_image_error", extra={"image_url": image_url})
+        return _err("WP_ERROR", str(exc), 500)

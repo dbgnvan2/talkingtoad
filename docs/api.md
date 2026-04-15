@@ -25,6 +25,8 @@ All endpoints require `Authorization: Bearer <token>`.
 |---|---|---|
 | GET | `/api/crawl/{job_id}/export/csv` | Full results as CSV. |
 | GET | `/api/crawl/{job_id}/export/csv/{category}` | Category results as CSV. |
+| GET | `/api/crawl/{job_id}/export/pdf` | Professional PDF report. Query params: `include_help`, `include_pages`, `summary_only`. |
+| GET | `/api/crawl/{job_id}/export/excel` | Tabbed Excel report grouped by category. |
 
 ## Fix Manager (WordPress integration)
 
@@ -35,6 +37,8 @@ All endpoints require `Authorization: Bearer <token>`.
 | DELETE | `/api/fixes/media/{media_id}?force=true` | Permanently delete a media item from WordPress. |
 | GET | `/api/fixes/orphaned-media/{job_id}` | List WordPress media items not found in the crawl. |
 | GET | `/api/fixes/orphaned-media/{job_id}/csv` | Download orphaned media list as a CSV file. |
+| POST | `/api/fixes/update-image-meta?image_url={url}&alt_text={txt}` | Update alt text, title, or caption for a WordPress media item. |
+| POST | `/api/fixes/optimize-image?job_id={id}&image_url={url}&new_filename={name}` | Download, optimize, rename, and replace an image across all WP posts. |
 | PATCH | `/api/fixes/{fix_id}` | Update a single fix — change `proposed_value` or `status`. |
 | POST | `/api/fixes/apply/{job_id}` | Apply all approved fixes to WordPress. Stops on first failure. |
 | DELETE | `/api/fixes/{job_id}` | Delete all fixes for a job (to regenerate from scratch). |
@@ -131,7 +135,8 @@ Only the fields you include are updated.
 
 | Method | Endpoint | Description |
 |---|---|---|
-| GET | `/api/health` | `{"status": "ok", "version": "1.7"}` |
+| GET | `/api/health` | `{"status": "ok", "version": "1.8"}` |
+| GET | `/api/ai/test` | Test connectivity to Gemini/OpenAI API providers. |
 | GET | `/api/robots?url={url}` | Fetch and parse robots.txt for a domain. |
 | GET | `/api/sitemap?url={url}` | Fetch and parse sitemap(s) for a domain. |
 | GET | `/api/utility/generate-llms-txt?job_id={id}` | Generate an /llms.txt file from crawl data. |

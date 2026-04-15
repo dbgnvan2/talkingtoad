@@ -28,6 +28,8 @@ export default function Home() {
   const [imgSizeLimit, setImgSizeLimit] = useState('')
   const [suppressH1Input, setSuppressH1Input] = useState('')
   const [suppressBannerH1, setSuppressBannerH1] = useState(false)
+  const [clientName, setClientName] = useState('')
+  const [preparedBy, setPreparedBy] = useState('')
   // All analyses enabled by default (null = all on)
   const [analyses, setAnalyses] = useState(() =>
     Object.fromEntries(ANALYSIS_TOGGLES.map(t => [t.key, true]))
@@ -59,6 +61,8 @@ export default function Home() {
     if (maxPages) settings.max_pages = parseInt(maxPages, 10)
     if (crawlDelay) settings.crawl_delay_ms = parseInt(crawlDelay, 10)
     if (imgSizeLimit) settings.img_size_limit_kb = parseInt(imgSizeLimit, 10)
+    if (clientName) settings.client_name = clientName
+    if (preparedBy) settings.prepared_by = preparedBy
     const suppressH1s = suppressH1Input.split('\n').map(s => s.trim()).filter(Boolean)
     if (suppressH1s.length) settings.suppress_h1_strings = suppressH1s
     if (suppressBannerH1) settings.suppress_banner_h1 = true
@@ -249,6 +253,32 @@ export default function Home() {
                     className="w-full border border-gray-300 rounded px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
                   />
                   <p className="text-xs text-gray-400 mt-1">Images larger than this are flagged</p>
+                </div>
+                <div className="col-span-2 grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">
+                      Client Name (for Report)
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. Storybrook Therapy"
+                      value={clientName}
+                      onChange={e => setClientName(e.target.value)}
+                      className="w-full border border-gray-300 rounded px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">
+                      Prepared By
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Your name"
+                      value={preparedBy}
+                      onChange={e => setPreparedBy(e.target.value)}
+                      className="w-full border border-gray-300 rounded px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
+                    />
+                  </div>
                 </div>
                 <div className="col-span-2">
                   <label className="block text-xs font-medium text-gray-600 mb-1">

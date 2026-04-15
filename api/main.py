@@ -16,7 +16,12 @@ import logging
 import os
 from contextlib import asynccontextmanager
 
+from dotenv import load_dotenv
 from fastapi import FastAPI, Request
+
+# Load .env file at the earliest possible entry point
+load_dotenv()
+load_dotenv(".env-ttoad")
 from fastapi.exceptions import HTTPException, RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -37,16 +42,14 @@ from api.services.rate_limiter import limiter
 
 def _configure_logging() -> None:
     log_level = os.getenv("LOG_LEVEL", "INFO").upper()
-    handler = logging.StreamHandler()
-    formatter = jsonlogger.JsonFormatter(
-        fmt="%(asctime)s %(levelname)s %(name)s %(message)s",
-        datefmt="%Y-%m-%dT%H:%M:%SZ",
+    # Simple plain-text logging for easier local debugging
+    logging.basicConfig(
+        level=log_level,
+        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+        datefmt="%H:%M:%S",
+        force=True
     )
-    handler.setFormatter(formatter)
-    root = logging.getLogger()
-    root.handlers.clear()
-    root.addHandler(handler)
-    root.setLevel(log_level)
+    print(f"DEBUG: Environment loaded. API_KEY_READ={os.getenv('API_KEY_READ')}")
 
 
 _configure_logging()

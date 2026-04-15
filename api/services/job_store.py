@@ -270,6 +270,9 @@ CREATE TABLE IF NOT EXISTS issues (
     priority_rank        INTEGER NOT NULL DEFAULT 0,
     effort               INTEGER NOT NULL DEFAULT 0,
     human_description    TEXT NOT NULL DEFAULT '',
+    what_it_is           TEXT,
+    impact_desc          TEXT,
+    how_to_fix           TEXT,
     extra                TEXT,
     FOREIGN KEY (job_id) REFERENCES crawl_jobs(job_id)
 );
@@ -398,7 +401,10 @@ class SQLiteJobStore:
             ("impact",             "INTEGER NOT NULL DEFAULT 0"),
             ("priority_rank",      "INTEGER NOT NULL DEFAULT 0"),
             ("effort",             "INTEGER NOT NULL DEFAULT 0"),
-            ("human_description",  "TEXT NOT NULL DEFAULT ''"),
+            ("human_description",  "TEXT"),
+            ("what_it_is",         "TEXT"),
+            ("impact_desc",        "TEXT"),
+            ("how_to_fix",         "TEXT"),
             ("extra",              "TEXT"),
         ]
         for col, col_type in issue_columns:
@@ -524,7 +530,11 @@ class SQLiteJobStore:
         rows = [_issue_to_row(i) for i in issues]
         await self._db.executemany(
             """
-            INSERT OR REPLACE INTO issues VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT OR REPLACE INTO issues (
+                issue_id, job_id, page_id, page_url, link_id, category, severity,
+                issue_code, description, recommendation, impact, priority_rank,
+                effort, human_description, what_it_is, impact_desc, how_to_fix, extra
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             rows,
         )
@@ -1295,6 +1305,9 @@ def _issue_to_row(i: Issue) -> tuple:
         i.priority_rank,
         i.effort,
         i.human_description,
+        i.what_it_is,
+        i.impact_desc,
+        i.how_to_fix,
         json.dumps(i.extra) if i.extra else None,
     )
 
@@ -1322,6 +1335,9 @@ def _row_to_issue(row: dict) -> Issue:
         priority_rank=row.get("priority_rank") or 0,
         effort=row.get("effort") or 0,
         human_description=row.get("human_description") or "",
+        what_it_is=row.get("what_it_is") or "",
+        impact_desc=row.get("impact_desc") or "",
+        how_to_fix=row.get("how_to_fix") or "",
         extra=extra,
     )
 
@@ -1757,6 +1773,14 @@ class RedisJobStore:
             "issue_code": i.issue_code,
             "description": i.description,
             "recommendation": i.recommendation,
+            "impact": i.impact,
+            "priority_rank": i.priority_rank,
+            "effort": i.effort,
+            "human_description": i.human_description,
+            "what_it_is": i.what_it_is,
+            "impact_desc": i.impact_desc,
+            "how_to_fix": i.how_to_fix,
+            "extra": i.extra,
         }
 
     def _dict_to_issue(self, d: dict) -> Issue:

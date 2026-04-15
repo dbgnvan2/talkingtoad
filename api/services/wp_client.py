@@ -288,27 +288,56 @@ class WPClient:
         r = await self.delete(f"media/{media_id}?force={'true' if force else 'false'}")
         return r.status_code == 200
 
-    async def list_media(self) -> list[dict]:
-        """Fetch all media items from the WordPress REST API, handling pagination.
+    async def upload_media(
+        self,
+        file_path: str | Path,
+        title: str | None = None,
+        alt_text: str | None = None,
+    ) -> dict | None:
+        """Upload a file to the WordPress Media Library.
 
-        Returns:
-            A list of dicts representing media items.
+        Returns the created media attachment object as a dict, or None on failure.
         """
-        all_media = []
-        page = 1
-        per_page = 100
+        file_path = Path(file_path)
+        if not file_path.exists():
+            raise FileNotFoundError(f"File not found: {file_path}")
 
-        while True:
-            r = await self.get(f"media?page={page}&per_page={per_page}")
-            if r.status_code == 400:  # Page out of range
-                break
-            r.raise_for_status()
-            data = r.json()
-            if not data:
-                break
-            all_media.extend(data)
-            if len(data) < per_page:
-                break
-            page += 1
+        from mimetypes import guess_type
+        mime_type, _ = guess_type(file_path.name)
+        if not mime_type:
+            mime_type = "application/octet-stream"
 
-        return all_media
+        headers = self._auth_headers.copy()
+        headers["Content-Disposition"] = f'attachment; filename="{file_path.name}"'
+        headers["Content-Type"] = mime_type
+
+        assert self._client is not None
+        with open(file_path, "rb") as f:
+            r = await self._client.post(
+                f"{self.site_url}/wp-json/wp/v2/media",
+                content=f.read(),
+                headers=headers,
+            )
+
+        if r.status_code != 201:
+            logger.error(
+                "wp_upload_failed",
+                extra={"file": file_path.name, "status": r.status_code, "error": r.text},
+            )
+            return None
+
+        data = r.json()
+        attachment_id = data.get("id")
+
+        # Update metadata if provided
+        if attachment_id and (title or alt_text):
+            payload = {}
+            if title:
+                payload["title"] = title
+            if alt_text:
+                payload["alt_text"] = alt_text
+            
+            if payload:
+                await self.patch(f"media/{attachment_id}", json=payload)
+
+        return data

@@ -51,3 +51,34 @@ async def analyze_page(request: AIAnalysisRequest, store=Depends(get_store)):
         "analysis_type": request.analysis_type,
         "suggestion": suggestion
     }
+
+
+@router.get("/test")
+async def test_ai_connection():
+    """Verify that the configured AI provider is reachable and responsive."""
+    import os
+    api_key_read = os.getenv("API_KEY_READ", "Not found")
+    
+    context = {
+        "title": "Test Title",
+        "meta_description": "Test Description",
+        "content_summary": "This is a test of the AI connection."
+    }
+    try:
+        suggestion = await analyze_with_ai("title_meta_optimize", context)
+        # Check if the result is an error message from the service
+        if suggestion.startswith("AI analysis skipped") or suggestion.startswith("Error calling"):
+            return {
+                "success": False, 
+                "message": suggestion, 
+                "api_key_read": api_key_read
+            }
+        
+        return {
+            "success": True, 
+            "message": "AI connection successful!", 
+            "sample": suggestion,
+            "api_key_read": api_key_read
+        }
+    except Exception as exc:
+        return {"success": False, "message": str(exc), "api_key_read": api_key_read}

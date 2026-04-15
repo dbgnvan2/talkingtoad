@@ -36,6 +36,8 @@ from api.models.page import CrawledPage
 from api.services.auth import require_auth
 from api.services.job_store import SQLiteJobStore, RedisJobStore
 from api.services.rate_limiter import CRAWL_START_LIMIT, limiter
+from api.services.report_generator import generate_pdf_report
+from api.services.excel_generator import generate_excel_report
 
 logger = logging.getLogger(__name__)
 
@@ -949,6 +951,79 @@ async def export_csv_full(
 
     issues = await store.get_all_issues(job_id)
     return _csv_response(issues, filename=f"crawl-{job_id}.csv")
+
+
+@router.get("/{job_id}/export/pdf", response_model=None)
+async def export_pdf_report(
+    job_id: str,
+    include_help: bool = Query(True, description="Include detailed help text for each issue category"),
+    include_pages: bool = Query(True, description="List affected URLs for each issue type"),
+    summary_only: bool = Query(False, description="Generate summary pages only (ignores help and page lists)"),
+    store: SQLiteJobStore | RedisJobStore = Depends(get_store),
+) -> StreamingResponse | JSONResponse:
+    """Generate and download a professional PDF audit report."""
+    job = await store.get_job(job_id)
+    if job is None:
+        return _err("JOB_NOT_FOUND", "No crawl job found with the given ID.", 404)
+
+    issues = await store.get_all_issues(job_id)
+    summary = await store.get_summary(job_id)
+    
+    # Fetch top 10 pages for the report
+    top_pages_data, _ = await store.get_pages_with_issue_counts(job_id, page=1, limit=10)
+    
+    # summary_only is a shortcut for disabling help and pages
+    if summary_only:
+        include_help = False
+        include_pages = False
+
+    try:
+        logger.info("generating_pdf_report", extra={
+            "job_id": job_id, 
+            "issues_count": len(issues),
+            "include_help": include_help,
+            "include_pages": include_pages
+        })
+        pdf_bytes = await generate_pdf_report(
+            job, issues, summary, 
+            include_help=include_help, 
+            include_pages=include_pages,
+            top_pages=top_pages_data
+        )
+        logger.info("pdf_report_generated", extra={"job_id": job_id, "size_bytes": len(pdf_bytes)})
+        return StreamingResponse(
+            io.BytesIO(pdf_bytes),
+            media_type="application/pdf",
+            headers={"Content-Disposition": f'attachment; filename="TalkingToad-Audit-{job_id[:8]}.pdf"'},
+        )
+    except Exception as exc:
+        logger.exception("pdf_generation_failed", extra={"job_id": job_id, "error": str(exc)})
+        return _err("REPORT_ERROR", f"Failed to generate PDF: {str(exc)}", 500)
+
+
+@router.get("/{job_id}/export/excel", response_model=None)
+async def export_excel_report(
+    job_id: str,
+    store: SQLiteJobStore | RedisJobStore = Depends(get_store),
+) -> StreamingResponse | JSONResponse:
+    """Generate and download a multi-sheet Excel audit report."""
+    job = await store.get_job(job_id)
+    if job is None:
+        return _err("JOB_NOT_FOUND", "No crawl job found with the given ID.", 404)
+
+    issues = await store.get_all_issues(job_id)
+    summary = await store.get_summary(job_id)
+    
+    try:
+        excel_bytes = generate_excel_report(job, issues, summary)
+        return StreamingResponse(
+            io.BytesIO(excel_bytes),
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": f'attachment; filename="TalkingToad-Audit-{job_id[:8]}.xlsx"'},
+        )
+    except Exception as exc:
+        logger.exception("excel_generation_failed", extra={"job_id": job_id})
+        return _err("REPORT_ERROR", f"Failed to generate Excel: {str(exc)}", 500)
 
 
 @router.get("/{job_id}/export/csv/{category}", response_model=None)

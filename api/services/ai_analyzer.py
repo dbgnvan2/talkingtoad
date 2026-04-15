@@ -9,11 +9,12 @@ import os
 from typing import Any
 
 import httpx
+from dotenv import load_dotenv
+
+# Ensure environment is loaded
+load_dotenv()
 
 logger = logging.getLogger(__name__)
-
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
 PROMPT_LIBRARY = {
     "title_meta_optimize": (
@@ -34,31 +35,42 @@ PROMPT_LIBRARY = {
 
 async def analyze_with_ai(prompt_key: str, context: dict[str, Any]) -> str:
     """Send a request to the configured LLM using a prompt from the library."""
+    # RE-FETCH every time to ensure we aren't stuck with None if imported early
+    gemini_key = os.getenv("GEMINI_API_KEY")
+    openai_key = os.getenv("OPENAI_API_KEY")
+
+    if not gemini_key and not openai_key:
+        # One more attempt at loading if they are missing
+        load_dotenv()
+        gemini_key = os.getenv("GEMINI_API_KEY")
+        openai_key = os.getenv("OPENAI_API_KEY")
+
     if prompt_key not in PROMPT_LIBRARY:
         raise ValueError(f"Unknown prompt key: {prompt_key}")
 
     prompt_template = PROMPT_LIBRARY[prompt_key]
     prompt = prompt_template.format(**context)
 
-    if GEMINI_API_KEY:
-        return await _call_gemini(prompt)
-    elif OPENAI_API_KEY:
-        return await _call_openai(prompt)
+    if gemini_key:
+        return await _call_gemini(prompt, gemini_key)
+    elif openai_key:
+        return await _call_openai(prompt, openai_key)
     else:
+        logger.warning("ai_analysis_skipped_no_key")
         return "AI analysis skipped: No API key configured (GEMINI_API_KEY or OPENAI_API_KEY)."
 
 
-async def _call_gemini(prompt: str) -> str:
+async def _call_gemini(prompt: str, api_key: str) -> str:
     """Call Google Gemini API."""
-    # Using the standard Google AI API endpoint
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}"
     payload = {
         "contents": [{"parts": [{"text": prompt}]}]
     }
     try:
         async with httpx.AsyncClient() as client:
             res = await client.post(url, json=payload, timeout=20.0)
-            res.raise_for_status()
+            if res.status_code != 200:
+                return f"Error calling Gemini: HTTP {res.status_code} - {res.text}"
             data = res.json()
             return data["candidates"][0]["content"]["parts"][0]["text"].strip()
     except Exception as exc:
@@ -66,10 +78,13 @@ async def _call_gemini(prompt: str) -> str:
         return f"Error calling Gemini: {str(exc)}"
 
 
-async def _call_openai(prompt: str) -> str:
+async def _call_openai(prompt: str, api_key: str) -> str:
     """Call OpenAI API."""
     url = "https://api.openai.com/v1/chat/completions"
-    headers = {"Authorization": f"Bearer {OPENAI_API_KEY}"}
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json"
+    }
     payload = {
         "model": "gpt-4o",
         "messages": [{"role": "user", "content": prompt}]
@@ -77,7 +92,8 @@ async def _call_openai(prompt: str) -> str:
     try:
         async with httpx.AsyncClient() as client:
             res = await client.post(url, headers=headers, json=payload, timeout=20.0)
-            res.raise_for_status()
+            if res.status_code != 200:
+                return f"Error calling OpenAI: HTTP {res.status_code} - {res.text}"
             data = res.json()
             return data["choices"][0]["message"]["content"].strip()
     except Exception as exc:

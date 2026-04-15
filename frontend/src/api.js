@@ -277,6 +277,17 @@ export async function updateImageMeta(imageUrl, { altText, title, caption } = {}
   return checkResponse(res)
 }
 
+export async function optimizeImage(jobId, imageUrl, targetWidth = null, newFilename = null) {
+  const params = new URLSearchParams({ job_id: jobId, image_url: imageUrl })
+  if (targetWidth) params.set('target_width', targetWidth)
+  if (newFilename) params.set('new_filename', newFilename)
+  const res = await fetch(`/api/fixes/optimize-image?${params}`, {
+    method: 'POST',
+    headers: authHeaders(),
+  })
+  return checkResponse(res)
+}
+
 export async function removeExemptAnchorUrl(url) {
   const params = new URLSearchParams({ url })
   const res = await fetch(`/api/exempt-anchor-urls?${params}`, {
@@ -303,4 +314,57 @@ export async function downloadCsv(jobId, category) {
   a.click()
   document.body.removeChild(a)
   URL.revokeObjectURL(objectUrl)
+}
+
+export async function downloadPdfReport(jobId, { includeHelp = true, includePages = true, summaryOnly = false } = {}) {
+  const params = new URLSearchParams({
+    include_help: includeHelp,
+    include_pages: includePages,
+    summary_only: summaryOnly
+  })
+  const url = `/api/crawl/${jobId}/export/pdf?${params}`
+  const h = authHeaders()
+  const res = await fetch(url, { headers: h })
+  if (!res.ok) throw new Error(`PDF Export failed: HTTP ${res.status}`)
+  const blob = await res.blob()
+  const objectUrl = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = objectUrl
+  a.download = `TalkingToad-Audit-${jobId.slice(0, 8)}.pdf`
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  URL.revokeObjectURL(objectUrl)
+}
+
+export async function downloadExcelReport(jobId) {
+  const url = `/api/crawl/${jobId}/export/excel`
+  const h = authHeaders()
+  const res = await fetch(url, { headers: h })
+  if (!res.ok) throw new Error(`Excel Export failed: HTTP ${res.status}`)
+  const blob = await res.blob()
+  const objectUrl = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = objectUrl
+  a.download = `TalkingToad-Audit-${jobId.slice(0, 8)}.xlsx`
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  URL.revokeObjectURL(objectUrl)
+}
+
+export async function analyzeWithAi(jobId, pageUrl, type) {
+  const res = await fetch('/api/ai/analyze', {
+    method: 'POST',
+    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ job_id: jobId, page_url: pageUrl, analysis_type: type })
+  })
+  return checkResponse(res)
+}
+
+export async function testAI() {
+  const res = await fetch('/api/ai/test', {
+    headers: authHeaders(),
+  })
+  return checkResponse(res)
 }

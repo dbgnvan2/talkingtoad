@@ -72,7 +72,7 @@ async def generate_llms_txt(
 @router.get("/health")
 async def health() -> dict:
     """Health check endpoint (spec §6.3)."""
-    return {"status": "ok", "version": "1.7"}
+    return {"status": "ok", "version": "1.8"}
 
 
 @router.get("/robots")

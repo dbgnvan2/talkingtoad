@@ -55,7 +55,24 @@ For WordPress sites, TalkingToad can connect directly and apply fixes:
 4. **Apply** — approved fixes are written back to WordPress via `PATCH /wp-json/wp/v2/posts/{id}` using the appropriate SEO plugin meta keys (Yoast SEO or Rank Math auto-detected).
 5. Stops on the first failure so the user can correct and retry.
 
-### 4. Results Dashboard
+### 5. Image Intelligence & Optimization (v1.8)
+
+Automates the remediation of `IMG_OVERSIZED` and `IMG_ALT_MISSING` issues:
+- **Smart Compression** — Downloads oversized images, resizes them (target 1200px), and converts them to next-gen WebP format with high-quality resampling.
+- **SEO Renaming** — Identifies images with inconsistent naming (uppercase, underscores) and renames them to SEO-friendly slugs (lowercase, hyphens).
+- **Global Replacement** — Automatically uploads the optimized image to WordPress, updates all posts and pages referencing the old URL, and deletes the heavy original from the Media Library.
+- **Archive Safety** — Maintains a local archive of all optimized assets for permanent records.
+
+### 6. Professional PDF Reporting (v1.8)
+
+Generates client-ready SEO audits in 8.5" x 11" format:
+- **Customization** — Set "Client Name" and "Prepared By" during scan setup for a personalized title page.
+- **Dashboard View** — Summary page with high-level stats and issue category boxes.
+- **Prioritization** — Dedicated section for "Top 10 Pages to Fix First".
+- **Structured Help** — Optional high-impact help boxes for every issue type, explaining "What it is", "Impact", and "How to fix".
+- **Flexible Detail** — Toggle help text or URL listings on/off during export.
+
+### 7. Results Dashboard
 
 The frontend presents results in tabs by issue category. Each tab shows a sortable table of issues with:
 - Issue code and plain-English description
@@ -158,6 +175,7 @@ Any results tab can be exported as a CSV file for sharing with a developer or fi
 | HTTP Client | httpx (async) |
 | HTML Parser | BeautifulSoup4 + lxml |
 | PDF Parser | pypdf |
+| Image Processing | Pillow |
 | AI Analysis | Google Gemini / OpenAI |
 | Data Store | SQLite (dev) / Upstash Redis (prod) |
 | Hosting | Vercel (frontend SPA + Python serverless) |

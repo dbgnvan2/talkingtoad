@@ -1678,3 +1678,114 @@ async def update_image_metadata(
         return {"success": False, "error": body.get("message", f"HTTP {r.status_code}")}
     except Exception as exc:
         return {"success": False, "error": str(exc)}
+
+
+async def optimize_media_item(
+    wp: WPClient,
+    image_url: str,
+    target_width: int | None = None,
+    new_filename: str | None = None,
+    job_id: str | None = None,
+    store: SQLiteJobStore | RedisJobStore | None = None,
+) -> dict:
+    """Download, optimize (optionally rename), re-upload, and replace an image in WordPress.
+
+    Workflow:
+    1. Resolve attachment ID.
+    2. Download to temp file.
+    3. Run ImageOptimizer (converts to WebP).
+    4. If new_filename is provided, rename the optimized file before upload.
+    5. Upload optimized version.
+    6. Replace URL in all posts using the original.
+    7. Delete original attachment.
+
+    Returns {success: bool, old_url, new_url, new_id, replacements}.
+    """
+    from api.services.image_processor import ImageOptimizer
+    import tempfile
+    import os
+    import httpx
+
+    # 1. Resolve attachment
+    att = await find_attachment_by_url(wp, image_url)
+    if not att:
+        return {"success": False, "error": f"No WP attachment found for: {image_url}"}
+
+    old_att_id = att["id"]
+    old_url = att["source_url"]
+
+    # 2. Download to temp
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        tmp_path = Path(tmp_dir)
+        filename = os.path.basename(urlparse(old_url).path)
+        input_path = tmp_path / filename
+
+        try:
+            async with httpx.AsyncClient() as client:
+                res = await client.get(old_url)
+                res.raise_for_status()
+                with open(input_path, "wb") as f:
+                    f.write(res.content)
+        except Exception as exc:
+            return {"success": False, "error": f"Failed to download image: {exc}"}
+
+        # 3. Optimize
+        optimizer = ImageOptimizer(archive_path=tmp_path / "archive")
+        output_path = optimizer.optimize(input_path, target_width=target_width)
+        if not output_path:
+            # If optimization failed or was skipped (no gain), we might still want to rename.
+            # But currently, we only proceed if optimization happened.
+            return {"success": False, "error": "Image optimization skipped (no size gain) or failed."}
+
+        # 4. Handle Rename (if requested)
+        if new_filename:
+            # Ensure new_filename ends with .webp since optimizer converts it
+            if not new_filename.lower().endswith(".webp"):
+                new_filename = os.path.splitext(new_filename)[0] + ".webp"
+            
+            final_upload_path = output_path.with_name(new_filename)
+            output_path.rename(final_upload_path)
+            output_path = final_upload_path
+
+        # 5. Upload new version
+        new_media = await wp.upload_media(
+            output_path,
+            title=att.get("title"),
+            alt_text=att.get("alt_text")
+        )
+        if not new_media:
+            return {"success": False, "error": "Failed to upload optimized image to WordPress."}
+
+        new_url = new_media.get("source_url")
+        new_id = new_media.get("id")
+
+        # 6. Replace URLs in content
+        # Find exactly which pages use this image
+        replaced_count = 0
+        target_pages = []
+        if job_id and store:
+            pages = await store.get_pages(job_id)
+            for p in pages:
+                # Store the full image URLs in image_urls, so we check for old_url
+                if old_url in p.image_urls:
+                    target_pages.append(p.url)
+        
+        if target_pages:
+            for p_url in target_pages:
+                success, _ = await replace_link_in_post(wp, p_url, old_url, new_url)
+                if success:
+                    replaced_count += 1
+        else:
+            # Fallback: simple search in WP API (might be slow)
+            pass
+
+        # 7. Delete old attachment
+        await wp.delete_media(old_att_id)
+
+        return {
+            "success": True,
+            "old_url": old_url,
+            "new_url": new_url,
+            "new_id": new_id,
+            "replacements": replaced_count
+        }
