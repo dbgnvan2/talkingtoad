@@ -395,7 +395,19 @@ class SQLiteJobStore:
                     f"ALTER TABLE crawled_pages ADD COLUMN {col} {col_type}"
                 )
             except Exception:
-                pass  # column already exists
+                pass
+
+        # Job level migrations
+        job_columns = [
+            ("llms_txt_custom", "TEXT"),
+        ]
+        for col, col_type in job_columns:
+            try:
+                await self._db.execute(
+                    f"ALTER TABLE crawl_jobs ADD COLUMN {col} {col_type}"
+                )
+            except Exception:
+                pass
 
         issue_columns = [
             ("impact",             "INTEGER NOT NULL DEFAULT 0"),
@@ -483,7 +495,7 @@ class SQLiteJobStore:
 
         _ALLOWED = {
             "status", "pages_crawled", "pages_total", "current_url",
-            "completed_at", "error_message",
+            "completed_at", "error_message", "llms_txt_custom",
         }
         unknown = set(fields) - _ALLOWED
         if unknown:
@@ -1204,6 +1216,7 @@ def _row_to_job(row: dict) -> CrawlJob:
         completed_at=datetime.fromisoformat(row["completed_at"]) if row["completed_at"] else None,
         error_message=row["error_message"],
         settings=CrawlSettings(**settings_data),
+        llms_txt_custom=row.get("llms_txt_custom"),
     )
 
 
@@ -1440,7 +1453,7 @@ class RedisJobStore:
             return
         _ALLOWED = {
             "status", "pages_crawled", "pages_total", "current_url",
-            "completed_at", "error_message",
+            "completed_at", "error_message", "llms_txt_custom",
         }
         unknown = set(fields) - _ALLOWED
         if unknown:
@@ -1743,6 +1756,7 @@ class RedisJobStore:
             "completed_at": job.completed_at.isoformat() if job.completed_at else "",
             "error_message": job.error_message or "",
             "settings_json": job.settings.model_dump_json(),
+            "llms_txt_custom": job.llms_txt_custom or "",
         }
 
     def _mapping_to_job(self, m: dict) -> CrawlJob:
@@ -1759,6 +1773,7 @@ class RedisJobStore:
             completed_at=datetime.fromisoformat(m["completed_at"]) if m.get("completed_at") else None,
             error_message=m.get("error_message") or None,
             settings=CrawlSettings(**settings_data),
+            llms_txt_custom=m.get("llms_txt_custom") or None,
         )
 
     def _issue_to_dict(self, i: Issue) -> dict:

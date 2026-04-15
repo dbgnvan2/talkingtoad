@@ -1,13 +1,20 @@
-import React, { useState, useEffect, useCallback, useRef, forwardRef, useMemo } from 'react'
+import React, { useState, useEffect, useCallback, useMemo } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import IssueTable from '../components/IssueTable.jsx'
 import SeverityBadge from '../components/SeverityBadge.jsx'
 import IssueHelpPanel from '../components/IssueHelpPanel.jsx'
 import FixManager from '../components/FixManager.jsx'
 import FixInlinePanel, { FIXABLE_CODES } from '../components/FixInlinePanel.jsx'
-import FixBrokenLinkPanel, { FIXABLE_LINK_CODES } from '../components/FixBrokenLinkPanel.jsx'
 import { getIssueHelp } from '../data/issueHelp.js'
-import { getResults, getResultsByCategory, getPages, getPageIssues, downloadCsv, downloadPdfReport, downloadExcelReport, rescanUrl, markFixed, authHeaders, getVerifiedLinks, addVerifiedLink, removeVerifiedLink, getPredefinedCodes, bulkTrimTitles, trimTitleOne, convertHeadingToBold, changeHeadingLevel, findHeading, bulkReplaceHeading, getFixHistory, getSuppressedCodes, addSuppressedCode, removeSuppressedCode, getExemptAnchorUrls, addExemptAnchorUrl, removeExemptAnchorUrl, getImageInfo, updateImageMeta, optimizeImage, analyzeHeadingSources, analyzeWithAi, testAI } from '../api.js'
+import {
+  getResults, getResultsByCategory, getPages, getPageIssues,
+  downloadCsv, downloadPdfReport, downloadExcelReport,
+  authHeaders, getVerifiedLinks, getPredefinedCodes,
+  getSuppressedCodes, getExemptAnchorUrls,
+  getImageInfo, updateImageMeta, optimizeImage, analyzeWithAi, testAI,
+  rescanUrl, analyzeHeadingSources, changeHeadingLevel, convertHeadingToBold,
+  addVerifiedLink, removeVerifiedLink, addSuppressedCode, removeSuppressedCode,
+  addExemptAnchorUrl, removeExemptAnchorUrl, markFixed
+} from '../api.js'
 
 const IMAGE_FIXABLE_CODES = new Set(['IMG_OVERSIZED', 'IMG_ALT_MISSING'])
 
@@ -24,7 +31,6 @@ const CATEGORIES = [
   { key: 'ai_readiness',  label: 'AI Readiness' },
 ]
 
-// Tab indices: 0=Summary, 1–N=categories, N+1=By Page, N+2=Fix Manager, N+3=History
 const TAB_SUMMARY    = 0
 const TAB_BY_PAGE    = CATEGORIES.length + 1
 const TAB_FIX_MGR    = CATEGORIES.length + 2
@@ -37,744 +43,1227 @@ export default function Results() {
   const [summary, setSummary] = useState(null)
   const [summaryError, setSummaryError] = useState(null)
   const [csvError, setCsvError] = useState(null)
-  const [jumpToUrl, setJumpToUrl] = useState(null)
-  const [verifiedLinks, setVerifiedLinks] = useState(new Set())
-  const [predefinedCodes, setPredefinedCodes] = useState(null)
-  const [suppressedCodes, setSuppressedCodes] = useState(new Set())
-  const [exemptAnchorUrls, setExemptAnchorUrls] = useState(new Set())
+  const [focusedPageUrl, setFocusedPageUrl] = useState(null)
   const [showPdfModal, setShowPdfModal] = useState(false)
 
   const loadSummary = useCallback(() => {
-    console.log('Loading results for job:', jobId)
     getResults(jobId)
       .then(res => {
-        console.log('API Response:', res)
-        if (!res.summary) throw new Error('Missing summary in response')
-        setSummary(res.summary)
+        if (res?.summary) setSummary(res.summary)
+        else throw new Error("Invalid response from server")
       })
-      .catch(err => {
-        console.error('Crawl load error:', err)
-        setSummaryError(err.message)
-      })
+      .catch(err => setSummaryError(err.message))
   }, [jobId])
 
-  const loadVerified = useCallback(() => {
-    getVerifiedLinks().then(links => setVerifiedLinks(new Set(links.map(l => l.url))))
-  }, [])
+  useEffect(() => { loadSummary() }, [loadSummary])
 
-  const loadSuppressed = useCallback(() => {
-    getSuppressedCodes().then(codes => setSuppressedCodes(new Set(codes)))
-  }, [])
-
-  const loadExemptAnchors = useCallback(() => {
-    getExemptAnchorUrls().then(urls => setExemptAnchorUrls(new Set(urls.map(u => u.url))))
-  }, [])
-
-  useEffect(() => {
-    loadSummary()
-    loadVerified()
-    loadSuppressed()
-    loadExemptAnchors()
-    getPredefinedCodes().then(setPredefinedCodes)
-  }, [loadSummary, loadVerified, loadSuppressed, loadExemptAnchors])
-
-  function handleUrlClick(url) {
-    setJumpToUrl(url)
-    setActiveTab(TAB_BY_PAGE)
+  async function handlePdfDownload(options) {
+    try { await downloadPdfReport(jobId, options) } 
+    catch (err) { setCsvError('PDF generation failed.') }
   }
 
-  async function handleCsvDownload(category) {
-    setCsvError(null)
-    try {
-      await downloadCsv(jobId, category)
-    } catch (err) {
-      setCsvError('CSV export failed — please try again.')
-    }
+  if (summaryError) {
+    return (
+      <div className="max-w-2xl mx-auto mt-20 p-8 bg-white border border-red-100 rounded-2xl text-center">
+        <p className="text-4xl mb-4">⚠️</p>
+        <h1 className="text-xl font-bold text-gray-800">Error Loading Results</h1>
+        <p className="text-gray-500 mt-2">{summaryError}</p>
+        <button onClick={() => navigate('/')} className="mt-6 px-6 py-2 bg-green-600 text-white rounded-xl font-bold">Return Home</button>
+      </div>
+    )
   }
 
-  async function handlePdfDownload(options = {}) {
-    setCsvError(null)
-    try {
-      const { includeHelp = true, includePages = true, summaryOnly = false } = options
-      await downloadPdfReport(jobId, { includeHelp, includePages, summaryOnly })
-    } catch (err) {
-      setCsvError('PDF report failed — please try again.')
-    }
+  if (!summary) {
+    return (
+      <div className="max-w-6xl mx-auto px-4 py-20 text-center">
+        <Spinner />
+        <p className="mt-4 text-gray-400 font-bold uppercase tracking-widest animate-pulse">Loading Results...</p>
+      </div>
+    )
   }
 
-  async function handleExcelDownload() {
-    setCsvError(null)
-    try {
-      await downloadExcelReport(jobId)
-    } catch (err) {
-      setCsvError('Excel export failed — please try again.')
-    }
-  }
-
-  const tabs = [
-    'Summary',
-    ...CATEGORIES.map(c => c.label),
-    'By Page',
-    'Fix Manager',
-    'Fix History',
-  ]
+  const tabs = ['Summary', ...CATEGORIES.map(c => c.label), 'By Page', 'Fix Manager', 'Fix History']
 
   return (
     <div className="max-w-6xl mx-auto px-4 py-8">
       {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 mb-8">
+      <div className="flex justify-between items-end mb-8">
         <div>
-          <button
-            onClick={() => navigate('/')}
-            className="text-xs font-bold text-green-600 uppercase tracking-widest hover:text-green-700 transition-colors mb-1"
-          >
-            ← Back to start
-          </button>
-          <h1 className="text-2xl font-bold text-gray-800">
-            Audit Results
-          </h1>
-          {summary?.target_url && (
-            <p className="text-sm text-gray-500 font-mono mt-1">
-              {summary.target_url.replace(/^https?:\/\//, '')}
-            </p>
-          )}
+          <button onClick={() => navigate('/')} className="text-xs font-bold text-green-600 uppercase tracking-widest hover:underline mb-1">← Start New Scan</button>
+          <h1 className="text-2xl font-bold text-gray-800">Audit Results</h1>
+          <p className="text-sm text-gray-500 font-mono">{summary.target_url?.replace(/^https?:\/\//, '')}</p>
         </div>
-
-        {csvError && (
-          <div className="bg-red-50 text-red-600 text-xs px-3 py-2 rounded-lg border border-red-100 animate-pulse">
-            {csvError}
-          </div>
-        )}
+        <div className="flex gap-2">
+          {csvError && <span className="text-red-600 text-xs self-center mr-2">{csvError}</span>}
+          <button onClick={() => downloadCsv(jobId).catch(() => setCsvError('CSV failed'))} className="px-3 py-1.5 bg-white border border-gray-300 rounded-lg text-xs font-bold shadow-sm">CSV</button>
+          <button onClick={() => downloadExcelReport(jobId).catch(() => setCsvError('Excel failed'))} className="px-3 py-1.5 bg-white border border-gray-300 rounded-lg text-xs font-bold shadow-sm">Excel</button>
+          <button onClick={() => setShowPdfModal(true)} className="px-3 py-1.5 bg-green-600 text-white rounded-lg text-xs font-bold shadow-sm">PDF Report</button>
+        </div>
       </div>
 
       {/* Tabs */}
-      <div className="border-b border-gray-200 mb-6 overflow-x-auto">
-        <div className="flex gap-6 min-w-max">
-          {tabs.map((label, i) => {
-            const isActive = activeTab === i
-            return (
-              <button
-                key={label}
-                onClick={() => { setActiveTab(i); setJumpToUrl(null) }}
-                className={`pb-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
-                  isActive
-                    ? 'border-green-600 text-green-600'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                }`}
-              >
-                {label}
-              </button>
-            )
-          })}
-        </div>
+      <div className="border-b border-gray-200 mb-6 overflow-x-auto flex gap-6 whitespace-nowrap">
+        {tabs.map((label, i) => (
+          <button
+            key={label}
+            onClick={() => setActiveTab(i)}
+            className={`pb-3 text-sm font-bold border-b-2 transition-colors ${
+              activeTab === i ? 'border-green-600 text-green-600' : 'border-transparent text-gray-400 hover:text-gray-700'
+            }`}
+          >
+            {label}
+          </button>
+        ))}
       </div>
 
-      {/* Tab content */}
-      {!summary && !summaryError ? (
-        <div className="py-20 text-center">
-          <Spinner />
-          <p className="text-xs text-gray-400 mt-4 uppercase tracking-widest font-bold animate-pulse">Retrieving saved results...</p>
-        </div>
-      ) : summaryError ? (
-        <div className="py-20 text-center bg-red-50 rounded-2xl border border-red-100">
-          <p className="text-3xl mb-4">🚫</p>
-          <h2 className="text-lg font-bold text-red-800">Results not found</h2>
-          <p className="text-sm text-red-600 mt-1 max-w-sm mx-auto">{summaryError}</p>
-          <button 
-            onClick={() => navigate('/')}
-            className="mt-6 px-6 py-2 bg-red-600 text-white rounded-xl font-bold text-sm hover:bg-red-700 transition-all"
-          >
-            Start a new scan
-          </button>
-        </div>
-      ) : (
-        <>
-          {activeTab === TAB_SUMMARY && (
-            <SummaryTab
-          summary={summary}
-          error={summaryError}
-          jobId={jobId}
-          onCategoryClick={i => setActiveTab(i + 1)}
-          onPageClick={handleUrlClick}
-          suppressedCodes={suppressedCodes}
-          onUnsuppress={loadSuppressed}
-          exemptAnchorUrls={exemptAnchorUrls}
-          onUnexemptAnchor={loadExemptAnchors}
-          onPdfDownload={() => setShowPdfModal(true)}
-          onCsvDownload={() => handleCsvDownload()}
-          onExcelDownload={handleExcelDownload}
-        />
-      )}
-      {activeTab >= 1 && activeTab <= CATEGORIES.length && (
-        <CategoryTab
-          jobId={jobId}
-          category={CATEGORIES[activeTab - 1].key}
-          onUrlClick={handleUrlClick}
-          verifiedLinks={verifiedLinks}
-          onVerify={loadVerified}
-          onUnverify={loadVerified}
-          onExemptAnchor={loadExemptAnchors}
-          exemptAnchorUrls={exemptAnchorUrls}
-        />
-      )}
-      {activeTab === TAB_BY_PAGE && (
-        <ByPageTab
-          jobId={jobId}
-          jumpToUrl={jumpToUrl}
-          onJumpConsumed={() => setJumpToUrl(null)}
-          onRescanComplete={loadSummary}
-          onNavigateToCategory={cat => {
-            const idx = CATEGORIES.findIndex(c => c.key === cat)
-            if (idx !== -1) setActiveTab(idx + 1)
-          }}
-        />
-      )}
-      {activeTab === TAB_FIX_MGR && (
-        <FixManager jobId={jobId} />
-      )}
-      {activeTab === TAB_HISTORY && (
-        <FixHistoryTab jobId={jobId} />
-      )}
-        </>
+      {/* Tab Content */}
+      <div className="min-h-[400px]">
+        {activeTab === TAB_SUMMARY && (
+          <SummaryTab summary={summary} onCategoryClick={i => setActiveTab(i + 1)} onPageClick={setFocusedPageUrl} jobId={jobId} onShowPdfModal={() => setShowPdfModal(true)} />
+        )}
+        {activeTab >= 1 && activeTab <= CATEGORIES.length && (
+          <CategoryTab jobId={jobId} category={CATEGORIES[activeTab - 1]} onPageClick={setFocusedPageUrl} />
+        )}
+        {activeTab === TAB_BY_PAGE && (
+          <ByPageTab jobId={jobId} onPageClick={setFocusedPageUrl} />
+        )}
+        {activeTab === TAB_FIX_MGR && <FixManager jobId={jobId} />}
+        {activeTab === TAB_HISTORY && <div className="py-12 text-center text-gray-400">History view coming soon.</div>}
+      </div>
+
+      {/* Slide-over Page Audit Panel (The "Right Side Panel") */}
+      {focusedPageUrl && (
+        <PageFocusPanel jobId={jobId} pageUrl={focusedPageUrl} onClose={() => setFocusedPageUrl(null)} onRescan={() => loadSummary()} />
       )}
 
       {showPdfModal && (
-        <ExportReportModal
-          onClose={() => setShowPdfModal(false)}
-          onDownload={handlePdfDownload}
-        />
+        <ExportReportModal onClose={() => setShowPdfModal(false)} onDownload={handlePdfDownload} />
       )}
     </div>
   )
 }
 
-function SummaryTab({ summary: s, error, jobId, onCategoryClick, onPageClick, suppressedCodes, onUnsuppress, exemptAnchorUrls, onUnexemptAnchor, onPdfDownload, onCsvDownload, onExcelDownload }) {
-  const [activeSeverity, setActiveSeverity] = useState(null)
-  const [sevIssues, setSevIssues] = useState(null)
-  const [sevLoading, setSevLoading] = useState(false)
-  const [focusedPageUrl, setFocusedPageUrl] = useState(null)
+function SummaryTab({ summary: s, onCategoryClick, onPageClick, jobId, onShowPdfModal }) {
+  const [severityDrilldown, setSeverityDrilldown] = useState(null)
+  const [aiTesting, setAiTesting] = useState(false)
+  const [aiStatus, setAiStatus] = useState(null)
 
-  useEffect(() => {
-    if (!activeSeverity) { setSevIssues(null); return }
-    setSevLoading(true)
-    getResults(jobId, { severity: activeSeverity, page: 1, limit: 20 })
-      .then(d => { setSevIssues(d.issues); setSevLoading(false) })
-      .catch(() => setSevLoading(false))
-  }, [jobId, activeSeverity])
-
-  if (error) return <div className="text-red-600">Error loading summary: {error}</div>
-  if (!s) return <div className="py-12 flex justify-center"><Spinner /></div>
-
-  function toggleSeverity(sev) {
-    setActiveSeverity(prev => prev === sev ? null : sev)
+  async function handleTestAI() {
+    setAiTesting(true)
+    setAiStatus(null)
+    try {
+      const result = await testAI()
+      setAiStatus({ success: true, message: result.message || 'AI connection successful!' })
+    } catch (err) {
+      setAiStatus({ success: false, message: 'AI test failed: ' + err.message })
+    } finally {
+      setAiTesting(false)
+    }
   }
 
   return (
-    <div className="space-y-8">
-      {/* 3x2 Grid of Stat Boxes */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <StatCard label="Health Score" value={s.health_score} color={s.health_score > 80 ? 'text-green-600' : s.health_score > 50 ? 'text-amber-500' : 'text-red-600'} />
-        <StatCard label="Pages Crawled" value={s.pages_crawled} />
-        <StatCard label="Total Issues" value={s.total_issues} />
-        <StatCard label="Critical Issues" value={s.by_severity?.critical || 0} color="text-red-600" onClick={() => toggleSeverity('critical')} active={activeSeverity === 'critical'} />
-        <StatCard label="Warnings" value={s.by_severity?.warning || 0} color="text-amber-500" onClick={() => toggleSeverity('warning')} active={activeSeverity === 'warning'} />
-        <StatCard label="Info Notices" value={s.by_severity?.info || 0} color="text-blue-500" onClick={() => toggleSeverity('info')} active={activeSeverity === 'info'} />
+    <div className="space-y-10">
+      {/* Quick Actions Bar */}
+      <div className="flex flex-wrap items-center gap-3 p-4 bg-gradient-to-r from-green-50 to-indigo-50 rounded-2xl border border-gray-100">
+        <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest mr-2">Quick Actions:</span>
+        <button
+          onClick={onShowPdfModal}
+          className="px-4 py-2 bg-green-600 text-white rounded-xl text-xs font-bold shadow-sm hover:bg-green-700 transition-all flex items-center gap-2"
+        >
+          <span>📄</span> Generate PDF Report
+        </button>
+        <button
+          onClick={handleTestAI}
+          disabled={aiTesting}
+          className="px-4 py-2 bg-indigo-600 text-white rounded-xl text-xs font-bold shadow-sm hover:bg-indigo-700 transition-all disabled:opacity-50 flex items-center gap-2"
+        >
+          <span>✨</span> {aiTesting ? 'Testing AI...' : 'Test AI Connection'}
+        </button>
+        {aiStatus && (
+          <span className={`text-xs font-medium px-3 py-1 rounded-full ${aiStatus.success ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+            {aiStatus.message}
+          </span>
+        )}
       </div>
 
-      {activeSeverity && (
-        <div className="bg-white border border-gray-200 rounded-xl p-5">
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="text-sm font-semibold text-gray-700 capitalize">{activeSeverity} issues</h2>
-            <button onClick={() => setActiveSeverity(null)} className="text-xs text-gray-400 hover:text-gray-600">✕ close</button>
-          </div>
-          {sevLoading ? <Spinner /> : <SeverityGroupedList issues={sevIssues || []} onPageClick={onPageClick} />}
-        </div>
+      {/* 3x2 High-Level Stats */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <StatCard label="Health Score" value={s.health_score} color={s.health_score > 80 ? 'text-green-600' : 'text-amber-500'} />
+        <StatCard label="Pages Crawled" value={s.pages_crawled} />
+        <StatCard label="Total Issues" value={s.total_issues} />
+        <SeverityStatCard
+          label="Critical Issues"
+          value={s.by_severity?.critical || 0}
+          severity="critical"
+          isActive={severityDrilldown === 'critical'}
+          onClick={() => setSeverityDrilldown(severityDrilldown === 'critical' ? null : 'critical')}
+        />
+        <SeverityStatCard
+          label="Warnings"
+          value={s.by_severity?.warning || 0}
+          severity="warning"
+          isActive={severityDrilldown === 'warning'}
+          onClick={() => setSeverityDrilldown(severityDrilldown === 'warning' ? null : 'warning')}
+        />
+        <SeverityStatCard
+          label="Info Notices"
+          value={s.by_severity?.info || 0}
+          severity="info"
+          isActive={severityDrilldown === 'info'}
+          onClick={() => setSeverityDrilldown(severityDrilldown === 'info' ? null : 'info')}
+        />
+      </div>
+
+      {/* Severity Drill-down Panel */}
+      {severityDrilldown && (
+        <SeverityDrilldown
+          jobId={jobId}
+          severity={severityDrilldown}
+          onPageClick={onPageClick}
+          onClose={() => setSeverityDrilldown(null)}
+        />
       )}
 
-      {/* Issues by Category with Export Buttons */}
-      <div>
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="text-base font-semibold text-gray-700">Issues by Category</h2>
-          <div className="flex gap-2">
-            <button onClick={onCsvDownload} className="px-3 py-1.5 bg-white border border-gray-300 text-gray-700 rounded-lg text-xs font-bold hover:bg-gray-50 flex items-center gap-2 shadow-sm transition-all active:scale-95">
-              CSV
-            </button>
-            <button onClick={onExcelDownload} className="px-3 py-1.5 bg-white border border-gray-300 text-gray-700 rounded-lg text-xs font-bold hover:bg-gray-50 flex items-center gap-2 shadow-sm transition-all active:scale-95">
-              Excel (Tabbed)
-            </button>
-            <button onClick={onPdfDownload} className="px-3 py-1.5 bg-green-600 text-white rounded-lg text-xs font-bold hover:bg-green-700 flex items-center gap-2 shadow-sm transition-all active:scale-95">
-              PDF Report
-            </button>
-          </div>
-        </div>
+      {/* 10 Category Drill-down Boxes */}
+      <section>
+        <h2 className="text-base font-black text-gray-400 uppercase tracking-widest mb-4">Issues by Category</h2>
         <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
           {CATEGORIES.map((cat, i) => (
-            <button
-              key={cat.key}
-              onClick={() => onCategoryClick(i)}
-              className="text-left bg-white border border-gray-200 rounded-lg p-4 hover:border-green-400 transition-colors"
-            >
-              <p className="text-lg font-bold text-gray-800">{s.by_category?.[cat.key] || 0}</p>
-              <p className="text-xs text-gray-500">{cat.label}</p>
+            <button key={cat.key} onClick={() => onCategoryClick(i)} className="text-left bg-white border border-gray-200 rounded-2xl p-5 hover:border-green-400 hover:shadow-md transition-all group">
+              <p className="text-2xl font-black text-gray-800 group-hover:text-green-600">{s.by_category?.[cat.key] || 0}</p>
+              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mt-1">{cat.label}</p>
             </button>
           ))}
         </div>
-      </div>
+      </section>
 
-      <TopPriorityGroups jobId={jobId} onPageFocus={setFocusedPageUrl} />
-      <TopPagesPanel jobId={jobId} onPageClick={setFocusedPageUrl} />
+      <TopPriorityGroups jobId={jobId} onPageClick={onPageClick} />
+      <Top10Pages jobId={jobId} onPageClick={onPageClick} />
       <LLMSTxtGenerator jobId={jobId} />
-
-      {focusedPageUrl && (
-        <PageFocusPanel jobId={jobId} pageUrl={focusedPageUrl} onClose={() => setFocusedPageUrl(null)} />
-      )}
     </div>
   )
 }
 
-function StatCard({ label, value, color = 'text-gray-800', onClick, active }) {
+function SeverityStatCard({ label, value, severity, isActive, onClick }) {
+  const colors = {
+    critical: { text: 'text-red-600', bg: 'bg-red-50', border: 'border-red-200', activeBg: 'bg-red-100' },
+    warning: { text: 'text-amber-600', bg: 'bg-amber-50', border: 'border-amber-200', activeBg: 'bg-amber-100' },
+    info: { text: 'text-blue-600', bg: 'bg-blue-50', border: 'border-blue-200', activeBg: 'bg-blue-100' }
+  }
+  const c = colors[severity]
+
   return (
     <button
       onClick={onClick}
-      disabled={!onClick}
-      className={`bg-white border rounded-xl p-5 text-center transition-all ${
-        onClick ? 'hover:shadow-md cursor-pointer' : 'cursor-default'
-      } ${active ? 'border-green-500 ring-1 ring-green-500' : 'border-gray-200'}`}
+      disabled={value === 0}
+      className={`${isActive ? c.activeBg : 'bg-white'} border ${isActive ? c.border : 'border-gray-200'} rounded-3xl p-6 text-center shadow-sm transition-all ${value > 0 ? 'hover:shadow-md cursor-pointer' : 'opacity-60 cursor-default'}`}
     >
-      <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">{label}</p>
-      <p className={`text-3xl font-bold ${color}`}>{value}</p>
+      <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">{label}</p>
+      <p className={`text-4xl font-black ${c.text}`}>{value}</p>
+      {value > 0 && <p className="text-[9px] font-bold text-gray-400 mt-1">{isActive ? '▲ Click to close' : '▼ Click to expand'}</p>}
     </button>
   )
 }
 
-function ExportReportModal({ onClose, onDownload }) {
-  const [opts, setOpts] = useState({ includeHelp: true, includePages: true, summaryOnly: false })
-  return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-2xl shadow-xl max-w-sm w-full p-6">
-        <h3 className="text-lg font-bold text-gray-800 mb-4">Export PDF Report</h3>
-        <div className="space-y-4 mb-6">
-          <label className="flex items-start gap-3 cursor-pointer">
-            <input type="checkbox" className="mt-1 accent-green-600" checked={opts.summaryOnly} onChange={e => setOpts({ ...opts, summaryOnly: e.target.checked })} />
-            <div>
-              <span className="block text-sm font-bold text-gray-700">Summary Only</span>
-              <span className="block text-xs text-gray-500">Only dashboard and top pages.</span>
-            </div>
-          </label>
-          {!opts.summaryOnly && (
-            <>
-              <label className="flex items-start gap-3 cursor-pointer">
-                <input type="checkbox" className="mt-1 accent-green-600" checked={opts.includeHelp} onChange={e => setOpts({ ...opts, includeHelp: e.target.checked })} />
-                <div>
-                  <span className="block text-sm font-bold text-gray-700">Include Help Text</span>
-                  <span className="block text-xs text-gray-500">Explains "What it is", "Impact", and "How to fix".</span>
-                </div>
-              </label>
-              <label className="flex items-start gap-3 cursor-pointer">
-                <input type="checkbox" className="mt-1 accent-green-600" checked={opts.includePages} onChange={e => setOpts({ ...opts, includePages: e.target.checked })} />
-                <div>
-                  <span className="block text-sm font-bold text-gray-700">List Affected Pages</span>
-                  <span className="block text-xs text-gray-500">Show up to 20 example URLs per issue.</span>
-                </div>
-              </label>
-            </>
-          )}
-        </div>
-        <div className="flex gap-3">
-          <button onClick={onClose} className="flex-1 px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50 rounded-xl">Cancel</button>
-          <button onClick={() => { onDownload(opts); onClose() }} className="flex-1 px-4 py-2 text-sm font-bold text-white bg-green-600 hover:bg-green-700 rounded-xl">Generate PDF</button>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-function LLMSTxtGenerator({ jobId }) {
-  const [loading, setLoading] = useState(false)
-  const [testing, setTesting] = useState(false)
-  const [testResult, setTestResult] = useState(null)
-  const [content, setContent] = useState('')
-  const [error, setError] = useState(null)
-  const [showHelp, setShowHelp] = useState(false)
-
-  const STARTER_TEMPLATE = `# Site Name\n\n> Summary of what your organisation does.\n\n## Core Content\n- [About](https://example.com/about)\n`
-
-  async function handleGenerate() {
-    setLoading(true); setError(null)
-    try {
-      const data = await fetch(`/api/utility/generate-llms-txt?job_id=${jobId}`, { headers: authHeaders() }).then(r => r.json())
-      if (data.error) throw new Error(data.error)
-      setContent(data.content)
-    } catch (e) { setError(e.message) } finally { setLoading(false) }
-  }
-
-  async function handleTest() {
-    setTesting(true); setTestResult(null)
-    try {
-      const data = await testAI()
-      setTestResult(data)
-    } catch (e) { setTestResult({ success: false, message: e.message }) } finally { setTesting(false) }
-  }
-
-  return (
-    <div className="bg-white border border-indigo-200 rounded-xl p-6 shadow-sm">
-      <div className="flex items-center gap-3 mb-4">
-        <div className="flex-1">
-          <h3 className="text-sm font-bold text-gray-800 uppercase tracking-wider">llms.txt Generator</h3>
-          <p className="text-xs text-gray-500">Machine-readable index for AI agents.</p>
-        </div>
-        <div className="flex gap-2">
-          <button onClick={handleTest} disabled={testing} className="px-3 py-2 border rounded-lg text-xs font-bold bg-white text-gray-700 hover:bg-gray-50">
-            {testing ? 'Testing...' : 'Test AI API'}
-          </button>
-          <button onClick={handleGenerate} disabled={loading} className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-xs font-bold hover:bg-indigo-700">
-            {loading ? 'Generating...' : 'Auto-Generate'}
-          </button>
-        </div>
-      </div>
-      {testResult && <div className={`mb-4 p-3 rounded-lg text-xs ${testResult.success ? 'bg-green-50 text-green-800' : 'bg-red-50 text-red-700'}`}>{testResult.message}</div>}
-      <textarea value={content} onChange={e => setContent(e.target.value)} className="w-full h-40 bg-gray-50 border rounded-lg p-3 font-mono text-xs" />
-    </div>
-  )
-}
-
-function AIAnalyzePanel({ jobId, pageUrl, onClose }) {
-  const [loading, setLoading] = useState(false)
-  const [suggestion, setSuggestion] = useState(null)
-  const [error, setError] = useState(null)
-
-  async function handleAnalyze(type) {
-    setLoading(true); setSuggestion(null); setError(null)
-    try {
-      const data = await analyzeWithAi(jobId, pageUrl, type)
-      if (data.error) throw new Error(data.error)
-      setSuggestion(data.suggestion)
-    } catch (e) { setError(e.message) } finally { setLoading(false) }
-  }
-
-  return (
-    <div className="mt-1 border border-indigo-100 rounded-lg bg-indigo-50 overflow-hidden text-xs">
-      <div className="flex items-center justify-between px-3 py-2 bg-indigo-100">
-        <span className="font-medium text-indigo-800">AI Analysis Engine (Gemini)</span>
-        <button onClick={onClose} className="text-indigo-400 hover:text-indigo-600">&times;</button>
-      </div>
-      <div className="p-3">
-        <div className="flex gap-2 mb-3">
-          <button onClick={() => handleAnalyze('title_meta_optimize')} disabled={loading} className="px-2 py-1 bg-white border border-indigo-300 text-indigo-700 rounded hover:bg-indigo-50">Optimize Title/Meta</button>
-          <button onClick={() => handleAnalyze('semantic_alignment')} disabled={loading} className="px-2 py-1 bg-white border border-indigo-300 text-indigo-700 rounded hover:bg-indigo-50">Check Semantics</button>
-        </div>
-        {loading && <p className="text-indigo-600 animate-pulse">Consulting AI...</p>}
-        {error && <p className="text-red-600">Error: {error}</p>}
-        {suggestion && <div className="bg-white border rounded p-3 text-gray-800 whitespace-pre-line font-serif text-sm">{suggestion}</div>}
-      </div>
-    </div>
-  )
-}
-
-function ImageFixPanel({ jobId, imageUrl, mode, onClose, onFixed }) {
-  const [info, setInfo] = useState(null)
-  const [loading, setLoading] = useState(false)
-  const [loadErr, setLoadErr] = useState(null)
-  const [targetWidth, setTargetWidth] = useState(1200)
-  const [optimizing, setOptimizing] = useState(false)
-  const [saveResult, setSaveResult] = useState(null)
-
-  const originalFilename = imageUrl.split('/').pop()
-  const cleanFilename = (name) => name.replace(/\.[^/.]+$/, "").toLowerCase().replace(/_/g, '-').replace(/[^a-z0-9-]/g, '')
-  const [newFilename, setNewFilename] = useState(cleanFilename(originalFilename))
-
-  useEffect(() => { if (mode === 'oversized') load() }, [])
-
-  async function load() {
-    setLoading(true); setLoadErr(null)
-    try {
-      const data = await getImageInfo(imageUrl)
-      if (!data.success) { setLoadErr(data.error); return }
-      setInfo(data)
-    } catch (e) { setLoadErr(e.message) } finally { setLoading(false) }
-  }
-
-  async function handleOptimize() {
-    setOptimizing(true); setSaveResult(null)
-    try {
-      const result = await optimizeImage(jobId, imageUrl, targetWidth, newFilename)
-      if (result.success) { onFixed?.(); onClose?.() }
-      else setSaveResult({ success: false, error: result.error || 'Failed' })
-    } catch (err) { setSaveResult({ success: false, error: err.message }) } finally { setOptimizing(false) }
-  }
-
-  return (
-    <div className="mt-1 border border-blue-100 rounded-lg bg-blue-50 overflow-hidden text-xs p-3">
-      <div className="flex justify-between mb-2">
-        <span className="font-medium text-blue-800 truncate max-w-xs">{originalFilename}</span>
-        <button onClick={onClose} className="text-blue-400">&times;</button>
-      </div>
-      <div className="flex gap-4">
-        <div className="w-20 h-20 bg-gray-200 rounded shrink-0 overflow-hidden"><img src={imageUrl} className="w-full h-full object-cover" /></div>
-        <div className="flex-grow space-y-3">
-          <div className="grid grid-cols-2 gap-2">
-            <div><label className="block text-[9px] text-gray-400 font-bold uppercase">New Name</label><input value={newFilename} onChange={e => setNewFilename(cleanFilename(e.target.value))} className="w-full border rounded p-1" /></div>
-            <div><label className="block text-[9px] text-gray-400 font-bold uppercase">Width</label><select value={targetWidth} onChange={e => setTargetWidth(Number(e.target.value))} className="w-full border rounded p-1"><option value={800}>800px</option><option value={1200}>1200px</option></select></div>
-          </div>
-          <button onClick={handleOptimize} disabled={optimizing} className="bg-blue-600 text-white px-4 py-1.5 rounded font-bold">{optimizing ? 'Working...' : 'Optimize & Replace'}</button>
-          {saveResult && <p className="text-red-600 text-[10px]">{saveResult.error}</p>}
-        </div>
-      </div>
-    </div>
-  )
-}
-
-function Spinner() {
-  return <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-green-600 mx-auto" />
-}
-
-function CategoryTab({ jobId, category, onUrlClick, verifiedLinks, onVerify, onUnverify, onExemptAnchor, exemptAnchorUrls }) {
+function SeverityDrilldown({ jobId, severity, onPageClick, onClose }) {
   const [data, setData] = useState(null)
-  const [page, setPage] = useState(1)
-  const [severity, setSeverity] = useState('')
-  const [error, setError] = useState(null)
-
-  const load = useCallback(() => {
-    getResultsByCategory(jobId, category, { page, limit: 50, severity: severity || undefined })
-      .then(setData)
-      .catch(err => setError(err.message))
-  }, [jobId, category, page, severity])
-
-  useEffect(() => { load() }, [load])
-
-  if (error) return <div className="text-red-600 p-4">Error: {error}</div>
-  if (!data) return <div className="py-12"><Spinner /></div>
-
-  return (
-    <div>
-      <div className="flex items-center justify-between mb-4">
-        <h2 className="text-lg font-bold text-gray-800 capitalize">{category.replace('_', ' ')} Issues</h2>
-        <div className="flex items-center gap-3">
-          <label className="text-xs font-medium text-gray-500">Filter severity:</label>
-          <select value={severity} onChange={e => { setSeverity(e.target.value); setPage(1) }} className="text-xs border-gray-300 rounded px-2 py-1">
-            <option value="">All</option>
-            <option value="critical">Critical Only</option>
-            <option value="warning">Warning Only</option>
-            <option value="info">Info Only</option>
-          </select>
-        </div>
-      </div>
-      <IssueTable issues={data.issues} onPageClick={onUrlClick} verifiedLinks={verifiedLinks} onVerify={onVerify} onUnverify={onUnverify} onExemptAnchor={onExemptAnchor} exemptAnchorUrls={exemptAnchorUrls} />
-    </div>
-  )
-}
-
-function ByPageTab({ jobId, jumpToUrl, onJumpConsumed, onRescanComplete, onNavigateToCategory }) {
-  const [data, setData] = useState(null)
-  const [page, setPage] = useState(1)
-  const [minSeverity, setMinSeverity] = useState('')
-  const [search, setSearch] = useState('')
-  const [expandedUrl, setExpandedUrl] = useState(null)
-  const [error, setError] = useState(null)
-
-  const load = useCallback(() => {
-    getPages(jobId, { page, limit: 50, minSeverity: minSeverity || undefined })
-      .then(setData)
-      .catch(err => setError(err.message))
-  }, [jobId, page, minSeverity])
-
-  useEffect(() => { load() }, [load])
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    if (jumpToUrl && data) {
-      setExpandedUrl(jumpToUrl)
-      onJumpConsumed()
-      const el = document.getElementById(`page-row-${jumpToUrl}`)
-      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    setLoading(true)
+    getResults(jobId, { severity, limit: 100 })
+      .then(d => setData(d))
+      .catch(() => setData({ issues: [] }))
+      .finally(() => setLoading(false))
+  }, [jobId, severity])
+
+  const severityLabels = { critical: 'Critical', warning: 'Warning', info: 'Info' }
+  const severityColors = {
+    critical: 'border-red-200 bg-red-50',
+    warning: 'border-amber-200 bg-amber-50',
+    info: 'border-blue-200 bg-blue-50'
+  }
+
+  if (loading) {
+    return (
+      <div className={`border rounded-2xl p-8 ${severityColors[severity]} animate-slide-in`}>
+        <Spinner />
+      </div>
+    )
+  }
+
+  // Group issues by issue_code
+  const groups = (data?.issues || []).reduce((acc, iss) => {
+    if (!acc[iss.issue_code]) acc[iss.issue_code] = { ...iss, count: 0, pages: [] }
+    acc[iss.issue_code].count++
+    if (!acc[iss.issue_code].pages.includes(iss.page_url)) {
+      acc[iss.issue_code].pages.push(iss.page_url)
     }
-  }, [jumpToUrl, data, onJumpConsumed])
-
-  if (error) return <div className="text-red-600 p-4">Error: {error}</div>
-  if (!data) return <div className="py-12"><Spinner /></div>
-
-  const filtered = search.trim() ? data.pages.filter(p => p.url.toLowerCase().includes(search.toLowerCase())) : data.pages
-
-  return (
-    <div>
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-4">
-        <div className="flex-1 max-w-md relative">
-          <input type="text" placeholder="Search pages..." value={search} onChange={e => setSearch(e.target.value)} className="w-full pl-9 pr-4 py-2 border border-gray-300 rounded-lg text-sm" />
-          <svg className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
-        </div>
-        <div className="flex items-center gap-3">
-          <label className="text-xs font-medium text-gray-500 whitespace-nowrap">Min severity:</label>
-          <select value={minSeverity} onChange={e => { setMinSeverity(e.target.value); setPage(1) }} className="text-xs border-gray-300 rounded px-2 py-1">
-            <option value="">Any issue</option>
-            <option value="critical">Critical only</option>
-            <option value="warning">Warning or higher</option>
-          </select>
-        </div>
-      </div>
-      <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">
-        <table className="min-w-full divide-y divide-gray-200 text-sm">
-          <thead className="bg-gray-50">
-            <tr>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Page URL</th>
-              <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase">Issues</th>
-              <th className="px-6 py-3"></th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-200">
-            {filtered.map(p => (
-              <React.Fragment key={p.url}>
-                <tr id={`page-row-${p.url}`} className={`hover:bg-gray-50 transition-colors ${expandedUrl === p.url ? 'bg-green-50/30' : ''}`}>
-                  <td className="px-6 py-4 font-mono text-xs break-all max-w-xl text-gray-700">{p.url}</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-center">
-                    <div className="flex justify-center gap-1.5">
-                      {p.issue_counts.critical > 0 && <span className="bg-red-100 text-red-700 px-2 py-0.5 rounded-full text-[10px] font-bold">{p.issue_counts.critical}</span>}
-                      {p.issue_counts.warning > 0 && <span className="bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full text-[10px] font-bold">{p.issue_counts.warning}</span>}
-                      {p.issue_counts.info > 0 && <span className="bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full text-[10px] font-bold">{p.issue_counts.info}</span>}
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 text-right">
-                    <button onClick={() => setExpandedUrl(expandedUrl === p.url ? null : p.url)} className="text-xs font-bold text-green-600 hover:text-green-700 transition-colors">{expandedUrl === p.url ? 'Close' : 'View Issues'}</button>
-                  </td>
-                </tr>
-                {expandedUrl === p.url && (
-                  <tr>
-                    <td colSpan="3" className="px-6 py-4 bg-gray-50 border-y border-gray-100"><PageDetail jobId={jobId} pageUrl={p.url} onRescanComplete={onRescanComplete} onNavigateToCategory={onNavigateToCategory} /></td>
-                  </tr>
-                )}
-              </React.Fragment>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  )
-}
-
-function PageDetail({ jobId, pageUrl, onRescanComplete, onNavigateToCategory }) {
-  const [data, setData] = useState(null)
-  const [error, setError] = useState(null)
-  const [expandedHelp, setExpandedHelp] = useState(null)
-  const [openFixCode, setOpenFixCode] = useState(null)
-
-  const load = useCallback(() => {
-    getPageIssues(jobId, pageUrl).then(setData).catch(err => setError(err.message))
-  }, [jobId, pageUrl])
-
-  useEffect(() => { load() }, [load])
-
-  if (error) return <div className="text-red-600 text-xs">{error}</div>
-  if (!data) return <Spinner />
-
-  const grouped = data.issues.reduce((acc, iss) => {
-    if (!acc[iss.category]) acc[iss.category] = []
-    acc[iss.category].push(iss)
     return acc
   }, {})
 
+  const sortedGroups = Object.values(groups).sort((a, b) => b.priority_rank - a.priority_rank)
+
   return (
-    <div className="space-y-6">
-      {Object.entries(grouped).map(([cat, issues]) => (
-        <div key={cat}>
-          <div className="flex items-center justify-between mb-2">
-            <h3 className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">{cat.replace('_', ' ')}</h3>
-            <button onClick={() => onNavigateToCategory(cat)} className="text-[10px] font-bold text-blue-600 hover:underline">View All Category Issues →</button>
-          </div>
-          <div className="space-y-1.5">
-            {issues.map((issue, i) => {
-              const helpKey = `${cat}-${i}`, isHelpOpen = expandedHelp === helpKey, isImageFixable = IMAGE_FIXABLE_CODES.has(issue.issue_code)
-              const isFixable = FIXABLE_CODES.has(issue.issue_code) || isImageFixable, isFixOpen = openFixCode === issue.issue_code
-              return (
-                <div key={i}>
-                  <div className="flex items-start gap-2 bg-white rounded border border-gray-200 px-3 py-2.5 shadow-sm">
-                    <SeverityBadge severity={issue.severity} />
-                    <div className="flex-1">
-                      <p className="text-xs font-bold text-gray-800">{issue.human_description || issue.issue_code.replace('_', ' ').title()}</p>
-                      <p className="text-[11px] text-gray-500 mt-0.5 leading-relaxed">{issue.description}</p>
-                    </div>
-                    <div className="flex gap-1.5 shrink-0">
-                      {isFixable && (
-                        <button onClick={() => setOpenFixCode(isFixOpen ? null : issue.issue_code)} className={`text-[10px] font-bold px-2 py-1 rounded transition-colors ${isFixOpen ? 'bg-green-600 text-white' : 'bg-green-50 text-green-700 border border-green-200 hover:bg-green-100'}`}>
-                          {isFixOpen ? 'Close' : 'Fix'}
-                        </button>
-                      )}
-                      <button onClick={() => setExpandedHelp(isHelpOpen ? null : helpKey)} className={`w-5 h-5 rounded-full text-xs font-bold border ${isHelpOpen ? 'bg-blue-600 text-white' : 'text-blue-600 border-blue-200'}`}>?</button>
-                    </div>
+    <div className={`border rounded-2xl p-6 ${severityColors[severity]} animate-slide-in`}>
+      <div className="flex justify-between items-center mb-4">
+        <h3 className="text-lg font-bold text-gray-800">
+          {severityLabels[severity]} Issues ({data?.issues?.length || 0})
+        </h3>
+        <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl">&times;</button>
+      </div>
+
+      {sortedGroups.length === 0 ? (
+        <p className="text-gray-500 text-center py-4">No {severity} issues found.</p>
+      ) : (
+        <div className="space-y-3 max-h-96 overflow-y-auto">
+          {sortedGroups.map(group => (
+            <div key={group.issue_code} className="bg-white rounded-xl p-4 border border-gray-100 shadow-sm">
+              <div className="flex items-start justify-between mb-2">
+                <div className="flex items-center gap-3">
+                  <SeverityBadge severity={group.severity} />
+                  <div>
+                    <p className="font-bold text-gray-800 text-sm">{group.human_description || group.issue_code}</p>
+                    <p className="text-[10px] text-gray-400 font-mono">{group.issue_code}</p>
                   </div>
-                  {isFixOpen && isImageFixable && <ImageFixPanel jobId={jobId} imageUrl={pageUrl} mode={issue.issue_code === 'IMG_OVERSIZED' ? 'oversized' : 'alt'} onClose={() => setOpenFixCode(null)} onFixed={onRescanComplete} />}
-                  {isFixOpen && !isImageFixable && <FixInlinePanel jobId={jobId} pageUrl={pageUrl} issueCode={issue.issue_code} onClose={() => setOpenFixCode(null)} />}
-                  {isHelpOpen && <div className="mt-1"><IssueHelpPanel code={issue.issue_code} onClose={() => setExpandedHelp(null)} /></div>}
                 </div>
-              )
-            })}
-          </div>
+                <span className="text-[10px] font-black text-gray-400 bg-gray-100 px-2 py-1 rounded-full">
+                  {group.count} issue{group.count !== 1 ? 's' : ''}
+                </span>
+              </div>
+              <div className="flex flex-wrap gap-1 mt-2">
+                {group.pages.slice(0, 5).map(url => (
+                  <button
+                    key={url}
+                    onClick={() => onPageClick(url)}
+                    className="text-[10px] font-mono text-blue-600 bg-blue-50 px-2 py-1 rounded hover:bg-blue-100 truncate max-w-[200px]"
+                    title={url}
+                  >
+                    {new URL(url).pathname || '/'}
+                  </button>
+                ))}
+                {group.pages.length > 5 && (
+                  <span className="text-[10px] text-gray-400 px-2 py-1">+{group.pages.length - 5} more</span>
+                )}
+              </div>
+            </div>
+          ))}
         </div>
-      ))}
+      )}
     </div>
   )
 }
 
-function SeverityGroupedList({ issues, onPageClick }) {
-  const grouped = issues.reduce((acc, iss) => {
+function Top10Pages({ jobId, onPageClick }) {
+  const [pages, setPages] = useState(null)
+
+  useEffect(() => {
+    getPages(jobId, { limit: 10 })
+      .then(d => {
+        // Sort by total issues descending
+        const sorted = (d.pages || []).sort((a, b) => {
+          const aTotal = (a.issue_counts?.critical || 0) + (a.issue_counts?.warning || 0) + (a.issue_counts?.info || 0)
+          const bTotal = (b.issue_counts?.critical || 0) + (b.issue_counts?.warning || 0) + (b.issue_counts?.info || 0)
+          // Prioritize by critical first, then warning, then total
+          if ((b.issue_counts?.critical || 0) !== (a.issue_counts?.critical || 0)) {
+            return (b.issue_counts?.critical || 0) - (a.issue_counts?.critical || 0)
+          }
+          if ((b.issue_counts?.warning || 0) !== (a.issue_counts?.warning || 0)) {
+            return (b.issue_counts?.warning || 0) - (a.issue_counts?.warning || 0)
+          }
+          return bTotal - aTotal
+        })
+        setPages(sorted.slice(0, 10))
+      })
+      .catch(() => setPages([]))
+  }, [jobId])
+
+  if (!pages || pages.length === 0) return null
+
+  // Filter to only show pages with issues
+  const pagesWithIssues = pages.filter(p =>
+    (p.issue_counts?.critical || 0) + (p.issue_counts?.warning || 0) + (p.issue_counts?.info || 0) > 0
+  )
+
+  if (pagesWithIssues.length === 0) return null
+
+  return (
+    <section>
+      <h2 className="text-base font-black text-gray-400 uppercase tracking-widest mb-4">Top 10 Pages to Fix</h2>
+      <div className="bg-white border border-gray-200 rounded-2xl overflow-hidden shadow-sm">
+        <table className="min-w-full">
+          <thead className="bg-gray-50 border-b border-gray-200">
+            <tr>
+              <th className="px-4 py-3 text-left text-[9px] font-black text-gray-400 uppercase tracking-widest">Page</th>
+              <th className="px-4 py-3 text-center text-[9px] font-black text-gray-400 uppercase tracking-widest w-24">Critical</th>
+              <th className="px-4 py-3 text-center text-[9px] font-black text-gray-400 uppercase tracking-widest w-24">Warning</th>
+              <th className="px-4 py-3 text-center text-[9px] font-black text-gray-400 uppercase tracking-widest w-24">Info</th>
+              <th className="px-4 py-3 text-center text-[9px] font-black text-gray-400 uppercase tracking-widest w-20">Total</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-100">
+            {pagesWithIssues.map((p, idx) => {
+              const total = (p.issue_counts?.critical || 0) + (p.issue_counts?.warning || 0) + (p.issue_counts?.info || 0)
+              let pathname = p.url
+              try { pathname = new URL(p.url).pathname || '/' } catch {}
+
+              return (
+                <tr
+                  key={p.url}
+                  onClick={() => onPageClick(p.url)}
+                  className="hover:bg-green-50 cursor-pointer transition-colors group"
+                >
+                  <td className="px-4 py-3">
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] font-black text-gray-300 w-5">{idx + 1}</span>
+                      <span className="text-xs font-mono text-gray-600 group-hover:text-blue-600 truncate max-w-md" title={p.url}>
+                        {pathname}
+                      </span>
+                    </div>
+                  </td>
+                  <td className="px-4 py-3 text-center">
+                    {p.issue_counts?.critical > 0 && (
+                      <span className="inline-block bg-red-100 text-red-700 px-2 py-0.5 rounded-full text-[10px] font-black">
+                        {p.issue_counts.critical}
+                      </span>
+                    )}
+                  </td>
+                  <td className="px-4 py-3 text-center">
+                    {p.issue_counts?.warning > 0 && (
+                      <span className="inline-block bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full text-[10px] font-black">
+                        {p.issue_counts.warning}
+                      </span>
+                    )}
+                  </td>
+                  <td className="px-4 py-3 text-center">
+                    {p.issue_counts?.info > 0 && (
+                      <span className="inline-block bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full text-[10px] font-black">
+                        {p.issue_counts.info}
+                      </span>
+                    )}
+                  </td>
+                  <td className="px-4 py-3 text-center">
+                    <span className="text-sm font-black text-gray-800">{total}</span>
+                  </td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  )
+}
+
+function CategoryTab({ jobId, category, onPageClick }) {
+  const [data, setData] = useState(null)
+  const [expandedCode, setExpandedCode] = useState(null)
+
+  useEffect(() => {
+    setData(null)
+    getResultsByCategory(jobId, category.key).then(setData).catch(() => setData({ issues: [] }))
+  }, [jobId, category.key])
+
+  if (!data) return <div className="py-20"><Spinner /></div>
+
+  const groups = data.issues.reduce((acc, iss) => {
     if (!acc[iss.issue_code]) acc[iss.issue_code] = { ...iss, count: 0, pages: [] }
     acc[iss.issue_code].count++
     acc[iss.issue_code].pages.push(iss.page_url)
     return acc
   }, {})
+
   return (
     <div className="space-y-4">
-      {Object.values(grouped).map(group => (
-        <div key={group.issue_code} className="border-b border-gray-100 pb-4 last:border-0">
-          <div className="flex items-center gap-2 mb-1.5">
-            <SeverityBadge severity={group.severity} />
-            <h3 className="text-sm font-bold text-gray-800">{group.human_description || group.issue_code}</h3>
-            <span className="text-[10px] font-bold bg-gray-100 text-gray-500 px-1.5 rounded uppercase">{group.count} pages</span>
+      <h2 className="text-xl font-bold text-gray-800 mb-6">{category.label} Details</h2>
+      {Object.values(groups).length === 0 ? (
+        <div className="py-12 bg-white rounded-2xl border border-gray-100 text-center text-gray-400 font-medium font-serif italic">No issues found in this category.</div>
+      ) : (
+        Object.values(groups).map(group => (
+          <div key={group.issue_code} className="bg-white border border-gray-200 rounded-2xl overflow-hidden shadow-sm hover:border-gray-300 transition-colors">
+            <button 
+              onClick={() => setExpandedCode(expandedCode === group.issue_code ? null : group.issue_code)}
+              className="w-full flex items-center justify-between px-6 py-5"
+            >
+              <div className="flex items-center gap-4">
+                <SeverityBadge severity={group.severity} />
+                <div className="text-left">
+                  <p className="font-bold text-gray-800 leading-none">{group.human_description || group.issue_code}</p>
+                  <p className="text-[10px] font-bold text-gray-400 mt-1 uppercase tracking-widest">{group.count} Affected Pages</p>
+                </div>
+              </div>
+              <span className="text-gray-300 text-sm font-bold">{expandedCode === group.issue_code ? '▲' : '▼'}</span>
+            </button>
+            
+            {expandedCode === group.issue_code && (
+              <div className="px-6 pb-6 border-t border-gray-50 pt-6 space-y-8">
+                <IssueHelpPanel issueCode={group.issue_code} />
+                <div>
+                  <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-4">Affected Pages</h4>
+                  <div className="grid grid-cols-1 gap-2">
+                    {group.pages.map(url => (
+                      <button key={url} onClick={() => onPageClick(url)} className="text-left p-3 rounded-xl border border-gray-100 hover:bg-green-50 hover:border-green-200 transition-all font-mono text-xs text-blue-600 truncate flex justify-between items-center group">
+                        <span>{url}</span>
+                        <span className="opacity-0 group-hover:opacity-100 text-[9px] font-black text-green-600 uppercase">Inspect →</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
-          <p className="text-xs text-gray-500 mb-2 leading-relaxed">{group.description}</p>
-          <div className="flex flex-wrap gap-1.5">
-            {group.pages.slice(0, 5).map(url => (
-              <button key={url} onClick={() => onPageClick(url)} className="text-[10px] text-blue-600 hover:underline truncate max-w-[200px] bg-blue-50 px-1.5 py-0.5 rounded">{url.replace(/^https?:\/\/[^\/]+/, '') || '/'}</button>
-            ))}
-            {group.count > 5 && <span className="text-[10px] text-gray-400 font-medium">+{group.count - 5} more</span>}
-          </div>
-        </div>
-      ))}
+        ))
+      )}
     </div>
   )
 }
 
-function TopPagesPanel({ jobId, onPageClick }) {
-  const [pages, setPages] = useState(null)
-  useEffect(() => {
-    getPages(jobId, { page: 1, limit: 10 }).then(d => setPages(d.pages.filter(p => p.issue_counts.total > 0))).catch(() => setPages([]))
-  }, [jobId])
-  if (!pages?.length) return null
+function PageFocusPanel({ jobId, pageUrl, onClose, onRescan }) {
+  const [refreshing, setRefreshing] = useState(false)
+  const [refreshKey, setRefreshKey] = useState(0)
+  const [showSettings, setShowSettings] = useState(false)
+
+  async function handleRefresh() {
+    setRefreshing(true)
+    try {
+      await rescanUrl(jobId, pageUrl)
+      setRefreshKey(k => k + 1)
+      onRescan?.()
+    } catch (err) {
+      console.error('Rescan failed:', err)
+    } finally {
+      setRefreshing(false)
+    }
+  }
+
   return (
-    <div>
-      <h2 className="text-base font-semibold text-gray-700 mb-3">Top 10 pages to fix first</h2>
-      <div className="bg-white border rounded-xl overflow-hidden shadow-sm">
-        <table className="min-w-full text-xs divide-y divide-gray-200">
-          <thead className="bg-gray-50">
-            <tr><th className="px-4 py-2.5 text-left text-gray-500 font-bold">Page</th><th className="px-3 py-2.5 text-center text-red-600">Crit</th><th className="px-3 py-2.5 text-center text-amber-600">Warn</th><th className="px-3 py-2.5 text-center text-blue-600">Info</th></tr>
-          </thead>
-          <tbody className="divide-y divide-gray-100">
-            {pages.map(p => (
-              <tr key={p.url} className="hover:bg-gray-50 cursor-pointer" onClick={() => onPageClick(p.url)}>
-                <td className="px-4 py-3 font-mono text-gray-700 truncate max-w-md">{p.url.replace(/^https?:\/\/[^\/]+/, '') || '/'}</td>
-                <td className="px-3 py-3 text-center font-bold text-red-600">{p.issue_counts.critical}</td>
-                <td className="px-3 py-3 text-center font-bold text-amber-600">{p.issue_counts.warning}</td>
-                <td className="px-3 py-3 text-center font-bold text-blue-600">{p.issue_counts.info}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+    <div className="fixed inset-0 z-50 flex justify-end">
+      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm transition-opacity" onClick={onClose}></div>
+      <div className="relative w-full max-w-2xl bg-gray-50 h-full shadow-2xl flex flex-col animate-slide-in">
+        <div className="p-6 bg-white border-b shadow-sm">
+          <div className="flex justify-between items-center">
+            <div className="min-w-0 pr-4 flex-1">
+              <h2 className="text-xl font-bold text-gray-800">Page Audit</h2>
+              <p className="text-xs font-mono text-gray-400 truncate mt-1">{pageUrl}</p>
+            </div>
+            <div className="flex items-center gap-2 flex-shrink-0">
+              <button
+                onClick={() => setShowSettings(!showSettings)}
+                className={`w-10 h-10 flex items-center justify-center rounded-full transition-all ${showSettings ? 'bg-indigo-100 text-indigo-600' : 'bg-gray-50 text-gray-400 hover:bg-gray-100'}`}
+                title="Settings & Tools"
+              >
+                ⚙
+              </button>
+              <button
+                onClick={handleRefresh}
+                disabled={refreshing}
+                className="w-10 h-10 flex items-center justify-center rounded-full bg-green-50 text-green-600 hover:bg-green-100 transition-all disabled:opacity-50"
+                title="Refresh page data"
+              >
+                <span className={refreshing ? 'animate-spin' : ''}>↻</span>
+              </button>
+              <a
+                href={pageUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="w-10 h-10 flex items-center justify-center rounded-full bg-blue-50 text-blue-600 hover:bg-blue-100 transition-all"
+                title="Open page in new tab"
+              >
+                ↗
+              </a>
+              <button onClick={onClose} className="w-10 h-10 flex items-center justify-center rounded-full bg-gray-100 text-gray-400 hover:text-gray-600 hover:bg-gray-200 transition-all text-2xl font-black">&times;</button>
+            </div>
+          </div>
+          {showSettings && (
+            <SettingsToolbar jobId={jobId} pageUrl={pageUrl} onUpdate={() => { setRefreshKey(k => k + 1); onRescan?.() }} />
+          )}
+        </div>
+        <div className="flex-1 overflow-y-auto p-6 scrollbar-thin">
+          <PageDetail key={refreshKey} jobId={jobId} pageUrl={pageUrl} onRescan={onRescan} />
+        </div>
       </div>
     </div>
   )
 }
 
-function TopPriorityGroups({ jobId, onPageFocus }) {
+function SettingsToolbar({ jobId, pageUrl, onUpdate }) {
+  const [aiStatus, setAiStatus] = useState(null)
+  const [testing, setTesting] = useState(false)
+  const [verifiedLinks, setVerifiedLinks] = useState([])
+  const [suppressedCodes, setSuppressedCodes] = useState([])
+  const [exemptAnchors, setExemptAnchors] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [activeTab, setActiveTab] = useState('ai')
+
+  useEffect(() => {
+    async function loadSettings() {
+      try {
+        const [vl, sc, ea] = await Promise.all([
+          getVerifiedLinks().catch(() => ({ links: [] })),
+          getSuppressedCodes().catch(() => ({ codes: [] })),
+          getExemptAnchorUrls().catch(() => ({ urls: [] }))
+        ])
+        setVerifiedLinks(vl.links || [])
+        setSuppressedCodes(sc.codes || [])
+        setExemptAnchors(ea.urls || [])
+      } finally {
+        setLoading(false)
+      }
+    }
+    loadSettings()
+  }, [])
+
+  async function handleTestAI() {
+    setTesting(true)
+    try {
+      const result = await testAI()
+      setAiStatus(result.message || 'AI connection successful')
+    } catch (err) {
+      setAiStatus('AI test failed: ' + err.message)
+    } finally {
+      setTesting(false)
+    }
+  }
+
+  async function handleRemoveVerified(url) {
+    try {
+      await removeVerifiedLink(url)
+      setVerifiedLinks(prev => prev.filter(l => l.url !== url))
+      onUpdate?.()
+    } catch (err) {
+      alert('Failed to remove: ' + err.message)
+    }
+  }
+
+  async function handleRemoveSuppressed(code) {
+    try {
+      await removeSuppressedCode(code)
+      setSuppressedCodes(prev => prev.filter(c => c !== code))
+      onUpdate?.()
+    } catch (err) {
+      alert('Failed to remove: ' + err.message)
+    }
+  }
+
+  async function handleRemoveExempt(url) {
+    try {
+      await removeExemptAnchorUrl(url)
+      setExemptAnchors(prev => prev.filter(e => e.url !== url))
+      onUpdate?.()
+    } catch (err) {
+      alert('Failed to remove: ' + err.message)
+    }
+  }
+
+  return (
+    <div className="mt-4 pt-4 border-t border-gray-100 animate-slide-in">
+      <div className="flex gap-2 mb-3">
+        {['ai', 'verified', 'suppressed', 'exempt'].map(tab => (
+          <button
+            key={tab}
+            onClick={() => setActiveTab(tab)}
+            className={`text-[10px] font-bold px-3 py-1 rounded-full uppercase ${
+              activeTab === tab ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+            }`}
+          >
+            {tab === 'ai' ? 'AI Test' : tab === 'verified' ? `Verified (${verifiedLinks.length})` : tab === 'suppressed' ? `Suppressed (${suppressedCodes.length})` : `Exempt (${exemptAnchors.length})`}
+          </button>
+        ))}
+      </div>
+
+      {activeTab === 'ai' && (
+        <div className="space-y-2">
+          <button
+            onClick={handleTestAI}
+            disabled={testing}
+            className="text-xs font-bold px-4 py-2 bg-indigo-100 text-indigo-700 rounded-lg hover:bg-indigo-200 disabled:opacity-50"
+          >
+            {testing ? 'Testing...' : 'Test AI Connection'}
+          </button>
+          {aiStatus && <p className="text-xs text-gray-600">{aiStatus}</p>}
+        </div>
+      )}
+
+      {activeTab === 'verified' && (
+        <div className="max-h-32 overflow-y-auto space-y-1">
+          {loading ? <Spinner /> : verifiedLinks.length === 0 ? (
+            <p className="text-xs text-gray-400">No verified links</p>
+          ) : verifiedLinks.map(link => (
+            <div key={link.url} className="flex items-center justify-between p-2 bg-white rounded-lg text-xs">
+              <span className="truncate flex-1 text-gray-600 font-mono">{link.url}</span>
+              <button onClick={() => handleRemoveVerified(link.url)} className="text-red-500 hover:text-red-700 ml-2">×</button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {activeTab === 'suppressed' && (
+        <div className="max-h-32 overflow-y-auto space-y-1">
+          {loading ? <Spinner /> : suppressedCodes.length === 0 ? (
+            <p className="text-xs text-gray-400">No suppressed issue codes</p>
+          ) : suppressedCodes.map(code => (
+            <div key={code} className="flex items-center justify-between p-2 bg-white rounded-lg text-xs">
+              <span className="text-gray-700 font-mono">{code}</span>
+              <button onClick={() => handleRemoveSuppressed(code)} className="text-red-500 hover:text-red-700 ml-2">×</button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {activeTab === 'exempt' && (
+        <div className="max-h-32 overflow-y-auto space-y-1">
+          {loading ? <Spinner /> : exemptAnchors.length === 0 ? (
+            <p className="text-xs text-gray-400">No exempt anchor URLs</p>
+          ) : exemptAnchors.map(item => (
+            <div key={item.url} className="flex items-center justify-between p-2 bg-white rounded-lg text-xs">
+              <span className="truncate flex-1 text-gray-600 font-mono">{item.url}</span>
+              <button onClick={() => handleRemoveExempt(item.url)} className="text-red-500 hover:text-red-700 ml-2">×</button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function PageDetail({ jobId, pageUrl, onRescan }) {
+  const [data, setData] = useState(null)
+  const [openFixCode, setOpenFixCode] = useState(null)
+  const [expandedSections, setExpandedSections] = useState({ metadata: false, headings: true, issues: true })
+
+  const load = useCallback(() => {
+    getPageIssues(jobId, pageUrl).then(setData).catch(() => {})
+  }, [jobId, pageUrl])
+
+  useEffect(() => { load() }, [load])
+
+  if (!data) return <div className="py-20"><Spinner /></div>
+
+  const toggleSection = (section) => {
+    setExpandedSections(prev => ({ ...prev, [section]: !prev[section] }))
+  }
+
+  // Flatten issues from by_category into a single list
+  const allIssues = Object.entries(data.by_category || {}).flatMap(([cat, issues]) =>
+    issues.map(iss => ({ ...iss, category: cat }))
+  )
+
+  // Group issues by category for display
+  const grouped = allIssues.reduce((acc, iss) => {
+    if (!acc[iss.category]) acc[iss.category] = []
+    acc[iss.category].push(iss)
+    return acc
+  }, {})
+
+  const pageData = data.page_data || {}
+
+  return (
+    <div className="space-y-6">
+      {/* Page Metadata Section */}
+      <CollapsibleSection
+        title="Page Metadata"
+        expanded={expandedSections.metadata}
+        onToggle={() => toggleSection('metadata')}
+        badge={<span className="text-[9px] px-2 py-0.5 bg-gray-100 text-gray-500 rounded-full font-bold">SEO</span>}
+      >
+        <div className="space-y-4">
+          <MetadataField label="Title" value={pageData.title} limit={60} />
+          <MetadataField label="Meta Description" value={pageData.meta_description} limit={160} />
+          <MetadataField label="H1 Tags" value={pageData.h1_tags?.join(' | ') || '(none)'} />
+          <MetadataField label="Canonical URL" value={pageData.canonical_url} />
+          {pageData.og_title && <MetadataField label="OG Title" value={pageData.og_title} />}
+          {pageData.og_description && <MetadataField label="OG Description" value={pageData.og_description} />}
+          {pageData.robots_directive && <MetadataField label="Robots Directive" value={pageData.robots_directive} />}
+          <div className="flex gap-6 text-xs text-gray-500">
+            {pageData.word_count != null && <span><strong>Words:</strong> {pageData.word_count}</span>}
+            {pageData.response_size_bytes != null && <span><strong>Size:</strong> {Math.round(pageData.response_size_bytes / 1024)} KB</span>}
+          </div>
+        </div>
+      </CollapsibleSection>
+
+      {/* Headings Section */}
+      <CollapsibleSection
+        title="Headings Structure"
+        expanded={expandedSections.headings}
+        onToggle={() => toggleSection('headings')}
+        badge={pageData.headings_outline?.length > 0 && (
+          <span className="text-[9px] px-2 py-0.5 bg-indigo-100 text-indigo-600 rounded-full font-bold">{pageData.headings_outline.length} headings</span>
+        )}
+      >
+        <HeadingsPanel jobId={jobId} pageUrl={pageUrl} headings={pageData.headings_outline || []} onUpdate={() => { load(); onRescan?.() }} />
+      </CollapsibleSection>
+
+      {/* Issues Section */}
+      <CollapsibleSection
+        title="Issues Found"
+        expanded={expandedSections.issues}
+        onToggle={() => toggleSection('issues')}
+        badge={data.total_issues > 0 && (
+          <span className="text-[9px] px-2 py-0.5 bg-red-100 text-red-600 rounded-full font-bold">{data.total_issues} issues</span>
+        )}
+      >
+        {Object.keys(grouped).length === 0 ? (
+          <div className="py-8 text-center text-gray-400 font-medium">
+            <span className="text-2xl block mb-2">✓</span>
+            No issues found on this page
+          </div>
+        ) : (
+          <div className="space-y-8">
+            {Object.entries(grouped).map(([cat, issues]) => (
+              <div key={cat} className="space-y-3">
+                <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1 border-l-2 border-gray-200 pl-2">{cat.replace('_', ' ')}</h4>
+                <div className="space-y-3">
+                  {issues.map((iss, idx) => (
+                    <IssueCard
+                      key={`${iss.issue_code}-${idx}`}
+                      issue={iss}
+                      jobId={jobId}
+                      pageUrl={pageUrl}
+                      isOpen={openFixCode === `${iss.issue_code}-${idx}`}
+                      onToggleFix={() => setOpenFixCode(openFixCode === `${iss.issue_code}-${idx}` ? null : `${iss.issue_code}-${idx}`)}
+                      onFixComplete={() => { setOpenFixCode(null); load(); onRescan?.() }}
+                    />
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </CollapsibleSection>
+    </div>
+  )
+}
+
+function CollapsibleSection({ title, expanded, onToggle, badge, children }) {
+  return (
+    <div className="bg-white border border-gray-200 rounded-2xl overflow-hidden shadow-sm">
+      <button
+        onClick={onToggle}
+        className="w-full flex items-center justify-between px-5 py-4 hover:bg-gray-50 transition-colors"
+      >
+        <div className="flex items-center gap-3">
+          <span className="font-bold text-gray-800">{title}</span>
+          {badge}
+        </div>
+        <span className="text-gray-300 text-sm font-bold">{expanded ? '▲' : '▼'}</span>
+      </button>
+      {expanded && (
+        <div className="px-5 pb-5 border-t border-gray-100 pt-4">
+          {children}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function MetadataField({ label, value, limit }) {
+  const isEmpty = !value || value === '(none)'
+  const isOverLimit = limit && value && value.length > limit
+  return (
+    <div>
+      <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">{label}</p>
+      <p className={`text-sm ${isEmpty ? 'text-gray-300 italic' : isOverLimit ? 'text-amber-600' : 'text-gray-700'}`}>
+        {value || '(empty)'}
+        {isOverLimit && <span className="ml-2 text-[10px] font-bold">({value.length}/{limit})</span>}
+      </p>
+    </div>
+  )
+}
+
+function HeadingsPanel({ jobId, pageUrl, headings, onUpdate }) {
+  const [sources, setSources] = useState(null)
+  const [loading, setLoading] = useState(false)
+  const [editingIdx, setEditingIdx] = useState(null)
+  const [actionLoading, setActionLoading] = useState(false)
+
+  async function loadSources() {
+    setLoading(true)
+    try {
+      const result = await analyzeHeadingSources(pageUrl, jobId)
+      setSources(result.headings || [])
+    } catch (err) {
+      console.error('Failed to analyze headings:', err)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  if (headings.length === 0) {
+    return <div className="py-6 text-center text-gray-400 text-sm">No headings found on this page</div>
+  }
+
+  async function handleChangeLevel(heading, newLevel) {
+    setActionLoading(true)
+    try {
+      await changeHeadingLevel(pageUrl, heading.text, heading.level, newLevel)
+      setEditingIdx(null)
+      onUpdate?.()
+    } catch (err) {
+      alert('Failed to change heading level: ' + err.message)
+    } finally {
+      setActionLoading(false)
+    }
+  }
+
+  async function handleConvertToBold(heading) {
+    setActionLoading(true)
+    try {
+      await convertHeadingToBold(pageUrl, heading.text, heading.level)
+      setEditingIdx(null)
+      onUpdate?.()
+    } catch (err) {
+      alert('Failed to convert to bold: ' + err.message)
+    } finally {
+      setActionLoading(false)
+    }
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="flex justify-between items-center mb-2">
+        <p className="text-xs text-gray-500">{headings.length} heading{headings.length !== 1 ? 's' : ''} detected</p>
+        {!sources && (
+          <button
+            onClick={loadSources}
+            disabled={loading}
+            className="text-[10px] font-bold text-indigo-600 hover:text-indigo-800 disabled:opacity-50"
+          >
+            {loading ? 'Analyzing...' : 'Analyze Sources →'}
+          </button>
+        )}
+      </div>
+      <div className="space-y-2">
+        {headings.map((h, idx) => {
+          const sourceInfo = sources?.find(s => s.text === h.text && s.level === h.level)
+          const isFixable = sourceInfo?.fixable !== false
+          const isEditing = editingIdx === idx
+
+          return (
+            <div key={idx} className="flex items-start gap-3 p-3 bg-gray-50 rounded-xl group hover:bg-gray-100 transition-colors">
+              <span className={`flex-shrink-0 w-8 h-8 flex items-center justify-center rounded-lg text-xs font-black ${
+                h.level === 1 ? 'bg-red-100 text-red-700' :
+                h.level === 2 ? 'bg-amber-100 text-amber-700' :
+                'bg-blue-100 text-blue-700'
+              }`}>
+                H{h.level}
+              </span>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm text-gray-800 break-words">{h.text}</p>
+                {sourceInfo && (
+                  <div className="flex items-center gap-2 mt-1">
+                    <span className={`text-[9px] px-2 py-0.5 rounded-full font-bold ${
+                      sourceInfo.source === 'post_content' ? 'bg-green-100 text-green-700' :
+                      sourceInfo.source === 'reusable_block' ? 'bg-purple-100 text-purple-700' :
+                      sourceInfo.source === 'widget' ? 'bg-amber-100 text-amber-700' :
+                      'bg-gray-200 text-gray-600'
+                    }`}>
+                      {sourceInfo.source === 'post_content' ? 'Post Content' :
+                       sourceInfo.source === 'reusable_block' ? 'Reusable Block' :
+                       sourceInfo.source === 'widget' ? 'Widget' :
+                       sourceInfo.source === 'acf_field' ? 'ACF Field' :
+                       'Theme/Plugin'}
+                    </span>
+                    {!isFixable && <span className="text-[9px] text-gray-400">(not fixable via API)</span>}
+                  </div>
+                )}
+                {isEditing && isFixable && (
+                  <div className="mt-3 p-3 bg-white rounded-lg border border-gray-200 space-y-3">
+                    <div>
+                      <p className="text-[10px] font-bold text-gray-500 uppercase mb-2">Change Level To:</p>
+                      <div className="flex gap-2 flex-wrap">
+                        {[1, 2, 3, 4, 5, 6].filter(l => l !== h.level).map(level => (
+                          <button
+                            key={level}
+                            onClick={() => handleChangeLevel(h, level)}
+                            disabled={actionLoading}
+                            className="px-3 py-1.5 text-xs font-bold bg-indigo-50 text-indigo-700 rounded-lg hover:bg-indigo-100 disabled:opacity-50"
+                          >
+                            H{level}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => handleConvertToBold(h)}
+                        disabled={actionLoading}
+                        className="px-3 py-1.5 text-xs font-bold bg-amber-50 text-amber-700 rounded-lg hover:bg-amber-100 disabled:opacity-50"
+                      >
+                        Convert to Bold
+                      </button>
+                      <button
+                        onClick={() => setEditingIdx(null)}
+                        className="px-3 py-1.5 text-xs text-gray-500 hover:text-gray-700"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+              {sources && isFixable && !isEditing && (
+                <button
+                  onClick={() => setEditingIdx(idx)}
+                  className="opacity-0 group-hover:opacity-100 flex-shrink-0 text-[10px] font-bold text-indigo-600 hover:text-indigo-800 transition-all"
+                >
+                  Edit
+                </button>
+              )}
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+function IssueCard({ issue: iss, jobId, pageUrl, isOpen, onToggleFix, onFixComplete }) {
+  const [showActions, setShowActions] = useState(false)
+  const [actionLoading, setActionLoading] = useState(null)
+  const [showHelp, setShowHelp] = useState(false)
+  const [aiResult, setAiResult] = useState(null)
+  const [aiLoading, setAiLoading] = useState(false)
+
+  const canFix = FIXABLE_CODES.has(iss.issue_code) || IMAGE_FIXABLE_CODES.has(iss.issue_code)
+  const isBrokenLink = ['BROKEN_LINK_404', 'BROKEN_LINK_410', 'BROKEN_LINK_5XX', 'BROKEN_LINK_503', 'EXTERNAL_LINK_TIMEOUT', 'EXTERNAL_LINK_SKIPPED'].includes(iss.issue_code)
+  const isEmptyAnchor = iss.issue_code === 'LINK_EMPTY_ANCHOR'
+  const isImageIssue = IMAGE_FIXABLE_CODES.has(iss.issue_code)
+
+  const helpContent = useMemo(() => getIssueHelp(iss.issue_code), [iss.issue_code])
+
+  async function handleVerifyLink() {
+    const linkUrl = iss.extra?.link_url || iss.extra?.href
+    if (!linkUrl) return alert('No link URL found in issue data')
+    setActionLoading('verify')
+    try {
+      await addVerifiedLink(linkUrl, jobId)
+      alert('Link marked as verified. It will be excluded from future scans.')
+      onFixComplete?.()
+    } catch (err) {
+      alert('Failed to verify link: ' + err.message)
+    } finally {
+      setActionLoading(null)
+    }
+  }
+
+  async function handleSuppressCode() {
+    if (!confirm(`Suppress all "${iss.issue_code}" issues across all scans? This is a global setting.`)) return
+    setActionLoading('suppress')
+    try {
+      await addSuppressedCode(iss.issue_code)
+      alert(`Issue code "${iss.issue_code}" suppressed globally.`)
+      onFixComplete?.()
+    } catch (err) {
+      alert('Failed to suppress code: ' + err.message)
+    } finally {
+      setActionLoading(null)
+    }
+  }
+
+  async function handleExemptAnchor() {
+    const anchorUrl = iss.extra?.href || iss.extra?.link_url
+    if (!anchorUrl) return alert('No anchor URL found in issue data')
+    setActionLoading('exempt')
+    try {
+      await addExemptAnchorUrl(anchorUrl, `Exempted from ${pageUrl}`)
+      alert('Anchor URL exempted from empty anchor checks.')
+      onFixComplete?.()
+    } catch (err) {
+      alert('Failed to exempt anchor: ' + err.message)
+    } finally {
+      setActionLoading(null)
+    }
+  }
+
+  async function handleMarkFixed() {
+    setActionLoading('markfixed')
+    try {
+      await markFixed(jobId, pageUrl, [iss.issue_code])
+      alert('Issue marked as manually fixed.')
+      onFixComplete?.()
+    } catch (err) {
+      alert('Failed to mark as fixed: ' + err.message)
+    } finally {
+      setActionLoading(null)
+    }
+  }
+
+  async function handleAiAnalyze() {
+    setAiLoading(true)
+    try {
+      const result = await analyzeWithAi(jobId, pageUrl, 'title_meta_optimize')
+      setAiResult(result.suggestion || result.result || JSON.stringify(result))
+    } catch (err) {
+      setAiResult('AI analysis failed: ' + err.message)
+    } finally {
+      setAiLoading(false)
+    }
+  }
+
+  return (
+    <div className="bg-gray-50 border border-gray-100 rounded-xl p-4 hover:border-gray-200 transition-colors">
+      <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center gap-3">
+          <SeverityBadge severity={iss.severity} />
+          <span className="font-bold text-gray-800 text-sm">{iss.human_description || iss.issue_code}</span>
+        </div>
+        <div className="flex items-center gap-1">
+          {canFix && (
+            <button
+              onClick={onToggleFix}
+              className={`text-[10px] font-black px-3 py-1 rounded-full uppercase transition-all ${
+                isOpen ? 'bg-gray-800 text-white' : 'bg-green-50 text-green-700 hover:bg-green-100'
+              }`}
+            >
+              {isOpen ? 'Close' : 'Fix'}
+            </button>
+          )}
+          <button
+            onClick={() => setShowActions(!showActions)}
+            className="text-[10px] font-bold px-2 py-1 rounded-full text-gray-400 hover:text-gray-600 hover:bg-gray-100"
+            title="More actions"
+          >
+            •••
+          </button>
+        </div>
+      </div>
+
+      <p className="text-xs text-gray-500 leading-relaxed mb-1">{iss.description}</p>
+      <p className="text-[10px] font-bold text-green-600 italic">Recommendation: {iss.recommendation}</p>
+
+      {/* Extra data display */}
+      {iss.extra && Object.keys(iss.extra).length > 0 && (
+        <div className="mt-2 p-2 bg-gray-100 rounded-lg">
+          <p className="text-[9px] font-bold text-gray-400 uppercase mb-1">Details</p>
+          {iss.extra.link_url && <p className="text-xs text-gray-600 font-mono truncate">Link: {iss.extra.link_url}</p>}
+          {iss.extra.href && <p className="text-xs text-gray-600 font-mono truncate">Href: {iss.extra.href}</p>}
+          {iss.extra.image_url && <p className="text-xs text-gray-600 font-mono truncate">Image: {iss.extra.image_url}</p>}
+          {iss.extra.size_kb && <p className="text-xs text-gray-600">Size: {iss.extra.size_kb} KB</p>}
+          {iss.extra.status_code && <p className="text-xs text-gray-600">Status: {iss.extra.status_code}</p>}
+        </div>
+      )}
+
+      {/* Actions dropdown */}
+      {showActions && (
+        <div className="mt-3 p-3 bg-white border border-gray-200 rounded-lg space-y-2 animate-slide-in">
+          <p className="text-[9px] font-black text-gray-400 uppercase mb-2">Actions</p>
+          <div className="flex flex-wrap gap-2">
+            {isBrokenLink && (
+              <button
+                onClick={handleVerifyLink}
+                disabled={actionLoading === 'verify'}
+                className="text-[10px] font-bold px-3 py-1.5 bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100 disabled:opacity-50"
+              >
+                {actionLoading === 'verify' ? 'Verifying...' : '✓ Mark Link Verified'}
+              </button>
+            )}
+            {isEmptyAnchor && (
+              <button
+                onClick={handleExemptAnchor}
+                disabled={actionLoading === 'exempt'}
+                className="text-[10px] font-bold px-3 py-1.5 bg-purple-50 text-purple-700 rounded-lg hover:bg-purple-100 disabled:opacity-50"
+              >
+                {actionLoading === 'exempt' ? 'Exempting...' : 'Exempt This Anchor'}
+              </button>
+            )}
+            <button
+              onClick={handleSuppressCode}
+              disabled={actionLoading === 'suppress'}
+              className="text-[10px] font-bold px-3 py-1.5 bg-amber-50 text-amber-700 rounded-lg hover:bg-amber-100 disabled:opacity-50"
+            >
+              {actionLoading === 'suppress' ? 'Suppressing...' : 'Suppress Issue Type'}
+            </button>
+            <button
+              onClick={handleMarkFixed}
+              disabled={actionLoading === 'markfixed'}
+              className="text-[10px] font-bold px-3 py-1.5 bg-green-50 text-green-700 rounded-lg hover:bg-green-100 disabled:opacity-50"
+            >
+              {actionLoading === 'markfixed' ? 'Marking...' : 'Mark as Fixed'}
+            </button>
+            <button
+              onClick={() => setShowHelp(!showHelp)}
+              className="text-[10px] font-bold px-3 py-1.5 bg-gray-50 text-gray-600 rounded-lg hover:bg-gray-100"
+            >
+              {showHelp ? 'Hide Help' : 'Show Help'}
+            </button>
+            <button
+              onClick={handleAiAnalyze}
+              disabled={aiLoading}
+              className="text-[10px] font-bold px-3 py-1.5 bg-indigo-50 text-indigo-700 rounded-lg hover:bg-indigo-100 disabled:opacity-50"
+            >
+              {aiLoading ? 'Analyzing...' : '✨ AI Suggestion'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Help content */}
+      {showHelp && helpContent && (
+        <div className="mt-3 p-3 bg-blue-50 border border-blue-100 rounded-lg animate-slide-in">
+          <IssueHelpPanel issueCode={iss.issue_code} />
+        </div>
+      )}
+
+      {/* AI result */}
+      {aiResult && (
+        <div className="mt-3 p-3 bg-indigo-50 border border-indigo-100 rounded-lg animate-slide-in">
+          <p className="text-[9px] font-black text-indigo-600 uppercase mb-2">AI Suggestion</p>
+          <p className="text-xs text-indigo-900 whitespace-pre-wrap">{aiResult}</p>
+          <button onClick={() => setAiResult(null)} className="mt-2 text-[10px] text-indigo-500 hover:text-indigo-700">Dismiss</button>
+        </div>
+      )}
+
+      {/* Fix panel */}
+      {isOpen && (
+        <div className="mt-4 pt-4 border-t border-gray-200 animate-slide-in">
+          {isImageIssue ? (
+            <ImageFixPanel jobId={jobId} imageUrl={iss.extra?.image_url || pageUrl} issueCode={iss.issue_code} onClose={onFixComplete} />
+          ) : (
+            <FixInlinePanel jobId={jobId} pageUrl={pageUrl} issueCode={iss.issue_code} onClose={onFixComplete} />
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function ByPageTab({ jobId, onPageClick }) {
+  const [data, setData] = useState(null)
+  useEffect(() => {
+    getPages(jobId, { limit: 200 }).then(setData).catch(() => setData({ pages: [] }))
+  }, [jobId])
+
+  if (!data) return <Spinner />
+
+  return (
+    <div className="bg-white border border-gray-200 rounded-3xl overflow-hidden shadow-sm">
+      <table className="min-w-full divide-y divide-gray-200 text-sm">
+        <thead className="bg-gray-50">
+          <tr><th className="px-6 py-5 text-left font-bold text-gray-400 uppercase tracking-widest text-[9px]">Page URL</th><th className="px-6 py-5 text-center font-bold text-gray-400 uppercase tracking-widest text-[9px]">Issues Found</th></tr>
+        </thead>
+        <tbody className="divide-y divide-gray-100">
+          {data.pages.map(p => (
+            <tr key={p.url} onClick={() => onPageClick(p.url)} className="hover:bg-green-50/30 cursor-pointer transition-colors group">
+              <td className="px-6 py-4 font-mono text-xs text-gray-600 truncate max-w-lg group-hover:text-blue-600">{p.url}</td>
+              <td className="px-6 py-4">
+                <div className="flex justify-center gap-2">
+                  {p.issue_counts.critical > 0 && <span className="bg-red-100 text-red-700 px-2.5 py-0.5 rounded-full text-[10px] font-black">{p.issue_counts.critical}</span>}
+                  {p.issue_counts.warning > 0 && <span className="bg-amber-100 text-amber-700 px-2.5 py-0.5 rounded-full text-[10px] font-black">{p.issue_counts.warning}</span>}
+                  {p.issue_counts.info > 0 && <span className="bg-blue-100 text-blue-700 px-2.5 py-0.5 rounded-full text-[10px] font-black">{p.issue_counts.info}</span>}
+                </div>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+function TopPriorityGroups({ jobId, onPageClick }) {
   const [groups, setGroups] = useState(null)
   useEffect(() => {
-    getResults(jobId, { page: 1, limit: 5 }).then(d => {
+    getResults(jobId, { limit: 5 }).then(d => {
       const g = d.issues.reduce((acc, iss) => {
         if (!acc[iss.issue_code]) acc[iss.issue_code] = { ...iss, count: 0, pages: [] }
         acc[iss.issue_code].count++; acc[iss.issue_code].pages.push(iss.page_url)
@@ -785,70 +1274,280 @@ function TopPriorityGroups({ jobId, onPageFocus }) {
   }, [jobId])
   if (!groups?.length) return null
   return (
-    <div>
-      <h2 className="text-base font-semibold text-gray-700 mb-3">Top 5 Priority Fixes</h2>
+    <section>
+      <h2 className="text-base font-black text-gray-400 uppercase tracking-widest mb-4">Top 5 Priority Fixes</h2>
       <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
         {groups.map(g => (
-          <button key={g.issue_code} onClick={() => onPageFocus(g.pages[0])} className="text-left bg-white border border-gray-200 rounded-xl p-4 hover:border-green-400 transition-colors shadow-sm">
+          <button key={g.issue_code} onClick={() => onPageClick(g.pages[0])} className="text-left bg-white border border-gray-200 rounded-2xl p-5 hover:border-green-400 hover:shadow-md transition-all shadow-sm group">
             <SeverityBadge severity={g.severity} />
-            <p className="text-xs font-bold text-gray-800 mt-2 line-clamp-2">{g.human_description || g.issue_code}</p>
-            <p className="text-[10px] text-gray-500 mt-1 uppercase font-bold tracking-wider">{g.count} pages</p>
+            <p className="text-xs font-bold text-gray-800 mt-3 line-clamp-2 group-hover:text-green-700">{g.human_description || g.issue_code}</p>
+            <p className="text-[10px] font-black text-gray-400 mt-1 uppercase tracking-tighter">{g.count} pages affected</p>
           </button>
         ))}
       </div>
+    </section>
+  )
+}
+
+function StatCard({ label, value, color = 'text-gray-800' }) {
+  return (
+    <div className="bg-white border border-gray-200 rounded-3xl p-6 text-center shadow-sm">
+      <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">{label}</p>
+      <p className={`text-4xl font-black ${color}`}>{value}</p>
     </div>
   )
 }
 
-function FixHistoryTab({ jobId }) {
-  const [history, setHistory] = useState(null)
-  useEffect(() => { getFixHistory(jobId).then(setHistory).catch(() => setHistory([])) }, [jobId])
-  if (!history) return <Spinner />
-  if (history.length === 0) return <div className="py-12 text-center text-gray-400 text-sm font-medium">No history yet. Fixes applied via the Fix Manager will appear here.</div>
+function LLMSTxtGenerator({ jobId }) {
+  const [content, setContent] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [saveStatus, setSaveStatus] = useState(null)
+
+  useEffect(() => {
+    setLoading(true)
+    fetch(`/api/utility/generate-llms-txt?job_id=${jobId}`, { headers: authHeaders() })
+      .then(r => r.json()).then(d => { setContent(d.content); setLoading(false) })
+  }, [jobId])
+
+  async function handleSave() {
+    setSaveStatus('saving')
+    try {
+      await fetch('/api/utility/save-llms-txt', {
+        method: 'POST',
+        headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ job_id: jobId, content })
+      })
+      setSaveStatus('saved'); setTimeout(() => setSaveStatus(null), 2000)
+    } catch { setSaveStatus('error') }
+  }
+
   return (
-    <div className="bg-white border rounded-xl overflow-hidden shadow-sm">
-      <table className="min-w-full text-xs divide-y divide-gray-200">
-        <thead className="bg-gray-50">
-          <tr><th className="px-6 py-3 text-left text-gray-500 uppercase tracking-widest font-bold">Applied At</th><th className="px-6 py-3 text-left text-gray-500 uppercase tracking-widest font-bold">Page</th><th className="px-6 py-3 text-left text-gray-500 uppercase tracking-widest font-bold">Issue</th><th className="px-6 py-3 text-left text-gray-500 uppercase tracking-widest font-bold">Result</th></tr>
-        </thead>
-        <tbody className="divide-y divide-gray-100">
-          {history.map(h => (
-            <tr key={h.id} className="hover:bg-gray-50 transition-colors">
-              <td className="px-6 py-4 whitespace-nowrap text-gray-500">{new Date(h.applied_at).toLocaleString()}</td>
-              <td className="px-6 py-4 font-mono text-gray-700 truncate max-w-xs" title={h.page_url}>{h.page_url.replace(/^https?:\/\/[^\/]+/, '') || '/'}</td>
-              <td className="px-6 py-4 font-bold text-gray-800">{h.issue_code}</td>
-              <td className="px-6 py-4">
-                <span className={`px-2 py-0.5 rounded-full font-bold uppercase text-[9px] ${h.status === 'success' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>{h.status}</span>
-                {h.error && <p className="text-red-500 mt-1 italic">{h.error}</p>}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+    <div className="bg-white border border-indigo-100 rounded-3xl p-8 shadow-sm">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
+        <div>
+          <h3 className="text-lg font-bold text-gray-800">llms.txt AI Index</h3>
+          <p className="text-sm text-gray-400">Help Gemini and ChatGPT find your most important content.</p>
+        </div>
+        <button onClick={handleSave} className={`px-8 py-2.5 rounded-2xl text-sm font-black transition-all shadow-lg active:scale-95 ${saveStatus==='saved' ? 'bg-green-600 text-white shadow-green-100' : 'bg-indigo-600 text-white shadow-indigo-100 hover:bg-indigo-700'}`}>
+          {saveStatus==='saving' ? 'Saving...' : saveStatus==='saved' ? '✓ Saved Successfully' : 'Save to Job Data'}
+        </button>
+      </div>
+      <textarea value={content} onChange={e => setContent(e.target.value)} className="w-full h-48 bg-indigo-50/20 border border-indigo-50 rounded-2xl p-5 font-mono text-xs focus:bg-white transition-colors focus:ring-2 focus:ring-indigo-100 focus:outline-none" />
     </div>
   )
 }
 
-function PageFocusPanel({ jobId, pageUrl, onClose }) {
-  const [isOpen, setIsOpen] = useState(false)
-  useEffect(() => { setIsOpen(true) }, [])
+function ImageFixPanel({ jobId, imageUrl, issueCode, onClose }) {
+  const [imageInfo, setImageInfo] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [altText, setAltText] = useState('')
+  const [title, setTitle] = useState('')
+  const [caption, setCaption] = useState('')
+  const [targetWidth, setTargetWidth] = useState(1200)
+  const [saving, setSaving] = useState(false)
+  const [optimizing, setOptimizing] = useState(false)
+  const [error, setError] = useState(null)
+
+  const isOversized = issueCode === 'IMG_OVERSIZED'
+  const isAltMissing = issueCode === 'IMG_ALT_MISSING'
+
+  useEffect(() => {
+    async function loadInfo() {
+      try {
+        const info = await getImageInfo(imageUrl)
+        setImageInfo(info)
+        setAltText(info.alt_text || '')
+        setTitle(info.title || '')
+        setCaption(info.caption || '')
+      } catch (err) {
+        setError('Failed to load image info: ' + err.message)
+      } finally {
+        setLoading(false)
+      }
+    }
+    loadInfo()
+  }, [imageUrl])
+
+  async function handleSaveMeta() {
+    setSaving(true)
+    setError(null)
+    try {
+      await updateImageMeta(imageUrl, { altText, title, caption })
+      alert('Image metadata updated successfully!')
+      onClose?.()
+    } catch (err) {
+      setError('Failed to update: ' + err.message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function handleOptimize() {
+    setOptimizing(true)
+    setError(null)
+    try {
+      const result = await optimizeImage(jobId, imageUrl, targetWidth)
+      if (result.success) {
+        alert('Image optimized and replaced successfully!')
+        onClose?.()
+      } else {
+        setError(result.error || 'Optimization failed')
+      }
+    } catch (err) {
+      setError('Failed to optimize: ' + err.message)
+    } finally {
+      setOptimizing(false)
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="bg-blue-50 border border-blue-100 rounded-2xl p-5 text-center">
+        <Spinner />
+        <p className="text-xs text-blue-600 mt-2">Loading image info...</p>
+      </div>
+    )
+  }
+
   return (
-    <div className="fixed inset-0 z-50 overflow-hidden">
-      <div className="absolute inset-0 bg-gray-500 bg-opacity-75 transition-opacity" onClick={() => { setIsOpen(false); setTimeout(onClose, 300) }}></div>
-      <div className="fixed inset-y-0 right-0 max-w-full flex">
-        <div className={`w-screen max-w-2xl transform transition-transform duration-300 ease-in-out ${isOpen ? 'translate-x-0' : 'translate-x-full'}`}>
-          <div className="h-full flex flex-col bg-gray-50 shadow-2xl">
-            <div className="px-6 py-4 bg-white border-b border-gray-200 flex items-center justify-between">
-              <div>
-                <h2 className="text-lg font-bold text-gray-800">Page Audit</h2>
-                <p className="text-[10px] font-mono text-gray-500 truncate max-w-md" title={pageUrl}>{pageUrl}</p>
-              </div>
-              <button onClick={() => { setIsOpen(false); setTimeout(onClose, 300) }} className="text-gray-400 hover:text-gray-600 text-xl font-bold">&times;</button>
-            </div>
-            <div className="flex-1 overflow-y-auto p-6"><PageDetail jobId={jobId} pageUrl={pageUrl} onNavigateToCategory={onClose} /></div>
+    <div className="bg-blue-50 border border-blue-100 rounded-2xl p-5 space-y-4">
+      <p className="text-[10px] font-black text-blue-800 uppercase tracking-widest">Image Intelligence Engine</p>
+
+      {error && (
+        <div className="p-2 bg-red-100 border border-red-200 rounded-lg text-xs text-red-700">{error}</div>
+      )}
+
+      {/* Image preview and info */}
+      {imageInfo && (
+        <div className="flex gap-4">
+          <img src={imageUrl} alt="" className="w-20 h-20 object-cover rounded-lg border border-blue-200" />
+          <div className="text-xs text-gray-600 space-y-1">
+            <p><strong>Filename:</strong> {imageInfo.filename || 'Unknown'}</p>
+            {imageInfo.width && imageInfo.height && (
+              <p><strong>Dimensions:</strong> {imageInfo.width} × {imageInfo.height}</p>
+            )}
+            {imageInfo.file_size_kb && (
+              <p><strong>Size:</strong> {imageInfo.file_size_kb} KB</p>
+            )}
+            {imageInfo.mime_type && (
+              <p><strong>Type:</strong> {imageInfo.mime_type}</p>
+            )}
           </div>
+        </div>
+      )}
+
+      {/* Alt text / metadata editing (for ALT_MISSING or general use) */}
+      {(isAltMissing || !isOversized) && (
+        <div className="space-y-3">
+          <div>
+            <label className="block text-[9px] font-bold text-blue-600 uppercase mb-1">Alt Text</label>
+            <input
+              type="text"
+              value={altText}
+              onChange={e => setAltText(e.target.value)}
+              placeholder="Describe this image for screen readers..."
+              className="w-full border border-blue-200 rounded-lg text-xs p-2.5 bg-white focus:ring-2 focus:ring-blue-100 outline-none"
+            />
+          </div>
+          <div>
+            <label className="block text-[9px] font-bold text-blue-600 uppercase mb-1">Title</label>
+            <input
+              type="text"
+              value={title}
+              onChange={e => setTitle(e.target.value)}
+              placeholder="Image title..."
+              className="w-full border border-blue-200 rounded-lg text-xs p-2.5 bg-white focus:ring-2 focus:ring-blue-100 outline-none"
+            />
+          </div>
+          <div>
+            <label className="block text-[9px] font-bold text-blue-600 uppercase mb-1">Caption</label>
+            <input
+              type="text"
+              value={caption}
+              onChange={e => setCaption(e.target.value)}
+              placeholder="Caption (optional)..."
+              className="w-full border border-blue-200 rounded-lg text-xs p-2.5 bg-white focus:ring-2 focus:ring-blue-100 outline-none"
+            />
+          </div>
+          <button
+            onClick={handleSaveMeta}
+            disabled={saving}
+            className="w-full py-2.5 bg-blue-600 text-white rounded-lg text-xs font-bold hover:bg-blue-700 disabled:opacity-50"
+          >
+            {saving ? 'Saving...' : 'Save Metadata'}
+          </button>
+        </div>
+      )}
+
+      {/* Optimization (for OVERSIZED) */}
+      {isOversized && (
+        <div className="pt-3 border-t border-blue-200 space-y-3">
+          <p className="text-[9px] font-bold text-blue-600 uppercase">Optimize & Compress</p>
+          <div className="flex items-end gap-3">
+            <div className="flex-1">
+              <label className="block text-[9px] font-bold text-blue-400 uppercase mb-1">Max Width</label>
+              <select
+                value={targetWidth}
+                onChange={e => setTargetWidth(Number(e.target.value))}
+                className="w-full border border-blue-200 rounded-lg text-xs p-2.5 bg-white focus:ring-2 focus:ring-blue-100 outline-none"
+              >
+                <option value={800}>800px</option>
+                <option value={1200}>1200px (Recommended)</option>
+                <option value={1600}>1600px</option>
+                <option value={2000}>2000px</option>
+              </select>
+            </div>
+            <button
+              onClick={handleOptimize}
+              disabled={optimizing}
+              className="px-6 py-2.5 bg-green-600 text-white rounded-lg text-xs font-bold hover:bg-green-700 disabled:opacity-50"
+            >
+              {optimizing ? 'Optimizing...' : 'Optimize Image'}
+            </button>
+          </div>
+          <p className="text-[9px] text-blue-500">
+            This will resize, convert to WebP, upload to WordPress, and update all references.
+          </p>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function ExportReportModal({ onClose, onDownload }) {
+  const [opts, setOpts] = useState({ includeHelp: true, includePages: true, summaryOnly: false })
+  return (
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={onClose}>
+      <div className="bg-white rounded-3xl shadow-2xl max-w-sm w-full p-8" onClick={e => e.stopPropagation()}>
+        <h3 className="text-xl font-black text-gray-800 mb-6">PDF Report Options</h3>
+        <div className="space-y-5 mb-8">
+          <OptionToggle label="Summary Only" desc="Stats and top priority pages only" checked={opts.summaryOnly} onChange={v => setOpts({...opts, summaryOnly: v})} />
+          {!opts.summaryOnly && (
+            <>
+              <OptionToggle label="Help Text" desc="Include 'What it is' boxes" checked={opts.includeHelp} onChange={v => setOpts({...opts, includeHelp: v})} />
+              <OptionToggle label="Affected Pages" desc="List URLs for each issue" checked={opts.includePages} onChange={v => setOpts({...opts, includePages: v})} />
+            </>
+          )}
+        </div>
+        <div className="flex gap-3">
+          <button onClick={onClose} className="flex-1 py-3 text-sm font-bold text-gray-400 hover:text-gray-600 transition-colors">Cancel</button>
+          <button onClick={() => { onDownload(opts); onClose() }} className="flex-1 py-3 bg-green-600 text-white rounded-2xl text-sm font-bold shadow-lg shadow-green-100 active:scale-95 transition-all hover:bg-green-700">Generate PDF</button>
         </div>
       </div>
     </div>
   )
 }
+
+function OptionToggle({ label, desc, checked, onChange }) {
+  return (
+    <label className="flex items-start gap-3 cursor-pointer group">
+      <input type="checkbox" className="mt-1 accent-green-600 w-4 h-4" checked={checked} onChange={e => onChange(e.target.checked)} />
+      <div>
+        <span className="block text-sm font-bold text-gray-700 group-hover:text-green-600 transition-colors">{label}</span>
+        <span className="block text-[10px] text-gray-400 font-medium">{desc}</span>
+      </div>
+    </label>
+  )
+}
+
+function Spinner() { return <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-green-600 mx-auto" /> }

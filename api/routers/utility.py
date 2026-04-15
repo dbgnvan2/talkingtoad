@@ -20,12 +20,30 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api")
 
 
+class LLMSTxtSaveRequest(BaseModel):
+    job_id: str
+    content: str
+
+
 @router.get("/utility/generate-llms-txt")
 async def generate_llms_txt(
     job_id: str = Query(..., description="Job ID to generate llms.txt from"),
     store=Depends(get_store),
 ):
-    """Generate an llms.txt formatted Markdown file from crawl data (spec §2.2)."""
+    """Generate or retrieve an llms.txt formatted Markdown file from crawl data (spec §2.2)."""
+    job = await store.get_job(job_id)
+    if not job:
+        return JSONResponse(status_code=404, content={"error": "Job not found"})
+
+    # If we already have a custom one saved, return it
+    if job.llms_txt_custom:
+        return {
+            "job_id": job_id,
+            "content": job.llms_txt_custom,
+            "filename": "llms.txt",
+            "is_custom": True
+        }
+
     pages = await store.get_pages(job_id)
     if not pages:
         return JSONResponse(status_code=404, content={"error": "No pages found for this job"})
@@ -45,7 +63,6 @@ async def generate_llms_txt(
     summary = homepage.meta_description if homepage else "A collection of high-value pages."
 
     # Sort by crawl_depth (asc) and then by link count (desc)
-    # We want shallow pages with many links first
     valid_pages.sort(key=lambda p: (p.crawl_depth or 99, -(len(p.h1_tags) + (p.word_count or 0) // 100)))
 
     # Limit to top 20 high-value links as per spec
@@ -65,8 +82,19 @@ async def generate_llms_txt(
     return {
         "job_id": job_id,
         "content": "\n".join(lines),
-        "filename": "llms.txt"
+        "filename": "llms.txt",
+        "is_custom": False
     }
+
+
+@router.post("/utility/save-llms-txt")
+async def save_llms_txt(
+    body: LLMSTxtSaveRequest,
+    store=Depends(get_store),
+):
+    """Persist a custom llms.txt content for a job."""
+    await store.update_job(body.job_id, llms_txt_custom=body.content)
+    return {"success": True, "job_id": body.job_id}
 
 
 @router.get("/health")

@@ -80,7 +80,7 @@ class TestHealthEndpoint:
     async def test_health_returns_ok(self, api_client, auth_headers):
         r = await api_client.get("/api/health", headers=auth_headers)
         assert r.status_code == 200
-        assert r.json() == {"status": "ok", "version": "1.4"}
+        assert r.json() == {"status": "ok", "version": "1.8"}
 
     async def test_health_no_auth_required(self, api_client):
         # /api/health is on the utility router which has no auth dependency

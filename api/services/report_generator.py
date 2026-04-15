@@ -14,6 +14,7 @@ COLOR_INFO = (37, 99, 235)
 COLOR_GRAY_800 = (31, 41, 55)
 COLOR_GRAY_600 = (75, 85, 99)
 COLOR_GRAY_500 = (107, 114, 128)
+COLOR_GRAY_100 = (243, 244, 246)
 COLOR_TOAD_GREEN = (22, 163, 74)
 COLOR_BLUE_BG = (239, 246, 255) # Light blue help box
 COLOR_BLUE_TEXT = (30, 58, 138) # Dark blue help labels
@@ -180,11 +181,52 @@ async def generate_pdf_report(
             pdf.set_text_color(*COLOR_GRAY_800)
             pdf.multi_cell(W, 6, pdf.clean_text(url))
             
-            pdf.set_x(25.4)
-            pdf.set_font('helvetica', '', 9)
-            pdf.set_text_color(*COLOR_GRAY_500)
             pdf.multi_cell(W, 5, f"Issues: {counts.get('critical')} Critical, {counts.get('warning')} Warnings, {counts.get('info')} Info")
             pdf.ln(2)
+
+    # ── Page 4: AI Readiness (llms.txt) ───────────────────────────────────
+    pdf.add_page()
+    pdf.chapter_title("AI Readiness: llms.txt Status")
+    pdf.set_font('helvetica', '', 10)
+    pdf.set_text_color(*COLOR_GRAY_600)
+    pdf.set_x(25.4)
+    pdf.multi_cell(W, 5, "An llms.txt file is a machine-readable index that helps AI agents (like Gemini and ChatGPT) navigate your most important content.")
+    pdf.ln(5)
+
+    # 1. Existing file status
+    pdf.set_x(25.4)
+    pdf.set_font('helvetica', 'B', 11)
+    pdf.set_text_color(*COLOR_GRAY_800)
+    pdf.cell(W, 8, "Status of live /llms.txt file:", new_x="LMARGIN", new_y="NEXT")
+    
+    existing_issue = next((i for i in issues if i.issue_code == "LLMS_TXT_MISSING"), None)
+    pdf.set_x(25.4)
+    if existing_issue:
+        pdf.set_font('helvetica', 'B', 10)
+        pdf.set_text_color(*COLOR_CRITICAL)
+        pdf.cell(W, 8, "MISSING - No /llms.txt file was detected during the crawl.", new_x="LMARGIN", new_y="NEXT")
+    else:
+        pdf.set_font('helvetica', 'B', 10)
+        pdf.set_text_color(*COLOR_TOAD_GREEN)
+        pdf.cell(W, 8, "FOUND - A file exists at your root domain.", new_x="LMARGIN", new_y="NEXT")
+
+    pdf.ln(5)
+
+    # 2. Proposed content
+    pdf.set_x(25.4)
+    pdf.set_font('helvetica', 'B', 11)
+    pdf.set_text_color(*COLOR_GRAY_800)
+    pdf.cell(W, 8, "Proposed /llms.txt content (Machine-readable):", new_x="LMARGIN", new_y="NEXT")
+    
+    proposed_content = job.llms_txt_custom or "No proposed content has been saved yet. Use the TalkingToad dashboard to generate and save your optimized llms.txt file."
+    
+    pdf.set_x(25.4)
+    pdf.set_fill_color(*COLOR_GRAY_100)
+    pdf.set_font('courier', '', 8)
+    pdf.set_text_color(50, 50, 50)
+    pdf.multi_cell(W, 4, pdf.clean_text(proposed_content), fill=True, border=1)
+    
+    pdf.ln(10)
 
     # ── Detailed Issues by Category ──────────────────────────────────────
     from collections import defaultdict

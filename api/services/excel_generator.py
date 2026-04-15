@@ -57,6 +57,30 @@ def generate_excel_report(job: CrawlJob, issues: list[Issue], summary: dict) -> 
     ws_summary.column_dimensions['A'].width = 25
     ws_summary.column_dimensions['B'].width = 50
 
+    # ── AI Readiness Sheet ────────────────────────────────────────────────
+    ws_ai = wb.create_sheet(title="AI Readiness")
+    ws_ai["A1"] = "AI Readiness Report"
+    ws_ai["A1"].font = header_font
+    
+    ws_ai["A3"] = "Live /llms.txt status:"
+    ws_ai["A3"].font = label_font
+    
+    # Check if we have LLMS_TXT_MISSING in issues
+    is_missing = any(i.issue_code == "LLMS_TXT_MISSING" for i in issues)
+    ws_ai["B3"] = "MISSING" if is_missing else "FOUND"
+    
+    ws_ai["A5"] = "Proposed /llms.txt Content:"
+    ws_ai["A5"].font = label_font
+    
+    # Put content in a single cell, wrap it
+    proposed = job.llms_txt_custom or "Not generated yet."
+    ws_ai["A6"] = proposed
+    ws_ai["A6"].alignment = Alignment(wrap_text=True, vertical="top")
+    ws_ai.merge_cells("A6:E20") # Give it some space
+    
+    ws_ai.column_dimensions['A'].width = 30
+    ws_ai.column_dimensions['B'].width = 50
+
     # ── Issue Sheets (by Category) ─────────────────────────────────────────
     # Group issues by category
     from collections import defaultdict

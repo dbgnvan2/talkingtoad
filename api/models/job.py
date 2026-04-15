@@ -54,3 +54,5 @@ class CrawlJob(BaseModel):
     completed_at: datetime | None = None
     error_message: str | None = None
     settings: CrawlSettings = Field(default_factory=CrawlSettings)
+    # Persisted custom llms.txt content
+    llms_txt_custom: str | None = None

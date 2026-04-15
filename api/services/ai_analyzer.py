@@ -51,10 +51,10 @@ async def analyze_with_ai(prompt_key: str, context: dict[str, Any]) -> str:
     prompt_template = PROMPT_LIBRARY[prompt_key]
     prompt = prompt_template.format(**context)
 
-    if gemini_key:
-        return await _call_gemini(prompt, gemini_key)
-    elif openai_key:
+    if openai_key:
         return await _call_openai(prompt, openai_key)
+    elif gemini_key:
+        return await _call_gemini(prompt, gemini_key)
     else:
         logger.warning("ai_analysis_skipped_no_key")
         return "AI analysis skipped: No API key configured (GEMINI_API_KEY or OPENAI_API_KEY)."
@@ -62,7 +62,8 @@ async def analyze_with_ai(prompt_key: str, context: dict[str, Any]) -> str:
 
 async def _call_gemini(prompt: str, api_key: str) -> str:
     """Call Google Gemini API."""
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}"
+    # Using v1 stable endpoint
+    url = f"https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key={api_key}"
     payload = {
         "contents": [{"parts": [{"text": prompt}]}]
     }

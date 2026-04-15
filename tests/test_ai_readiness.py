@@ -186,8 +186,10 @@ async def test_llms_txt_missing_issue():
 @pytest.mark.asyncio
 async def test_generate_llms_txt_logic():
     from api.routers.utility import generate_llms_txt
-    
+    from api.models.job import CrawlJob
+
     mock_store = MagicMock()
+    mock_store.get_job = AsyncMock(return_value=CrawlJob(job_id="1", target_url="https://a.com/", status="complete"))
     mock_store.get_pages = AsyncMock(return_value=[
         CrawledPage(job_id="1", url="https://a.com/", status_code=200, is_indexable=True, crawl_depth=0, title="Home", meta_description="Home Desc"),
         CrawledPage(job_id="1", url="https://a.com/p1", status_code=200, is_indexable=True, crawl_depth=1, title="Page 1", word_count=500, h1_tags=["H1"]),
