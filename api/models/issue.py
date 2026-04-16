@@ -37,6 +37,7 @@ PHASE_1_CATEGORIES: frozenset[str] = frozenset(
     [
         "broken_link", "metadata", "heading", "redirect",
         "crawlability", "duplicate", "sitemap", "security", "url_structure",
+        "image", "ai_readiness",
     ]
 )
 

@@ -78,12 +78,14 @@ class TalkingToadReport(FPDF):
         self.ln(2)
 
 async def generate_pdf_report(
-    job: CrawlJob, 
-    issues: list[Issue], 
+    job: CrawlJob,
+    issues: list[Issue],
     summary: dict,
     include_help: bool = True,
     include_pages: bool = True,
-    top_pages: list[dict] = None
+    top_pages: list[dict] = None,
+    image_summary: dict = None,
+    top_images: list = None,
 ) -> bytes:
     pdf = TalkingToadReport()
     pdf.alias_nb_pages()
@@ -150,7 +152,8 @@ async def generate_pdf_report(
         ("Headings", "heading"), ("Redirects", "redirect"),
         ("Crawlability", "crawlability"), ("Duplicates", "duplicate"),
         ("Sitemap", "sitemap"), ("Security", "security"),
-        ("URL Structure", "url_structure"), ("AI Readiness", "ai_readiness"),
+        ("URL Structure", "url_structure"), ("Images", "image"),
+        ("AI Readiness", "ai_readiness"),
     ]
     
     for label, key in cat_list:
@@ -227,6 +230,107 @@ async def generate_pdf_report(
     pdf.multi_cell(W, 4, pdf.clean_text(proposed_content), fill=True, border=1)
     
     pdf.ln(10)
+
+    # ── Image Health Summary ──────────────────────────────────────────────
+    if image_summary and image_summary.get("total_images", 0) > 0:
+        pdf.add_page()
+        pdf.chapter_title("Image Health Summary")
+        pdf.set_font('helvetica', '', 10)
+        pdf.set_text_color(*COLOR_GRAY_600)
+        pdf.set_x(25.4)
+        pdf.multi_cell(W, 5, "Analysis of all images found during the crawl, including accessibility, performance, and optimization metrics.")
+        pdf.ln(5)
+
+        # Image stats
+        img_stats = [
+            ("Image Health Score", f"{image_summary.get('image_health_score', 0)}%",
+             COLOR_TOAD_GREEN if image_summary.get('image_health_score', 0) >= 80 else
+             COLOR_WARNING if image_summary.get('image_health_score', 0) >= 60 else COLOR_CRITICAL),
+            ("Total Images", str(image_summary.get('total_images', 0)), COLOR_GRAY_800),
+            ("Total Size", f"{image_summary.get('total_size_kb', 0)} KB", COLOR_GRAY_800),
+            ("Avg Load Time", f"{image_summary.get('avg_load_time_ms', 0)}ms",
+             COLOR_WARNING if image_summary.get('avg_load_time_ms', 0) > 500 else COLOR_GRAY_800),
+        ]
+
+        for label, val, color in img_stats:
+            pdf.set_x(25.4)
+            pdf.set_font('helvetica', 'B', 12)
+            pdf.set_text_color(*COLOR_GRAY_500)
+            pdf.cell(60, 10, pdf.clean_text(label + ":"))
+            pdf.set_font('helvetica', 'B', 14)
+            pdf.set_text_color(*color)
+            pdf.cell(W - 60, 10, val, new_x="LMARGIN", new_y="NEXT")
+
+        # Format breakdown
+        by_format = image_summary.get("by_format", {})
+        if by_format:
+            pdf.ln(5)
+            pdf.set_x(25.4)
+            pdf.set_font('helvetica', 'B', 12)
+            pdf.set_text_color(*COLOR_GRAY_800)
+            pdf.cell(W, 8, "Images by Format:", new_x="LMARGIN", new_y="NEXT")
+
+            for fmt, count in sorted(by_format.items(), key=lambda x: -x[1]):
+                pdf.set_x(25.4)
+                pdf.set_font('helvetica', '', 11)
+                pdf.set_text_color(*COLOR_GRAY_600)
+                pdf.cell(60, 8, pdf.clean_text(fmt.upper() + ":"))
+                pdf.set_font('helvetica', 'B', 11)
+                pdf.set_text_color(*COLOR_GRAY_800)
+                pdf.cell(W - 60, 8, str(count), new_x="LMARGIN", new_y="NEXT")
+
+        # Top issue counts
+        by_issue = image_summary.get("by_issue", {})
+        if by_issue:
+            pdf.ln(5)
+            pdf.set_x(25.4)
+            pdf.set_font('helvetica', 'B', 12)
+            pdf.set_text_color(*COLOR_GRAY_800)
+            pdf.cell(W, 8, "Top Image Issues:", new_x="LMARGIN", new_y="NEXT")
+
+            for code, count in sorted(by_issue.items(), key=lambda x: -x[1])[:8]:
+                pdf.set_x(25.4)
+                pdf.set_font('helvetica', '', 11)
+                pdf.set_text_color(*COLOR_GRAY_600)
+                display_code = code.replace('IMG_', '').replace('_', ' ').title()
+                pdf.cell(80, 8, pdf.clean_text(display_code + ":"))
+                pdf.set_font('helvetica', 'B', 11)
+                pdf.set_text_color(*COLOR_GRAY_800)
+                pdf.cell(W - 80, 8, f"{count} image{'s' if count != 1 else ''}", new_x="LMARGIN", new_y="NEXT")
+
+        # Top problematic images
+        if top_images and len(top_images) > 0:
+            pdf.ln(5)
+            pdf.set_x(25.4)
+            pdf.set_font('helvetica', 'B', 12)
+            pdf.set_text_color(*COLOR_GRAY_800)
+            pdf.cell(W, 8, "Images Needing Attention:", new_x="LMARGIN", new_y="NEXT")
+
+            for img in top_images[:10]:
+                if pdf.get_y() > 230:
+                    pdf.add_page()
+
+                score = img.overall_score if hasattr(img, 'overall_score') else img.get('overall_score', 0)
+                filename = img.filename if hasattr(img, 'filename') else img.get('filename', 'Unknown')
+                issues_list = img.issues if hasattr(img, 'issues') else img.get('issues', [])
+
+                score_color = COLOR_TOAD_GREEN if score >= 80 else COLOR_WARNING if score >= 60 else COLOR_CRITICAL
+
+                pdf.set_x(25.4)
+                pdf.set_font('helvetica', 'B', 10)
+                pdf.set_text_color(*score_color)
+                pdf.cell(15, 6, str(round(score)))
+                pdf.set_text_color(*COLOR_GRAY_800)
+                pdf.cell(W - 15, 6, pdf.clean_text(filename[:60]), new_x="LMARGIN", new_y="NEXT")
+
+                if issues_list:
+                    pdf.set_x(40)
+                    pdf.set_font('helvetica', '', 9)
+                    pdf.set_text_color(*COLOR_GRAY_500)
+                    issue_text = ", ".join([c.replace('IMG_', '') for c in issues_list[:4]])
+                    if len(issues_list) > 4:
+                        issue_text += f" +{len(issues_list) - 4} more"
+                    pdf.cell(W - 15, 5, pdf.clean_text(issue_text), new_x="LMARGIN", new_y="NEXT")
 
     # ── Detailed Issues by Category ──────────────────────────────────────
     from collections import defaultdict

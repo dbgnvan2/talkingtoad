@@ -38,6 +38,8 @@ from api.crawler.normaliser import (
 from api.crawler.parser import ParsedPage, parse_page
 from api.crawler.robots import RobotsData, fetch_robots
 from api.crawler.sitemap import fetch_sitemap_recursive
+from api.models.image import ImageInfo
+from api.crawler.image_analyzer import analyze_batch as analyze_images
 
 logger = logging.getLogger(__name__)
 
@@ -133,6 +135,8 @@ class CrawlResult:
     # (target_url, source_url, link_text) for every broken external link found.
     # Stored so the router can persist them to the links table for the Fix panel.
     broken_link_sources: list[tuple[str, str, str | None]] = field(default_factory=list)
+    # v1.9image: Analyzed images with scores and issues
+    images: list[ImageInfo] = field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
@@ -161,6 +165,7 @@ async def run_crawl(
         cancel_event: If set, the engine checks this after each page and stops
             cleanly when the event fires.
     """
+    print(f"[CRAWL] run_crawl started for {target_url}")
     if settings is None:
         settings = CrawlSettings()
 
@@ -284,10 +289,10 @@ async def run_crawl(
         external_per_page_count: dict[str, int] = {}
         external_targets_seen: set[str] = set()  # deduplicate by target URL
 
-        # Image URLs: collected during internal crawl, checked after for broken images
-        # Format: {"page_url": str, "image_url": str}
-        _IMAGE_URL_CAP_PER_JOB = 200
-        image_url_queue: list[dict] = []
+        # Image data: collected during internal crawl, analyzed after
+        # Format: dict from parser with url, page_url, alt, srcset, etc.
+        _IMAGE_URL_CAP_PER_JOB = 150
+        image_data_queue: list[dict] = []
         image_targets_seen: set[str] = set()
 
         # ── 4. Internal crawl loop ────────────────────────────────────────
@@ -403,6 +408,8 @@ async def run_crawl(
             is_html = "html" in ct
             is_asset = "pdf" in ct or ct.startswith("image/")
 
+            print(f"[DEBUG] url={url}, ct={ct}, is_html={is_html}, has_image_data={page.image_data is not None}, image_count={len(page.image_data) if page.image_data else 0}")
+
             if is_html:
                 # Skip SEO checks on 4xx/5xx pages — they are error pages, not real content.
                 # Emit a BROKEN_LINK_404 (or 5xx variant) issue so the user knows this internal
@@ -468,12 +475,16 @@ async def run_crawl(
                         external_per_page_count[url] = per_page + 1
                         external_targets_seen.add(target)
 
-            # Collect image URLs for broken-image checking
-            if is_html and page.image_urls:
-                for img_url in page.image_urls:
-                    if img_url not in image_targets_seen and len(image_url_queue) < _IMAGE_URL_CAP_PER_JOB:
-                        image_url_queue.append({"page_url": url, "image_url": img_url})
-                        image_targets_seen.add(img_url)
+            # Collect image data for full analysis (v1.9image)
+            if is_html:
+                img_count = len(page.image_data) if page.image_data else 0
+                print(f"[IMG] Page {url} has {img_count} images, is_html={is_html}")
+                if page.image_data:
+                    for img_data in page.image_data:
+                        img_url = img_data.get("url")
+                        if img_url and img_url not in image_targets_seen and len(image_data_queue) < _IMAGE_URL_CAP_PER_JOB:
+                            image_data_queue.append(img_data)
+                            image_targets_seen.add(img_url)
 
         # ── 5. External link checking ─────────────────────────────────────
         external_checked = 0
@@ -523,17 +534,163 @@ async def run_crawl(
                         all_issues.append(issue)
                         broken_link_sources.append((target, source_url, ext.get("link_text")))
 
-        # ── 5.5 Broken image checking ─────────────────────────────────────
-        for img in image_url_queue:
-            if cancel_event and cancel_event.is_set():
-                break
-            img_result = await _check_external_link(img["image_url"], client)
-            if img_result is not None and img_result.status_code >= 400:
-                issue = make_issue(
-                    "IMG_BROKEN", img["page_url"],
-                    extra={"image_url": img["image_url"], "status_code": img_result.status_code},
+        # ── 5.5 Image analysis (v1.9image) ─────────────────────────────────
+        # Collect image metadata from HTML without fetching actual images
+        # Full image data (dimensions, size) fetched on-demand via API
+        all_images: list[ImageInfo] = []
+
+        print(f"[IMG] image_data_queue has {len(image_data_queue)} entries")
+
+        try:
+            image_config = {
+                "max_image_size_kb": settings.img_size_limit_kb,
+            }
+
+            # Filter valid images
+            valid_img_data = [d for d in image_data_queue if d.get("url")]
+            print(f"[IMG] valid_img_data has {len(valid_img_data)} entries")
+
+            if valid_img_data:
+                log.info("collecting_images", extra={"count": len(valid_img_data)})
+
+                # Check if this is a WordPress site (look for wp-content in any image URL)
+                is_wordpress = any("/wp-content/uploads/" in d.get("url", "") for d in valid_img_data)
+                wp_api_base = None
+                if is_wordpress:
+                    # Derive WP API base from first wp-content URL
+                    for d in valid_img_data:
+                        img_url = d.get("url", "")
+                        if "/wp-content/uploads/" in img_url:
+                            parsed = urlparse(img_url)
+                            wp_api_base = f"{parsed.scheme}://{parsed.netloc}/wp-json/wp/v2"
+                            print(f"[IMG] WordPress detected, API base: {wp_api_base}")
+                            break
+
+                # Try to get WP metadata for all images in parallel
+                wp_metadata_cache: dict[str, dict] = {}
+                if wp_api_base:
+                    async def fetch_wp_meta(img_url: str):
+                        meta = await _get_wp_image_metadata(img_url, client, wp_api_base)
+                        return (img_url, meta)
+
+                    try:
+                        wp_tasks = [fetch_wp_meta(d["url"]) for d in valid_img_data if "/wp-content/uploads/" in d.get("url", "")]
+                        if wp_tasks:
+                            wp_results = await asyncio.wait_for(
+                                asyncio.gather(*wp_tasks, return_exceptions=True),
+                                timeout=15.0
+                            )
+                            for item in wp_results:
+                                if isinstance(item, tuple) and item[1]:
+                                    wp_metadata_cache[item[0]] = item[1]
+                            print(f"[IMG] Got WP metadata for {len(wp_metadata_cache)} images")
+                    except Exception as wp_exc:
+                        print(f"[IMG] WP metadata fetch failed: {wp_exc}")
+
+                # For non-WP images, do HEAD requests to get file size
+                head_metadata_cache: dict[str, dict] = {}
+                non_wp_images = [d for d in valid_img_data if d.get("url") not in wp_metadata_cache]
+                if non_wp_images:
+                    async def fetch_head_meta(img_url: str):
+                        try:
+                            response = await client.head(img_url, timeout=3.0, follow_redirects=True)
+                            if response.status_code == 200:
+                                content_length = response.headers.get("content-length")
+                                content_type = response.headers.get("content-type", "")
+                                return (img_url, {
+                                    "file_size": int(content_length) if content_length else None,
+                                    "content_type": content_type,
+                                })
+                        except Exception:
+                            pass
+                        return (img_url, {})
+
+                    try:
+                        head_tasks = [fetch_head_meta(d["url"]) for d in non_wp_images]
+                        if head_tasks:
+                            head_results = await asyncio.wait_for(
+                                asyncio.gather(*head_tasks, return_exceptions=True),
+                                timeout=10.0
+                            )
+                            for item in head_results:
+                                if isinstance(item, tuple) and item[1]:
+                                    head_metadata_cache[item[0]] = item[1]
+                            print(f"[IMG] Got HEAD metadata for {len(head_metadata_cache)} images")
+                    except Exception as head_exc:
+                        print(f"[IMG] HEAD metadata fetch failed: {head_exc}")
+
+                for img_data in valid_img_data:
+                    img_url = img_data["url"]
+                    wp_meta = wp_metadata_cache.get(img_url, {})
+                    head_meta = head_metadata_cache.get(img_url, {})
+
+                    # Prefer WP metadata, fallback to HEAD metadata
+                    width = wp_meta.get("width")
+                    height = wp_meta.get("height")
+                    file_size = wp_meta.get("filesize") or head_meta.get("file_size")
+                    mime_type = wp_meta.get("mime_type") or head_meta.get("content_type")
+                    fmt = _guess_format_from_url(img_url)
+                    if mime_type:
+                        # Extract format from mime_type like "image/jpeg"
+                        fmt = mime_type.split("/")[-1] if "/" in mime_type else fmt
+
+                    # Determine data source level
+                    if wp_meta or (file_size and width and height):
+                        # Full metadata from WP API or complete HEAD + dimensions
+                        data_source = "crawl_meta"
+                    elif file_size or head_meta:
+                        # Partial metadata from HEAD request only
+                        data_source = "crawl_meta"
+                    else:
+                        # HTML-only data
+                        data_source = "html_only"
+
+                    image_info = ImageInfo(
+                        url=img_url,
+                        page_url=img_data.get("page_url", ""),
+                        job_id=job_id,
+                        alt=img_data.get("alt"),
+                        title=img_data.get("title"),
+                        filename=_extract_filename(img_url),
+                        format=fmt,
+                        width=width,
+                        height=height,
+                        rendered_width=img_data.get("rendered_width"),
+                        rendered_height=img_data.get("rendered_height"),
+                        file_size_bytes=file_size,
+                        load_time_ms=None,
+                        http_status=0,  # Only set when image is actually fetched via "Get Details"
+                        is_lazy_loaded=img_data.get("is_lazy_loaded", False),
+                        has_srcset=img_data.get("has_srcset", False),
+                        srcset_candidates=img_data.get("srcset_candidates", []),
+                        is_decorative=img_data.get("is_decorative", False),
+                        surrounding_text=img_data.get("surrounding_text", ""),
+                        content_hash=None,
+                        data_source=data_source,
+                    )
+                    all_images.append(image_info)
+
+            # Run batch analysis on HTML-level data (alt text checks work without fetch)
+            if all_images:
+                analyzed_images, image_issues = analyze_images(
+                    all_images,
+                    config=image_config,
+                    job_id=job_id,
                 )
-                all_issues.append(issue)
+                all_images = analyzed_images
+                all_issues.extend(image_issues)
+
+                log.info("images_analyzed", extra={
+                    "total": len(all_images),
+                    "issues_found": len(image_issues),
+                })
+
+        except Exception as img_exc:
+            print(f"[IMG] Exception during image analysis: {img_exc}")
+            log.exception("image_analysis_failed", extra={"error": str(img_exc)})
+            all_images = []  # Continue crawl without images
+
+        print(f"[IMG] Final all_images count: {len(all_images)}")
 
         # ── 6. AMP HTML link checking ────────────────────────────────────
         amp_statuses: dict[str, int] = {}
@@ -576,6 +733,7 @@ async def run_crawl(
             pages_crawled=len(all_pages),
             external_links_checked=external_checked,
             broken_link_sources=broken_link_sources,
+            images=all_images,
         )
 
 
@@ -597,6 +755,175 @@ async def _check_external_link(
     if result.status_code == 405:
         result = await fetch_page(url, client, is_head=False)
     return result
+
+
+async def _fetch_image_full(
+    url: str,
+    client: httpx.AsyncClient,
+    timeout: float = 3.0,
+    max_size: int = 5 * 1024 * 1024,  # 5MB
+) -> dict:
+    """Fetch full image data including bytes for dimension extraction.
+
+    Returns a dict with:
+    - http_status: int
+    - file_size_bytes: int|None
+    - load_time_ms: int|None
+    - width: int|None (intrinsic)
+    - height: int|None (intrinsic)
+    - format: str
+    - content_hash: str|None (MD5)
+    - error: str|None
+    """
+    import hashlib
+    import time
+
+    start_time = time.time()
+    result = {
+        "url": url,
+        "http_status": 0,
+        "file_size_bytes": None,
+        "load_time_ms": None,
+        "width": None,
+        "height": None,
+        "format": "unknown",
+        "content_hash": None,
+        "error": None,
+    }
+
+    try:
+        response = await client.get(url, timeout=timeout)
+        result["http_status"] = response.status_code
+        result["load_time_ms"] = int((time.time() - start_time) * 1000)
+
+        if response.status_code < 400:
+            content = response.content
+            result["file_size_bytes"] = len(content)
+
+            # Hash for duplicate detection
+            result["content_hash"] = hashlib.md5(content).hexdigest()
+
+            # Extract dimensions using Pillow
+            try:
+                from PIL import Image
+                import io
+                img = Image.open(io.BytesIO(content))
+                result["width"], result["height"] = img.size
+                result["format"] = img.format.lower() if img.format else "unknown"
+            except Exception:
+                pass
+
+    except Exception as e:
+        result["error"] = str(e)
+        result["load_time_ms"] = int((time.time() - start_time) * 1000)
+
+    return result
+
+
+def _extract_filename(url: str) -> str:
+    """Extract filename from URL path."""
+    try:
+        path = urlparse(url).path
+        if path:
+            return path.rstrip("/").rsplit("/", 1)[-1]
+    except Exception:
+        pass
+    return ""
+
+
+def _guess_format_from_url(url: str) -> str:
+    """Guess image format from URL extension."""
+    try:
+        path = urlparse(url).path.lower()
+        if path.endswith(".webp"):
+            return "webp"
+        elif path.endswith(".avif"):
+            return "avif"
+        elif path.endswith((".jpg", ".jpeg")):
+            return "jpeg"
+        elif path.endswith(".png"):
+            return "png"
+        elif path.endswith(".gif"):
+            return "gif"
+        elif path.endswith(".svg"):
+            return "svg"
+        elif path.endswith(".ico"):
+            return "ico"
+    except Exception:
+        pass
+    return "unknown"
+
+
+async def _get_wp_image_metadata(
+    image_url: str,
+    client: httpx.AsyncClient,
+    wp_api_base: str | None = None,
+) -> dict | None:
+    """Try to get image metadata from WordPress REST API.
+
+    Returns dict with width, height, filesize, mime_type if found, else None.
+    """
+    if not wp_api_base:
+        # Derive from image URL - assume /wp-content/uploads/ pattern
+        parsed = urlparse(image_url)
+        if "/wp-content/uploads/" not in parsed.path:
+            return None
+        wp_api_base = f"{parsed.scheme}://{parsed.netloc}/wp-json/wp/v2"
+
+    # Extract filename from URL for search
+    filename = image_url.rsplit("/", 1)[-1] if "/" in image_url else ""
+    if not filename:
+        return None
+
+    # Remove size suffix like -300x200 before extension
+    import re
+    base_filename = re.sub(r'-\d+x\d+(\.[a-z]+)$', r'\1', filename, flags=re.IGNORECASE)
+    search_term = base_filename.rsplit(".", 1)[0] if "." in base_filename else base_filename
+
+    try:
+        # Search WordPress media library
+        search_url = f"{wp_api_base}/media?search={search_term}&per_page=5"
+        response = await client.get(search_url, timeout=5.0)
+
+        if response.status_code != 200:
+            return None
+
+        media_items = response.json()
+        if not media_items or not isinstance(media_items, list):
+            return None
+
+        # Find matching image by URL
+        for item in media_items:
+            source_url = item.get("source_url", "")
+            # Check if this is our image (match base filename)
+            if base_filename in source_url or filename in source_url:
+                details = item.get("media_details", {})
+                return {
+                    "width": details.get("width"),
+                    "height": details.get("height"),
+                    "filesize": details.get("filesize"),
+                    "mime_type": item.get("mime_type"),
+                    "alt_text": item.get("alt_text"),
+                    "wp_id": item.get("id"),
+                }
+
+        # If no exact match, return first result if filename is similar
+        if media_items:
+            item = media_items[0]
+            details = item.get("media_details", {})
+            return {
+                "width": details.get("width"),
+                "height": details.get("height"),
+                "filesize": details.get("filesize"),
+                "mime_type": item.get("mime_type"),
+                "alt_text": item.get("alt_text"),
+                "wp_id": item.get("id"),
+            }
+
+    except Exception:
+        pass
+
+    return None
 
 
 def _effective_delay(base_delay_s: float, robots_data: RobotsData | None) -> float:

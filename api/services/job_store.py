@@ -24,6 +24,7 @@ from typing import Any, Protocol, runtime_checkable
 
 import aiosqlite
 
+from api.models.image import ImageInfo
 from api.models.issue import Issue, IssueCategory, PHASE_1_CATEGORIES
 from api.models.job import CrawlJob, CrawlSettings, JobStatus
 from api.models.link import Link
@@ -196,6 +197,19 @@ class JobStore(Protocol):
     async def record_fixed_issues(self, job_id: str, page_url: str, codes: list[str]) -> None: ...
     async def get_fix_history(self, job_id: str) -> list[dict]: ...
 
+    # Image analysis (v1.9image)
+    async def save_images(self, images: list[ImageInfo]) -> None: ...
+    async def get_images(
+        self,
+        job_id: str,
+        *,
+        page: int = 1,
+        limit: int = 50,
+        sort_by: str = "score",
+    ) -> list[ImageInfo]: ...
+    async def get_image_summary(self, job_id: str) -> dict: ...
+    async def get_image_by_url(self, job_id: str, url: str) -> ImageInfo | None: ...
+
 
 # ---------------------------------------------------------------------------
 # SQLite implementation
@@ -341,12 +355,47 @@ CREATE TABLE IF NOT EXISTS exempt_anchor_urls (
     added_at     TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+CREATE TABLE IF NOT EXISTS images (
+    id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+    job_id                TEXT NOT NULL,
+    url                   TEXT NOT NULL,
+    page_url              TEXT NOT NULL,
+    alt                   TEXT,
+    title                 TEXT,
+    filename              TEXT,
+    format                TEXT,
+    width                 INTEGER,
+    height                INTEGER,
+    rendered_width        INTEGER,
+    rendered_height       INTEGER,
+    file_size_bytes       INTEGER,
+    load_time_ms          INTEGER,
+    http_status           INTEGER,
+    is_lazy_loaded        INTEGER NOT NULL DEFAULT 0,
+    has_srcset            INTEGER NOT NULL DEFAULT 0,
+    srcset_candidates     TEXT,  -- JSON array
+    is_decorative         INTEGER NOT NULL DEFAULT 0,
+    surrounding_text      TEXT,
+    content_hash          TEXT,
+    performance_score     REAL NOT NULL DEFAULT 100.0,
+    accessibility_score   REAL NOT NULL DEFAULT 100.0,
+    semantic_score        REAL NOT NULL DEFAULT 100.0,
+    technical_score       REAL NOT NULL DEFAULT 100.0,
+    overall_score         REAL NOT NULL DEFAULT 100.0,
+    issues                TEXT,  -- JSON array of issue codes
+    data_source           TEXT NOT NULL DEFAULT 'html_only',  -- html_only, crawl_meta, or full_fetch
+    FOREIGN KEY (job_id) REFERENCES crawl_jobs(job_id),
+    UNIQUE(job_id, url)
+);
+
 CREATE INDEX IF NOT EXISTS idx_issues_job_id ON issues(job_id);
 CREATE INDEX IF NOT EXISTS idx_issues_job_category ON issues(job_id, category);
 CREATE INDEX IF NOT EXISTS idx_issues_job_severity ON issues(job_id, severity);
 CREATE INDEX IF NOT EXISTS idx_pages_job_id ON crawled_pages(job_id);
 CREATE INDEX IF NOT EXISTS idx_links_job_id ON links(job_id);
 CREATE INDEX IF NOT EXISTS idx_fixes_job_id ON fixes(job_id);
+CREATE INDEX IF NOT EXISTS idx_images_job_id ON images(job_id);
+CREATE INDEX IF NOT EXISTS idx_images_hash ON images(content_hash);
 """
 
 # ORDER BY expressions
@@ -423,6 +472,18 @@ class SQLiteJobStore:
             try:
                 await self._db.execute(
                     f"ALTER TABLE issues ADD COLUMN {col} {col_type}"
+                )
+            except Exception:
+                pass  # column already exists
+
+        # Image table migrations (v1.9image)
+        image_columns = [
+            ("data_source", "TEXT NOT NULL DEFAULT 'html_only'"),
+        ]
+        for col, col_type in image_columns:
+            try:
+                await self._db.execute(
+                    f"ALTER TABLE images ADD COLUMN {col} {col_type}"
                 )
             except Exception:
                 pass  # column already exists
@@ -1197,6 +1258,185 @@ class SQLiteJobStore:
         rows = await self.get_exempt_anchor_urls()
         return {r["url"] for r in rows}
 
+    # ── Image analysis (v1.9image) ──────────────────────────────────────────
+
+    async def save_images(self, images: list[ImageInfo]) -> None:
+        """Save a batch of ImageInfo records for a job."""
+        if not images:
+            return
+        db = self._db
+        assert db is not None
+        rows = [_image_to_row(img) for img in images]
+        await db.executemany(
+            """
+            INSERT OR REPLACE INTO images (
+                job_id, url, page_url, alt, title, filename, format,
+                width, height, rendered_width, rendered_height,
+                file_size_bytes, load_time_ms, http_status,
+                is_lazy_loaded, has_srcset, srcset_candidates, is_decorative,
+                surrounding_text, content_hash,
+                performance_score, accessibility_score, semantic_score,
+                technical_score, overall_score, issues, data_source
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            rows,
+        )
+        await db.commit()
+
+    async def get_images(
+        self,
+        job_id: str,
+        *,
+        page: int = 1,
+        limit: int = 50,
+        sort_by: str = "score",
+    ) -> list[ImageInfo]:
+        """Return images for a job with pagination and sorting."""
+        db = self._db
+        assert db is not None
+
+        # Sorting options
+        if sort_by == "size":
+            order_clause = "file_size_bytes DESC NULLS LAST"
+        elif sort_by == "load_time":
+            order_clause = "load_time_ms DESC NULLS LAST"
+        else:  # default: score (lowest first = worst images first)
+            order_clause = "overall_score ASC"
+
+        offset = (page - 1) * limit
+        async with db.execute(
+            f"""
+            SELECT * FROM images
+            WHERE job_id = ?
+            ORDER BY {order_clause}
+            LIMIT ? OFFSET ?
+            """,
+            (job_id, limit, offset),
+        ) as cursor:
+            rows = await cursor.fetchall()
+        return [_row_to_image(dict(r)) for r in rows]
+
+    async def get_image_summary(self, job_id: str) -> dict:
+        """Return image health summary for a job."""
+        db = self._db
+        assert db is not None
+
+        # Total and analyzed counts
+        async with db.execute(
+            "SELECT COUNT(*) FROM images WHERE job_id = ?",
+            (job_id,),
+        ) as cursor:
+            row = await cursor.fetchone()
+        total_images = row[0] if row else 0
+
+        if total_images == 0:
+            return {
+                "total_images": 0,
+                "images_analyzed": 0,
+                "images_with_metadata": 0,
+                "image_health_score": 100,
+                "by_issue": {},
+                "by_format": {},
+                "total_size_kb": 0,
+                "avg_load_time_ms": 0,
+                "avg_score": 100,
+            }
+
+        # Analyzed = those with http_status > 0 (full fetch)
+        async with db.execute(
+            "SELECT COUNT(*) FROM images WHERE job_id = ? AND data_source = 'full_fetch'",
+            (job_id,),
+        ) as cursor:
+            row = await cursor.fetchone()
+        images_analyzed = row[0] if row else 0
+
+        # Images with metadata (crawl_meta or full_fetch)
+        async with db.execute(
+            "SELECT COUNT(*) FROM images WHERE job_id = ? AND data_source IN ('crawl_meta', 'full_fetch')",
+            (job_id,),
+        ) as cursor:
+            row = await cursor.fetchone()
+        images_with_metadata = row[0] if row else 0
+
+        # Average scores (only for analyzed images)
+        async with db.execute(
+            """
+            SELECT
+                AVG(overall_score) as avg_score,
+                AVG(load_time_ms) as avg_load_time
+            FROM images
+            WHERE job_id = ? AND http_status > 0
+            """,
+            (job_id,),
+        ) as cursor:
+            row = await cursor.fetchone()
+        avg_score = row[0] if row and row[0] else 100
+        avg_load_time = row[1] if row and row[1] else 0
+
+        # Total size (all images, including those analyzed during crawl)
+        async with db.execute(
+            """
+            SELECT SUM(file_size_bytes)
+            FROM images
+            WHERE job_id = ?
+            """,
+            (job_id,),
+        ) as cursor:
+            row = await cursor.fetchone()
+        total_size_bytes = row[0] if row and row[0] else 0
+
+        # Count by format
+        async with db.execute(
+            """
+            SELECT format, COUNT(*) FROM images
+            WHERE job_id = ? AND format IS NOT NULL
+            GROUP BY format
+            """,
+            (job_id,),
+        ) as cursor:
+            format_rows = await cursor.fetchall()
+        by_format = {r[0]: r[1] for r in format_rows}
+
+        # Count by issue code (need to parse JSON issues array)
+        by_issue: dict[str, int] = {}
+        async with db.execute(
+            "SELECT issues FROM images WHERE job_id = ? AND issues IS NOT NULL",
+            (job_id,),
+        ) as cursor:
+            issue_rows = await cursor.fetchall()
+        for row in issue_rows:
+            try:
+                codes = json.loads(row[0]) if row[0] else []
+                for code in codes:
+                    by_issue[code] = by_issue.get(code, 0) + 1
+            except (json.JSONDecodeError, TypeError):
+                pass
+
+        return {
+            "total_images": total_images,
+            "images_analyzed": images_analyzed,
+            "images_with_metadata": images_with_metadata,
+            "image_health_score": round(avg_score),
+            "by_issue": by_issue,
+            "by_format": by_format,
+            "total_size_kb": round(total_size_bytes / 1024) if total_size_bytes else 0,
+            "avg_load_time_ms": round(avg_load_time) if avg_load_time else 0,
+            "avg_score": round(avg_score, 1),
+        }
+
+    async def get_image_by_url(self, job_id: str, url: str) -> ImageInfo | None:
+        """Get a single image by URL."""
+        db = self._db
+        assert db is not None
+        async with db.execute(
+            "SELECT * FROM images WHERE job_id = ? AND url = ?",
+            (job_id, url),
+        ) as cursor:
+            row = await cursor.fetchone()
+        if row is None:
+            return None
+        return _row_to_image(dict(row))
+
 
 # ---------------------------------------------------------------------------
 # Row ↔ Model conversion helpers
@@ -1380,6 +1620,86 @@ def _row_to_link(row: dict) -> Link:
         status_code=row["status_code"],
         is_broken=bool(row["is_broken"]),
         check_skipped=bool(row["check_skipped"]),
+    )
+
+
+def _image_to_row(img: ImageInfo) -> tuple:
+    return (
+        img.job_id,
+        img.url,
+        img.page_url,
+        img.alt,
+        img.title,
+        img.filename,
+        img.format,
+        img.width,
+        img.height,
+        img.rendered_width,
+        img.rendered_height,
+        img.file_size_bytes,
+        img.load_time_ms,
+        img.http_status,
+        int(img.is_lazy_loaded),
+        int(img.has_srcset),
+        json.dumps(img.srcset_candidates) if img.srcset_candidates else None,
+        int(img.is_decorative),
+        img.surrounding_text,
+        img.content_hash,
+        img.performance_score,
+        img.accessibility_score,
+        img.semantic_score,
+        img.technical_score,
+        img.overall_score,
+        json.dumps(img.issues) if img.issues else None,
+        img.data_source,
+    )
+
+
+def _row_to_image(row: dict) -> ImageInfo:
+    srcset_raw = row.get("srcset_candidates")
+    srcset = []
+    if srcset_raw:
+        try:
+            srcset = json.loads(srcset_raw)
+        except (json.JSONDecodeError, TypeError):
+            srcset = []
+
+    issues_raw = row.get("issues")
+    issues = []
+    if issues_raw:
+        try:
+            issues = json.loads(issues_raw)
+        except (json.JSONDecodeError, TypeError):
+            issues = []
+
+    return ImageInfo(
+        job_id=row["job_id"],
+        url=row["url"],
+        page_url=row["page_url"],
+        alt=row.get("alt"),
+        title=row.get("title"),
+        filename=row.get("filename") or "",
+        format=row.get("format") or "unknown",
+        width=row.get("width"),
+        height=row.get("height"),
+        rendered_width=row.get("rendered_width"),
+        rendered_height=row.get("rendered_height"),
+        file_size_bytes=row.get("file_size_bytes"),
+        load_time_ms=row.get("load_time_ms"),
+        http_status=row.get("http_status") or 0,
+        is_lazy_loaded=bool(row.get("is_lazy_loaded")),
+        has_srcset=bool(row.get("has_srcset")),
+        srcset_candidates=srcset,
+        is_decorative=bool(row.get("is_decorative")),
+        surrounding_text=row.get("surrounding_text") or "",
+        content_hash=row.get("content_hash"),
+        performance_score=row.get("performance_score") or 100.0,
+        accessibility_score=row.get("accessibility_score") or 100.0,
+        semantic_score=row.get("semantic_score") or 100.0,
+        technical_score=row.get("technical_score") or 100.0,
+        overall_score=row.get("overall_score") or 100.0,
+        issues=issues,
+        data_source=row.get("data_source") or "html_only",
     )
 
 
@@ -1728,6 +2048,37 @@ class RedisJobStore:
 
     async def get_fix_history(self, job_id: str) -> list[dict]:
         return []  # Not implemented for Redis MVP
+
+    # ── Image analysis (Redis — not implemented for MVP) ───────────────────
+
+    async def save_images(self, images: list[ImageInfo]) -> None:
+        pass  # Not implemented for Redis MVP
+
+    async def get_images(
+        self,
+        job_id: str,
+        *,
+        page: int = 1,
+        limit: int = 50,
+        sort_by: str = "score",
+    ) -> list[ImageInfo]:
+        return []  # Not implemented for Redis MVP
+
+    async def get_image_summary(self, job_id: str) -> dict:
+        return {
+            "total_images": 0,
+            "images_analyzed": 0,
+            "images_with_metadata": 0,
+            "image_health_score": 100,
+            "by_issue": {},
+            "by_format": {},
+            "total_size_kb": 0,
+            "avg_load_time_ms": 0,
+            "avg_score": 100,
+        }
+
+    async def get_image_by_url(self, job_id: str, url: str) -> ImageInfo | None:
+        return None  # Not implemented for Redis MVP
 
     # ── Private serialisation ──────────────────────────────────────────────
 

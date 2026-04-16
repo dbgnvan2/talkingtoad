@@ -94,6 +94,9 @@ class ParsedPage:
     has_json_ld: bool = False
     pdf_metadata: dict | None = None
 
+    # v1.9 Image Intelligence fields
+    image_data: list = None  # list[dict] - comprehensive image data for ImageInfo
+
 
 def parse_page(
     result: FetchResult,
@@ -197,6 +200,8 @@ def parse_page(
         text_to_html_ratio=text_to_html_ratio,
         has_json_ld=_has_json_ld_script(soup),
         pdf_metadata=pdf_metadata,
+        # v1.9 Image Intelligence
+        image_data=_extract_image_data(soup, page_url),
     )
 
 
@@ -504,26 +509,28 @@ def _check_hsts(headers: dict[str, str], page_url: str) -> bool | None:
 
 
 def _count_img_missing_alt(soup: BeautifulSoup) -> int:
-    """Count <img> tags that are completely missing an alt attribute.
+    """Count <img> tags that are missing or have empty/blank alt attributes.
 
-    Images with alt="" are intentionally decorative and are NOT flagged —
-    per HTML spec and our own recommendation, empty alt is the correct way
-    to mark a decorative image.  Only a completely absent alt attribute
-    indicates the author forgot to describe the image.
+    Both missing alt and empty alt="" are flagged — every meaningful image
+    should have descriptive alt text for accessibility and SEO.
     """
     count = 0
     for tag in soup.find_all("img"):
-        if tag.get("alt") is None:
+        alt = tag.get("alt")
+        # Flag if alt is missing (None) or empty/whitespace-only
+        if alt is None or (isinstance(alt, str) and not alt.strip()):
             count += 1
     return count
 
 
 def _find_img_missing_alt_srcs(soup: BeautifulSoup, page_url: str = "") -> list[str]:
-    """Return absolute src URLs of <img> tags that are completely missing an alt attribute."""
+    """Return absolute src URLs of <img> tags that are missing or have empty alt attributes."""
     from urllib.parse import urljoin
     srcs = []
     for tag in soup.find_all("img", src=True):
-        if tag.get("alt") is None:
+        alt = tag.get("alt")
+        # Flag if alt is missing (None) or empty/whitespace-only
+        if alt is None or (isinstance(alt, str) and not alt.strip()):
             src = tag["src"].strip()
             if src and not src.startswith("data:"):
                 srcs.append(urljoin(page_url, src) if page_url else src)
@@ -626,3 +633,178 @@ def _count_internal_nofollow(soup: BeautifulSoup, page_url: str, base_url: str) 
         if "nofollow" in [r.lower() for r in rel_val]:
             count += 1
     return count
+
+
+# ---------------------------------------------------------------------------
+# v1.9 Image Intelligence - Enhanced Image Extraction
+# ---------------------------------------------------------------------------
+
+
+def _extract_image_data(soup: BeautifulSoup, page_url: str) -> list[dict]:
+    """Extract comprehensive image data from page for ImageInfo creation.
+
+    Returns a list of dicts with all HTML-level metadata for each image.
+    The engine will merge this with fetched data (dimensions, size, etc.).
+    """
+    images = []
+    for tag in soup.find_all("img", src=True):
+        src = tag["src"].strip()
+        if not src or src.startswith("data:"):
+            continue
+
+        try:
+            absolute_url = urljoin(page_url, src)
+        except Exception:
+            continue
+
+        parsed = urlparse(absolute_url)
+        if parsed.scheme not in ("http", "https"):
+            continue
+
+        # Extract filename from URL path
+        filename = _extract_filename_from_url(absolute_url)
+
+        img_data = {
+            "url": absolute_url,
+            "page_url": page_url,
+            "alt": tag.get("alt"),  # None if missing, "" if empty
+            "title": tag.get("title"),
+            "filename": filename,
+            "rendered_width": _parse_dimension(tag.get("width")),
+            "rendered_height": _parse_dimension(tag.get("height")),
+            "is_lazy_loaded": tag.get("loading", "").lower() == "lazy",
+            "has_srcset": bool(tag.get("srcset")),
+            "srcset_candidates": _parse_srcset(tag.get("srcset", ""), page_url),
+            "is_decorative": _detect_decorative(tag),
+            "surrounding_text": _extract_surrounding_text(tag, limit=200),
+        }
+        images.append(img_data)
+
+    return images
+
+
+def _detect_decorative(tag) -> bool:
+    """Detect if image is decorative based on HTML attributes.
+
+    An image is considered decorative if:
+    - role="presentation"
+    - aria-hidden="true"
+    - alt="" (intentionally empty, not missing)
+    - dimensions < 32px (likely spacer/icon)
+    """
+    # Explicit decorative markers
+    if tag.get("role") == "presentation":
+        return True
+    if tag.get("aria-hidden") == "true":
+        return True
+
+    # Empty alt (intentionally decorative) - but NOT missing alt (None)
+    alt = tag.get("alt")
+    if alt is not None and isinstance(alt, str) and alt.strip() == "":
+        return True
+
+    # Tiny images (icons/spacers)
+    try:
+        w = int(tag.get("width", 999))
+        h = int(tag.get("height", 999))
+        if w < 32 and h < 32:
+            return True
+    except (ValueError, TypeError):
+        pass
+
+    return False
+
+
+def _parse_srcset(srcset: str, page_url: str = "") -> list[str]:
+    """Parse srcset attribute into list of absolute URLs.
+
+    srcset format: "image1.jpg 1x, image2.jpg 2x" or "small.jpg 300w, large.jpg 800w"
+    """
+    if not srcset:
+        return []
+
+    candidates = []
+    for part in srcset.split(","):
+        part = part.strip()
+        if not part:
+            continue
+        # First part before space is the URL
+        url_part = part.split()[0] if part else ""
+        if url_part:
+            try:
+                absolute = urljoin(page_url, url_part) if page_url else url_part
+                candidates.append(absolute)
+            except Exception:
+                pass
+    return candidates
+
+
+def _extract_surrounding_text(tag, limit: int = 200) -> str:
+    """Extract text context around an image tag (±limit chars).
+
+    Helps with semantic analysis of whether image relates to page content.
+    """
+    texts = []
+
+    # Previous siblings
+    for sib in tag.previous_siblings:
+        if hasattr(sib, "get_text"):
+            text = sib.get_text(strip=True)
+            if text:
+                texts.insert(0, text)
+        elif isinstance(sib, str) and sib.strip():
+            texts.insert(0, sib.strip())
+        if sum(len(t) for t in texts) > limit:
+            break
+
+    # Next siblings
+    for sib in tag.next_siblings:
+        if hasattr(sib, "get_text"):
+            text = sib.get_text(strip=True)
+            if text:
+                texts.append(text)
+        elif isinstance(sib, str) and sib.strip():
+            texts.append(sib.strip())
+        if sum(len(t) for t in texts) > limit * 2:
+            break
+
+    result = " ".join(texts)
+    # Trim to limit * 2 (before + after)
+    return result[: limit * 2] if len(result) > limit * 2 else result
+
+
+def _parse_dimension(value) -> int | None:
+    """Parse an HTML width/height attribute value to int.
+
+    Handles: "100", "100px", 100 (int)
+    Returns None for invalid/missing values.
+    """
+    if value is None:
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str):
+        # Remove 'px' suffix if present
+        clean = value.strip().lower().replace("px", "").strip()
+        try:
+            return int(clean)
+        except ValueError:
+            return None
+    return None
+
+
+def _extract_filename_from_url(url: str) -> str:
+    """Extract filename from URL path.
+
+    e.g. "https://example.com/images/photo.jpg?v=1" -> "photo.jpg"
+    """
+    try:
+        parsed = urlparse(url)
+        path = parsed.path
+        if path:
+            # Get the last segment of the path
+            filename = path.rstrip("/").rsplit("/", 1)[-1]
+            return filename
+    except Exception:
+        pass
+    return ""

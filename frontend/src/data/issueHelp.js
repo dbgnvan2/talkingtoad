@@ -970,23 +970,22 @@ const issueHelp = {
   // ═══════════════════════════════════════════════════════════════════════════
 
   IMG_ALT_MISSING: {
-    title: "Image missing alt text",
+    title: "Image missing or empty alt text",
     category: "image",
     severity: "warning",
     mission_impact: "People using screen readers cannot \"see\" what this image is about.",
     definition:
-      "This image has no alt attribute at all. The alt attribute provides a text " +
-      "description of an image for screen readers, search engines, and situations where " +
-      "the image cannot be displayed.",
+      "This image either has no alt attribute or has an empty/blank alt attribute. " +
+      "Every meaningful image should have descriptive alt text for accessibility and SEO.",
     impact:
       "Screen reader users who are blind or have low vision will have no way to understand " +
       "what this image shows — a significant accessibility barrier. Search engines also " +
       "cannot 'see' images and rely on alt text to understand their content.",
     fix:
-      "Add an alt attribute to the image tag that describes what the image shows in one " +
+      "Add a descriptive alt attribute to the image tag that describes what the image shows in one " +
       "concise sentence, e.g. alt=\"Two counsellors meeting with a client in an office\". " +
       "In WordPress, set the alt text for each image in the Media Library or in the block " +
-      "editor's image settings panel.",
+      "editor's image settings panel. Every image should have meaningful alt text.",
   },
 
   IMG_ALT_EMPTY: {
@@ -1106,7 +1105,7 @@ const issueHelp = {
 
   IMG_BROKEN: {
     title: "Broken image",
-    category: "broken_link",
+    category: "image",
     severity: "critical",
     mission_impact: "Visitors see a broken image icon instead of your photo or graphic.",
     definition:
@@ -1121,6 +1120,200 @@ const issueHelp = {
       "Find the broken image in your CMS media library and re-upload it, or update the " +
       "image src URL in the page editor to point to the correct file. In WordPress, use the " +
       "'Broken Link Checker' plugin to locate and fix broken image references site-wide.",
+  },
+
+  IMG_ALT_TOO_SHORT: {
+    title: "Image alt text too short",
+    category: "image",
+    severity: "warning",
+    definition:
+      "This image has alt text, but it's fewer than 5 characters — too brief to meaningfully " +
+      "describe the image content. Examples include single words like 'team' or 'logo'.",
+    impact:
+      "Very short alt text fails to provide adequate context for screen reader users, who may " +
+      "not understand what the image depicts. Search engines also benefit from descriptive " +
+      "alt text — a one-word label provides minimal SEO value compared to a concise description.",
+    fix:
+      "Expand the alt text to describe what the image actually shows. Instead of 'team', write " +
+      "'Staff members gathered at our annual fundraising gala'. Aim for 5–125 characters that " +
+      "convey the image's content and purpose. In WordPress, edit the image in the Media Library.",
+  },
+
+  IMG_ALT_TOO_LONG: {
+    title: "Image alt text too long",
+    category: "image",
+    severity: "info",
+    definition:
+      "This image has alt text exceeding 125 characters. While detailed descriptions are " +
+      "valuable, extremely long alt text can be overwhelming for screen reader users and " +
+      "may dilute keyword relevance for search engines.",
+    impact:
+      "Screen reader users must listen to the entire alt text before they can move on. Overly " +
+      "long descriptions slow down navigation and may cause users to skip images entirely. " +
+      "Search engines may also weight keywords less heavily if they're buried in lengthy text.",
+    fix:
+      "Shorten the alt text to 125 characters or fewer. Focus on the most important aspect of " +
+      "the image. If a longer description is genuinely needed (e.g. for a complex infographic), " +
+      "consider using a separate visible caption or linking to a full text description.",
+  },
+
+  IMG_ALT_GENERIC: {
+    title: "Image has generic alt text",
+    category: "image",
+    severity: "warning",
+    definition:
+      "The alt text for this image is a generic placeholder word like 'image', 'photo', " +
+      "'picture', 'icon', or 'graphic'. These terms describe what the element is, not what " +
+      "it depicts.",
+    impact:
+      "Generic alt text provides no useful information. A screen reader user hears 'image' " +
+      "but learns nothing about what the image shows. Search engines cannot determine the " +
+      "image's content or match it to relevant queries.",
+    fix:
+      "Replace the generic text with a description of what the image actually shows. For " +
+      "example, change 'photo' to 'A counsellor meeting with a young family in our community " +
+      "centre'. In WordPress, click on the image in the Media Library and update the Alt Text field.",
+  },
+
+  IMG_ALT_DUP_FILENAME: {
+    title: "Alt text duplicates filename",
+    category: "image",
+    severity: "warning",
+    definition:
+      "The alt text for this image is identical (or nearly identical) to its filename. Examples " +
+      "include 'DSC_0042' or 'hero-banner-v2'. Filenames rarely describe image content meaningfully.",
+    impact:
+      "Machine-generated filenames provide no value for accessibility or SEO. Screen reader " +
+      "users hear text like 'DSC underscore zero zero four two' instead of a useful description. " +
+      "This is a common sign that alt text was auto-generated rather than deliberately written.",
+    fix:
+      "Write alt text that describes the actual content of the image, ignoring the filename. " +
+      "In WordPress, when uploading images, the Media Library may auto-populate alt text from " +
+      "the filename — always review and replace this with a proper description.",
+  },
+
+  IMG_ALT_MISUSED: {
+    title: "Decorative image has alt text",
+    category: "image",
+    severity: "info",
+    definition:
+      "This image appears to be decorative (it has role='presentation', aria-hidden='true', or " +
+      "is marked as decorative), yet it also has alt text. Decorative images should have empty " +
+      "alt text (alt=\"\") so screen readers skip them entirely.",
+    impact:
+      "When a decorative image has alt text, screen readers announce it unnecessarily, cluttering " +
+      "the listening experience. Decorative images include visual flourishes, spacers, and icons " +
+      "that repeat information already provided in text.",
+    fix:
+      "If the image is truly decorative, remove its alt text or set alt=\"\". If the image does " +
+      "convey information, remove the role='presentation' or aria-hidden attribute and keep " +
+      "meaningful alt text. Choose one approach — don't mix both.",
+  },
+
+  IMG_SLOW_LOAD: {
+    title: "Image slow to load",
+    category: "image",
+    severity: "warning",
+    definition:
+      "This image took more than 1 second to download. Slow-loading images can significantly " +
+      "delay page rendering and hurt the overall user experience.",
+    impact:
+      "Visitors may see blank spaces or loading placeholders while waiting for slow images. " +
+      "Core Web Vitals (Google's page experience metrics) are negatively affected by slow " +
+      "resource loading. On mobile connections, a 1-second delay per image can add up quickly.",
+    fix:
+      "Reduce the image file size through compression or format conversion (JPEG → WebP). " +
+      "Ensure images are appropriately sized for their display dimensions. Consider lazy " +
+      "loading images below the fold so they don't block initial page rendering.",
+  },
+
+  IMG_OVERSCALED: {
+    title: "Image displayed much smaller than actual size",
+    category: "image",
+    severity: "warning",
+    definition:
+      "This image's intrinsic dimensions (width/height in pixels) are more than twice the size " +
+      "at which it's displayed on the page. For example, a 2000px wide image displayed at " +
+      "400px wide is being scaled down by 5x.",
+    impact:
+      "Overscaled images waste bandwidth — visitors download far more data than is actually " +
+      "needed to display the image. This slows page loading and wastes mobile data. The " +
+      "browser must also spend resources scaling the image down.",
+    fix:
+      "Resize the image to match its display size before uploading. If the image appears at " +
+      "600px wide on desktop, resize it to approximately 1200px wide (2x for retina displays). " +
+      "Use srcset to serve different sizes to different devices.",
+  },
+
+  IMG_POOR_COMPRESSION: {
+    title: "Image poorly compressed",
+    category: "image",
+    severity: "info",
+    definition:
+      "This image has a high bytes-per-pixel ratio, suggesting it could be compressed " +
+      "more efficiently without visible quality loss. The raw file size is larger than " +
+      "expected for the image's pixel dimensions.",
+    impact:
+      "Poorly compressed images increase page weight and loading time unnecessarily. Modern " +
+      "compression tools can often reduce file size by 50–80% with no perceptible quality " +
+      "difference. Every extra kilobyte affects mobile users most.",
+    fix:
+      "Re-compress the image using tools like Squoosh (squoosh.app), TinyPNG, or ImageOptim. " +
+      "For photographs, try quality settings around 75–85%. For graphics with flat colors, " +
+      "use PNG-8 or SVG instead of full-color PNG-24.",
+  },
+
+  IMG_FORMAT_LEGACY: {
+    title: "Image using legacy format",
+    category: "image",
+    severity: "info",
+    definition:
+      "This large image is using an older format (JPEG, PNG, or GIF) instead of modern " +
+      "formats like WebP or AVIF. Legacy formats typically produce larger file sizes for " +
+      "equivalent visual quality.",
+    impact:
+      "WebP images are typically 25–35% smaller than equivalent JPEG or PNG files. For sites " +
+      "with many images, this adds up to significant bandwidth savings and faster page loads. " +
+      "All modern browsers (Chrome, Firefox, Safari, Edge) support WebP.",
+    fix:
+      "Convert images to WebP format using tools like Squoosh, cwebp, or an image optimization " +
+      "plugin. In WordPress, plugins like ShortPixel, Imagify, or Smush can automatically " +
+      "convert uploaded images to WebP and serve them to supported browsers.",
+  },
+
+  IMG_NO_SRCSET: {
+    title: "Image missing responsive srcset",
+    category: "image",
+    severity: "info",
+    definition:
+      "This image is being scaled down for display but has no srcset attribute. A srcset allows " +
+      "browsers to choose the most appropriately sized image file based on screen size and " +
+      "resolution, rather than always downloading the largest version.",
+    impact:
+      "Without srcset, mobile users download the same large image file as desktop users, even " +
+      "though they only need a fraction of those pixels. This wastes bandwidth and slows page " +
+      "loading on mobile devices.",
+    fix:
+      "Add a srcset attribute with multiple image sizes, or use WordPress's built-in responsive " +
+      "image support (which automatically generates srcset for uploaded images). When adding " +
+      "images manually, include 2–3 size variants (e.g. 400w, 800w, 1200w).",
+  },
+
+  IMG_DUPLICATE_CONTENT: {
+    title: "Duplicate image content",
+    category: "image",
+    severity: "info",
+    definition:
+      "The same image content is served from multiple different URLs on your site. The crawler " +
+      "detected identical image data (via content hash) being loaded from different file paths.",
+    impact:
+      "Duplicate images waste storage space and may confuse search engine image indexing. Each " +
+      "URL is treated as a separate image, potentially splitting any image search ranking value. " +
+      "It also suggests inconsistent asset management.",
+    fix:
+      "Consolidate duplicate images to a single canonical URL. Update any pages loading the " +
+      "duplicate version to use the primary URL. In WordPress, delete duplicate entries from " +
+      "the Media Library and update posts that reference them.",
   },
 
   LINK_EMPTY_ANCHOR: {

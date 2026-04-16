@@ -118,6 +118,18 @@ _ISSUE_SCORING: dict[str, tuple[int, int]] = {
     "PDF_TOO_LARGE":              (4,  2),
     "IMG_OVERSIZED":              (5,  2),
     "IMG_ALT_MISSING":            (5,  2),
+    # v1.9image - New image issue codes
+    "IMG_ALT_TOO_SHORT":          (3,  1),
+    "IMG_ALT_TOO_LONG":           (2,  1),
+    "IMG_ALT_GENERIC":            (4,  1),
+    "IMG_ALT_DUP_FILENAME":       (3,  1),
+    "IMG_ALT_MISUSED":            (3,  2),
+    "IMG_SLOW_LOAD":              (4,  2),
+    "IMG_OVERSCALED":             (4,  3),
+    "IMG_POOR_COMPRESSION":       (4,  2),
+    "IMG_FORMAT_LEGACY":          (2,  2),
+    "IMG_NO_SRCSET":              (2,  3),
+    "IMG_DUPLICATE_CONTENT":      (2,  2),
     "LOGIN_REDIRECT":             (2,  1),
     "INTERNAL_REDIRECT_301":      (4,  1),
     "ORPHAN_PAGE":                (6,  4),
@@ -377,7 +389,7 @@ _CATALOGUE: dict[str, _IssueSpec] = {
         human_description="Oversized Document",
     ),
     "IMG_OVERSIZED": _IssueSpec(
-        category="crawlability", severity="warning",
+        category="image", severity="warning",
         description="Image file exceeds 200 KB",
         recommendation="Compress this image. Use Squoosh, TinyPNG, or ImageOptim to reduce the file size without visible quality loss.",
         human_description="Oversized Image",
@@ -489,12 +501,12 @@ _CATALOGUE: dict[str, _IssueSpec] = {
     ),
     # ── v1.5 bug fixes — codes that existed in scoring but had no catalogue entry ──
     "IMG_ALT_MISSING": _IssueSpec(
-        category="metadata", severity="warning",
-        description="One or more images are missing an alt attribute or have empty alt text",
+        category="image", severity="warning",
+        description="One or more images are missing an alt attribute or have empty/blank alt text",
         recommendation="Add a descriptive alt attribute to every <img> tag. Describe what the image shows "
                        "in plain language, e.g. alt=\"Counsellor speaking with a young person\". "
-                       "Purely decorative images should use alt=\"\" (empty string, not omitted).",
-        human_description="Images Without Description",
+                       "Every image should have meaningful alt text for accessibility and SEO.",
+        human_description="Images Missing Alt Text",
     ),
     # ── v1.5 new codes ────────────────────────────────────────────────────
     "INTERNAL_REDIRECT_301": _IssueSpec(
@@ -512,11 +524,89 @@ _CATALOGUE: dict[str, _IssueSpec] = {
         human_description="Not Mobile-Friendly",
     ),
     "IMG_BROKEN": _IssueSpec(
-        category="broken_link", severity="critical",
+        category="image", severity="critical",
         description="Image src URL returns an error response (4xx/5xx)",
         recommendation="Replace or remove the broken image. Use your CMS media library to re-upload the file "
                        "or update the src URL to point to the correct location.",
         human_description="Broken Image",
+    ),
+    # ── v1.9image - Enhanced Image Analysis ─────────────────────────────────
+    "IMG_ALT_TOO_SHORT": _IssueSpec(
+        category="image", severity="warning",
+        description="Image alt text is too short (under 5 characters)",
+        recommendation="Expand the alt text to at least 5 characters. Describe what the image shows, "
+                       "not just a single word.",
+        human_description="Alt Text Too Short",
+    ),
+    "IMG_ALT_TOO_LONG": _IssueSpec(
+        category="image", severity="warning",
+        description="Image alt text is too long (over 125 characters)",
+        recommendation="Shorten the alt text to under 125 characters. Be concise while still describing "
+                       "the image content. Screen readers may truncate longer alt text.",
+        human_description="Alt Text Too Long",
+    ),
+    "IMG_ALT_GENERIC": _IssueSpec(
+        category="image", severity="warning",
+        description="Image alt text uses a generic term like 'image', 'photo', or 'picture'",
+        recommendation="Replace generic alt text with a specific description of what the image shows. "
+                       "Instead of 'photo', describe the scene, people, or objects depicted.",
+        human_description="Generic Alt Text",
+    ),
+    "IMG_ALT_DUP_FILENAME": _IssueSpec(
+        category="image", severity="warning",
+        description="Image alt text matches the filename",
+        recommendation="Write descriptive alt text instead of using the filename. Describe what the "
+                       "image shows to help search engines and screen reader users.",
+        human_description="Alt Text is Filename",
+    ),
+    "IMG_ALT_MISUSED": _IssueSpec(
+        category="image", severity="warning",
+        description="Alt text usage is incorrect for image type (decorative image has alt text)",
+        recommendation="Decorative images should have empty alt=\"\" to be skipped by screen readers. "
+                       "Only meaningful images should have descriptive alt text.",
+        human_description="Alt Text Misused",
+    ),
+    "IMG_SLOW_LOAD": _IssueSpec(
+        category="image", severity="warning",
+        description="Image takes too long to load (over 1 second)",
+        recommendation="Optimize the image by compressing it, reducing dimensions, or using a CDN. "
+                       "Consider lazy loading for below-the-fold images.",
+        human_description="Slow Loading Image",
+    ),
+    "IMG_OVERSCALED": _IssueSpec(
+        category="image", severity="warning",
+        description="Image intrinsic size is more than 2x its display size (wasted bandwidth)",
+        recommendation="Resize the image to match its display dimensions. Use srcset to serve "
+                       "appropriately sized images to different devices.",
+        human_description="Overscaled Image",
+    ),
+    "IMG_POOR_COMPRESSION": _IssueSpec(
+        category="image", severity="warning",
+        description="Image has poor compression efficiency (high bytes per pixel)",
+        recommendation="Re-compress the image using WebP format for better efficiency. "
+                       "Use tools like Squoosh or ImageOptim for lossless compression.",
+        human_description="Poor Compression",
+    ),
+    "IMG_FORMAT_LEGACY": _IssueSpec(
+        category="image", severity="info",
+        description="Image uses legacy format (JPEG/PNG/GIF) where WebP would save significant space",
+        recommendation="Convert to WebP format for 25-35% smaller file sizes with the same quality. "
+                       "Most modern browsers support WebP.",
+        human_description="Legacy Image Format",
+    ),
+    "IMG_NO_SRCSET": _IssueSpec(
+        category="image", severity="info",
+        description="Large image lacks srcset for responsive delivery",
+        recommendation="Add a srcset attribute to serve appropriately sized images to mobile devices. "
+                       "This improves load times on smaller screens.",
+        human_description="Missing Responsive Images",
+    ),
+    "IMG_DUPLICATE_CONTENT": _IssueSpec(
+        category="image", severity="info",
+        description="Same image content used under multiple URLs",
+        recommendation="Consolidate duplicate images to a single URL. This saves server space "
+                       "and improves caching efficiency.",
+        human_description="Duplicate Image",
     ),
     "LINK_EMPTY_ANCHOR": _IssueSpec(
         category="metadata", severity="warning",
@@ -651,11 +741,23 @@ def _titles_mismatch(title: str, h1: str) -> bool:
     return title_words.isdisjoint(h1_words)
 
 
-def make_issue(code: str, page_url: str | None = None, extra: dict | None = None) -> Issue:
+def make_issue(
+    code: str,
+    page_url: str | None = None,
+    extra: dict | None = None,
+    *,
+    job_id: str = "",
+) -> Issue:
     """Construct an :class:`Issue` from a code in the catalogue.
 
     Automatically populates *impact*, *effort*, and *priority_rank* from
     :data:`_ISSUE_SCORING`.  Unknown codes get zeroes for all three.
+
+    Args:
+        code: The issue code from the catalogue.
+        page_url: The URL of the page where the issue was found.
+        extra: Optional supplementary data.
+        job_id: The crawl job ID (used for image analysis module).
     """
     spec = _CATALOGUE[code]
     impact, effort = _ISSUE_SCORING.get(code, (0, 0))

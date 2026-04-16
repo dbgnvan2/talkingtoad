@@ -7,7 +7,13 @@ from api.models.issue import Issue
 
 logger = logging.getLogger(__name__)
 
-def generate_excel_report(job: CrawlJob, issues: list[Issue], summary: dict) -> bytes:
+def generate_excel_report(
+    job: CrawlJob,
+    issues: list[Issue],
+    summary: dict,
+    image_summary: dict = None,
+    images: list = None,
+) -> bytes:
     """Generate a multi-sheet Excel workbook from crawl data."""
     wb = Workbook()
     
@@ -80,6 +86,101 @@ def generate_excel_report(job: CrawlJob, issues: list[Issue], summary: dict) -> 
     
     ws_ai.column_dimensions['A'].width = 30
     ws_ai.column_dimensions['B'].width = 50
+
+    # ── Images Sheet ───────────────────────────────────────────────────────
+    if image_summary and image_summary.get("total_images", 0) > 0:
+        ws_img = wb.create_sheet(title="Images")
+        ws_img["A1"] = "Image Health Report"
+        ws_img["A1"].font = header_font
+
+        ws_img["A3"] = "Image Health Score:"
+        ws_img["B3"] = f"{image_summary.get('image_health_score', 0)}%"
+        ws_img["A3"].font = label_font
+
+        ws_img["A4"] = "Total Images:"
+        ws_img["B4"] = image_summary.get("total_images", 0)
+        ws_img["A4"].font = label_font
+
+        ws_img["A5"] = "Total Size:"
+        ws_img["B5"] = f"{image_summary.get('total_size_kb', 0)} KB"
+        ws_img["A5"].font = label_font
+
+        ws_img["A6"] = "Avg Load Time:"
+        ws_img["B6"] = f"{image_summary.get('avg_load_time_ms', 0)}ms"
+        ws_img["A6"].font = label_font
+
+        # Format breakdown
+        ws_img["A8"] = "Images by Format"
+        ws_img["A8"].font = Font(bold=True, size=12)
+        row_num = 9
+        for fmt, count in sorted(image_summary.get("by_format", {}).items(), key=lambda x: -x[1]):
+            ws_img[f"A{row_num}"] = fmt.upper()
+            ws_img[f"B{row_num}"] = count
+            row_num += 1
+
+        # Top issues
+        row_num += 1
+        ws_img[f"A{row_num}"] = "Top Image Issues"
+        ws_img[f"A{row_num}"].font = Font(bold=True, size=12)
+        row_num += 1
+        for code, count in sorted(image_summary.get("by_issue", {}).items(), key=lambda x: -x[1])[:10]:
+            ws_img[f"A{row_num}"] = code.replace('IMG_', '').replace('_', ' ').title()
+            ws_img[f"B{row_num}"] = count
+            row_num += 1
+
+        ws_img.column_dimensions['A'].width = 30
+        ws_img.column_dimensions['B'].width = 20
+
+        # Image details sheet
+        if images and len(images) > 0:
+            ws_img_list = wb.create_sheet(title="Image Details")
+            img_headers = ["Score", "Filename", "URL", "Alt Text", "Size (KB)", "Dimensions", "Format", "Load Time (ms)", "Issues"]
+            ws_img_list.append(img_headers)
+
+            for cell in ws_img_list[1]:
+                cell.font = label_font
+                cell.fill = PatternFill(start_color="E5E7EB", end_color="E5E7EB", fill_type="solid")
+                cell.alignment = Alignment(horizontal="center")
+
+            for img in images:
+                # Handle both ImageInfo objects and dicts
+                score = img.overall_score if hasattr(img, 'overall_score') else img.get('overall_score', 0)
+                filename = img.filename if hasattr(img, 'filename') else img.get('filename', '')
+                url = img.url if hasattr(img, 'url') else img.get('url', '')
+                alt = img.alt if hasattr(img, 'alt') else img.get('alt', '')
+                size_kb = img.file_size_kb if hasattr(img, 'file_size_kb') else img.get('file_size_kb', 0)
+                width = img.width if hasattr(img, 'width') else img.get('width', 0)
+                height = img.height if hasattr(img, 'height') else img.get('height', 0)
+                fmt = img.format if hasattr(img, 'format') else img.get('format', '')
+                load_time = img.load_time_ms if hasattr(img, 'load_time_ms') else img.get('load_time_ms', 0)
+                issues_list = img.issues if hasattr(img, 'issues') else img.get('issues', [])
+
+                dimensions = f"{width}x{height}" if width and height else ""
+                issues_str = ", ".join(issues_list) if issues_list else ""
+
+                ws_img_list.append([
+                    round(score) if score else 0,
+                    filename or "",
+                    url or "",
+                    alt or "",
+                    size_kb or 0,
+                    dimensions,
+                    (fmt or "").upper(),
+                    load_time or 0,
+                    issues_str
+                ])
+
+            ws_img_list.column_dimensions['A'].width = 8
+            ws_img_list.column_dimensions['B'].width = 30
+            ws_img_list.column_dimensions['C'].width = 60
+            ws_img_list.column_dimensions['D'].width = 40
+            ws_img_list.column_dimensions['E'].width = 12
+            ws_img_list.column_dimensions['F'].width = 15
+            ws_img_list.column_dimensions['G'].width = 10
+            ws_img_list.column_dimensions['H'].width = 15
+            ws_img_list.column_dimensions['I'].width = 50
+
+            ws_img_list.auto_filter.ref = ws_img_list.dimensions
 
     # ── Issue Sheets (by Category) ─────────────────────────────────────────
     # Group issues by category

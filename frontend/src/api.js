@@ -265,15 +265,40 @@ export async function getImageInfo(imageUrl) {
   return checkResponse(res)
 }
 
-export async function updateImageMeta(imageUrl, { altText, title, caption } = {}) {
+export async function updateImageMeta(imageUrl, { altText, title, caption, jobId, wpCredentials } = {}) {
   const params = new URLSearchParams({ image_url: imageUrl })
+  if (jobId    !== undefined && jobId    !== null) params.set('job_id',   jobId)
   if (altText  !== undefined && altText  !== null) params.set('alt_text', altText)
   if (title    !== undefined && title    !== null) params.set('title',    title)
   if (caption  !== undefined && caption  !== null) params.set('caption',  caption)
-  const res = await fetch(`/api/fixes/update-image-meta?${params}`, {
+
+  const options = {
     method: 'POST',
     headers: authHeaders(),
-  })
+  }
+
+  // If WordPress credentials are provided, send them in the body
+  if (wpCredentials) {
+    options.body = JSON.stringify({ wp_credentials: wpCredentials })
+  }
+
+  const res = await fetch(`/api/fixes/update-image-meta?${params}`, options)
+  return checkResponse(res)
+}
+
+export async function refreshImageFromWP(imageUrl, jobId, wpCredentials = null) {
+  const params = new URLSearchParams({ image_url: imageUrl, job_id: jobId })
+
+  const options = {
+    method: 'POST',
+    headers: authHeaders(),
+  }
+
+  if (wpCredentials) {
+    options.body = JSON.stringify({ wp_credentials: wpCredentials })
+  }
+
+  const res = await fetch(`/api/fixes/refresh-image-from-wp?${params}`, options)
   return checkResponse(res)
 }
 
@@ -367,4 +392,106 @@ export async function testAI() {
     headers: authHeaders(),
   })
   return checkResponse(res)
+}
+
+// v1.9image: Image Analysis API
+export async function getImages(jobId, { page = 1, limit = 50, sortBy = 'score' } = {}) {
+  const params = new URLSearchParams({ page, limit, sort_by: sortBy })
+  const res = await fetch(`/api/crawl/${jobId}/images?${params}`, {
+    headers: authHeaders(),
+  })
+  return checkResponse(res)
+}
+
+export async function getImagesSummary(jobId) {
+  const res = await fetch(`/api/crawl/${jobId}/images/summary`, {
+    headers: authHeaders(),
+  })
+  return checkResponse(res)
+}
+
+export async function fetchImageDetails(jobId, imageUrl) {
+  const params = new URLSearchParams({ image_url: imageUrl })
+  const res = await fetch(`/api/crawl/${jobId}/images/fetch?${params}`, {
+    method: 'POST',
+    headers: authHeaders(),
+  })
+  return checkResponse(res)
+}
+
+// v1.9image: AI Image Analysis
+export async function analyzeImageWithAI(jobId, imageUrl) {
+  const params = new URLSearchParams({ image_url: imageUrl })
+  const res = await fetch(`/api/crawl/${jobId}/images/analyze-ai?${params}`, {
+    method: 'POST',
+    headers: authHeaders(),
+  })
+  return checkResponse(res)
+}
+
+// AI Page Advisor
+export async function getPageAdvisor(jobId, pageUrl) {
+  const res = await fetch('/api/ai/page-advisor', {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify({ job_id: jobId, page_url: pageUrl })
+  })
+  return checkResponse(res)
+}
+
+// AI Site Advisor
+export async function getSiteAdvisor(jobId) {
+  const res = await fetch('/api/ai/site-advisor', {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify({ job_id: jobId })
+  })
+  return checkResponse(res)
+}
+
+// Export AI Image Analysis as PDF
+export async function downloadAIImagePDF(jobId, aiResults = null) {
+  const url = `/api/crawl/${jobId}/export/ai-images-pdf`
+  const h = authHeaders()
+
+  // If we have AI results from the modal, send them as POST
+  const options = aiResults ? {
+    method: 'POST',
+    headers: h,
+    body: JSON.stringify({ ai_results: aiResults })
+  } : {
+    method: 'GET',
+    headers: h
+  }
+
+  const res = await fetch(url, options)
+  if (!res.ok) throw new Error(`PDF Export failed: HTTP ${res.status}`)
+  const blob = await res.blob()
+
+  // Try to use File System Access API for Save As dialog
+  if (window.showSaveFilePicker) {
+    try {
+      const handle = await window.showSaveFilePicker({
+        suggestedName: `AI-Image-Analysis-${jobId.slice(0, 8)}.pdf`,
+        types: [{
+          description: 'PDF Document',
+          accept: { 'application/pdf': ['.pdf'] }
+        }]
+      })
+      const writable = await handle.createWritable()
+      await writable.write(blob)
+      await writable.close()
+      return
+    } catch (err) {
+      // User cancelled or API not available, fall through to default
+      if (err.name !== 'AbortError') {
+        console.warn('Save picker failed:', err)
+      }
+    }
+  }
+
+  // Fallback: open in new tab (user can right-click save)
+  const objectUrl = URL.createObjectURL(blob)
+  window.open(objectUrl, '_blank')
+  setTimeout(() => URL.revokeObjectURL(objectUrl), 1000)
 }

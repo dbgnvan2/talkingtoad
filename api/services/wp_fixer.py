@@ -1571,7 +1571,7 @@ async def _fix_heading_in_template_parts(
 # Image metadata helpers
 # ---------------------------------------------------------------------------
 
-async def find_attachment_by_url(wp: WPClient, image_url: str) -> dict | None:
+async def find_attachment_by_url(wp: WPClient, image_url: str, cache_bust: bool = False) -> dict | None:
     """Resolve an image URL to a WordPress media attachment.
 
     Tries the source_url filter first (exact match), then falls back to a
@@ -1579,57 +1579,103 @@ async def find_attachment_by_url(wp: WPClient, image_url: str) -> dict | None:
     title, caption, admin_url.  Returns None if not found.
     """
     from urllib.parse import urlparse, unquote
+    import time
 
-    # Try exact source_url match
+    # Add cache-busting parameter if requested
+    cache_param = f"&_nocache={int(time.time() * 1000)}" if cache_bust else ""
+
+    # Try exact source_url match ONLY
+    # CRITICAL: Do NOT use fuzzy fallback - it matches wrong images!
+    # Extract filename and convert to WordPress slug format
+    filename = unquote(urlparse(image_url).path.split("/")[-1])
+    # WordPress slug: lowercase, no extension, special chars become hyphens
+    slug = re.sub(r'\.[^.]+$', '', filename).lower()  # Remove extension, lowercase
+    slug = re.sub(r'[^a-z0-9]+', '-', slug).strip('-')  # Special chars to hyphens
+
+    print(f"[WP FETCH] Looking for image: {image_url}")
+    print(f"[WP FETCH] Filename: {filename}")
+    print(f"[WP FETCH] WordPress slug: {slug}")
+
     try:
+        # Query by SLUG (the correct WordPress parameter!)
+        print(f"[WP FETCH] Querying WordPress by slug={slug}")
         r = await wp.get(
-            f"media?source_url={image_url}&_fields=id,source_url,alt_text,title,caption&per_page=1"
+            f"media?slug={slug}&_fields=id,source_url,alt_text,title,caption,description{cache_param}"
         )
+
         if r.status_code == 200:
             items = r.json()
-            if items:
-                return _attachment_dict(items[0], wp.site_url)
-    except Exception:
-        pass
+            print(f"[WP FETCH] WordPress returned {len(items)} items")
 
-    # Fallback: search by filename slug
-    filename = unquote(urlparse(image_url).path.split("/")[-1])
-    slug = re.sub(r"\.[^.]+$", "", filename)   # strip extension
-    slug = re.sub(r"-\d+x\d+$", "", slug)       # strip WP size suffix e.g. -300x200
-    try:
-        r = await wp.get(
-            f"media?search={slug}&_fields=id,source_url,alt_text,title,caption&per_page=10"
-        )
-        if r.status_code == 200:
-            for item in r.json():
-                src = item.get("source_url", "")
-                if urlparse(src).path.split("/")[-1] == filename:
-                    return _attachment_dict(item, wp.site_url)
-                src_slug = re.sub(r"\.[^.]+$", "", src.split("/")[-1])
-                src_slug = re.sub(r"-\d+x\d+$", "", src_slug)
-                if src_slug == slug:
-                    return _attachment_dict(item, wp.site_url)
-    except Exception:
-        pass
+            if not items:
+                print(f"[WP FETCH] No items found with filename: {filename}")
+                return None
 
-    return None
+            # Check each item for exact URL match
+            for item in items:
+                wp_data = _attachment_dict(item, wp.site_url)
+                wp_url = wp_data.get('source_url', '')
+                wp_id = wp_data.get('id')
+
+                print(f"[WP FETCH] Checking item {wp_id}:")
+                print(f"  - WordPress URL: {wp_url}")
+                print(f"  - Match: {wp_url == image_url}")
+
+                if wp_url == image_url:
+                    print(f"[WP FETCH] ✓✓✓ EXACT MATCH FOUND! WP ID: {wp_id}")
+                    return wp_data
+
+            # No exact match found
+            print(f"[WP FETCH] ✗ No exact URL match in {len(items)} results")
+            print(f"[WP FETCH] Image might use different filename in WordPress")
+            return None
+        else:
+            print(f"[WP FETCH] WordPress API error: {r.status_code}")
+            return None
+    except Exception as e:
+        print(f"[WP FETCH] Exception: {e}")
+        return None
 
 
 def _attachment_dict(item: dict, site_url: str) -> dict:
+    import re
+
+    def strip_html(text: str) -> str:
+        """Remove HTML tags from text."""
+        if not text:
+            return ""
+        # Remove HTML tags
+        text = re.sub(r'<[^>]+>', '', text)
+        # Decode HTML entities
+        text = text.replace('&nbsp;', ' ').replace('&amp;', '&').replace('&lt;', '<').replace('&gt;', '>')
+        return text.strip()
+
     att_id = item["id"]
+
+    # Get rendered fields and strip HTML
+    title_raw = item.get("title", {}).get("rendered", "")
+    caption_raw = item.get("caption", {}).get("rendered", "")
+    description_raw = item.get("description", {}).get("rendered", "")
+
+    print(f"[WP PARSE] Media ID {att_id}:")
+    print(f"  - Title raw: {title_raw[:100] if title_raw else '(empty)'}")
+    print(f"  - Caption raw: {caption_raw[:100] if caption_raw else '(empty)'}")
+    print(f"  - Description raw: {description_raw[:100] if description_raw else '(empty)'}")
+
     return {
-        "id":         att_id,
-        "source_url": item.get("source_url", ""),
-        "alt_text":   item.get("alt_text", ""),
-        "title":      item.get("title", {}).get("rendered", ""),
-        "caption":    item.get("caption", {}).get("rendered", ""),
-        "admin_url":  f"{site_url.rstrip('/')}/wp-admin/post.php?post={att_id}&action=edit",
+        "id":          att_id,
+        "source_url":  item.get("source_url", ""),
+        "alt_text":    item.get("alt_text", ""),
+        "title":       strip_html(title_raw),
+        "caption":     strip_html(caption_raw),
+        "description": strip_html(description_raw),
+        "admin_url":   f"{site_url.rstrip('/')}/wp-admin/post.php?post={att_id}&action=edit",
     }
 
 
-async def get_attachment_info(wp: WPClient, image_url: str) -> dict:
+async def get_attachment_info(wp: WPClient, image_url: str, cache_bust: bool = False) -> dict:
     """Return attachment metadata for *image_url*, or an error dict."""
-    att = await find_attachment_by_url(wp, image_url)
+    att = await find_attachment_by_url(wp, image_url, cache_bust=cache_bust)
     if not att:
         return {"success": False, "error": f"No WordPress media attachment found for: {image_url}"}
     return {"success": True, **att}

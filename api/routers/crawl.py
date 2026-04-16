@@ -46,7 +46,7 @@ router = APIRouter(prefix="/api/crawl", dependencies=[Depends(require_auth)])
 # Valid category slugs for the filtered results endpoint
 _VALID_CATEGORIES: frozenset[str] = frozenset(
     ["broken_link", "metadata", "heading", "redirect",
-     "crawlability", "duplicate", "sitemap", "security", "url_structure", "ai_readiness"]
+     "crawlability", "duplicate", "sitemap", "security", "url_structure", "ai_readiness", "image"]
 )
 
 # Per-job cancel events (job_id → asyncio.Event)
@@ -165,6 +165,8 @@ async def _run_crawl_background(
             cancel_event=cancel_event,
         )
 
+        print(f"[ROUTER] Crawl complete. Pages: {len(result.pages)}, Issues: {len(result.issues)}, Images: {len(result.images)}")
+
         pages = [_engine_page_to_model(p, job_id) for p in result.pages]
         issues = [_engine_issue_to_model(i, job_id) for i in result.issues]
         broken_links = [
@@ -185,6 +187,8 @@ async def _run_crawl_background(
             await store.save_issues(issues)
         if broken_links:
             await store.save_links(broken_links)
+        if result.images:
+            await store.save_images(result.images)
 
         final_status = "cancelled" if result.cancelled else "complete"
         await store.update_job(
@@ -288,6 +292,10 @@ async def start_crawl(
     store: SQLiteJobStore | RedisJobStore = Depends(get_store),
 ) -> dict:
     """Submit a new crawl job (spec §6.4 POST /api/crawl/start)."""
+    import sys
+    print("[START] ====== start_crawl endpoint called ======", flush=True)
+    sys.stderr.write("[START] ====== STDERR start_crawl ======\n")
+    sys.stderr.flush()
     target_url = body.get("target_url", "").strip()
     if not target_url or not target_url.startswith(("http://", "https://")):
         return _err("INVALID_URL", "target_url must be a valid http or https URL.", 422)
@@ -883,6 +891,48 @@ async def scan_single_page(
         if issue.category not in _BROKEN_LINK_CATEGORIES:
             issue.page_url = url
 
+    # ── Image collection (v1.9image) ────────────────────────────────────
+    from api.models.image import ImageInfo
+    from api.crawler.image_analyzer import analyze_batch as analyze_images
+    from api.crawler.engine import _guess_format_from_url, _extract_filename
+
+    all_images: list[ImageInfo] = []
+    if page.image_data:
+        for img_data in page.image_data:
+            img_url = img_data.get("url")
+            if not img_url:
+                continue
+            image_info = ImageInfo(
+                url=img_url,
+                page_url=url,
+                job_id=job_id,
+                alt=img_data.get("alt"),
+                title=img_data.get("title"),
+                filename=_extract_filename(img_url),
+                format=_guess_format_from_url(img_url),
+                width=None,
+                height=None,
+                rendered_width=img_data.get("rendered_width"),
+                rendered_height=img_data.get("rendered_height"),
+                file_size_bytes=None,
+                load_time_ms=None,
+                http_status=0,
+                is_lazy_loaded=img_data.get("is_lazy_loaded", False),
+                has_srcset=img_data.get("has_srcset", False),
+                srcset_candidates=img_data.get("srcset_candidates", []),
+                is_decorative=img_data.get("is_decorative", False),
+                surrounding_text=img_data.get("surrounding_text", ""),
+                content_hash=None,
+                data_source="html_only",
+            )
+            all_images.append(image_info)
+
+        if all_images:
+            analyzed_images, image_issues = analyze_images(all_images, job_id=job_id)
+            all_images = analyzed_images
+            # Add image issues to the issues list
+            new_issues.extend([_engine_issue_to_model(i, job_id) for i in image_issues])
+
     page_model = _engine_page_to_model(page, job_id)
     page_model.url = url
     page_model.status_code = result.status_code
@@ -891,6 +941,8 @@ async def scan_single_page(
     await store.save_pages([page_model])
     if new_issues:
         await store.save_issues(new_issues)
+    if all_images:
+        await store.save_images(all_images)
 
     await store.update_job(
         job_id,
@@ -899,7 +951,7 @@ async def scan_single_page(
         pages_total=1,
     )
 
-    logger.info("scan_page_complete", extra={"job_id": job_id, "url": url, "issues": len(new_issues)})
+    logger.info("scan_page_complete", extra={"job_id": job_id, "url": url, "issues": len(new_issues), "images": len(all_images)})
 
     return {"job_id": job_id, "status": "complete", "url": url, "issues": len(new_issues)}
 
@@ -968,10 +1020,14 @@ async def export_pdf_report(
 
     issues = await store.get_all_issues(job_id)
     summary = await store.get_summary(job_id)
-    
+
     # Fetch top 10 pages for the report
     top_pages_data, _ = await store.get_pages_with_issue_counts(job_id, page=1, limit=10)
-    
+
+    # Fetch image data for the report
+    image_summary = await store.get_image_summary(job_id)
+    top_images, _ = await store.get_images(job_id, page=1, limit=20, sort_by="score")
+
     # summary_only is a shortcut for disabling help and pages
     if summary_only:
         include_help = False
@@ -979,16 +1035,18 @@ async def export_pdf_report(
 
     try:
         logger.info("generating_pdf_report", extra={
-            "job_id": job_id, 
+            "job_id": job_id,
             "issues_count": len(issues),
             "include_help": include_help,
             "include_pages": include_pages
         })
         pdf_bytes = await generate_pdf_report(
-            job, issues, summary, 
-            include_help=include_help, 
+            job, issues, summary,
+            include_help=include_help,
             include_pages=include_pages,
-            top_pages=top_pages_data
+            top_pages=top_pages_data,
+            image_summary=image_summary,
+            top_images=top_images,
         )
         logger.info("pdf_report_generated", extra={"job_id": job_id, "size_bytes": len(pdf_bytes)})
         return StreamingResponse(
@@ -1013,9 +1071,17 @@ async def export_excel_report(
 
     issues = await store.get_all_issues(job_id)
     summary = await store.get_summary(job_id)
-    
+
+    # Fetch image data for the report
+    image_summary = await store.get_image_summary(job_id)
+    images_list, _ = await store.get_images(job_id, page=1, limit=500, sort_by="score")
+
     try:
-        excel_bytes = generate_excel_report(job, issues, summary)
+        excel_bytes = generate_excel_report(
+            job, issues, summary,
+            image_summary=image_summary,
+            images=images_list,
+        )
         return StreamingResponse(
             io.BytesIO(excel_bytes),
             media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -1067,6 +1133,294 @@ def _issue_dict(issue: Issue) -> dict:
     }
 
 
+@router.get("/{job_id}/images", response_model=None)
+async def get_images(
+    job_id: str,
+    page: int = Query(1, ge=1),
+    limit: int = Query(50, ge=1, le=1000),  # Increased from 100 to 1000 for bulk operations
+    sort_by: str = Query("score", regex="^(score|size|load_time)$"),
+    store: SQLiteJobStore | RedisJobStore = Depends(get_store),
+) -> dict | JSONResponse:
+    """Return paginated list of images for a job with scores and issues."""
+    job = await store.get_job(job_id)
+    if job is None:
+        return _err("JOB_NOT_FOUND", "No crawl job found with the given ID.", 404)
+
+    images = await store.get_images(job_id, page=page, limit=limit, sort_by=sort_by)
+    summary = await store.get_image_summary(job_id)
+
+    total = summary.get("total_images", 0)
+    total_pages = max(1, math.ceil(total / limit))
+
+    return {
+        "job_id": job_id,
+        "pagination": {
+            "page": page,
+            "limit": limit,
+            "total_images": total,
+            "total_pages": total_pages,
+        },
+        "images": [_image_dict(img) for img in images],
+    }
+
+
+@router.get("/{job_id}/images/summary", response_model=None)
+async def get_images_summary(
+    job_id: str,
+    store: SQLiteJobStore | RedisJobStore = Depends(get_store),
+) -> dict | JSONResponse:
+    """Return image analysis summary stats for a job."""
+    job = await store.get_job(job_id)
+    if job is None:
+        return _err("JOB_NOT_FOUND", "No crawl job found with the given ID.", 404)
+
+    summary = await store.get_image_summary(job_id)
+    return {
+        "job_id": job_id,
+        **summary,
+    }
+
+
+@router.get("/{job_id}/images/{image_url:path}", response_model=None)
+async def get_image_detail(
+    job_id: str,
+    image_url: str,
+    store: SQLiteJobStore | RedisJobStore = Depends(get_store),
+) -> dict | JSONResponse:
+    """Return detailed info for a specific image by URL."""
+    job = await store.get_job(job_id)
+    if job is None:
+        return _err("JOB_NOT_FOUND", "No crawl job found with the given ID.", 404)
+
+    image = await store.get_image_by_url(job_id, image_url)
+    if image is None:
+        return _err("IMAGE_NOT_FOUND", f"No image found with URL: {image_url}", 404)
+
+    return {
+        "job_id": job_id,
+        "image": _image_dict(image),
+    }
+
+
+@router.post("/{job_id}/images/fetch", response_model=None)
+async def fetch_image_details(
+    job_id: str,
+    image_url: str = Query(..., description="URL of the image to fetch"),
+    fetch_wp_metadata: bool = Query(True, description="Also fetch WordPress metadata (alt text, title)"),
+    store: SQLiteJobStore | RedisJobStore = Depends(get_store),
+) -> dict | JSONResponse:
+    """Fetch full image details: image file (dimensions, size, format) + WordPress metadata (alt text, title).
+
+    This is the unified "Fetch WP Data" endpoint that gets the complete truth from live sources.
+    """
+    import hashlib
+    import time
+    from urllib.parse import urlparse
+    import json
+    from pathlib import Path
+
+    print(f"\n{'='*80}")
+    print(f"[FETCH] START - Image URL: {image_url}")
+    print(f"[FETCH] Job ID: {job_id}")
+    print(f"[FETCH] Fetch WP metadata: {fetch_wp_metadata}")
+    print(f"{'='*80}\n")
+
+    job = await store.get_job(job_id)
+    if job is None:
+        return _err("JOB_NOT_FOUND", "No crawl job found with the given ID.", 404)
+
+    image = await store.get_image_by_url(job_id, image_url)
+    if image is None:
+        return _err("IMAGE_NOT_FOUND", f"No image found with URL: {image_url}", 404)
+
+    print(f"[FETCH] Got image from DB:")
+    print(f"  - Image URL: {image.url}")
+    print(f"  - Current alt: '{image.alt}'")
+    print(f"  - Current title: '{image.title}'")
+    print(f"  - File size: {image.file_size_bytes}")
+    print(f"  - Dimensions: {image.width}x{image.height}")
+
+    # Step 1: Fetch WordPress metadata if requested
+    wp_fetch_success = False
+    if fetch_wp_metadata:
+        try:
+            from api.services.wp_client import WPClient
+            from api.services.wp_fixer import get_attachment_info
+
+            _CREDS_PATH = Path("wp-credentials.json")
+            if _CREDS_PATH.exists():
+                with open(_CREDS_PATH) as f:
+                    creds = json.load(f)
+
+                # Validate domain
+                job_domain = urlparse(job.target_url).netloc
+                creds_domain = urlparse(creds.get("site_url", "")).netloc
+
+                if job_domain == creds_domain:
+                    wp = WPClient(
+                        site_url=creds["site_url"],
+                        login_url=creds["login_url"],
+                        username=creds["username"],
+                        password=creds["password"],
+                    )
+                    async with wp:
+                        wp_info = await get_attachment_info(wp, image_url, cache_bust=True)
+
+                    if wp_info.get("success"):
+                        wp_alt = wp_info.get("alt_text", "")
+                        wp_title = wp_info.get("title", "")
+                        wp_caption = wp_info.get("caption", "")
+                        wp_description = wp_info.get("description", "")
+                        wp_media_id = wp_info.get("id")
+                        wp_source_url = wp_info.get("source_url", "")
+
+                        print(f"\n[FETCH] WordPress Response:")
+                        print(f"  - WP Media ID: {wp_media_id}")
+                        print(f"  - WP Source URL: {wp_source_url}")
+                        print(f"  - WP Alt Text: '{wp_alt}'")
+                        print(f"  - WP Title: '{wp_title}'")
+                        print(f"  - WP Caption: '{wp_caption}'")
+                        print(f"  - WP Description: '{wp_description}'")
+                        print(f"  - URL Match: {wp_source_url == image_url}")
+
+                        # CRITICAL: Only update if URLs match exactly
+                        if wp_source_url == image_url:
+                            image.alt = wp_alt
+                            image.title = wp_title
+                            image.caption = wp_caption
+                            image.description = wp_description
+                            wp_fetch_success = True
+                            print(f"  ✓ URLs match - updating metadata")
+                        else:
+                            print(f"  ✗ URL MISMATCH - NOT updating metadata!")
+                            print(f"    Requested: {image_url}")
+                            print(f"    Got:       {wp_source_url}")
+                    else:
+                        print(f"[FETCH] WordPress fetch failed: {wp_info.get('error')}")
+                        print(f"  ⚠ Image not found in WordPress Media Library")
+                        print(f"  This image exists on the server but wasn't uploaded via WP Media Library")
+                        # Continue with image file fetch - we can still get dimensions/size/etc.
+                else:
+                    print(f"[FETCH] Domain mismatch - job: {job_domain}, creds: {creds_domain}")
+        except Exception as e:
+            print(f"[FETCH] WordPress fetch error: {e}")
+            logger.warning("wp_fetch_failed_in_fetch", extra={"error": str(e)})
+
+    # Step 2: Fetch the actual image file
+    try:
+        import httpx
+        from PIL import Image as PILImage
+        import io as pio
+
+        start_time = time.time()
+        async with httpx.AsyncClient(follow_redirects=True, timeout=10.0) as client:
+            response = await client.get(image_url)
+
+        load_time_ms = int((time.time() - start_time) * 1000)
+        http_status = response.status_code
+
+        width, height, fmt, content_hash, file_size_bytes = None, None, "unknown", None, None
+
+        if response.status_code < 400:
+            content = response.content
+            file_size_bytes = len(content)
+            content_hash = hashlib.md5(content).hexdigest()
+
+            try:
+                img = PILImage.open(pio.BytesIO(content))
+                width, height = img.size
+                fmt = img.format.lower() if img.format else "unknown"
+            except Exception:
+                pass
+
+        # Update the stored image with fetched data
+        image.width = width
+        image.height = height
+        image.format = fmt
+        image.file_size_bytes = file_size_bytes
+        image.load_time_ms = load_time_ms
+        image.http_status = http_status
+        image.content_hash = content_hash
+        image.data_source = "full_fetch"
+
+        # Step 3: Re-analyze with ALL new data (including WP metadata if fetched)
+        from api.crawler.image_analyzer import analyze_image
+        issues, scores = analyze_image(image, job_id=job_id)
+        image.performance_score = scores["performance_score"]
+        image.accessibility_score = scores["accessibility_score"]
+        image.semantic_score = scores["semantic_score"]
+        image.technical_score = scores["technical_score"]
+        image.overall_score = scores["overall_score"]
+        image.issues = [i.code for i in issues]
+
+        print(f"\n[FETCH] Before Save to DB:")
+        print(f"  - Image URL: {image.url}")
+        print(f"  - Alt text to save: '{image.alt}'")
+        print(f"  - Title to save: '{image.title}'")
+        print(f"  - Overall score: {image.overall_score}")
+        print(f"  - Issues: {image.issues}")
+
+        # Save updated image
+        await store.save_images([image])
+
+        print(f"\n[FETCH] After Save - verifying:")
+        print(f"  - Image URL in object: {image.url}")
+        print(f"  - Alt text in object: '{image.alt}'")
+
+        result_image = _image_dict(image)
+        print(f"\n[FETCH] Returning to frontend:")
+        print(f"  - URL: {result_image['url']}")
+        print(f"  - Alt: '{result_image['alt']}'")
+        print(f"  - Overall score: {result_image['overall_score']}")
+        print(f"{'='*80}\n")
+
+        return {
+            "job_id": job_id,
+            "fetched": True,
+            "wp_metadata_fetched": wp_fetch_success,
+            "image": result_image,
+        }
+
+    except Exception as e:
+        logger.exception("image_fetch_failed", extra={"image_url": image_url})
+        return _err("FETCH_FAILED", f"Failed to fetch image: {str(e)}", 500)
+
+
+# ── Private helpers ────────────────────────────────────────────────────────
+
+def _image_dict(img) -> dict:
+    """Convert ImageInfo to API response dict."""
+    return {
+        "url": img.url,
+        "page_url": img.page_url,
+        "alt": img.alt,
+        "title": img.title,
+        "caption": img.caption,
+        "description": img.description,
+        "filename": img.filename,
+        "format": img.format,
+        "width": img.width,
+        "height": img.height,
+        "rendered_width": img.rendered_width,
+        "rendered_height": img.rendered_height,
+        "file_size_bytes": img.file_size_bytes,
+        "file_size_kb": round(img.file_size_bytes / 1024, 1) if img.file_size_bytes else None,
+        "load_time_ms": img.load_time_ms,
+        "http_status": img.http_status,
+        "is_lazy_loaded": img.is_lazy_loaded,
+        "has_srcset": img.has_srcset,
+        "is_decorative": img.is_decorative,
+        "content_hash": img.content_hash,
+        "performance_score": img.performance_score,
+        "accessibility_score": img.accessibility_score,
+        "semantic_score": img.semantic_score,
+        "technical_score": img.technical_score,
+        "overall_score": img.overall_score,
+        "issues": img.issues,
+        "data_source": img.data_source,
+    }
+
+
 def _csv_response(issues: list[Issue], filename: str) -> StreamingResponse:
     def generate():
         buf = io.StringIO()
@@ -1092,4 +1446,220 @@ def _csv_response(issues: list[Issue], filename: str) -> StreamingResponse:
         generate(),
         media_type="text/csv",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.post("/{job_id}/images/analyze-ai")
+async def analyze_image_with_ai_endpoint(
+    job_id: str,
+    image_url: str = Query(..., description="URL of the image to analyze"),
+    store=Depends(get_store)
+):
+    """
+    Analyze an image using AI vision models (Gemini Vision or GPT-4V).
+
+    Updates the image's semantic_score and issues based on AI analysis.
+    """
+    from api.services.ai_analyzer import analyze_image_with_ai
+
+    # Get current image data
+    image = await store.get_image_by_url(job_id, image_url)
+    if not image:
+        return {"error": f"Image not found: {image_url}"}
+
+    # Analyze with AI
+    analysis = await analyze_image_with_ai(image_url, image.alt or "")
+
+    # Update image with AI analysis results
+    image.semantic_score = analysis["semantic_score"]
+
+    # Add AI-generated issues if accuracy or quality is low
+    new_issues = []
+    if analysis["accuracy_score"] < 70:
+        new_issues.append("IMG_ALT_INACCURATE")
+    if analysis["quality_score"] < 70:
+        new_issues.append("IMG_ALT_LOW_QUALITY")
+
+    # Merge with existing issues (avoid duplicates)
+    existing_issues = set(image.issues)
+    for issue in new_issues:
+        if issue not in existing_issues:
+            image.issues.append(issue)
+
+    # Save updated image
+    await store.save_images([image])
+
+    return {
+        "image_url": image_url,
+        "analysis": analysis,
+        "updated_scores": {
+            "semantic_score": image.semantic_score,
+            "overall_score": image.overall_score
+        }
+    }
+
+
+@router.api_route("/{job_id}/export/ai-images-pdf", methods=["GET", "POST"])
+async def export_ai_analysis_pdf(
+    job_id: str,
+    request: Request,
+    store=Depends(get_store)
+):
+    """Export AI image analysis results as a detailed PDF."""
+    from fpdf import FPDF
+    from urllib.parse import unquote
+
+    def clean_text(text: str) -> str:
+        """Clean text for Latin-1 PDF encoding."""
+        if not text:
+            return ""
+        # Convert to string and replace non-Latin-1 characters
+        text = str(text)
+        return text.encode('latin-1', errors='ignore').decode('latin-1')
+
+    def clean_filename(url: str) -> str:
+        """Extract and decode filename from URL."""
+        if not url:
+            return "Unknown"
+        # Get last part of URL
+        filename = url.split('/')[-1]
+        # URL decode (converts %20 to space, %2B to +, etc.)
+        filename = unquote(filename)
+        # Replace + with space (sometimes used in URLs)
+        filename = filename.replace('+', ' ')
+        # Clean for Latin-1
+        return clean_text(filename)
+
+    job = await store.get_job(job_id)
+    if not job:
+        return _err("JOB_NOT_FOUND", "Job not found", 404)
+
+    # Check if we have AI results from POST
+    ai_results = None
+    if request.method == "POST":
+        try:
+            body = await request.json()
+            ai_results = body.get("ai_results", [])
+            # Debug logging
+            if ai_results:
+                print(f"[PDF Export] Received {len(ai_results)} AI results")
+                if ai_results:
+                    first = ai_results[0]
+                    print(f"[PDF Export] First result keys: {list(first.keys())}")
+                    if "analysis" in first:
+                        print(f"[PDF Export] Analysis keys: {list(first['analysis'].keys())}")
+                        print(f"[PDF Export] Accuracy score: {first['analysis'].get('accuracy_score')}")
+        except Exception as e:
+            print(f"[PDF Export] Error parsing POST body: {e}")
+            import traceback
+            traceback.print_exc()
+            pass
+
+    # Get all images (returns list of ImageInfo objects)
+    all_images = await store.get_images(job_id, page=1, limit=1000, sort_by="score")
+
+    # Create PDF with detailed AI analysis
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_font('Arial', 'B', 16)
+    pdf.cell(0, 10, 'AI Image Analysis Results', ln=True, align='C')
+    pdf.ln(5)
+
+    pdf.set_font('Arial', '', 10)
+    pdf.cell(0, 10, f'Job: {job_id[:20]}...', ln=True)
+
+    if ai_results:
+        pdf.cell(0, 10, f'Images Analyzed: {len(ai_results)}', ln=True)
+    else:
+        pdf.cell(0, 10, f'Total Images: {len(all_images)}', ln=True)
+    pdf.ln(5)
+
+    # Use AI results if available, otherwise fall back to basic image data
+    if ai_results:
+        # Detailed AI analysis results
+        for idx, result in enumerate(ai_results, 1):
+            if idx > 50:  # Limit to first 50
+                break
+
+            # Filename
+            pdf.set_font('Arial', 'B', 11)
+            image_url = result.get("imageUrl", "")
+            filename = clean_filename(image_url)[:70]
+            pdf.cell(0, 7, f'{idx}. {filename}', ln=True)
+
+            analysis = result.get("analysis", {})
+            error = result.get("error")
+
+            if error:
+                pdf.set_font('Arial', 'I', 9)
+                pdf.cell(0, 5, clean_text(str(error)[:100]), ln=True)
+            else:
+                pdf.set_font('Arial', '', 9)
+
+                # Scores
+                acc_score = int(analysis.get("accuracy_score", 0))
+                qual_score = int(analysis.get("quality_score", 0))
+                sem_score = int(analysis.get("semantic_score", 0))
+                pdf.cell(0, 5, f'Accuracy: {acc_score}/100  |  Quality: {qual_score}/100  |  Semantic: {sem_score}/100', ln=True)
+
+                # Description
+                description = clean_text(analysis.get("description", "N/A"))
+                pdf.set_font('Arial', 'B', 9)
+                pdf.cell(0, 5, 'AI Description:', ln=True)
+                pdf.set_font('Arial', '', 8)
+                # Split into lines manually to avoid multi_cell issues
+                words = description.split()
+                line = ""
+                for word in words:
+                    if len(line + " " + word) > 90:
+                        pdf.cell(0, 4, line, ln=True)
+                        line = word
+                    else:
+                        line = line + " " + word if line else word
+                if line:
+                    pdf.cell(0, 4, line, ln=True)
+
+                # Suggested Alt Text
+                suggested = clean_text(analysis.get("suggested_alt", "N/A"))
+                pdf.set_font('Arial', 'B', 9)
+                pdf.cell(0, 5, 'Suggested Alt:', ln=True)
+                pdf.set_font('Arial', 'I', 8)
+                pdf.cell(0, 4, f'"{suggested[:120]}"', ln=True)
+
+                # Issues
+                issues = analysis.get("issues", [])
+                if issues:
+                    pdf.set_font('Arial', '', 8)
+                    issue_text = ", ".join(str(i) for i in issues[:5])
+                    pdf.cell(0, 4, f'Issues: {issue_text}', ln=True)
+
+            pdf.ln(4)
+    else:
+        # Fallback to basic image data
+        for idx, img in enumerate(all_images, 1):
+            if idx > 50:  # Limit to first 50
+                break
+
+            pdf.set_font('Arial', 'B', 11)
+            filename = clean_text(img.filename or "Unknown")[:50]
+            pdf.cell(0, 8, f'{idx}. {filename}', ln=True)
+
+            pdf.set_font('Arial', '', 9)
+            sem_score = int(img.semantic_score)
+            overall_score = int(img.overall_score)
+            pdf.cell(0, 6, f'   Semantic: {sem_score}/100  Overall: {overall_score}/100', ln=True)
+
+            alt_text = clean_text(img.alt or "(none)")[:80]
+            pdf.cell(0, 6, f'   Alt: {alt_text}', ln=True)
+            pdf.ln(2)
+
+    # Generate PDF bytes
+    pdf_bytes = pdf.output()
+    if isinstance(pdf_bytes, str):
+        pdf_bytes = pdf_bytes.encode('latin-1')
+
+    return StreamingResponse(
+        io.BytesIO(pdf_bytes),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="AI-Analysis-{job_id[:8]}.pdf"'}
     )

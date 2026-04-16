@@ -5,8 +5,8 @@
 TalkingToad is a lightweight, web-based SEO crawler for nonprofit organisations. It replicates the essential functionality of Screaming Frog SEO Spider — free, zero-installation, simple results — deployed on Vercel with a React frontend and Python/FastAPI backend.
 
 **GitHub:** https://github.com/dbgnvan2/talkingtoad
-**Spec:** `nonprofit-crawler-spec-v1.4.md` + v1.5 extensions
-**Current Version:** 1.8
+**Spec:** `nonprofit-crawler-spec-v1.4.md` + v1.5 extensions + v1.9 Image Intelligence
+**Current Version:** 1.9
 
 ---
 
@@ -36,11 +36,13 @@ TalkingToad/
 │   ├── crawler/                 # Async crawl engine + issue detection
 │   │   ├── engine.py            # Async BFS crawler (~600 lines)
 │   │   ├── issue_checker.py     # SEO issue detection (~1100 lines)
+│   │   ├── image_analyzer.py    # Image analysis and scoring (~500 lines)
 │   │   ├── parser.py            # BeautifulSoup HTML extraction
 │   │   ├── normaliser.py        # URL normalization + WP noise detection
 │   │   ├── robots.py            # robots.txt parser
 │   │   └── sitemap.py           # XML sitemap parser
-│   ├── models/                  # Pydantic models (Job, Page, Issue, Fix)
+│   ├── models/                  # Pydantic models (Job, Page, Issue, Fix, Image)
+│   │   └── image.py             # ImageInfo data model
 │   ├── routers/                 # API endpoints (crawl, fixes, utility, verified, ai)
 │   └── services/                # Business logic
 │       ├── wp_fixer.py          # WordPress REST API integration (~1200 lines)
@@ -71,13 +73,92 @@ TalkingToad/
 
 ---
 
-## Key Features (v1.8)
+## Key Features (v1.9)
 
 1. **Crawler:** Async engine with robots.txt/sitemap support and 50+ SEO issue checks.
 2. **WordPress Fix Manager:** One-click remediation for titles, meta, and headings via WP REST API.
-3. **Image Intelligence Engine:** Automated WebP optimization and SEO-friendly renaming.
+3. **Image Intelligence Engine (v1.9):**
+   - 3-level data architecture: Scan (instant) → Fetch (live WP + image file) → AI Analysis
+   - WordPress Media Library integration (alt text, title, caption, description)
+   - Performance scoring (file size, compression, load time)
+   - Accessibility scoring (alt text quality, length, semantic accuracy)
+   - AI-powered alt text generation with vision models
+   - GEO-optimized metadata (see `geo_image_ai_spec.md`)
 4. **AI Readiness:** /llms.txt generator and AI semantic audit (Gemini/OpenAI).
 5. **Reporting:** Professional 8.5" x 11" PDF audits and tabbed Excel workbooks.
+
+---
+
+## Image Intelligence Engine (v1.9)
+
+### Architecture: 3-Level Data Model
+
+1. **Level 1: Scan Details** (Instant, from initial crawl)
+   - HTML attributes: alt, title, rendered dimensions
+   - Surrounding text context (±200 chars)
+   - Decorative detection
+   - Data source: `html_only`
+
+2. **Level 2: Fetch** (Live data from WordPress + image file)
+   - WordPress Media Library: alt_text, title, caption, description
+   - Image file analysis: intrinsic dimensions, format, file size, load time
+   - Content hash for duplicate detection
+   - Data source: `full_fetch`
+
+3. **Level 3: AI Analysis** (Vision model analysis)
+   - AI-generated image description
+   - Suggested alt text (80-125 chars)
+   - Accuracy and quality scores
+   - Data source: AI analysis metadata
+
+### Image Issue Codes
+| Code | Category | Description |
+|---|---|---|
+| `IMG_ALT_MISSING` | accessibility | Non-decorative image missing alt text |
+| `IMG_ALT_TOO_SHORT` | accessibility | Alt text < 5 characters |
+| `IMG_ALT_TOO_LONG` | accessibility | Alt text > 125 characters |
+| `IMG_ALT_GENERIC` | accessibility | Generic terms (e.g., "image", "photo") |
+| `IMG_ALT_DUP_FILENAME` | accessibility | Alt text duplicates filename |
+| `IMG_ALT_MISUSED` | accessibility | Decorative image has meaningful alt text |
+| `IMG_OVERSIZED` | performance | File size > 200KB |
+| `IMG_SLOW_LOAD` | performance | Load time > 1000ms |
+| `IMG_OVERSCALED` | performance | Intrinsic size > 2x rendered size |
+| `IMG_POOR_COMPRESSION` | performance | Bytes per pixel > 0.5 |
+| `IMG_FORMAT_LEGACY` | performance | JPEG/PNG/GIF > 50KB (should use WebP/AVIF) |
+| `IMG_NO_SRCSET` | technical | Missing srcset when scaled down |
+| `IMG_BROKEN` | technical | HTTP 4xx/5xx status |
+| `IMG_DUPLICATE_CONTENT` | technical | Same content hash as another image |
+
+### GEO-Optimized AI Analysis (Upcoming)
+
+**Specs:** See `geo_image_ai_spec.md` and `geo_image_ai_prompt.md`
+
+**Objective:** Generate semantically aligned, entity-rich Alt Text and Long Descriptions that satisfy both WCAG 2.2 and Generative Engine Optimization (GEO) standards.
+
+**Triple-Context Packet:**
+1. Image bytes (high-resolution for vision analysis)
+2. Page context (300 chars before/after + H1)
+3. Global settings (org name, location pool, topic entities)
+
+**Output Requirements:**
+- Alt text: 80-125 chars with 1 local entity + 1 topic entity
+- Long description: 150-300 words, GEO-rich, factual for AI Overviews
+- Entity density: Names, Places, Theories (not just keywords)
+
+**Configuration:** See section 5 in `geo_image_ai_spec.md`
+
+### WordPress Integration
+
+**Slug-Based Queries:** Uses WordPress REST API `slug` parameter for accurate image matching.
+
+**Fields Fetched:**
+- `alt_text`: WordPress alt text field
+- `title`: Media title (HTML stripped)
+- `caption`: Media caption (HTML stripped)
+- `description`: Media description (HTML stripped)
+- `source_url`: Full image URL for verification
+
+**Exact URL Verification:** Only updates image metadata if WordPress `source_url` matches exactly.
 
 ---
 
@@ -181,5 +262,9 @@ pytest tests/ -v
 | `docs/architecture.md` | System design, data flow, design decisions |
 | `docs/issue-codes.md` | All issue codes with explanations and fixes |
 | `docs/overview.md` | Feature descriptions and crawl pipeline |
+| `docs/image-scan-spec.md` | Image Intelligence Engine specification (v1.9) |
+| `docs/image-scan-implementation-plan.md` | Image feature implementation roadmap |
+| `geo_image_ai_spec.md` | GEO-Advanced Image Metadata Generator spec |
+| `geo_image_ai_prompt.md` | Master prompt for 90+ score GEO optimization |
 | `PLAN.md` | Implementation milestones and checklist |
 | `TODO.md` | Technical debt and future improvements |

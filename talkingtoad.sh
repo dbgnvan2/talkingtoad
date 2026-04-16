@@ -224,12 +224,22 @@ PYEOF
 
 cmd_server() {
   require_venv
+  local log_level="info"
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --debug|--log) log_level="debug"; shift ;;
+      *) error "Unknown option: $1" ;;
+    esac
+  done
+
   info "Starting API server on http://localhost:8000"
   info "API docs at http://localhost:8000/docs"
+  info "Log level: $log_level"
   info "Auth: ${AUTH_TOKEN:+enabled (AUTH_TOKEN is set)}${AUTH_TOKEN:-disabled (no AUTH_TOKEN — open access)}"
   echo ""
   RATE_LIMIT_ENABLED="false" \
-    "$VENV/bin/uvicorn" api.main:app --reload --port 8000
+    "$VENV/bin/uvicorn" api.main:app --reload --port 8000 --log-level "$log_level"
 }
 
 cmd_frontend() {

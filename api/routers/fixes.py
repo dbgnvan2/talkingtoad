@@ -16,8 +16,9 @@ import logging
 from datetime import datetime, timezone
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Body
 from fastapi.responses import JSONResponse, StreamingResponse
+from pydantic import BaseModel
 
 from api.models.fix import (
     ApplyFixesResponse,
@@ -60,6 +61,16 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/fixes", dependencies=[Depends(require_auth)])
 
 _CREDS_PATH = Path("wp-credentials.json")
+
+# Request body models for WordPress authentication
+class WPCredentials(BaseModel):
+    site_url: str
+    login_url: str
+    username: str
+    password: str
+
+class UpdateImageMetaBody(BaseModel):
+    wp_credentials: WPCredentials | None = None
 
 
 # ── Dependency injection ───────────────────────────────────────────────────
@@ -714,26 +725,234 @@ async def get_image_info(
 @router.post("/update-image-meta", response_model=None)
 async def update_image_meta_endpoint(
     image_url: str = Query(..., description="Absolute URL of the image"),
+    job_id: str | None = Query(None, description="Crawl job ID to validate site domain"),
     alt_text:  str | None = Query(None, description="New alt text (omit to leave unchanged)"),
     title:     str | None = Query(None, description="New media title (omit to leave unchanged)"),
     caption:   str | None = Query(None, description="New caption (omit to leave unchanged)"),
+    body: UpdateImageMetaBody | None = Body(None),
+    store=Depends(get_store),
 ) -> dict | JSONResponse:
     """Update alt text, title, and/or caption for a WordPress media attachment.
 
-    Only the fields explicitly provided are updated.  Used by the
-    IMG_ALT_MISSING fix panel.
+    Accepts WordPress credentials in POST body (wp_credentials) or uses wp-credentials.json.
     """
-    if not _CREDS_PATH.exists():
-        return _err("NO_CREDENTIALS", "wp-credentials.json not found.", 400)
+    from urllib.parse import urlparse
+    import json
+
+    # Determine which credentials to use
+    if body and body.wp_credentials:
+        # Use credentials from request body
+        creds_to_use = {
+            "site_url": body.wp_credentials.site_url,
+            "login_url": body.wp_credentials.login_url,
+            "username": body.wp_credentials.username,
+            "password": body.wp_credentials.password,
+        }
+        using_provided_creds = True
+    else:
+        # Use credentials from file
+        if not _CREDS_PATH.exists():
+            return _err("NO_CREDENTIALS", "wp-credentials.json not found. Please provide WordPress credentials.", 400)
+
+        with open(_CREDS_PATH) as f:
+            creds_to_use = json.load(f)
+        using_provided_creds = False
+
+    # CRITICAL: Validate domain if job_id is provided
+    if job_id:
+        job = await store.get_job(job_id)
+        if job:
+            job_domain = urlparse(job.target_url).netloc
+            creds_domain = urlparse(creds_to_use.get("site_url", "")).netloc
+
+            if job_domain != creds_domain:
+                return _err(
+                    "DOMAIN_MISMATCH",
+                    f"WordPress credentials are for {creds_domain}, but you're crawling {job_domain}. "
+                    f"Please provide credentials for {job_domain}.",
+                    403
+                )
+
+    # Create WPClient with credentials
     try:
-        async with WPClient.from_credentials_file(_CREDS_PATH) as wp:
+        wp = WPClient(
+            site_url=creds_to_use["site_url"],
+            login_url=creds_to_use["login_url"],
+            username=creds_to_use["username"],
+            password=creds_to_use["password"],
+        )
+        async with wp:
             result = await update_image_metadata(wp, image_url, alt_text=alt_text, title=title, caption=caption)
+
+        # Update our database with the new alt text if job_id is provided
+        updated_image = None
+        if job_id and alt_text is not None:
+            image = await store.get_image_by_url(job_id, image_url)
+            if image:
+                print(f"[UPDATE META] Image URL: {image_url[-50:]}")
+                print(f"[UPDATE META] Before update, DB had: '{image.alt}'")
+                print(f"[UPDATE META] Updating to: '{alt_text}'")
+
+                image.alt = alt_text
+                # Re-analyze image with updated alt text to get new scores
+                from api.crawler.image_analyzer import analyze_image
+                issues, scores = analyze_image(image, job_id=job_id)
+                image.performance_score = scores["performance_score"]
+                image.accessibility_score = scores["accessibility_score"]
+                image.semantic_score = scores["semantic_score"]
+                image.technical_score = scores["technical_score"]
+                image.overall_score = scores["overall_score"]
+                image.issues = [i.code for i in issues]
+                await store.save_images([image])
+                updated_image = image
+
+                print(f"[UPDATE META] After save, image.alt: '{image.alt}'")
+                print(f"[UPDATE META] Image URL in saved object: {image.url[-50:]}")
+
+                logger.info("image_alt_updated_in_db", extra={"image_url": image_url, "alt_text": alt_text, "new_overall_score": image.overall_score})
+
+        # Optionally save provided credentials to file for future use
+        if using_provided_creds and job_id:
+            try:
+                with open(_CREDS_PATH, "w") as f:
+                    json.dump(creds_to_use, f, indent=2)
+                logger.info("wp_credentials_saved", extra={"site_url": creds_to_use["site_url"]})
+            except Exception as e:
+                logger.warning("failed_to_save_credentials", extra={"error": str(e)})
+
     except WPAuthError as exc:
         return _err("WP_AUTH_FAILED", str(exc), 400)
     except Exception as exc:
         logger.exception("update_image_meta_error", extra={"image_url": image_url})
         return _err("WP_ERROR", str(exc), 500)
+
+    # Return WordPress result plus updated image data if available
+    if updated_image:
+        from api.routers.crawl import _image_dict
+        result["updated_image"] = _image_dict(updated_image)
+
     return result
+
+
+@router.post("/refresh-image-from-wp", response_model=None)
+async def refresh_image_from_wp_endpoint(
+    image_url: str = Query(..., description="Absolute URL of the image"),
+    job_id: str = Query(..., description="Crawl job ID"),
+    body: UpdateImageMetaBody | None = Body(None),
+    store=Depends(get_store),
+) -> dict | JSONResponse:
+    """Fetch fresh image metadata (alt text, title, caption) from WordPress and update our database."""
+    from urllib.parse import urlparse
+    import json
+
+    # Determine which credentials to use
+    if body and body.wp_credentials:
+        creds_to_use = {
+            "site_url": body.wp_credentials.site_url,
+            "login_url": body.wp_credentials.login_url,
+            "username": body.wp_credentials.username,
+            "password": body.wp_credentials.password,
+        }
+    else:
+        if not _CREDS_PATH.exists():
+            return _err("NO_CREDENTIALS", "wp-credentials.json not found. Please provide WordPress credentials.", 400)
+        with open(_CREDS_PATH) as f:
+            creds_to_use = json.load(f)
+
+    # Validate domain
+    job = await store.get_job(job_id)
+    if not job:
+        return _err("JOB_NOT_FOUND", f"No job with id {job_id}", 404)
+
+    job_domain = urlparse(job.target_url).netloc
+    creds_domain = urlparse(creds_to_use.get("site_url", "")).netloc
+
+    if job_domain != creds_domain:
+        return _err(
+            "DOMAIN_MISMATCH",
+            f"WordPress credentials are for {creds_domain}, but you're crawling {job_domain}. "
+            f"Please provide credentials for {job_domain}.",
+            403
+        )
+
+    # Fetch fresh metadata from WordPress
+    try:
+        wp = WPClient(
+            site_url=creds_to_use["site_url"],
+            login_url=creds_to_use["login_url"],
+            username=creds_to_use["username"],
+            password=creds_to_use["password"],
+        )
+        async with wp:
+            # Use cache_bust=True to ensure we get fresh data from WordPress
+            wp_info = await get_attachment_info(wp, image_url, cache_bust=True)
+
+        if not wp_info.get("success"):
+            return _err("WP_IMAGE_NOT_FOUND", wp_info.get("error", "Image not found in WordPress"), 404)
+
+        # Update our database with fresh metadata
+        image = await store.get_image_by_url(job_id, image_url)
+        if not image:
+            return _err("IMAGE_NOT_FOUND", f"No image found in database: {image_url}", 404)
+
+        # Log what we got from WordPress
+        wp_alt_text = wp_info.get("alt_text", "")
+        wp_id = wp_info.get("id")
+
+        # DIRECT PRINT for debugging - will show in logs
+        print(f"[REFRESH WP] Image URL: {image_url[-50:]}")
+        print(f"[REFRESH WP] WordPress Media ID: {wp_id}")
+        print(f"[REFRESH WP] WordPress returned alt_text: '{wp_alt_text}'")
+        print(f"[REFRESH WP] Before update, our DB had: '{image.alt}'")
+
+        logger.info("wp_fetch_result", extra={
+            "image_url": image_url,
+            "wp_alt_text": wp_alt_text,
+            "wp_title": wp_info.get("title", ""),
+            "wp_id": wp_id,
+            "before_update_alt": image.alt
+        })
+
+        # Update metadata fields
+        image.alt = wp_alt_text
+        image.title = wp_info.get("title", "")
+        # Note: caption is stored in WordPress but we don't have a caption field in ImageInfo model
+
+        # Re-analyze image with updated metadata
+        from api.crawler.image_analyzer import analyze_image
+        issues, scores = analyze_image(image, job_id=job_id)
+        image.performance_score = scores["performance_score"]
+        image.accessibility_score = scores["accessibility_score"]
+        image.semantic_score = scores["semantic_score"]
+        image.technical_score = scores["technical_score"]
+        image.overall_score = scores["overall_score"]
+        image.issues = [i.code for i in issues]
+
+        await store.save_images([image])
+
+        print(f"[REFRESH WP] After update, saved to DB: '{image.alt}'")
+        print(f"[REFRESH WP] Image URL in saved object: {image.url[-50:]}")
+
+        logger.info("image_refreshed_from_wp", extra={
+            "image_url": image_url,
+            "after_update_alt": image.alt,
+            "new_overall_score": image.overall_score
+        })
+
+        # Return updated image
+        from api.routers.crawl import _image_dict
+        return {
+            "success": True,
+            "message": "Image metadata refreshed from WordPress",
+            "updated_image": _image_dict(image),
+            "wp_info": wp_info
+        }
+
+    except WPAuthError as exc:
+        return _err("WP_AUTH_FAILED", str(exc), 400)
+    except Exception as exc:
+        logger.exception("refresh_image_from_wp_error", extra={"image_url": image_url})
+        return _err("WP_ERROR", str(exc), 500)
 
 
 @router.get("/{job_id}", response_model=list[Fix])
