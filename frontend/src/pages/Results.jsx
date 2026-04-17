@@ -556,7 +556,7 @@ function CategoryTab({ jobId, category, onPageClick, onShowHelp }) {
                 <div>
                   {FIXABLE_LINK_CODES.has(group.issue_code) ? (
                     <>
-                      <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-4">Broken URLs — Click to see source pages & fix</h4>
+                      <h4 className="text-sm font-bold text-gray-700 mb-4">Broken URLs — click "Show Source Pages" to see where these links are</h4>
                       <div className="space-y-3">
                         {group.pages.map(brokenUrl => (
                           <BrokenLinkItem key={brokenUrl} jobId={jobId} brokenUrl={brokenUrl} />
@@ -633,68 +633,67 @@ function BrokenLinkItem({ jobId, brokenUrl }) {
   }
 
   return (
-    <div className="border border-gray-200 rounded-xl overflow-hidden">
-      <button
-        onClick={loadSources}
-        className="w-full flex items-center justify-between px-4 py-3 bg-red-50 hover:bg-red-100 transition-colors"
-      >
-        <div className="flex items-center gap-3 min-w-0">
-          <span className="text-red-500 text-lg">🔗</span>
-          <span className="font-mono text-xs text-red-700 truncate">{brokenUrl}</span>
-        </div>
-        <div className="flex items-center gap-2 flex-shrink-0">
-          <a
-            href={brokenUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            onClick={e => e.stopPropagation()}
-            className="text-xs text-blue-600 hover:text-blue-800 underline"
-          >
-            Test ↗
-          </a>
-          <span className="text-gray-400">{loading ? '...' : expanded ? '▲' : '▼'}</span>
-        </div>
-      </button>
+    <div className="border border-red-200 rounded-xl overflow-hidden bg-white">
+      {/* Broken URL header */}
+      <div className="flex items-center gap-3 px-4 py-3 bg-red-50">
+        <span className="text-red-500 text-xl">🔗</span>
+        <span className="font-mono text-sm text-red-800 truncate flex-1">{brokenUrl}</span>
+        <a
+          href={brokenUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-sm text-blue-600 hover:text-blue-800 underline px-2"
+        >
+          Test ↗
+        </a>
+        <button
+          onClick={loadSources}
+          disabled={loading}
+          className="px-4 py-2 bg-orange-500 text-white text-sm font-bold rounded-lg hover:bg-orange-600 disabled:opacity-50"
+        >
+          {loading ? 'Loading...' : expanded ? 'Hide Sources' : 'Show Source Pages'}
+        </button>
+      </div>
 
       {error && (
-        <div className="px-4 py-2 bg-red-100 text-red-700 text-xs">{error}</div>
+        <div className="px-4 py-3 bg-red-100 text-red-700 text-sm">{error}</div>
       )}
 
       {expanded && sources && (
-        <div className="px-4 py-3 bg-white border-t border-gray-100">
-          <p className="text-xs font-bold text-gray-500 uppercase mb-2">
-            Found on {sources.length} source page{sources.length !== 1 ? 's' : ''}:
+        <div className="px-4 py-4 bg-gray-50 border-t border-red-100">
+          <p className="text-sm font-bold text-gray-700 mb-3">
+            This broken link is found on {sources.length} page{sources.length !== 1 ? 's' : ''}:
           </p>
           <div className="space-y-2">
             {sources.map(s => (
-              <div key={s.source_url} className="flex items-center gap-2 p-2 bg-gray-50 rounded-lg">
-                <span className="font-mono text-xs text-gray-700 truncate flex-1" title={s.source_url}>
+              <div key={s.source_url} className="flex items-center gap-3 p-3 bg-white rounded-lg border border-gray-200">
+                <span className="font-mono text-sm text-gray-800 truncate flex-1" title={s.source_url}>
                   {s.source_url}
                 </span>
                 <a
                   href={s.source_url}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-xs text-blue-600 hover:text-blue-800 flex-shrink-0"
+                  className="text-sm text-blue-600 hover:text-blue-800 font-medium px-2"
                 >
                   Open ↗
                 </a>
                 <button
                   onClick={() => handleRescan(s.source_url)}
                   disabled={rescanning === s.source_url}
-                  className={`text-xs px-2 py-1 rounded flex-shrink-0 ${
+                  className={`text-sm px-3 py-1.5 rounded-lg font-bold ${
                     rescanned.has(s.source_url)
-                      ? 'bg-green-100 text-green-700'
-                      : 'bg-blue-100 text-blue-700 hover:bg-blue-200'
+                      ? 'bg-green-500 text-white'
+                      : 'bg-blue-500 text-white hover:bg-blue-600'
                   } disabled:opacity-50`}
                 >
-                  {rescanning === s.source_url ? '...' : rescanned.has(s.source_url) ? '✓ Rescanned' : 'Rescan'}
+                  {rescanning === s.source_url ? 'Rescanning...' : rescanned.has(s.source_url) ? '✓ Rescanned' : 'Rescan Page'}
                 </button>
               </div>
             ))}
           </div>
           {sources.length === 0 && (
-            <p className="text-xs text-gray-500 italic">No source pages found. Run a fresh crawl to detect link sources.</p>
+            <p className="text-sm text-gray-500 italic">No source pages found. Run a fresh crawl to detect link sources.</p>
           )}
         </div>
       )}
