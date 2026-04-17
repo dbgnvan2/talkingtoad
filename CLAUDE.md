@@ -229,11 +229,33 @@ OPENAI_API_KEY=your-openai-api-key
 
 ## Coding Standards
 
+### CRITICAL: Testing and Documentation Requirements
+
+**YOU MUST create tests for ALL new functionality. NO EXCEPTIONS.**
+
+When implementing new features:
+1. **Write tests FIRST or IMMEDIATELY after** implementing the feature
+2. **Update documentation** in `/docs` for any architectural changes
+3. **Update CLAUDE.md** if coding standards or key features change
+4. **Never commit untested code** - regressions waste user time and trust
+
+**Required test types:**
+- **Unit tests** for business logic (issue detection, scoring, analysis)
+- **Integration tests** for API endpoints (request → response → side effects)
+- **Architecture constraint tests** for design rules (e.g., "scan must never call WP API")
+- **Serialization tests** for API responses (verify all model fields are included)
+
+**Test file naming:**
+- `test_[feature].py` for feature tests
+- `test_[component]_integration.py` for integration tests
+- `test_architecture_constraints.py` for design rule enforcement
+
+### Code Quality Standards
+
 - **GUI Architecture:** DO NOT change the GUI structure or navigation flow on your own. You MUST have explicit instructions from the user before altering how data is displayed or navigated.
 - **Python:** Async-first, Pydantic models, strictly typed, `load_dotenv()` required in service entry points.
 - **React:** Functional components, Tailwind CSS, explicit loading/error states for all API calls.
 - **Reporting:** 1-inch margins, Letter format, Latin-1 safe text cleaning.
-- **Testing:** Integration tests for all export and AI endpoints.
 - **Issue Codes:** Source of truth is `api/crawler/issue_checker.py` (`_ISSUE_SCORING`, `_CATALOGUE`).
 - **Frontend Help:** Issue explanations in `frontend/src/data/issueHelp.js` must match `docs/issue-codes.md`.
 
