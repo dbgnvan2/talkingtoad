@@ -6,9 +6,11 @@
  */
 
 import React, { useState, useEffect, useCallback } from 'react'
-import { getImages, getImagesSummary, fetchImageDetails, analyzeImageWithAI, updateImageMeta, downloadAIImagePDF } from '../api.js'
+import { getImages, getImagesSummary, fetchImageDetails, analyzeImageWithAI, updateImageMeta, downloadAIImagePDF, analyzeImageWithGeo, applyGeoMetadata, getGeoSettings } from '../api.js'
 import { getIssueHelp } from '../data/issueHelp.js'
 import SeverityBadge from './SeverityBadge.jsx'
+import GeoAnalysisModal from './GeoAnalysisModal.jsx'
+import GeoSettingsModal from './GeoSettingsModal.jsx'
 
 export default function ImageAnalysisPanel({ jobId, onPageClick, onShowHelp }) {
   const [summary, setSummary] = useState(null)
@@ -478,6 +480,10 @@ function ImageCard({ image, jobId, isExpanded, onToggle, onPageClick, isSelected
   const [applyingAI, setApplyingAI] = useState(false)
   const [applySuccess, setApplySuccess] = useState(false)
   const [showWpLogin, setShowWpLogin] = useState(false)
+  const [geoResult, setGeoResult] = useState(null)
+  const [showGeoModal, setShowGeoModal] = useState(false)
+  const [showGeoSettings, setShowGeoSettings] = useState(false)
+  const [geoConfigured, setGeoConfigured] = useState(false)
 
   const dataSource = image.data_source || 'html_only'
   const isPartialAnalysis = dataSource !== 'full_fetch'
@@ -510,31 +516,92 @@ function ImageCard({ image, jobId, isExpanded, onToggle, onPageClick, isSelected
 
   const handleAnalyzeAI = async (e) => {
     e.stopPropagation()
+
+    // Extract domain from page URL
+    let domain = ''
+    try {
+      const url = new URL(image.page_url)
+      domain = url.hostname.replace('www.', '')
+    } catch (err) {
+      console.error('Failed to extract domain from page URL:', err)
+      alert('Could not determine domain from page URL')
+      return
+    }
+
     setAnalyzingAI(true)
     try {
-      const result = await analyzeImageWithAI(jobId, image.url)
-      setAiResult(result.analysis)
+      // Check if GEO is configured for this domain
+      const geoConfig = await getGeoSettings(domain)
 
-      // Auto-expand to show results
+      if (!geoConfig.is_configured) {
+        setAnalyzingAI(false)
+        const configure = confirm(
+          `GEO is not configured for ${domain}.\n\n` +
+          'GEO (Generative Engine Optimization) generates AI-powered metadata with geographic and topic context.\n\n' +
+          'Would you like to configure it now?'
+        )
+        if (configure) {
+          setShowGeoSettings(true)
+        }
+        return
+      }
+
+      // Run GEO analysis
+      const result = await analyzeImageWithGeo(jobId, image.url)
+
+      if (!result.success) {
+        throw new Error(result.error || 'GEO analysis failed')
+      }
+
+      // Show modal with results
+      setGeoResult(result)
+      setShowGeoModal(true)
+      setGeoConfigured(true)
+
+      // Auto-expand to show analysis
       if (!isExpanded && onToggle) {
         onToggle()
       }
-
-      // Reload image to get updated score
-      if (onImageUpdate) {
-        const updatedResult = await fetchImageDetails(jobId, image.url)
-        if (updatedResult.image) {
-          onImageUpdate(updatedResult.image)
-        }
-      }
     } catch (err) {
       console.error('Failed to analyze image:', err)
-      alert('AI analysis failed: ' + err.message)
+      const errorMsg = err.message || 'Unknown error'
+      if (errorMsg.includes('No GEO configuration')) {
+        alert('GEO is not configured for this domain. Please configure it first.')
+        setShowGeoSettings(true)
+      } else {
+        alert('GEO analysis failed: ' + errorMsg)
+      }
     } finally {
       setAnalyzingAI(false)
     }
   }
 
+  const handleSaveGeo = async (altText, longDescription) => {
+    try {
+      // Apply GEO metadata to database
+      const result = await applyGeoMetadata(jobId, image.url, altText, longDescription)
+
+      if (result.success) {
+        // Close modal
+        setShowGeoModal(false)
+
+        // Reload image to get updated scores
+        if (onImageUpdate) {
+          const updatedResult = await fetchImageDetails(jobId, image.url)
+          if (updatedResult.image) {
+            onImageUpdate(updatedResult.image)
+          }
+        }
+
+        alert(`GEO metadata applied!\n\nNew accessibility score: ${result.new_scores.accessibility_score}\nNew overall score: ${result.new_scores.overall_score}`)
+      } else {
+        throw new Error(result.message || 'Failed to apply GEO metadata')
+      }
+    } catch (err) {
+      console.error('Failed to save GEO metadata:', err)
+      alert('Failed to save GEO metadata: ' + err.message)
+    }
+  }
 
   const handleApplyAISuggestion = async (e, wpCredentials = null) => {
     e?.stopPropagation()
@@ -642,8 +709,9 @@ function ImageCard({ image, jobId, isExpanded, onToggle, onPageClick, isSelected
               onClick={handleAnalyzeAI}
               disabled={analyzingAI}
               className="px-2 py-0.5 text-[10px] bg-purple-100 text-purple-700 rounded font-bold hover:bg-purple-200 disabled:opacity-50"
+              title="GEO AI Analysis: Generate entity-rich alt text and descriptions for AI search engines"
             >
-              {analyzingAI ? 'Analyzing...' : 'AI Analyze'}
+              {analyzingAI ? 'Analyzing...' : '🤖 GEO AI'}
             </button>
           </div>
           <div className="flex gap-3 mt-1 text-xs text-gray-500">
@@ -890,6 +958,35 @@ function ImageCard({ image, jobId, isExpanded, onToggle, onPageClick, isSelected
             await handleApplyAISuggestion(null, credentials)
           }}
           onClose={() => setShowWpLogin(false)}
+        />
+      )}
+
+      {/* GEO Analysis Modal */}
+      {showGeoModal && geoResult && (
+        <GeoAnalysisModal
+          geoResult={geoResult}
+          image={image}
+          onSave={handleSaveGeo}
+          onClose={() => setShowGeoModal(false)}
+        />
+      )}
+
+      {/* GEO Settings Modal */}
+      {showGeoSettings && (
+        <GeoSettingsModal
+          domain={(() => {
+            try {
+              const url = new URL(image.page_url)
+              return url.hostname.replace('www.', '')
+            } catch {
+              return ''
+            }
+          })()}
+          onClose={() => setShowGeoSettings(false)}
+          onSaved={() => {
+            setShowGeoSettings(false)
+            setGeoConfigured(true)
+          }}
         />
       )}
     </div>

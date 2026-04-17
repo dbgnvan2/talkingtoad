@@ -507,6 +507,16 @@ export async function getGeoSettings(domain) {
   return checkResponse(res)
 }
 
+// Save GEO configuration for a domain
+export async function saveGeoSettings(config) {
+  const res = await fetch('/api/geo/settings', {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify(config),
+  })
+  return checkResponse(res)
+}
+
 // Analyze image with GEO-optimized prompting
 export async function analyzeImageWithGeo(jobId, imageUrl) {
   const res = await fetch('/api/ai/image/analyze-geo', {
