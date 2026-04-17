@@ -554,20 +554,149 @@ function CategoryTab({ jobId, category, onPageClick, onShowHelp }) {
               <div className="px-6 pb-6 border-t border-gray-50 pt-6 space-y-8">
                 <IssueHelpPanel issueCode={group.issue_code} />
                 <div>
-                  <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-4">Affected Pages</h4>
-                  <div className="grid grid-cols-1 gap-2">
-                    {group.pages.map(url => (
-                      <button key={url} onClick={() => onPageClick(url)} className="text-left p-3 rounded-xl border border-gray-100 hover:bg-green-50 hover:border-green-200 transition-all font-mono text-xs text-blue-600 truncate flex justify-between items-center group">
-                        <span>{url}</span>
-                        <span className="text-sm font-black text-green-600 uppercase">Inspect →</span>
-                      </button>
-                    ))}
-                  </div>
+                  {FIXABLE_LINK_CODES.has(group.issue_code) ? (
+                    <>
+                      <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-4">Broken URLs — Click to see source pages & fix</h4>
+                      <div className="space-y-3">
+                        {group.pages.map(brokenUrl => (
+                          <BrokenLinkItem key={brokenUrl} jobId={jobId} brokenUrl={brokenUrl} />
+                        ))}
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-4">Affected Pages</h4>
+                      <div className="grid grid-cols-1 gap-2">
+                        {group.pages.map(url => (
+                          <button key={url} onClick={() => onPageClick(url)} className="text-left p-3 rounded-xl border border-gray-100 hover:bg-green-50 hover:border-green-200 transition-all font-mono text-xs text-blue-600 truncate flex justify-between items-center group">
+                            <span>{url}</span>
+                            <span className="text-sm font-black text-green-600 uppercase">Inspect →</span>
+                          </button>
+                        ))}
+                      </div>
+                    </>
+                  )}
                 </div>
               </div>
             )}
           </div>
         ))
+      )}
+    </div>
+  )
+}
+
+function BrokenLinkItem({ jobId, brokenUrl }) {
+  const [expanded, setExpanded] = useState(false)
+  const [loading, setLoading] = useState(false)
+  const [sources, setSources] = useState(null)
+  const [error, setError] = useState(null)
+  const [rescanning, setRescanning] = useState(null)
+  const [rescanned, setRescanned] = useState(new Set())
+
+  async function loadSources() {
+    if (sources) {
+      setExpanded(!expanded)
+      return
+    }
+    setLoading(true)
+    setError(null)
+    try {
+      const params = new URLSearchParams({ job_id: jobId, target_url: brokenUrl })
+      const res = await fetch(`/api/fixes/link-sources?${params}`, { headers: authHeaders() })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error?.message || 'Failed to load sources')
+      setSources(data)
+      setExpanded(true)
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function handleRescan(sourceUrl) {
+    setRescanning(sourceUrl)
+    try {
+      const params = new URLSearchParams({ url: sourceUrl })
+      const res = await fetch(`/api/crawl/${jobId}/rescan-url?${params}`, {
+        method: 'POST',
+        headers: authHeaders(),
+      })
+      if (!res.ok) throw new Error('Rescan failed')
+      setRescanned(prev => new Set([...prev, sourceUrl]))
+    } catch (err) {
+      alert('Rescan failed: ' + err.message)
+    } finally {
+      setRescanning(null)
+    }
+  }
+
+  return (
+    <div className="border border-gray-200 rounded-xl overflow-hidden">
+      <button
+        onClick={loadSources}
+        className="w-full flex items-center justify-between px-4 py-3 bg-red-50 hover:bg-red-100 transition-colors"
+      >
+        <div className="flex items-center gap-3 min-w-0">
+          <span className="text-red-500 text-lg">🔗</span>
+          <span className="font-mono text-xs text-red-700 truncate">{brokenUrl}</span>
+        </div>
+        <div className="flex items-center gap-2 flex-shrink-0">
+          <a
+            href={brokenUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={e => e.stopPropagation()}
+            className="text-xs text-blue-600 hover:text-blue-800 underline"
+          >
+            Test ↗
+          </a>
+          <span className="text-gray-400">{loading ? '...' : expanded ? '▲' : '▼'}</span>
+        </div>
+      </button>
+
+      {error && (
+        <div className="px-4 py-2 bg-red-100 text-red-700 text-xs">{error}</div>
+      )}
+
+      {expanded && sources && (
+        <div className="px-4 py-3 bg-white border-t border-gray-100">
+          <p className="text-xs font-bold text-gray-500 uppercase mb-2">
+            Found on {sources.length} source page{sources.length !== 1 ? 's' : ''}:
+          </p>
+          <div className="space-y-2">
+            {sources.map(s => (
+              <div key={s.source_url} className="flex items-center gap-2 p-2 bg-gray-50 rounded-lg">
+                <span className="font-mono text-xs text-gray-700 truncate flex-1" title={s.source_url}>
+                  {s.source_url}
+                </span>
+                <a
+                  href={s.source_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-xs text-blue-600 hover:text-blue-800 flex-shrink-0"
+                >
+                  Open ↗
+                </a>
+                <button
+                  onClick={() => handleRescan(s.source_url)}
+                  disabled={rescanning === s.source_url}
+                  className={`text-xs px-2 py-1 rounded flex-shrink-0 ${
+                    rescanned.has(s.source_url)
+                      ? 'bg-green-100 text-green-700'
+                      : 'bg-blue-100 text-blue-700 hover:bg-blue-200'
+                  } disabled:opacity-50`}
+                >
+                  {rescanning === s.source_url ? '...' : rescanned.has(s.source_url) ? '✓ Rescanned' : 'Rescan'}
+                </button>
+              </div>
+            ))}
+          </div>
+          {sources.length === 0 && (
+            <p className="text-xs text-gray-500 italic">No source pages found. Run a fresh crawl to detect link sources.</p>
+          )}
+        </div>
       )}
     </div>
   )
@@ -1112,7 +1241,7 @@ function IssueCard({ issue: iss, jobId, pageUrl, isOpen, onToggleFix, onFixCompl
   const [aiResult, setAiResult] = useState(null)
   const [aiLoading, setAiLoading] = useState(false)
 
-  const canFix = FIXABLE_CODES.has(iss.issue_code) || IMAGE_FIXABLE_CODES.has(iss.issue_code)
+  const canFix = FIXABLE_CODES.has(iss.issue_code) || IMAGE_FIXABLE_CODES.has(iss.issue_code) || FIXABLE_LINK_CODES.has(iss.issue_code)
   const isBrokenLink = ['BROKEN_LINK_404', 'BROKEN_LINK_410', 'BROKEN_LINK_5XX', 'BROKEN_LINK_503', 'EXTERNAL_LINK_TIMEOUT', 'EXTERNAL_LINK_SKIPPED'].includes(iss.issue_code)
   const isEmptyAnchor = iss.issue_code === 'LINK_EMPTY_ANCHOR'
   const isImageIssue = IMAGE_FIXABLE_CODES.has(iss.issue_code)
