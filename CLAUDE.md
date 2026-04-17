@@ -5,8 +5,8 @@
 TalkingToad is a lightweight, web-based SEO crawler for nonprofit organisations. It replicates the essential functionality of Screaming Frog SEO Spider — free, zero-installation, simple results — deployed on Vercel with a React frontend and Python/FastAPI backend.
 
 **GitHub:** https://github.com/dbgnvan2/talkingtoad
-**Spec:** `nonprofit-crawler-spec-v1.4.md` + v1.5 extensions + v1.9 Image Intelligence
-**Current Version:** 1.9
+**Spec:** `nonprofit-crawler-spec-v1.4.md` + v1.5 extensions + v1.9 Image Intelligence + v1.9.1 Optimization
+**Current Version:** 1.9.1
 
 ---
 
@@ -50,7 +50,10 @@ TalkingToad/
 │       ├── report_generator.py  # PDF audit generation (fpdf2)
 │       ├── excel_generator.py   # Excel export (openpyxl)
 │       ├── job_store.py         # SQLite/Redis abstraction
-│       └── image_optimizer.py   # WebP conversion + SEO renaming
+│       ├── image_processor.py   # WebP optimization + SEO renaming
+│       ├── exif_injector.py     # GPS EXIF coordinate injection
+│       ├── upload_validator.py  # Pre-upload validation
+│       └── batch_optimizer.py   # Batch job management
 ├── frontend/                    # React + Vite SPA
 │   ├── src/pages/               # Home, Progress, Results (~3500 lines)
 │   ├── src/components/          # FixManager, LLMSTxtGenerator, etc.
@@ -73,7 +76,7 @@ TalkingToad/
 
 ---
 
-## Key Features (v1.9)
+## Key Features (v1.9.1)
 
 1. **Crawler:** Async engine with robots.txt/sitemap support and 50+ SEO issue checks.
 2. **WordPress Fix Manager:** One-click remediation for titles, meta, and headings via WP REST API.
@@ -84,8 +87,17 @@ TalkingToad/
    - Accessibility scoring (alt text quality, length, semantic accuracy)
    - AI-powered alt text generation with vision models
    - GEO-optimized metadata (see `geo_image_ai_spec.md`)
-4. **AI Readiness:** /llms.txt generator and AI semantic audit (Gemini/OpenAI).
-5. **Reporting:** Professional 8.5" x 11" PDF audits and tabbed Excel workbooks.
+4. **Image Optimization Module (v1.9.1):**
+   - Download existing WP images → optimize → upload as NEW file
+   - Upload local images → optimize → upload to WordPress
+   - WebP conversion with target file size < 200KB
+   - GPS EXIF coordinate injection
+   - SEO filename generation (keyword-city-small.webp)
+   - GEO AI metadata generation (alt text, description, caption)
+   - Batch processing with pause/resume/cancel controls
+   - Local archiving of originals and optimized files
+5. **AI Readiness:** /llms.txt generator and AI semantic audit (Gemini/OpenAI).
+6. **Reporting:** Professional 8.5" x 11" PDF audits and tabbed Excel workbooks.
 
 ---
 
@@ -168,6 +180,62 @@ TalkingToad/
 - `source_url`: Full image URL for verification
 
 **Exact URL Verification:** Only updates image metadata if WordPress `source_url` matches exactly.
+
+---
+
+## Image Optimization Module (v1.9.1)
+
+### Two Workflows
+
+**Workflow A: Existing Image (from crawl)**
+1. Image already exists in WordPress (from crawl results)
+2. Download original from WordPress URL
+3. Resize → WebP → GPS EXIF → SEO rename
+4. Archive original + optimized to local folder
+5. Upload NEW optimized version to WordPress
+6. **Result:** 2 files in WordPress (original stays, new added)
+7. User manually replaces old image on page
+
+**Workflow B: New Local Image (file picker)**
+1. User selects file from local drive
+2. Resize → WebP → GPS EXIF → SEO rename
+3. Archive original + optimized to local folder
+4. Upload to WordPress
+5. **Result:** 1 file in WordPress (just the optimized one)
+
+### Key Files
+
+| File | Purpose |
+|---|---|
+| `api/services/exif_injector.py` | GPS coordinate injection via piexif |
+| `api/services/upload_validator.py` | Pre-upload validation (size, GPS, format) |
+| `api/services/batch_optimizer.py` | Batch job management with pause/resume/cancel |
+| `api/services/image_processor.py` | WebP optimization + SEO filename generation |
+| `api/services/wp_fixer.py` | `optimize_existing_image()` workflow |
+| `frontend/src/components/OptimizeExistingModal.jsx` | Single image optimization UI |
+| `frontend/src/components/BatchOptimizePanel.jsx` | Batch processing UI |
+
+### Batch Processing
+
+- Parallel execution with configurable concurrency (default: 3)
+- Progress tracking per image
+- Pause/resume without losing progress
+- Cancel stops remaining images
+- Per-image results with page URLs and error details
+
+### Archive Structure
+
+```
+archive/
+├── {job_id}/
+│   ├── originals/{original_filename}
+│   └── optimized/{seo_filename}.webp
+```
+
+### Tests
+
+- `tests/test_image_optimization.py` - EXIF, SEO filename, validation, integration
+- `tests/test_batch_optimizer.py` - Batch creation, controls, status, cleanup
 
 ---
 

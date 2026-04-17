@@ -341,3 +341,50 @@ class WPClient:
                 await self.patch(f"media/{attachment_id}", json=payload)
 
         return data
+
+    async def update_media_metadata(
+        self,
+        media_id: int,
+        alt_text: str | None = None,
+        title: str | None = None,
+        caption: str | None = None,
+        description: str | None = None,
+    ) -> dict | None:
+        """Update metadata for an existing media item.
+
+        Args:
+            media_id: The ID of the media item to update.
+            alt_text: New alt text (for accessibility).
+            title: New title.
+            caption: New caption (displayed below image).
+            description: New description (long-form text).
+
+        Returns:
+            Updated media object as dict, or None on failure.
+        """
+        payload = {}
+        if alt_text is not None:
+            payload["alt_text"] = alt_text
+        if title is not None:
+            payload["title"] = title
+        if caption is not None:
+            payload["caption"] = caption
+        if description is not None:
+            payload["description"] = description
+
+        if not payload:
+            return None
+
+        try:
+            r = await self.patch(f"media/{media_id}", json=payload)
+            if r.status_code == 200:
+                return r.json()
+            else:
+                logger.error(
+                    "wp_update_media_failed",
+                    extra={"media_id": media_id, "status": r.status_code, "error": r.text},
+                )
+                return None
+        except Exception as exc:
+            logger.error("wp_update_media_error", extra={"media_id": media_id, "error": str(exc)})
+            return None

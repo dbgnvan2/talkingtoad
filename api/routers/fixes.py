@@ -16,7 +16,7 @@ import logging
 from datetime import datetime, timezone
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, Query, Body
+from fastapi import APIRouter, Depends, Query, Body, UploadFile, Form
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
 
@@ -1210,3 +1210,350 @@ async def optimize_image_endpoint(
     except Exception as exc:
         logger.exception("optimize_image_error", extra={"image_url": image_url})
         return _err("WP_ERROR", str(exc), 500)
+
+
+# ---------------------------------------------------------------------------
+# Image Optimization Module v1.9.1 - New Workflow Endpoints
+# ---------------------------------------------------------------------------
+
+class OptimizeExistingRequest(BaseModel):
+    """Request model for Workflow A: existing image optimization."""
+    job_id: str
+    image_url: str
+    target_width: int = 1200
+    apply_gps: bool = True
+    seo_keyword: str | None = None
+    generate_geo_metadata: bool = False
+    page_h1: str = ""
+    surrounding_text: str = ""
+
+
+@router.post("/optimize-existing", response_model=None)
+async def optimize_existing_endpoint(
+    request: OptimizeExistingRequest,
+    store=Depends(get_store),
+) -> dict | JSONResponse:
+    """
+    Workflow A: Optimize an existing WordPress image.
+
+    Downloads from WP, optimizes (resize, WebP, GPS), uploads as NEW file.
+    Original stays in WordPress - user manually replaces on pages.
+
+    Returns page URLs where image is used so user knows where to update.
+    """
+    from api.services.wp_fixer import optimize_existing_image
+    from pathlib import Path
+
+    if not _CREDS_PATH.exists():
+        return _err("NO_CREDENTIALS", "wp-credentials.json not found.", 400)
+
+    # Get image info to find page URLs
+    image_info = await store.get_image_by_url(request.job_id, request.image_url)
+    page_urls = [image_info.page_url] if image_info else []
+
+    # Get GEO config for the domain
+    job = await store.get_job(request.job_id)
+    geo_config = None
+    if job:
+        from urllib.parse import urlparse
+        domain = urlparse(job.target_url).netloc.replace("www.", "")
+        geo_config = await store.get_geo_config(domain)
+
+    # Setup archive path
+    archive_path = Path("archive") / request.job_id
+
+    try:
+        async with WPClient.from_credentials_file(_CREDS_PATH) as wp:
+            result = await optimize_existing_image(
+                wp=wp,
+                image_url=request.image_url,
+                page_urls=page_urls,
+                geo_config=geo_config,
+                target_width=request.target_width,
+                apply_gps=request.apply_gps,
+                seo_keyword=request.seo_keyword,
+                archive_path=archive_path,
+                generate_geo_metadata=request.generate_geo_metadata,
+                page_h1=request.page_h1,
+                surrounding_text=request.surrounding_text,
+            )
+            if not result.get("success"):
+                return _err("OPTIMIZATION_FAILED", result.get("error", "Unknown error"), 500)
+            return result
+
+    except WPAuthError as exc:
+        return _err("WP_AUTH_FAILED", str(exc), 400)
+    except Exception as exc:
+        logger.exception("optimize_existing_error", extra={"image_url": request.image_url})
+        return _err("WP_ERROR", str(exc), 500)
+
+
+@router.post("/optimize-existing-preview", response_model=None)
+async def optimize_existing_preview_endpoint(
+    job_id: str = Query(..., description="Crawl job ID"),
+    image_url: str = Query(..., description="URL of image to preview"),
+    target_width: int = Query(1200, description="Target width"),
+    store=Depends(get_store),
+) -> dict | JSONResponse:
+    """
+    Preview optimization for an existing image without uploading.
+
+    Returns estimated file size, dimensions, and page URLs where used.
+    """
+    from api.services.wp_fixer import preview_optimization
+
+    # Get image info for page URLs
+    image_info = await store.get_image_by_url(job_id, image_url)
+    page_urls = [image_info.page_url] if image_info else []
+
+    # Get GEO config for location info
+    job = await store.get_job(job_id)
+    geo_location = None
+    if job:
+        from urllib.parse import urlparse
+        domain = urlparse(job.target_url).netloc.replace("www.", "")
+        geo_config = await store.get_geo_config(domain)
+        if geo_config:
+            geo_location = geo_config.primary_location
+
+    try:
+        preview = await preview_optimization(
+            image_url=image_url,
+            target_width=target_width,
+        )
+        preview["page_urls"] = page_urls
+        preview["geo_location"] = geo_location
+        return preview
+
+    except Exception as exc:
+        logger.exception("optimize_preview_error", extra={"image_url": image_url})
+        return _err("PREVIEW_ERROR", str(exc), 500)
+
+
+@router.post("/optimize-upload", response_model=None)
+async def optimize_upload_endpoint(
+    file: UploadFile,
+    target_width: int = Form(1200),
+    apply_gps: bool = Form(True),
+    seo_keyword: str | None = Form(None),
+    job_id: str | None = Form(None),
+    store=Depends(get_store),
+) -> dict | JSONResponse:
+    """
+    Workflow B: Upload and optimize a local image.
+
+    Accepts file upload, optimizes (resize, WebP, GPS), uploads to WordPress.
+    Only 1 file ends up in WordPress.
+    """
+    from api.services.wp_fixer import optimize_local_image
+    from pathlib import Path
+    import tempfile
+    import shutil
+
+    if not _CREDS_PATH.exists():
+        return _err("NO_CREDENTIALS", "wp-credentials.json not found.", 400)
+
+    # Get GEO config if job_id provided
+    geo_config = None
+    if job_id:
+        job = await store.get_job(job_id)
+        if job:
+            from urllib.parse import urlparse
+            domain = urlparse(job.target_url).netloc.replace("www.", "")
+            geo_config = await store.get_geo_config(domain)
+
+    # Setup archive path
+    archive_path = Path("archive") / (job_id or "uploads")
+
+    # Save uploaded file to temp location
+    with tempfile.NamedTemporaryFile(delete=False, suffix=Path(file.filename).suffix) as tmp:
+        shutil.copyfileobj(file.file, tmp)
+        local_path = Path(tmp.name)
+
+    try:
+        async with WPClient.from_credentials_file(_CREDS_PATH) as wp:
+            result = await optimize_local_image(
+                wp=wp,
+                local_path=local_path,
+                geo_config=geo_config,
+                target_width=target_width,
+                apply_gps=apply_gps,
+                seo_keyword=seo_keyword,
+                archive_path=archive_path,
+            )
+            if not result.get("success"):
+                return _err("OPTIMIZATION_FAILED", result.get("error", "Unknown error"), 500)
+            return result
+
+    except WPAuthError as exc:
+        return _err("WP_AUTH_FAILED", str(exc), 400)
+    except Exception as exc:
+        logger.exception("optimize_upload_error", extra={"filename": file.filename})
+        return _err("WP_ERROR", str(exc), 500)
+    finally:
+        # Cleanup temp file
+        if local_path.exists():
+            local_path.unlink()
+
+
+@router.post("/optimize-upload-preview", response_model=None)
+async def optimize_upload_preview_endpoint(
+    file: UploadFile,
+    target_width: int = Form(1200),
+) -> dict | JSONResponse:
+    """
+    Preview optimization for an uploaded file without saving to WordPress.
+
+    Returns estimated file size and dimensions.
+    """
+    from api.services.wp_fixer import preview_optimization
+    from pathlib import Path
+    import tempfile
+    import shutil
+
+    # Save uploaded file to temp location
+    with tempfile.NamedTemporaryFile(delete=False, suffix=Path(file.filename).suffix) as tmp:
+        shutil.copyfileobj(file.file, tmp)
+        local_path = Path(tmp.name)
+
+    try:
+        preview = await preview_optimization(
+            local_path=local_path,
+            target_width=target_width,
+        )
+        preview["original_filename"] = file.filename
+        return preview
+
+    except Exception as exc:
+        logger.exception("optimize_upload_preview_error", extra={"filename": file.filename})
+        return _err("PREVIEW_ERROR", str(exc), 500)
+    finally:
+        # Cleanup temp file
+        if local_path.exists():
+            local_path.unlink()
+
+
+# ---------------------------------------------------------------------------
+# Batch Optimization Endpoints
+# ---------------------------------------------------------------------------
+
+class BatchOptimizeRequest(BaseModel):
+    """Request model for starting a batch optimization."""
+    job_id: str
+    image_urls: list[str]
+    target_width: int = 1200
+    apply_gps: bool = True
+    generate_geo_metadata: bool = True
+    parallel_limit: int = 3
+
+
+@router.post("/batch-optimize/start", response_model=None)
+async def batch_optimize_start(
+    request: BatchOptimizeRequest,
+    store=Depends(get_store),
+) -> dict | JSONResponse:
+    """
+    Start a batch optimization job.
+
+    Creates a batch job and starts processing images in the background.
+    Returns batch_id for tracking progress.
+    """
+    from api.services.batch_optimizer import create_batch, start_batch
+
+    if not _CREDS_PATH.exists():
+        return _err("NO_CREDENTIALS", "wp-credentials.json not found.", 400)
+
+    if not request.image_urls:
+        return _err("NO_IMAGES", "No image URLs provided.", 400)
+
+    # Get GEO config for the domain
+    job = await store.get_job(request.job_id)
+    geo_config = None
+    if job:
+        from urllib.parse import urlparse
+        domain = urlparse(job.target_url).netloc.replace("www.", "")
+        geo_config = await store.get_geo_config(domain)
+
+    # Create batch job
+    batch = create_batch(
+        job_id=request.job_id,
+        image_urls=request.image_urls,
+        target_width=request.target_width,
+        apply_gps=request.apply_gps,
+        generate_geo_metadata=request.generate_geo_metadata,
+        parallel_limit=request.parallel_limit,
+    )
+
+    try:
+        # Start processing - batch will create its own WP client
+        await start_batch(batch.batch_id, _CREDS_PATH, geo_config, store)
+
+        return {
+            "batch_id": batch.batch_id,
+            "status": batch.status,
+            "total": batch.total,
+            "message": f"Batch started with {batch.total} images",
+        }
+
+    except Exception as exc:
+        logger.exception("batch_start_error")
+        return _err("BATCH_ERROR", str(exc), 500)
+
+
+@router.get("/batch-optimize/{batch_id}/status", response_model=None)
+async def batch_optimize_status(batch_id: str) -> dict | JSONResponse:
+    """
+    Get status of a batch optimization job.
+
+    Returns progress, completed/failed counts, and results.
+    """
+    from api.services.batch_optimizer import get_batch_status
+
+    status = get_batch_status(batch_id)
+    if not status:
+        return _err("BATCH_NOT_FOUND", f"Batch {batch_id} not found.", 404)
+
+    return status
+
+
+@router.post("/batch-optimize/{batch_id}/pause", response_model=None)
+async def batch_optimize_pause(batch_id: str) -> dict | JSONResponse:
+    """Pause a running batch job."""
+    from api.services.batch_optimizer import pause_batch, get_batch_status
+
+    if not pause_batch(batch_id):
+        return _err("PAUSE_FAILED", "Cannot pause batch (not running or not found).", 400)
+
+    return get_batch_status(batch_id)
+
+
+@router.post("/batch-optimize/{batch_id}/resume", response_model=None)
+async def batch_optimize_resume(batch_id: str) -> dict | JSONResponse:
+    """Resume a paused batch job."""
+    from api.services.batch_optimizer import resume_batch, get_batch_status
+
+    if not resume_batch(batch_id):
+        return _err("RESUME_FAILED", "Cannot resume batch (not paused or not found).", 400)
+
+    return get_batch_status(batch_id)
+
+
+@router.post("/batch-optimize/{batch_id}/cancel", response_model=None)
+async def batch_optimize_cancel(batch_id: str) -> dict | JSONResponse:
+    """Cancel a batch job."""
+    from api.services.batch_optimizer import cancel_batch, get_batch_status
+
+    if not cancel_batch(batch_id):
+        return _err("CANCEL_FAILED", "Cannot cancel batch (already completed/cancelled or not found).", 400)
+
+    return get_batch_status(batch_id)
+
+
+@router.get("/batch-optimize/list", response_model=None)
+async def batch_optimize_list(
+    job_id: str | None = Query(None, description="Filter by crawl job ID"),
+) -> list[dict]:
+    """List all batch optimization jobs."""
+    from api.services.batch_optimizer import list_batches
+
+    return list_batches(job_id)

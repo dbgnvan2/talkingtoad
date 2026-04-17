@@ -447,15 +447,23 @@ async def analyze_image_with_geo(
         cleaned_result = re.sub(r'```(?:json)?\s*\n?(.*?)\n?```', r'\1', result, flags=re.DOTALL)
         cleaned_result = cleaned_result.strip()
 
+        # Try to find JSON object in the response
+        json_match = re.search(r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', cleaned_result, flags=re.DOTALL)
+        if json_match:
+            cleaned_result = json_match.group(0)
+
         try:
             data = json.loads(cleaned_result)
             data["success"] = True
             return data
         except json.JSONDecodeError as e:
-            logger.error("geo_json_parse_error", extra={"error": str(e), "result": result})
+            logger.error("geo_json_parse_error", extra={"error": str(e), "result": result[:500]})
+            # Try to extract alt_text from raw response as fallback
+            alt_match = re.search(r'"alt_text"\s*:\s*"([^"]+)"', result)
+            desc_match = re.search(r'"long_description"\s*:\s*"([^"]+)"', result)
             return {
-                "alt_text": "",
-                "long_description": result[:300],  # Fallback to raw response
+                "alt_text": alt_match.group(1) if alt_match else "",
+                "long_description": desc_match.group(1) if desc_match else result[:300],
                 "success": False,
                 "error": "Failed to parse AI response",
             }

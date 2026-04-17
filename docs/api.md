@@ -71,6 +71,118 @@ All endpoints require `Authorization: Bearer <token>`.
 | POST | `/api/geo/settings` | Save GEO configuration for a domain. |
 | GET | `/api/geo/settings?domain={domain}` | Retrieve GEO configuration for a domain. |
 
+## Image Optimization (v1.9.1)
+
+### Single Image Optimization
+
+| Method | Endpoint | Description |
+|---|---|---|
+| POST | `/api/fixes/optimize-existing` | Download existing WP image → optimize → upload as NEW file. |
+| POST | `/api/fixes/optimize-upload` | Upload local file → optimize → upload to WordPress. |
+| POST | `/api/fixes/optimize-existing-preview` | Preview optimization for an existing image (no changes made). |
+
+### Batch Optimization
+
+| Method | Endpoint | Description |
+|---|---|---|
+| POST | `/api/fixes/batch-optimize/start` | Start batch optimization job for multiple images. |
+| GET | `/api/fixes/batch-optimize/{batch_id}/status` | Get batch job progress and results. |
+| POST | `/api/fixes/batch-optimize/{batch_id}/pause` | Pause a running batch job. |
+| POST | `/api/fixes/batch-optimize/{batch_id}/resume` | Resume a paused batch job. |
+| POST | `/api/fixes/batch-optimize/{batch_id}/cancel` | Cancel a batch job. |
+| GET | `/api/fixes/batch-optimize/list` | List all batch jobs (optionally filter by job_id). |
+
+### Optimize Existing Request
+
+```json
+{
+  "job_id": "abc123",
+  "image_url": "https://example.com/wp-content/uploads/image.jpg",
+  "target_width": 1200,
+  "apply_gps": true,
+  "generate_geo_metadata": true,
+  "seo_keyword": "therapy"
+}
+```
+
+### Optimize Existing Response
+
+```json
+{
+  "success": true,
+  "old_url": "https://example.com/wp-content/uploads/image.jpg",
+  "new_url": "https://example.com/wp-content/uploads/therapy-vancouver-small.webp",
+  "new_media_id": 12345,
+  "page_urls": ["https://example.com/services"],
+  "file_size_kb": 85.5,
+  "archive_paths": {
+    "original": "archive/job123/originals/image.jpg",
+    "optimized": "archive/job123/optimized/therapy-vancouver-small.webp"
+  },
+  "geo_metadata": {
+    "alt_text": "Therapy session in progress at Vancouver counselling centre",
+    "description": "Professional therapy services...",
+    "caption": "Licensed therapist providing support"
+  }
+}
+```
+
+### Batch Start Request
+
+```json
+{
+  "job_id": "abc123",
+  "image_urls": [
+    "https://example.com/wp-content/uploads/img1.jpg",
+    "https://example.com/wp-content/uploads/img2.png"
+  ],
+  "target_width": 1200,
+  "apply_gps": true,
+  "generate_geo_metadata": true,
+  "parallel_limit": 3
+}
+```
+
+### Batch Status Response
+
+```json
+{
+  "batch_id": "a1b2c3d4",
+  "job_id": "abc123",
+  "status": "running",
+  "total": 10,
+  "completed": 4,
+  "failed": 1,
+  "progress_percent": 50,
+  "current_index": 5,
+  "created_at": "2024-01-15T10:00:00",
+  "started_at": "2024-01-15T10:00:05",
+  "completed_at": null,
+  "results": [
+    {
+      "image_url": "https://example.com/img1.jpg",
+      "success": true,
+      "new_url": "https://example.com/optimized1.webp",
+      "new_media_id": 12345,
+      "file_size_kb": 75.2,
+      "page_urls": ["https://example.com/page1"],
+      "error": null,
+      "geo_metadata": { "alt_text": "...", "description": "...", "caption": "..." }
+    }
+  ]
+}
+```
+
+### Batch Status Values
+
+| Status | Description |
+|---|---|
+| `pending` | Job created but not yet started |
+| `running` | Currently processing images |
+| `paused` | Temporarily paused by user |
+| `completed` | All images processed |
+| `cancelled` | Stopped by user before completion |
+
 #### Heading source analysis response
 
 ```json
@@ -147,7 +259,7 @@ Only the fields you include are updated.
 
 | Method | Endpoint | Description |
 |---|---|---|
-| GET | `/api/health` | `{"status": "ok", "version": "1.8"}` |
+| GET | `/api/health` | `{"status": "ok", "version": "1.9.1"}` |
 | GET | `/api/ai/test` | Test connectivity to Gemini/OpenAI API providers. |
 | GET | `/api/robots?url={url}` | Fetch and parse robots.txt for a domain. |
 | GET | `/api/sitemap?url={url}` | Fetch and parse sitemap(s) for a domain. |

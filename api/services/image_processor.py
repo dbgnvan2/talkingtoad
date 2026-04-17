@@ -167,5 +167,161 @@ class ImageOptimizer:
                     result = self.optimize(path, target_width, target_height, mode)
                     if result:
                         optimized_paths.append(result)
-                        
+
         return optimized_paths
+
+
+# ---------------------------------------------------------------------------
+# SEO Filename Generation (v1.9.1 Image Optimization Module)
+# ---------------------------------------------------------------------------
+
+import re
+import unicodedata
+
+
+def generate_seo_filename(
+    original: str,
+    keyword: str,
+    city: str,
+    suffix: str = "-small",
+    extension: str = ".webp",
+    max_length: int = 50,
+) -> str:
+    """
+    Generate an SEO-optimized filename for WordPress upload.
+
+    Pattern: {keyword}-{city}{suffix}{extension}
+    Example: "therapy-services-vancouver-small.webp"
+
+    Transformations:
+    - Strip common non-descriptive prefixes (Screenshot, IMG_, DSC_, etc.)
+    - Convert to lowercase
+    - Replace spaces/underscores with hyphens
+    - Remove special characters except hyphens
+    - Normalize Unicode to ASCII
+    - Truncate to max_length (before suffix)
+
+    Args:
+        original: Original filename (used as fallback if keyword empty)
+        keyword: SEO keyword/topic for the image
+        city: Geographic location (city name)
+        suffix: Filename suffix (default "-small")
+        extension: File extension (default ".webp")
+        max_length: Maximum length for keyword-city part (default 50)
+
+    Returns:
+        SEO-optimized filename string
+    """
+    # Use keyword if provided, otherwise derive from original
+    if keyword and keyword.strip():
+        base = keyword.strip()
+    else:
+        # Clean up original filename as fallback
+        base = Path(original).stem if original else "image"
+        base = _clean_filename_base(base)
+
+    # Clean city name
+    city_clean = _slugify(city) if city else ""
+
+    # Slugify the keyword
+    keyword_clean = _slugify(base)
+
+    # Combine keyword and city
+    if city_clean:
+        combined = f"{keyword_clean}-{city_clean}"
+    else:
+        combined = keyword_clean
+
+    # Truncate to max length
+    if len(combined) > max_length:
+        combined = combined[:max_length].rstrip("-")
+
+    # Add suffix and extension
+    filename = f"{combined}{suffix}{extension}"
+
+    return filename
+
+
+def _clean_filename_base(filename: str) -> str:
+    """
+    Remove common non-descriptive prefixes and patterns from filenames.
+
+    Strips: Screenshot, IMG_, DSC_, date patterns (2024-01-15), etc.
+    """
+    # Patterns to remove
+    patterns_to_strip = [
+        r"^screenshot[_\-\s]*",
+        r"^img[_\-\s]*\d*[_\-\s]*",
+        r"^dsc[_\-\s]*\d*[_\-\s]*",
+        r"^photo[_\-\s]*\d*[_\-\s]*",
+        r"^image[_\-\s]*\d*[_\-\s]*",
+        r"^pic[_\-\s]*\d*[_\-\s]*",
+        r"^\d{4}[\-_]\d{2}[\-_]\d{2}[_\-\s]*",  # Date: 2024-01-15
+        r"^\d{8}[_\-\s]*",  # Date: 20240115
+        r"^screen\s*shot[_\-\s]*",
+        r"^capture[_\-\s]*",
+        r"^untitled[_\-\s]*",
+    ]
+
+    result = filename.lower()
+    for pattern in patterns_to_strip:
+        result = re.sub(pattern, "", result, flags=re.IGNORECASE)
+
+    return result.strip() or "image"
+
+
+def _slugify(text: str) -> str:
+    """
+    Convert text to URL-safe slug.
+
+    - Normalize Unicode to ASCII
+    - Convert to lowercase
+    - Replace spaces/underscores with hyphens
+    - Remove non-alphanumeric characters except hyphens
+    - Collapse multiple hyphens
+    """
+    if not text:
+        return ""
+
+    # Normalize Unicode (é → e, etc.)
+    text = unicodedata.normalize("NFKD", text)
+    text = text.encode("ascii", "ignore").decode("ascii")
+
+    # Lowercase
+    text = text.lower()
+
+    # Replace spaces and underscores with hyphens
+    text = re.sub(r"[\s_]+", "-", text)
+
+    # Remove anything that's not alphanumeric or hyphen
+    text = re.sub(r"[^a-z0-9\-]", "", text)
+
+    # Collapse multiple hyphens
+    text = re.sub(r"-+", "-", text)
+
+    # Strip leading/trailing hyphens
+    text = text.strip("-")
+
+    return text
+
+
+def suggest_seo_keyword(original_filename: str, alt_text: str = "") -> str:
+    """
+    Suggest an SEO keyword based on filename and alt text.
+
+    Prioritizes alt text if available, otherwise cleans up filename.
+
+    Args:
+        original_filename: Original image filename
+        alt_text: Image alt text (if available)
+
+    Returns:
+        Suggested keyword string
+    """
+    if alt_text and len(alt_text) > 5:
+        # Use first few words of alt text
+        words = alt_text.split()[:4]
+        return " ".join(words)
+
+    # Fall back to cleaned filename
+    return _clean_filename_base(Path(original_filename).stem)

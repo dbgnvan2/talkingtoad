@@ -29,6 +29,8 @@ pypdf>=4.1.0
 
 # Image processing
 Pillow>=10.2.0
+piexif>=1.1.3
+python-multipart>=0.0.9
 
 # PDF generation
 fpdf2>=2.7.8

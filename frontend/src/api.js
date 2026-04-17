@@ -544,3 +544,136 @@ export async function applyGeoMetadata(jobId, imageUrl, altText, description = '
   })
   return checkResponse(res)
 }
+
+// ---------------------------------------------------------------------------
+// Image Optimization Module v1.9.1
+// ---------------------------------------------------------------------------
+
+// Preview optimization for existing WP image (Workflow A)
+export async function previewExistingOptimization(jobId, imageUrl, targetWidth = 1200) {
+  const params = new URLSearchParams({
+    job_id: jobId,
+    image_url: imageUrl,
+    target_width: targetWidth,
+  })
+  const res = await fetch(`/api/fixes/optimize-existing-preview?${params}`, {
+    method: 'POST',
+    headers: authHeaders(),
+  })
+  return checkResponse(res)
+}
+
+// Optimize existing WP image (Workflow A) - keeps original in WP
+export async function optimizeExistingImage(jobId, imageUrl, options = {}) {
+  const res = await fetch('/api/fixes/optimize-existing', {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify({
+      job_id: jobId,
+      image_url: imageUrl,
+      target_width: options.targetWidth || 1200,
+      apply_gps: options.applyGps !== false,
+      seo_keyword: options.seoKeyword || null,
+      generate_geo_metadata: options.generateGeoMetadata || false,
+      page_h1: options.pageH1 || '',
+      surrounding_text: options.surroundingText || '',
+    }),
+  })
+  return checkResponse(res)
+}
+
+// Preview optimization for local file upload (Workflow B)
+export async function previewUploadOptimization(file, targetWidth = 1200) {
+  const formData = new FormData()
+  formData.append('file', file)
+  formData.append('target_width', targetWidth)
+
+  const res = await fetch('/api/fixes/optimize-upload-preview', {
+    method: 'POST',
+    headers: TOKEN ? { Authorization: `Bearer ${TOKEN}` } : {},
+    body: formData,
+  })
+  return checkResponse(res)
+}
+
+// Upload and optimize local file (Workflow B)
+export async function uploadAndOptimizeImage(file, options = {}) {
+  const formData = new FormData()
+  formData.append('file', file)
+  formData.append('target_width', options.targetWidth || 1200)
+  formData.append('apply_gps', options.applyGps !== false)
+  if (options.seoKeyword) formData.append('seo_keyword', options.seoKeyword)
+  if (options.jobId) formData.append('job_id', options.jobId)
+
+  const res = await fetch('/api/fixes/optimize-upload', {
+    method: 'POST',
+    headers: TOKEN ? { Authorization: `Bearer ${TOKEN}` } : {},
+    body: formData,
+  })
+  return checkResponse(res)
+}
+
+// ---------------------------------------------------------------------------
+// Batch Optimization API
+// ---------------------------------------------------------------------------
+
+// Start batch optimization
+export async function startBatchOptimize(jobId, imageUrls, options = {}) {
+  const res = await fetch('/api/fixes/batch-optimize/start', {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify({
+      job_id: jobId,
+      image_urls: imageUrls,
+      target_width: options.targetWidth || 1200,
+      apply_gps: options.applyGps !== false,
+      generate_geo_metadata: options.generateGeoMetadata !== false,
+      parallel_limit: options.parallelLimit || 3,
+    }),
+  })
+  return checkResponse(res)
+}
+
+// Get batch status
+export async function getBatchStatus(batchId) {
+  const res = await fetch(`/api/fixes/batch-optimize/${batchId}/status`, {
+    headers: authHeaders(),
+  })
+  return checkResponse(res)
+}
+
+// Pause batch
+export async function pauseBatch(batchId) {
+  const res = await fetch(`/api/fixes/batch-optimize/${batchId}/pause`, {
+    method: 'POST',
+    headers: authHeaders(),
+  })
+  return checkResponse(res)
+}
+
+// Resume batch
+export async function resumeBatch(batchId) {
+  const res = await fetch(`/api/fixes/batch-optimize/${batchId}/resume`, {
+    method: 'POST',
+    headers: authHeaders(),
+  })
+  return checkResponse(res)
+}
+
+// Cancel batch
+export async function cancelBatch(batchId) {
+  const res = await fetch(`/api/fixes/batch-optimize/${batchId}/cancel`, {
+    method: 'POST',
+    headers: authHeaders(),
+  })
+  return checkResponse(res)
+}
+
+// List batches
+export async function listBatches(jobId = null) {
+  const params = jobId ? `?job_id=${jobId}` : ''
+  const res = await fetch(`/api/fixes/batch-optimize/list${params}`, {
+    headers: authHeaders(),
+  })
+  return checkResponse(res)
+}

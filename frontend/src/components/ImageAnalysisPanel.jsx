@@ -11,6 +11,8 @@ import { getIssueHelp } from '../data/issueHelp.js'
 import SeverityBadge from './SeverityBadge.jsx'
 import GeoAnalysisModal from './GeoAnalysisModal.jsx'
 import GeoSettingsModal from './GeoSettingsModal.jsx'
+import OptimizeExistingModal from './OptimizeExistingModal.jsx'
+import BatchOptimizePanel from './BatchOptimizePanel.jsx'
 
 export default function ImageAnalysisPanel({ jobId, onPageClick, onShowHelp }) {
   const [summary, setSummary] = useState(null)
@@ -28,6 +30,7 @@ export default function ImageAnalysisPanel({ jobId, onPageClick, onShowHelp }) {
   const [aiResults, setAiResults] = useState(null)
   const [showWpLogin, setShowWpLogin] = useState(false)
   const [wpLoginCallback, setWpLoginCallback] = useState(null)
+  const [showBatchOptimize, setShowBatchOptimize] = useState(false)
 
   const loadData = useCallback(async () => {
     setLoading(true)
@@ -290,6 +293,17 @@ export default function ImageAnalysisPanel({ jobId, onPageClick, onShowHelp }) {
                 : 'Fetch All Images'
             }
           </button>
+          <button
+            onClick={() => setShowBatchOptimize(true)}
+            disabled={selectedImages.size === 0 || loading}
+            className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-bold hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+            title={selectedImages.size === 0 ? "Select images to batch optimize" : `Batch optimize ${selectedImages.size} images`}
+          >
+            {selectedImages.size === 0
+              ? '📦 Batch Optimize'
+              : `📦 Optimize ${selectedImages.size}`
+            }
+          </button>
           <label className="text-sm text-gray-500 font-medium">Sort by:</label>
           <select
             value={sortBy}
@@ -391,6 +405,20 @@ export default function ImageAnalysisPanel({ jobId, onPageClick, onShowHelp }) {
           onClose={() => setShowWpLogin(false)}
         />
       )}
+
+      {/* Batch Optimize Panel */}
+      {showBatchOptimize && (
+        <BatchOptimizePanel
+          jobId={jobId}
+          selectedImages={images.filter(img => selectedImages.has(img.url))}
+          onClose={() => setShowBatchOptimize(false)}
+          onComplete={(data) => {
+            // Reload data after batch completes
+            loadData()
+            setSelectedImages(new Set())
+          }}
+        />
+      )}
     </div>
   )
 }
@@ -484,6 +512,7 @@ function ImageCard({ image, jobId, isExpanded, onToggle, onPageClick, isSelected
   const [showGeoModal, setShowGeoModal] = useState(false)
   const [showGeoSettings, setShowGeoSettings] = useState(false)
   const [geoConfigured, setGeoConfigured] = useState(false)
+  const [showOptimizeModal, setShowOptimizeModal] = useState(false)
 
   const dataSource = image.data_source || 'html_only'
   const isPartialAnalysis = dataSource !== 'full_fetch'
@@ -712,6 +741,13 @@ function ImageCard({ image, jobId, isExpanded, onToggle, onPageClick, isSelected
               title="GEO AI Analysis: Generate entity-rich alt text and descriptions for AI search engines"
             >
               {analyzingAI ? 'Analyzing...' : '🤖 GEO AI'}
+            </button>
+            <button
+              onClick={(e) => { e.stopPropagation(); setShowOptimizeModal(true) }}
+              className="px-2 py-0.5 text-[10px] bg-blue-100 text-blue-700 rounded font-bold hover:bg-blue-200"
+              title="Optimize: Download, resize, convert to WebP, inject GPS, upload to WordPress"
+            >
+              📦 Optimize
             </button>
           </div>
           <div className="flex gap-3 mt-1 text-xs text-gray-500">
@@ -990,6 +1026,19 @@ function ImageCard({ image, jobId, isExpanded, onToggle, onPageClick, isSelected
           onSaved={() => {
             setShowGeoSettings(false)
             setGeoConfigured(true)
+          }}
+        />
+      )}
+
+      {/* Optimize Existing Image Modal */}
+      {showOptimizeModal && (
+        <OptimizeExistingModal
+          image={image}
+          jobId={jobId}
+          onClose={() => setShowOptimizeModal(false)}
+          onSuccess={(result) => {
+            // Optionally refresh the image list after optimization
+            console.log('Image optimized:', result)
           }}
         />
       )}
