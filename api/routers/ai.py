@@ -286,19 +286,56 @@ class ApplyGeoMetadataRequest(BaseModel):
 @router.post("/image/apply-geo-metadata")
 async def apply_geo_metadata(request: ApplyGeoMetadataRequest, store=Depends(get_store)):
     """
-    Apply GEO-generated metadata to an image in the database.
+    Apply GEO-generated metadata to an image.
 
-    Updates the image record with:
-    - alt_text (overwrites existing)
-    - long_description
-    - GEO analysis metadata
+    Updates BOTH WordPress AND local database with:
+    - alt_text (GEO-optimized, 80-125 chars)
+    - description (GEO-optimized, 150-300 words)
+
+    This ensures changes persist even after fetch.
     """
+    import json
+    from pathlib import Path
+    from api.services.wp_fixer import WPClient, update_image_metadata, WPAuthError
+
     # Get image info
     image_info = await store.get_image_by_url(request.job_id, request.image_url)
     if not image_info:
         return {"error": "Image not found", "success": False}
 
-    # Update image with GEO-optimized metadata
+    # Try to update WordPress first (if credentials available)
+    _CREDS_PATH = Path("wp-credentials.json")
+    wp_updated = False
+    wp_error = None
+
+    if _CREDS_PATH.exists():
+        try:
+            with open(_CREDS_PATH) as f:
+                creds = json.load(f)
+
+            wp = WPClient(
+                site_url=creds["site_url"],
+                login_url=creds["login_url"],
+                username=creds["username"],
+                password=creds["password"],
+            )
+
+            async with wp:
+                # Update WordPress with GEO-optimized metadata
+                await update_image_metadata(
+                    wp,
+                    request.image_url,
+                    alt_text=request.alt_text,
+                    description=request.description,
+                )
+                wp_updated = True
+
+        except WPAuthError as e:
+            wp_error = f"WordPress authentication failed: {str(e)}"
+        except Exception as e:
+            wp_error = f"WordPress update failed: {str(e)}"
+
+    # Update local database (always, even if WP update failed)
     image_info.alt = request.alt_text
     image_info.description = request.description
     image_info.data_source = "geo_analyzed"
@@ -325,5 +362,7 @@ async def apply_geo_metadata(request: ApplyGeoMetadataRequest, store=Depends(get
         "new_scores": {
             "accessibility_score": image_info.accessibility_score,
             "overall_score": image_info.overall_score,
-        }
+        },
+        "wordpress_updated": wp_updated,
+        "wordpress_error": wp_error,
     }

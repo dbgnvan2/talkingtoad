@@ -1687,8 +1687,9 @@ async def update_image_metadata(
     alt_text: str | None = None,
     title: str | None = None,
     caption: str | None = None,
+    description: str | None = None,
 ) -> dict:
-    """Update alt text, title, and/or caption for a WordPress media attachment.
+    """Update alt text, title, caption, and/or description for a WordPress media attachment.
 
     Finds the attachment by URL, then PATCHes only the provided fields.
     Returns a dict with keys: success, id, error.
@@ -1704,6 +1705,8 @@ async def update_image_metadata(
         payload["title"] = title
     if caption is not None:
         payload["caption"] = caption
+    if description is not None:
+        payload["description"] = description
 
     if not payload:
         return {"success": False, "error": "No fields to update."}
@@ -1718,6 +1721,7 @@ async def update_image_metadata(
                 "alt_text": updated.get("alt_text", ""),
                 "title":    updated.get("title", {}).get("rendered", ""),
                 "caption":  updated.get("caption", {}).get("rendered", ""),
+                "description": updated.get("description", {}).get("rendered", ""),
                 "error":    None,
             }
         body = r.json()
