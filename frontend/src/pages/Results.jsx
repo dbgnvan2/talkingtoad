@@ -593,6 +593,7 @@ function BrokenLinkItem({ jobId, brokenUrl }) {
   const [error, setError] = useState(null)
   const [rescanning, setRescanning] = useState(null)
   const [rescanned, setRescanned] = useState(new Set())
+  const [manualUrl, setManualUrl] = useState('')
 
   async function loadSources() {
     if (sources) {
@@ -693,7 +694,34 @@ function BrokenLinkItem({ jobId, brokenUrl }) {
             ))}
           </div>
           {sources.length === 0 && (
-            <p className="text-sm text-gray-500 italic">No source pages found. Run a fresh crawl to detect link sources.</p>
+            <div className="space-y-3">
+              <p className="text-sm text-gray-600">
+                No source pages found — the link may have been removed or fixed.
+              </p>
+              <div className="bg-white border border-gray-200 rounded-lg p-3">
+                <p className="text-sm font-medium text-gray-700 mb-2">Enter the page URL to rescan:</p>
+                <div className="flex gap-2">
+                  <input
+                    type="url"
+                    value={manualUrl}
+                    onChange={e => setManualUrl(e.target.value)}
+                    placeholder="https://yoursite.com/page-to-rescan"
+                    className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                  <button
+                    onClick={() => manualUrl && handleRescan(manualUrl)}
+                    disabled={!manualUrl || rescanning === manualUrl}
+                    className={`px-4 py-2 rounded-lg text-sm font-bold ${
+                      rescanned.has(manualUrl)
+                        ? 'bg-green-500 text-white'
+                        : 'bg-blue-500 text-white hover:bg-blue-600'
+                    } disabled:opacity-50`}
+                  >
+                    {rescanning === manualUrl ? 'Rescanning...' : rescanned.has(manualUrl) ? '✓ Rescanned' : 'Rescan'}
+                  </button>
+                </div>
+              </div>
+            </div>
           )}
         </div>
       )}
