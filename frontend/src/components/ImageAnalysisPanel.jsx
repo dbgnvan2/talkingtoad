@@ -790,14 +790,28 @@ function ImageCard({ image, jobId, isExpanded, onToggle, onPageClick, isSelected
                 <p><span className="text-gray-600 font-medium">Title:</span> <span className="text-gray-800">{image.title}</span></p>
               )}
 
-              {/* Caption */}
-              {image.caption && image.caption.trim() && (
-                <p><span className="text-gray-600 font-medium">WP Caption:</span> <span className="text-gray-800">{image.caption}</span></p>
+              {/* Caption - show if fetched (even if empty) */}
+              {image.data_source === 'full_fetch' && (
+                <p>
+                  <span className="text-gray-600 font-medium">WP Caption:</span>{' '}
+                  {image.caption && image.caption.trim() ? (
+                    <span className="text-gray-800">{image.caption}</span>
+                  ) : (
+                    <span className="text-gray-400 italic">(empty)</span>
+                  )}
+                </p>
               )}
 
-              {/* Description */}
-              {image.description && image.description.trim() && (
-                <p><span className="text-gray-600 font-medium">WP Description:</span> <span className="text-gray-800">{image.description}</span></p>
+              {/* Description - show if fetched (even if empty) */}
+              {image.data_source === 'full_fetch' && (
+                <p>
+                  <span className="text-gray-600 font-medium">WP Description:</span>{' '}
+                  {image.description && image.description.trim() ? (
+                    <span className="text-gray-800">{image.description}</span>
+                  ) : (
+                    <span className="text-gray-400 italic">(empty)</span>
+                  )}
+                </p>
               )}
 
               {/* File Info */}
