@@ -281,6 +281,8 @@ class ApplyGeoMetadataRequest(BaseModel):
     image_url: str
     alt_text: str
     long_description: str = ""
+    geo_entities: list[str] = []
+    geo_location: str = ""
 
 
 @router.post("/image/apply-geo-metadata")
@@ -301,6 +303,8 @@ async def apply_geo_metadata(request: ApplyGeoMetadataRequest, store=Depends(get
     # Update image with GEO metadata
     image_info.alt = request.alt_text
     image_info.long_description = request.long_description
+    image_info.geo_entities_detected = request.geo_entities
+    image_info.geo_location_used = request.geo_location
     image_info.data_source = "geo_analyzed"
 
     # Re-analyze with updated alt text

@@ -1438,6 +1438,11 @@ def _image_dict(img) -> dict:
         "overall_score": img.overall_score,
         "issues": img.issues,
         "data_source": img.data_source,
+        # GEO AI fields (v1.9geo)
+        "long_description": img.long_description,
+        "geo_entities_detected": img.geo_entities_detected,
+        "geo_location_used": img.geo_location_used,
+        "ai_analysis_metadata": img.ai_analysis_metadata,
     }
 
 

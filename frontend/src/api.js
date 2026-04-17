@@ -531,7 +531,7 @@ export async function analyzeImageWithGeo(jobId, imageUrl) {
 }
 
 // Apply GEO-generated metadata to an image
-export async function applyGeoMetadata(jobId, imageUrl, altText, longDescription = '') {
+export async function applyGeoMetadata(jobId, imageUrl, altText, longDescription = '', geoEntities = [], geoLocation = '') {
   const res = await fetch('/api/ai/image/apply-geo-metadata', {
     method: 'POST',
     headers: authHeaders(),
@@ -540,6 +540,8 @@ export async function applyGeoMetadata(jobId, imageUrl, altText, longDescription
       image_url: imageUrl,
       alt_text: altText,
       long_description: longDescription,
+      geo_entities: geoEntities,
+      geo_location: geoLocation,
     }),
   })
   return checkResponse(res)

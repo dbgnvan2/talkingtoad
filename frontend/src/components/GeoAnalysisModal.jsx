@@ -14,7 +14,12 @@ export default function GeoAnalysisModal({ geoResult, image, onSave, onClose }) 
   const handleSave = async () => {
     setSaving(true)
     try {
-      await onSave(editedAlt, editedDescription)
+      await onSave(
+        editedAlt,
+        editedDescription,
+        geoResult.entities_used || [],
+        geoResult.geographic_anchor || ''
+      )
     } finally {
       setSaving(false)
     }

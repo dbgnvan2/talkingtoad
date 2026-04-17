@@ -576,10 +576,10 @@ function ImageCard({ image, jobId, isExpanded, onToggle, onPageClick, isSelected
     }
   }
 
-  const handleSaveGeo = async (altText, longDescription) => {
+  const handleSaveGeo = async (altText, longDescription, geoEntities, geoLocation) => {
     try {
       // Apply GEO metadata to database
-      const result = await applyGeoMetadata(jobId, image.url, altText, longDescription)
+      const result = await applyGeoMetadata(jobId, image.url, altText, longDescription, geoEntities, geoLocation)
 
       if (result.success) {
         // Close modal
@@ -880,6 +880,24 @@ function ImageCard({ image, jobId, isExpanded, onToggle, onPageClick, isSelected
                     <span className="text-gray-400 italic">(empty)</span>
                   )}
                 </p>
+              )}
+
+              {/* GEO Long Description - show if GEO analyzed */}
+              {image.data_source === 'geo_analyzed' && image.long_description && (
+                <div className="p-3 bg-purple-50 border border-purple-200 rounded-lg">
+                  <p className="text-xs font-bold text-purple-900 mb-1">GEO Long Description:</p>
+                  <p className="text-xs text-purple-800 leading-relaxed">{image.long_description}</p>
+                  {image.geo_location_used && (
+                    <p className="text-[10px] text-purple-600 mt-2">
+                      Geographic Anchor: {image.geo_location_used}
+                    </p>
+                  )}
+                  {image.geo_entities_detected && image.geo_entities_detected.length > 0 && (
+                    <p className="text-[10px] text-purple-600">
+                      Entities: {image.geo_entities_detected.join(', ')}
+                    </p>
+                  )}
+                </div>
               )}
 
               {/* File Info */}
