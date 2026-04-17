@@ -2064,6 +2064,7 @@ async def optimize_local_image(
     apply_gps: bool = True,
     seo_keyword: str | None = None,
     archive_path: Path | None = None,
+    generate_geo_metadata: bool = False,
 ) -> dict:
     """
     Workflow B: Optimize a local image and upload to WordPress.
@@ -2078,6 +2079,7 @@ async def optimize_local_image(
         apply_gps: Whether to inject GPS EXIF (default True)
         seo_keyword: Keyword for SEO filename (optional)
         archive_path: Path to save original and optimized copies
+        generate_geo_metadata: Whether to generate AI alt text, description, caption
 
     Returns:
         {
@@ -2088,6 +2090,7 @@ async def optimize_local_image(
             file_size_kb: float,
             message: str,
             error: str | None,
+            geo_metadata: {alt_text, description, caption} | None,
         }
     """
     from api.services.image_processor import ImageOptimizer, generate_seo_filename
@@ -2105,6 +2108,7 @@ async def optimize_local_image(
         "file_size_kb": 0,
         "message": "",
         "error": None,
+        "geo_metadata": None,
     }
 
     if not local_path.exists():
@@ -2188,6 +2192,48 @@ async def optimize_local_image(
         result["new_media_id"] = new_media.get("id")
         result["success"] = True
         result["message"] = "Image optimized and uploaded. Link it to your pages in WordPress."
+
+        # 9. Generate GEO metadata if requested
+        if generate_geo_metadata and geo_config and result["new_url"]:
+            try:
+                from api.services.ai_analyzer import analyze_image_with_geo
+
+                geo_result = await analyze_image_with_geo(
+                    image_url=result["new_url"],
+                    page_h1="",  # No page context for local uploads
+                    surrounding_text=seo_keyword or "",  # Use keyword as context
+                    geo_config=geo_config,
+                )
+
+                if geo_result and geo_result.get("success"):
+                    geo_data = geo_result.get("result", {})
+                    alt_text = geo_data.get("alt_text", "")
+                    description = geo_data.get("long_description", "")
+                    caption = geo_data.get("caption", "")
+
+                    # Update WordPress metadata
+                    media_id = result["new_media_id"]
+                    if media_id and (alt_text or description or caption):
+                        await wp.update_media_metadata(
+                            media_id=media_id,
+                            alt_text=alt_text or None,
+                            description=description or None,
+                            caption=caption or None,
+                        )
+
+                    result["geo_metadata"] = {
+                        "alt_text": alt_text,
+                        "description": description,
+                        "caption": caption,
+                        "entities_used": geo_data.get("entities_used", []),
+                    }
+                else:
+                    logger.warning(
+                        "geo_metadata_skipped",
+                        extra={"reason": geo_result.get("error", "Unknown")}
+                    )
+            except Exception as exc:
+                logger.warning(f"GEO metadata generation failed: {exc}")
 
         return result
 

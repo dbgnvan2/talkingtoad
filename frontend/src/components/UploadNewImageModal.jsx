@@ -93,7 +93,7 @@ export default function UploadNewImageModal({ jobId, onClose, onSuccess }) {
         targetWidth,
         applyGps,
         seoKeyword: seoKeyword.trim() || null,
-        generateGeoMetadata,
+        generateGeoMetadata: generateGeoMetadata,
         jobId,
       })
       setResult(data)

@@ -1337,6 +1337,7 @@ async def optimize_upload_endpoint(
     apply_gps: bool = Form(True),
     seo_keyword: str | None = Form(None),
     job_id: str | None = Form(None),
+    generate_geo_metadata: bool = Form(False),
     store=Depends(get_store),
 ) -> dict | JSONResponse:
     """
@@ -1380,6 +1381,7 @@ async def optimize_upload_endpoint(
                 apply_gps=apply_gps,
                 seo_keyword=seo_keyword,
                 archive_path=archive_path,
+                generate_geo_metadata=generate_geo_metadata,
             )
             if not result.get("success"):
                 return _err("OPTIMIZATION_FAILED", result.get("error", "Unknown error"), 500)

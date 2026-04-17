@@ -602,6 +602,7 @@ export async function uploadAndOptimizeImage(file, options = {}) {
   formData.append('file', file)
   formData.append('target_width', options.targetWidth || 1200)
   formData.append('apply_gps', options.applyGps !== false)
+  formData.append('generate_geo_metadata', options.generateGeoMetadata || false)
   if (options.seoKeyword) formData.append('seo_keyword', options.seoKeyword)
   if (options.jobId) formData.append('job_id', options.jobId)
 
