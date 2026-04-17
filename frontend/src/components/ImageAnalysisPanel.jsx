@@ -12,6 +12,7 @@ import SeverityBadge from './SeverityBadge.jsx'
 import GeoAnalysisModal from './GeoAnalysisModal.jsx'
 import GeoSettingsModal from './GeoSettingsModal.jsx'
 import OptimizeExistingModal from './OptimizeExistingModal.jsx'
+import UploadNewImageModal from './UploadNewImageModal.jsx'
 import BatchOptimizePanel from './BatchOptimizePanel.jsx'
 
 export default function ImageAnalysisPanel({ jobId, onPageClick, onShowHelp }) {
@@ -31,6 +32,7 @@ export default function ImageAnalysisPanel({ jobId, onPageClick, onShowHelp }) {
   const [showWpLogin, setShowWpLogin] = useState(false)
   const [wpLoginCallback, setWpLoginCallback] = useState(null)
   const [showBatchOptimize, setShowBatchOptimize] = useState(false)
+  const [showUploadModal, setShowUploadModal] = useState(false)
 
   const loadData = useCallback(async () => {
     setLoading(true)
@@ -304,6 +306,13 @@ export default function ImageAnalysisPanel({ jobId, onPageClick, onShowHelp }) {
               : `📦 Optimize ${selectedImages.size}`
             }
           </button>
+          <button
+            onClick={() => setShowUploadModal(true)}
+            className="px-4 py-2 bg-green-600 text-white rounded-lg text-sm font-bold hover:bg-green-700 transition-all"
+            title="Upload and optimize a new image from your computer"
+          >
+            📤 Upload New
+          </button>
           <label className="text-sm text-gray-500 font-medium">Sort by:</label>
           <select
             value={sortBy}
@@ -416,6 +425,18 @@ export default function ImageAnalysisPanel({ jobId, onPageClick, onShowHelp }) {
             // Reload data after batch completes
             loadData()
             setSelectedImages(new Set())
+          }}
+        />
+      )}
+
+      {/* Upload New Image Modal */}
+      {showUploadModal && (
+        <UploadNewImageModal
+          jobId={jobId}
+          onClose={() => setShowUploadModal(false)}
+          onSuccess={(data) => {
+            // Optionally reload data after upload
+            loadData()
           }}
         />
       )}
