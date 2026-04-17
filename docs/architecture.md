@@ -49,6 +49,50 @@ WordPress sites generate large volumes of auto-generated URLs that have no SEO v
 
 These are detected by `normaliser.is_wp_noise_path()` and skipped during the crawl when `skip_wp_archives=True` (the default). This keeps results focused on real content pages.
 
+### Image Intelligence: 3-Level Data Architecture (v1.9)
+
+**CRITICAL ARCHITECTURAL PRINCIPLE - DO NOT VIOLATE**
+
+Image analysis uses a 3-level data architecture that balances speed, completeness, and site compatibility:
+
+#### Level 1: Scan (Automatic during crawl)
+- **Data sources:** HTML parsing + HTTP HEAD requests only
+- **Gets:** Alt text, title (from `<img>` tags), file size, content-type
+- **Does NOT call WordPress API** - would be too slow (100 images = 100+ API requests)
+- **Works on ANY site** (not just WordPress)
+- **Fast:** Already has HTML, HEAD requests only fetch headers
+- **Issues detected:** IMG_ALT_MISSING, IMG_ALT_TOO_SHORT, IMG_ALT_TOO_LONG, IMG_ALT_GENERIC, IMG_OVERSIZED (from file size)
+- **Data source:** `html_only`
+
+#### Level 2: Fetch (Manual button, per-image or batch)
+- **Data sources:** WordPress REST API (slug-based queries) + Image file download
+- **Gets:** Caption, description, WP alt text (may differ from HTML), intrinsic dimensions, exact file size, load time, content hash
+- **Uses slug-based WP API queries** (correct approach, see wp_fixer.py:1602)
+- **WordPress-specific:** Only works on WordPress sites
+- **Slower:** Requires API call + image download per image
+- **Use cases:**
+  - Get full WordPress metadata (caption, description)
+  - Verify updates after pushing changes to WordPress
+  - Re-analyze and update scores with complete data
+- **Issues detected:** All image issues with accurate scoring
+- **Data source:** `full_fetch`
+
+#### Level 3: AI Analysis (Manual button, per-image or batch)
+- **Data sources:** Vision model analysis (Gemini/OpenAI)
+- **Gets:** AI-generated image description, suggested alt text, semantic quality scores
+- **Optional:** GEO-optimized analysis with entity-rich metadata
+- **Use cases:**
+  - Generate alt text suggestions
+  - Analyze image content for semantic accuracy
+  - Create GEO-optimized metadata (entities, location anchors)
+- **Data source:** AI analysis metadata stored separately
+
+**Why this architecture:**
+1. **Scan speed:** Can't afford WP API calls during crawl (would 10x crawl time)
+2. **Universal compatibility:** HTML scan works on any site, WP API only works on WordPress
+3. **Data freshness:** Fetch verifies current WordPress state after updates
+4. **User control:** User decides when to invest time in fetching complete data
+
 ### WordPress Fix Manager
 
 The Fix Manager connects directly to a WordPress site and applies SEO fixes:

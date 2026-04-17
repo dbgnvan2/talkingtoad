@@ -42,3 +42,6 @@ frontend/.env.local
 # WordPress credentials (never commit)
 wp-credentials.json
 talkingtoad.db
+
+# GEO configuration (domain-specific settings)
+geo_settings.json

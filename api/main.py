@@ -35,6 +35,7 @@ from api.routers import fixes as fixes_router
 from api.routers import utility as utility_router
 from api.routers import verified as verified_router
 from api.routers import ai as ai_router
+from api.routers import geo as geo_router
 from api.services.job_store import SQLiteJobStore, RedisJobStore, get_job_store
 from api.services.rate_limiter import limiter
 
@@ -126,3 +127,4 @@ app.include_router(fixes_router.router)
 app.include_router(verified_router.router)
 app.include_router(utility_router.router)
 app.include_router(ai_router.router)
+app.include_router(geo_router.router)

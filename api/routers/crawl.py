@@ -1018,6 +1018,23 @@ async def export_pdf_report(
     if job is None:
         return _err("JOB_NOT_FOUND", "No crawl job found with the given ID.", 404)
 
+    # Load GEO config for the domain to get report preferences
+    try:
+        from urllib.parse import urlparse
+        domain = urlparse(job.target_url).netloc.replace('www.', '')
+        geo_config = await store.get_geo_config(domain)
+
+        if geo_config:
+            # Override job settings with GEO config if available
+            if geo_config.client_name:
+                job.settings.client_name = geo_config.client_name
+            if geo_config.prepared_by:
+                job.settings.prepared_by = geo_config.prepared_by
+            logger.info("geo_config_loaded_for_report", extra={"domain": domain, "has_client_name": bool(geo_config.client_name)})
+    except Exception as exc:
+        logger.warning("geo_config_load_failed", extra={"error": str(exc)})
+        # Continue with job settings as fallback
+
     issues = await store.get_all_issues(job_id)
     summary = await store.get_summary(job_id)
 

@@ -676,7 +676,7 @@ def _extract_image_data(soup: BeautifulSoup, page_url: str) -> list[dict]:
             "has_srcset": bool(tag.get("srcset")),
             "srcset_candidates": _parse_srcset(tag.get("srcset", ""), page_url),
             "is_decorative": _detect_decorative(tag),
-            "surrounding_text": _extract_surrounding_text(tag, limit=200),
+            "surrounding_text": _extract_surrounding_text(tag, limit=300),
         }
         images.append(img_data)
 
@@ -739,10 +739,11 @@ def _parse_srcset(srcset: str, page_url: str = "") -> list[str]:
     return candidates
 
 
-def _extract_surrounding_text(tag, limit: int = 200) -> str:
+def _extract_surrounding_text(tag, limit: int = 300) -> str:
     """Extract text context around an image tag (±limit chars).
 
     Helps with semantic analysis of whether image relates to page content.
+    Default limit increased to 300 for GEO analysis (v1.9geo).
     """
     texts = []
 

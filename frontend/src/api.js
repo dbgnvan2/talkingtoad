@@ -495,3 +495,42 @@ export async function downloadAIImagePDF(jobId, aiResults = null) {
   window.open(objectUrl, '_blank')
   setTimeout(() => URL.revokeObjectURL(objectUrl), 1000)
 }
+
+// ── GEO (Generative Engine Optimization) API ────────────────────────────────
+
+// Get GEO configuration for a domain
+export async function getGeoSettings(domain) {
+  const params = new URLSearchParams({ domain })
+  const res = await fetch(`/api/geo/settings?${params}`, {
+    headers: authHeaders(),
+  })
+  return checkResponse(res)
+}
+
+// Analyze image with GEO-optimized prompting
+export async function analyzeImageWithGeo(jobId, imageUrl) {
+  const res = await fetch('/api/ai/image/analyze-geo', {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify({
+      job_id: jobId,
+      image_url: imageUrl,
+    }),
+  })
+  return checkResponse(res)
+}
+
+// Apply GEO-generated metadata to an image
+export async function applyGeoMetadata(jobId, imageUrl, altText, longDescription = '') {
+  const res = await fetch('/api/ai/image/apply-geo-metadata', {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify({
+      job_id: jobId,
+      image_url: imageUrl,
+      alt_text: altText,
+      long_description: longDescription,
+    }),
+  })
+  return checkResponse(res)
+}

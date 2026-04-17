@@ -2,6 +2,9 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useCrawl } from '../hooks/useCrawl.js'
 import { getRecentJobs, scanPage } from '../api.js'
+import GeoSettings from '../components/GeoSettings.jsx'
+
+const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000'
 
 const ANALYSIS_TOGGLES = [
   { key: 'link_integrity', label: 'Link Integrity',  desc: 'Broken links, redirects, and status codes' },
@@ -28,8 +31,6 @@ export default function Home() {
   const [imgSizeLimit, setImgSizeLimit] = useState('')
   const [suppressH1Input, setSuppressH1Input] = useState('')
   const [suppressBannerH1, setSuppressBannerH1] = useState(false)
-  const [clientName, setClientName] = useState('')
-  const [preparedBy, setPreparedBy] = useState('')
   // All analyses enabled by default (null = all on)
   const [analyses, setAnalyses] = useState(() =>
     Object.fromEntries(ANALYSIS_TOGGLES.map(t => [t.key, true]))
@@ -38,6 +39,9 @@ export default function Home() {
   const [singleUrl, setSingleUrl] = useState('')
   const [singleLoading, setSingleLoading] = useState(false)
   const [singleError, setSingleError] = useState(null)
+  const [showGeoPrompt, setShowGeoPrompt] = useState(false)
+  const [showGeoSettings, setShowGeoSettings] = useState(false)
+  const [pendingCrawl, setPendingCrawl] = useState(null)
   const { start, loading, error } = useCrawl()
 
   useEffect(() => {
@@ -50,7 +54,28 @@ export default function Home() {
     setAnalyses(prev => ({ ...prev, [key]: !prev[key] }))
   }
 
-  function handleSubmit(e) {
+  function extractDomain(urlString) {
+    try {
+      const parsed = new URL(urlString.startsWith('http') ? urlString : 'https://' + urlString)
+      return parsed.hostname.replace('www.', '')
+    } catch {
+      return null
+    }
+  }
+
+  async function checkGeoConfig(domain) {
+    try {
+      const response = await fetch(`${API_BASE}/api/geo/settings?domain=${encodeURIComponent(domain)}`)
+      if (!response.ok) return null
+      const config = await response.json()
+      return config
+    } catch (err) {
+      console.error('Failed to check GEO config:', err)
+      return null
+    }
+  }
+
+  async function handleSubmit(e) {
     e.preventDefault()
     const finalUrl = normaliseUrl(url)
     // Persist for next visit
@@ -61,8 +86,6 @@ export default function Home() {
     if (maxPages) settings.max_pages = parseInt(maxPages, 10)
     if (crawlDelay) settings.crawl_delay_ms = parseInt(crawlDelay, 10)
     if (imgSizeLimit) settings.img_size_limit_kb = parseInt(imgSizeLimit, 10)
-    if (clientName) settings.client_name = clientName
-    if (preparedBy) settings.prepared_by = preparedBy
     const suppressH1s = suppressH1Input.split('\n').map(s => s.trim()).filter(Boolean)
     if (suppressH1s.length) settings.suppress_h1_strings = suppressH1s
     if (suppressBannerH1) settings.suppress_banner_h1 = true
@@ -71,7 +94,41 @@ export default function Home() {
     if (enabled.length < ANALYSIS_TOGGLES.length) {
       settings.enabled_analyses = enabled
     }
+
+    // Check if GEO settings are configured before starting crawl
+    const domain = extractDomain(finalUrl)
+    if (domain) {
+      const geoConfig = await checkGeoConfig(domain)
+      // Only prompt if core GEO fields OR report fields are missing
+      const missingCoreFields = !geoConfig || !geoConfig.is_configured
+      const missingReportFields = !geoConfig || (!geoConfig.client_name && !geoConfig.prepared_by)
+
+      if (missingCoreFields || missingReportFields) {
+        // Store pending crawl and show prompt
+        setPendingCrawl({ url: finalUrl, settings })
+        setShowGeoPrompt(true)
+        return
+      }
+    }
+
+    // Start crawl immediately if config exists
     start(finalUrl, settings)
+  }
+
+  function startPendingCrawl() {
+    if (pendingCrawl) {
+      start(pendingCrawl.url, pendingCrawl.settings)
+      setPendingCrawl(null)
+      setShowGeoPrompt(false)
+    }
+  }
+
+  function handleGeoSettingsClosed() {
+    setShowGeoSettings(false)
+    // After closing GEO settings, start the crawl
+    if (pendingCrawl) {
+      startPendingCrawl()
+    }
   }
 
   async function handleScanPage(e) {
@@ -254,32 +311,6 @@ export default function Home() {
                   />
                   <p className="text-xs text-gray-400 mt-1">Images larger than this are flagged</p>
                 </div>
-                <div className="col-span-2 grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">
-                      Client Name (for Report)
-                    </label>
-                    <input
-                      type="text"
-                      placeholder="e.g. Storybrook Therapy"
-                      value={clientName}
-                      onChange={e => setClientName(e.target.value)}
-                      className="w-full border border-gray-300 rounded px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">
-                      Prepared By
-                    </label>
-                    <input
-                      type="text"
-                      placeholder="Your name"
-                      value={preparedBy}
-                      onChange={e => setPreparedBy(e.target.value)}
-                      className="w-full border border-gray-300 rounded px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
-                    />
-                  </div>
-                </div>
                 <div className="col-span-2">
                   <label className="block text-xs font-medium text-gray-600 mb-1">
                     Suppress H1 text (one per line)
@@ -369,6 +400,57 @@ export default function Home() {
           your server.
         </p>
       </div>
+
+      {/* GEO Settings Prompt Modal */}
+      {showGeoPrompt && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-6">
+            <h3 className="text-xl font-bold text-gray-900 mb-3">Configure GEO Settings?</h3>
+            <p className="text-sm text-gray-600 mb-4">
+              No GEO configuration found for <span className="font-mono text-blue-600">{extractDomain(url)}</span>.
+              Configure your organization identity, locations, and report branding for this domain.
+            </p>
+            <p className="text-xs text-gray-500 mb-2">
+              <strong>Required fields:</strong>
+            </p>
+            <ul className="text-xs text-gray-600 mb-4 ml-4 list-disc">
+              <li>Organization Name</li>
+              <li>Topic Entities (at least 1)</li>
+              <li>Primary Location</li>
+              <li>Location Pool (at least 1)</li>
+            </ul>
+            <p className="text-xs text-gray-500 mb-6">
+              Report branding (Client Name, Prepared By) is optional but recommended.
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => {
+                  setShowGeoPrompt(false)
+                  setShowGeoSettings(true)
+                }}
+                className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
+              >
+                🌍 Configure Now
+              </button>
+              <button
+                onClick={startPendingCrawl}
+                className="flex-1 px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors font-medium"
+              >
+                Skip for Now
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* GEO Settings Modal */}
+      {showGeoSettings && pendingCrawl && (
+        <GeoSettings
+          domain={extractDomain(pendingCrawl.url) || ''}
+          isOpen={showGeoSettings}
+          onClose={handleGeoSettingsClosed}
+        />
+      )}
     </div>
   )
 }

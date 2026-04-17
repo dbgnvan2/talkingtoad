@@ -24,6 +24,7 @@ from typing import Any, Protocol, runtime_checkable
 
 import aiosqlite
 
+from api.models.geo_config import GeoConfig
 from api.models.image import ImageInfo
 from api.models.issue import Issue, IssueCategory, PHASE_1_CATEGORIES
 from api.models.job import CrawlJob, CrawlSettings, JobStatus
@@ -210,6 +211,11 @@ class JobStore(Protocol):
     async def get_image_summary(self, job_id: str) -> dict: ...
     async def get_image_by_url(self, job_id: str, url: str) -> ImageInfo | None: ...
 
+    # GEO configuration (v1.9geo)
+    async def save_geo_config(self, config: Any) -> None: ...
+    async def get_geo_config(self, domain: str) -> Any: ...
+    async def delete_geo_config(self, domain: str) -> bool: ...
+
 
 # ---------------------------------------------------------------------------
 # SQLite implementation
@@ -384,8 +390,18 @@ CREATE TABLE IF NOT EXISTS images (
     overall_score         REAL NOT NULL DEFAULT 100.0,
     issues                TEXT,  -- JSON array of issue codes
     data_source           TEXT NOT NULL DEFAULT 'html_only',  -- html_only, crawl_meta, or full_fetch
+    long_description      TEXT,  -- GEO-optimized long description
+    geo_entities_detected TEXT,  -- JSON array of detected entities
+    geo_location_used     TEXT,  -- Geographic location used in metadata
+    ai_analysis_metadata  TEXT,  -- JSON object with full AI analysis
     FOREIGN KEY (job_id) REFERENCES crawl_jobs(job_id),
     UNIQUE(job_id, url)
+);
+
+CREATE TABLE IF NOT EXISTS config (
+    key       TEXT PRIMARY KEY,
+    value     TEXT NOT NULL,
+    updated_at TEXT NOT NULL
 );
 
 CREATE INDEX IF NOT EXISTS idx_issues_job_id ON issues(job_id);
@@ -479,6 +495,10 @@ class SQLiteJobStore:
         # Image table migrations (v1.9image)
         image_columns = [
             ("data_source", "TEXT NOT NULL DEFAULT 'html_only'"),
+            ("long_description", "TEXT"),
+            ("geo_entities_detected", "TEXT"),
+            ("geo_location_used", "TEXT"),
+            ("ai_analysis_metadata", "TEXT"),
         ]
         for col, col_type in image_columns:
             try:
@@ -1276,8 +1296,9 @@ class SQLiteJobStore:
                 is_lazy_loaded, has_srcset, srcset_candidates, is_decorative,
                 surrounding_text, content_hash,
                 performance_score, accessibility_score, semantic_score,
-                technical_score, overall_score, issues, data_source
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                technical_score, overall_score, issues, data_source,
+                long_description, geo_entities_detected, geo_location_used, ai_analysis_metadata
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             rows,
         )
@@ -1436,6 +1457,74 @@ class SQLiteJobStore:
         if row is None:
             return None
         return _row_to_image(dict(row))
+
+    # ── GEO Configuration (v1.9geo) - Simple config table ─────────────────
+
+    async def save_geo_config(self, config: GeoConfig) -> None:
+        """Save GEO configuration for a domain in config table."""
+        db = self._db
+        assert db is not None
+        now = datetime.now(timezone.utc).isoformat()
+
+        # Update timestamps
+        if not config.created_at:
+            config.created_at = now
+        config.updated_at = now
+
+        # Store as JSON blob with key = geo_config:{domain}
+        key = f"geo_config:{config.domain}"
+        value = json.dumps(config.to_dict())
+
+        await db.execute(
+            """
+            INSERT INTO config (key, value, updated_at)
+            VALUES (?, ?, ?)
+            ON CONFLICT(key) DO UPDATE SET
+                value = excluded.value,
+                updated_at = excluded.updated_at
+            """,
+            (key, value, now),
+        )
+        await db.commit()
+        logger.info("geo_config_saved", extra={"domain": config.domain})
+
+    async def get_geo_config(self, domain: str) -> GeoConfig | None:
+        """Get GEO configuration for a domain from config table."""
+        db = self._db
+        assert db is not None
+        key = f"geo_config:{domain}"
+
+        async with db.execute(
+            "SELECT value FROM config WHERE key = ?",
+            (key,),
+        ) as cursor:
+            row = await cursor.fetchone()
+
+        if row is None:
+            return None
+
+        try:
+            data = json.loads(row[0])
+            return GeoConfig.from_dict(data)
+        except (json.JSONDecodeError, TypeError) as e:
+            logger.error("geo_config_parse_error", extra={"error": str(e), "domain": domain})
+            return None
+
+    async def delete_geo_config(self, domain: str) -> bool:
+        """Delete GEO configuration for a domain from config table."""
+        db = self._db
+        assert db is not None
+        key = f"geo_config:{domain}"
+
+        cursor = await db.execute(
+            "DELETE FROM config WHERE key = ?",
+            (key,),
+        )
+        await db.commit()
+        deleted = cursor.rowcount > 0
+        if deleted:
+            logger.info("geo_config_deleted", extra={"domain": domain})
+        return deleted
 
 
 # ---------------------------------------------------------------------------
@@ -1652,6 +1741,10 @@ def _image_to_row(img: ImageInfo) -> tuple:
         img.overall_score,
         json.dumps(img.issues) if img.issues else None,
         img.data_source,
+        img.long_description,
+        json.dumps(img.geo_entities_detected) if img.geo_entities_detected else None,
+        img.geo_location_used,
+        json.dumps(img.ai_analysis_metadata) if img.ai_analysis_metadata else None,
     )
 
 
@@ -1671,6 +1764,22 @@ def _row_to_image(row: dict) -> ImageInfo:
             issues = json.loads(issues_raw)
         except (json.JSONDecodeError, TypeError):
             issues = []
+
+    geo_entities_raw = row.get("geo_entities_detected")
+    geo_entities = []
+    if geo_entities_raw:
+        try:
+            geo_entities = json.loads(geo_entities_raw)
+        except (json.JSONDecodeError, TypeError):
+            geo_entities = []
+
+    ai_metadata_raw = row.get("ai_analysis_metadata")
+    ai_metadata = None
+    if ai_metadata_raw:
+        try:
+            ai_metadata = json.loads(ai_metadata_raw)
+        except (json.JSONDecodeError, TypeError):
+            ai_metadata = None
 
     return ImageInfo(
         job_id=row["job_id"],
@@ -1700,6 +1809,10 @@ def _row_to_image(row: dict) -> ImageInfo:
         overall_score=row.get("overall_score") or 100.0,
         issues=issues,
         data_source=row.get("data_source") or "html_only",
+        long_description=row.get("long_description"),
+        geo_entities_detected=geo_entities,
+        geo_location_used=row.get("geo_location_used"),
+        ai_analysis_metadata=ai_metadata,
     )
 
 
@@ -2079,6 +2192,17 @@ class RedisJobStore:
 
     async def get_image_by_url(self, job_id: str, url: str) -> ImageInfo | None:
         return None  # Not implemented for Redis MVP
+
+    # ── GEO Configuration (Redis — not implemented for MVP) ────────────────
+
+    async def save_geo_config(self, config: GeoConfig) -> None:
+        pass  # Not implemented for Redis MVP
+
+    async def get_geo_config(self, domain: str) -> GeoConfig | None:
+        return None  # Not implemented for Redis MVP
+
+    async def delete_geo_config(self, domain: str) -> bool:
+        return False  # Not implemented for Redis MVP
 
     # ── Private serialisation ──────────────────────────────────────────────
 

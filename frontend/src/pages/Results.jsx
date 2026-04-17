@@ -5,6 +5,7 @@ import IssueHelpPanel from '../components/IssueHelpPanel.jsx'
 import FixManager from '../components/FixManager.jsx'
 import FixInlinePanel, { FIXABLE_CODES } from '../components/FixInlinePanel.jsx'
 import SettingsPanel from '../components/SettingsPanel.jsx'
+import GeoSettings from '../components/GeoSettings.jsx'
 import ImageAnalysisPanel from '../components/ImageAnalysisPanel.jsx'
 import CategoryHelpModal from '../components/CategoryHelpModal.jsx'
 import { useTheme } from '../contexts/ThemeContext.jsx'
@@ -53,6 +54,7 @@ export default function Results() {
   const [focusedPageUrl, setFocusedPageUrl] = useState(null)
   const [showPdfModal, setShowPdfModal] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
+  const [showGeoSettings, setShowGeoSettings] = useState(false)
   const [showCategoryHelp, setShowCategoryHelp] = useState(null) // category key when help modal is open
 
   const loadSummary = useCallback(() => {
@@ -105,6 +107,7 @@ export default function Results() {
         <div className="flex gap-2">
           {csvError && <span className="text-red-600 text-xs self-center mr-2">{csvError}</span>}
           <button onClick={() => setShowSettings(true)} className="px-3 py-1.5 bg-white border border-gray-300 rounded-lg text-xs font-bold shadow-sm" title="Display Settings">⚙</button>
+          <button onClick={() => setShowGeoSettings(true)} className="px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-bold shadow-sm" title="GEO Settings">🌍 GEO</button>
           <button onClick={() => downloadCsv(jobId).catch(() => setCsvError('CSV failed'))} className="px-3 py-1.5 bg-white border border-gray-300 rounded-lg text-xs font-bold shadow-sm">CSV</button>
           <button onClick={() => downloadExcelReport(jobId).catch(() => setCsvError('Excel failed'))} className="px-3 py-1.5 bg-white border border-gray-300 rounded-lg text-xs font-bold shadow-sm">Excel</button>
           <button onClick={() => setShowPdfModal(true)} className="px-3 py-1.5 bg-green-600 text-white rounded-lg text-xs font-bold shadow-sm">PDF Report</button>
@@ -157,6 +160,14 @@ export default function Results() {
 
       {showSettings && (
         <SettingsPanel onClose={() => setShowSettings(false)} />
+      )}
+
+      {showGeoSettings && (
+        <GeoSettings
+          domain={summary.target_url?.replace(/^https?:\/\/(www\.)?/, '').split('/')[0] || ''}
+          isOpen={showGeoSettings}
+          onClose={() => setShowGeoSettings(false)}
+        />
       )}
 
       {showCategoryHelp && (

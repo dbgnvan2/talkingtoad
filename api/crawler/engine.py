@@ -553,44 +553,28 @@ async def run_crawl(
             if valid_img_data:
                 log.info("collecting_images", extra={"count": len(valid_img_data)})
 
-                # Check if this is a WordPress site (look for wp-content in any image URL)
-                is_wordpress = any("/wp-content/uploads/" in d.get("url", "") for d in valid_img_data)
-                wp_api_base = None
-                if is_wordpress:
-                    # Derive WP API base from first wp-content URL
-                    for d in valid_img_data:
-                        img_url = d.get("url", "")
-                        if "/wp-content/uploads/" in img_url:
-                            parsed = urlparse(img_url)
-                            wp_api_base = f"{parsed.scheme}://{parsed.netloc}/wp-json/wp/v2"
-                            print(f"[IMG] WordPress detected, API base: {wp_api_base}")
-                            break
+                # ═══════════════════════════════════════════════════════════════════
+                # CRITICAL ARCHITECTURAL PRINCIPLE - DO NOT VIOLATE
+                # ═══════════════════════════════════════════════════════════════════
+                #
+                # The SCAN process must ONLY use data from:
+                # 1. HTML parsing (alt, title from <img> tags) - ALREADY DONE in parser.py
+                # 2. HTTP HEAD requests (file size, content-type) - FAST, just headers
+                #
+                # The SCAN must NEVER call WordPress API because:
+                # - WP API calls are SLOW (100 images = 100+ API requests)
+                # - WP API only works on WordPress sites (HTML works on ANY site)
+                # - This would make crawls unacceptably slow
+                #
+                # WordPress-specific data (caption, description, WP alt text) is
+                # fetched ONLY via the manual "Fetch" button using slug-based queries.
+                #
+                # ═══════════════════════════════════════════════════════════════════
 
-                # Try to get WP metadata for all images in parallel
-                wp_metadata_cache: dict[str, dict] = {}
-                if wp_api_base:
-                    async def fetch_wp_meta(img_url: str):
-                        meta = await _get_wp_image_metadata(img_url, client, wp_api_base)
-                        return (img_url, meta)
-
-                    try:
-                        wp_tasks = [fetch_wp_meta(d["url"]) for d in valid_img_data if "/wp-content/uploads/" in d.get("url", "")]
-                        if wp_tasks:
-                            wp_results = await asyncio.wait_for(
-                                asyncio.gather(*wp_tasks, return_exceptions=True),
-                                timeout=15.0
-                            )
-                            for item in wp_results:
-                                if isinstance(item, tuple) and item[1]:
-                                    wp_metadata_cache[item[0]] = item[1]
-                            print(f"[IMG] Got WP metadata for {len(wp_metadata_cache)} images")
-                    except Exception as wp_exc:
-                        print(f"[IMG] WP metadata fetch failed: {wp_exc}")
-
-                # For non-WP images, do HEAD requests to get file size
+                # Do HEAD requests to get file size and content-type for ALL images
+                # This is fast (just HTTP headers) and works on any site
                 head_metadata_cache: dict[str, dict] = {}
-                non_wp_images = [d for d in valid_img_data if d.get("url") not in wp_metadata_cache]
-                if non_wp_images:
+                if valid_img_data:
                     async def fetch_head_meta(img_url: str):
                         try:
                             response = await client.head(img_url, timeout=3.0, follow_redirects=True)
@@ -606,7 +590,7 @@ async def run_crawl(
                         return (img_url, {})
 
                     try:
-                        head_tasks = [fetch_head_meta(d["url"]) for d in non_wp_images]
+                        head_tasks = [fetch_head_meta(d["url"]) for d in valid_img_data]
                         if head_tasks:
                             head_results = await asyncio.wait_for(
                                 asyncio.gather(*head_tasks, return_exceptions=True),
@@ -621,29 +605,23 @@ async def run_crawl(
 
                 for img_data in valid_img_data:
                     img_url = img_data["url"]
-                    wp_meta = wp_metadata_cache.get(img_url, {})
                     head_meta = head_metadata_cache.get(img_url, {})
 
-                    # Prefer WP metadata, fallback to HEAD metadata
-                    width = wp_meta.get("width")
-                    height = wp_meta.get("height")
-                    file_size = wp_meta.get("filesize") or head_meta.get("file_size")
-                    mime_type = wp_meta.get("mime_type") or head_meta.get("content_type")
+                    # Get file size and content-type from HEAD request
+                    # Width/height are NOT available from HEAD - will be fetched on-demand via "Fetch" button
+                    width = None
+                    height = None
+                    file_size = head_meta.get("file_size")
+                    mime_type = head_meta.get("content_type")
                     fmt = _guess_format_from_url(img_url)
                     if mime_type:
                         # Extract format from mime_type like "image/jpeg"
                         fmt = mime_type.split("/")[-1] if "/" in mime_type else fmt
 
-                    # Determine data source level
-                    if wp_meta or (file_size and width and height):
-                        # Full metadata from WP API or complete HEAD + dimensions
-                        data_source = "crawl_meta"
-                    elif file_size or head_meta:
-                        # Partial metadata from HEAD request only
-                        data_source = "crawl_meta"
-                    else:
-                        # HTML-only data
-                        data_source = "html_only"
+                    # Data source is always "html_only" during scan
+                    # Scan gets: alt/title from HTML + file size from HEAD request
+                    # Full metadata (caption, description, WP fields) requires manual "Fetch"
+                    data_source = "html_only"
 
                     image_info = ImageInfo(
                         url=img_url,

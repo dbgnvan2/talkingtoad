@@ -17,6 +17,47 @@ load_dotenv()
 logger = logging.getLogger(__name__)
 
 PROMPT_LIBRARY = {
+    "geo_image_analysis": (
+        "Role: You are an AI Search Architect specializing in Generative Engine Optimization (GEO).\n\n"
+        "You are analyzing an image for {{ORG_NAME}} located in {{PRIMARY_LOCATION}}. "
+        "Service locations include: {{LOCATION_POOL}}. "
+        "Topic entities: {{TOPIC_ENTITIES}}.\n\n"
+        "Context from the page:\n"
+        "H1: {{H1}}\n"
+        "Text around image: {{SURROUNDING_TEXT}}\n\n"
+        "Instructions:\n"
+        "Phase 1: Semantic Analysis\n"
+        "1. Identify the primary Subject in the image (e.g., 'Two people in a clinical setting').\n"
+        "2. Extract the Contextual Theme from the surrounding text (e.g., 'Family Cutoff').\n"
+        "3. Identify the Geographic Anchor to be used from the location pool "
+        "(if H1 contains the primary location, use a secondary location; otherwise, rotate through the pool).\n\n"
+        "Phase 2: Generate Alt Text (80-125 chars)\n"
+        "1. Start with the Subject + Theme.\n"
+        "2. Anchor it to the Geography.\n"
+        "3. Format: '[Subject] [Action] regarding [Theme] at {{ORG_NAME}} in [Geography].'\n"
+        "4. Constraint: No 'Photo of'. No generic adjectives. MUST be 80-125 characters.\n"
+        "5. MUST include 1 location entity from the pool AND 1 topic entity.\n\n"
+        "Phase 3: Generate Long Description (GEO-rich, 150-300 words)\n"
+        "1. Describe the visual details (lighting, posture, setting) as they relate to {{TOPIC_ENTITIES}}.\n"
+        "2. Explain the 'Purpose' of the image for a Generative Search Engine to use as a 'Knowledge Snippet.'\n"
+        "3. Explicitly mention how this image represents the organization's work in the {{PRIMARY_LOCATION}} community.\n"
+        "4. MUST be factual, entity-rich, and suitable for AI Overviews.\n"
+        "5. MUST be 150-300 words.\n\n"
+        "Final Goal: Every word must serve as a 'signal' that connects this image to a high-intent search "
+        "for services in the service area.\n\n"
+        "IMPORTANT: Respond with ONLY valid JSON, no markdown formatting, no code blocks.\n"
+        "Format:\n"
+        "{{\n"
+        '  "subject": "primary subject identified",\n'
+        '  "theme": "contextual theme from page",\n'
+        '  "geographic_anchor": "location used",\n'
+        '  "alt_text": "80-125 char alt text with entities",\n'
+        '  "long_description": "150-300 word GEO-rich description",\n'
+        '  "entities_used": ["location entity", "topic entity"],\n'
+        '  "char_count": 95,\n'
+        '  "word_count": 200\n'
+        "}}"
+    ),
     "title_meta_optimize": (
         "Rewrite this title tag and meta description to be more 'quotable' "
         "for an AI summary while staying under character limits (60 for title, 160 for meta).\n"
@@ -316,3 +357,113 @@ async def _fetch_image_base64(image_url: str) -> str:
     except Exception as exc:
         logger.error("image_fetch_failed", extra={"error": str(exc), "url": image_url})
         raise
+
+
+async def analyze_image_with_geo(
+    image_url: str,
+    page_h1: str,
+    surrounding_text: str,
+    geo_config: dict[str, Any],
+) -> dict[str, Any]:
+    """
+    Analyze an image using GEO-optimized prompting with triple-context packet.
+
+    Triple-Context Packet:
+    1. Image bytes (high-resolution)
+    2. Page context (H1 + surrounding text)
+    3. Global settings (org identity + geo matrix)
+
+    Args:
+        image_url: URL of the image to analyze
+        page_h1: H1 heading from the page
+        surrounding_text: Text context around the image (±300 chars)
+        geo_config: GeoConfig dict with org_name, topic_entities, primary_location, location_pool
+
+    Returns:
+        {
+            "alt_text": "GEO-optimized alt text (80-125 chars with entities)",
+            "long_description": "GEO-rich description (150-300 words)",
+            "entities_used": ["location", "topic"],
+            "geographic_anchor": "Vancouver",
+            "subject": "identified subject",
+            "theme": "contextual theme",
+            "char_count": 95,
+            "word_count": 200,
+            "success": True
+        }
+    """
+    gemini_key = os.getenv("GEMINI_API_KEY")
+    openai_key = os.getenv("OPENAI_API_KEY")
+
+    if not gemini_key and not openai_key:
+        load_dotenv()
+        gemini_key = os.getenv("GEMINI_API_KEY")
+        openai_key = os.getenv("OPENAI_API_KEY")
+
+    if not gemini_key and not openai_key:
+        logger.warning("geo_image_analysis_skipped_no_key")
+        return {
+            "alt_text": "",
+            "long_description": "",
+            "success": False,
+            "error": "No API key configured",
+        }
+
+    # Build context for prompt
+    context = {
+        "ORG_NAME": geo_config.get("org_name", ""),
+        "PRIMARY_LOCATION": geo_config.get("primary_location", ""),
+        "LOCATION_POOL": ", ".join(geo_config.get("location_pool", [])),
+        "TOPIC_ENTITIES": ", ".join(geo_config.get("topic_entities", [])),
+        "H1": page_h1 or "(none)",
+        "SURROUNDING_TEXT": surrounding_text or "(none)",
+    }
+
+    # Get prompt template and fill in context
+    prompt_template = PROMPT_LIBRARY["geo_image_analysis"]
+    prompt = prompt_template
+    for key, value in context.items():
+        prompt = prompt.replace("{{" + key + "}}", str(value))
+
+    try:
+        # Use vision API to analyze the image with GEO context
+        if openai_key:
+            result = await _call_openai_vision(image_url, prompt, openai_key)
+        elif gemini_key:
+            result = await _call_gemini_vision(image_url, prompt, gemini_key)
+        else:
+            return {
+                "alt_text": "",
+                "long_description": "",
+                "success": False,
+                "error": "No vision API available",
+            }
+
+        # Parse JSON response
+        import json
+        import re
+
+        # Remove markdown code blocks if present
+        cleaned_result = re.sub(r'```(?:json)?\s*\n?(.*?)\n?```', r'\1', result, flags=re.DOTALL)
+        cleaned_result = cleaned_result.strip()
+
+        try:
+            data = json.loads(cleaned_result)
+            data["success"] = True
+            return data
+        except json.JSONDecodeError as e:
+            logger.error("geo_json_parse_error", extra={"error": str(e), "result": result})
+            return {
+                "alt_text": "",
+                "long_description": result[:300],  # Fallback to raw response
+                "success": False,
+                "error": "Failed to parse AI response",
+            }
+    except Exception as exc:
+        logger.error("geo_image_analysis_failed", extra={"error": str(exc)})
+        return {
+            "alt_text": "",
+            "long_description": "",
+            "success": False,
+            "error": str(exc),
+        }

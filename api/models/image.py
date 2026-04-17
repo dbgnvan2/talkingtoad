@@ -56,6 +56,12 @@ class ImageInfo:
     # ── Analysis metadata ───────────────────────────────────────────────────
     data_source: str = "html_only"  # html_only, crawl_meta, or full_fetch
 
+    # ── GEO AI Analysis (v1.9geo) ───────────────────────────────────────────
+    long_description: str | None = None  # GEO-optimized long description (150-300 words)
+    geo_entities_detected: list[str] = field(default_factory=list)  # Entities found in metadata
+    geo_location_used: str | None = None  # Geographic location used in metadata
+    ai_analysis_metadata: dict[str, Any] | None = None  # Full AI analysis response
+
     def to_dict(self) -> dict[str, Any]:
         """Convert to dict for JSON serialization."""
         return asdict(self)

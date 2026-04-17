@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 
 from api.routers.crawl import get_store
-from api.services.ai_analyzer import analyze_with_ai
+from api.services.ai_analyzer import analyze_with_ai, analyze_image_with_geo
 
 logger = logging.getLogger(__name__)
 
@@ -197,4 +197,133 @@ async def get_site_advisor(request: SiteAdvisorRequest, store=Depends(get_store)
         "total_pages": summary.get("total_pages", 0),
         "total_issues": len(all_issues),
         "recommendations": recommendations
+    }
+
+
+class GeoImageAnalysisRequest(BaseModel):
+    job_id: str
+    image_url: str
+
+
+@router.post("/image/analyze-geo")
+async def analyze_image_geo(request: GeoImageAnalysisRequest, store=Depends(get_store)):
+    """
+    Analyze an image using GEO-optimized prompting.
+
+    Requires GEO configuration to be set up for the domain.
+    Uses triple-context packet: image + page context + GEO settings.
+
+    Returns:
+        {
+            "success": bool,
+            "alt_text": str (80-125 chars with entities),
+            "long_description": str (150-300 words),
+            "entities_used": list,
+            "geographic_anchor": str,
+            ...
+        }
+    """
+    # Get job to extract domain
+    job = await store.get_job(request.job_id)
+    if not job:
+        return {"error": "Job not found", "success": False}
+
+    # Extract domain from target URL
+    from urllib.parse import urlparse
+    domain = urlparse(job.target_url).netloc.replace('www.', '')
+
+    # Load GEO config for the domain
+    geo_config = await store.get_geo_config(domain)
+    if not geo_config:
+        return {
+            "error": f"No GEO configuration found for domain: {domain}. Please configure GEO settings first.",
+            "success": False
+        }
+
+    if not geo_config.is_configured():
+        errors = geo_config.validate()
+        return {
+            "error": "GEO configuration is incomplete",
+            "validation_errors": errors,
+            "success": False
+        }
+
+    # Get image info to extract page context
+    image_info = await store.get_image_by_url(request.job_id, request.image_url)
+    if not image_info:
+        return {"error": "Image not found in crawl data", "success": False}
+
+    # Get page data to extract H1
+    page_data, _ = await store.get_page_issues_by_url(request.job_id, image_info.page_url)
+    h1 = page_data.h1_tags[0] if page_data and page_data.h1_tags else ""
+
+    # Build GEO config dict
+    geo_dict = {
+        "org_name": geo_config.org_name,
+        "topic_entities": geo_config.topic_entities,
+        "primary_location": geo_config.primary_location,
+        "location_pool": geo_config.location_pool,
+    }
+
+    # Analyze image with GEO
+    result = await analyze_image_with_geo(
+        image_url=request.image_url,
+        page_h1=h1,
+        surrounding_text=image_info.surrounding_text,
+        geo_config=geo_dict,
+    )
+
+    return result
+
+
+class ApplyGeoMetadataRequest(BaseModel):
+    job_id: str
+    image_url: str
+    alt_text: str
+    long_description: str = ""
+
+
+@router.post("/image/apply-geo-metadata")
+async def apply_geo_metadata(request: ApplyGeoMetadataRequest, store=Depends(get_store)):
+    """
+    Apply GEO-generated metadata to an image in the database.
+
+    Updates the image record with:
+    - alt_text (overwrites existing)
+    - long_description
+    - GEO analysis metadata
+    """
+    # Get image info
+    image_info = await store.get_image_by_url(request.job_id, request.image_url)
+    if not image_info:
+        return {"error": "Image not found", "success": False}
+
+    # Update image with GEO metadata
+    image_info.alt = request.alt_text
+    image_info.long_description = request.long_description
+    image_info.data_source = "geo_analyzed"
+
+    # Re-analyze with updated alt text
+    from api.crawler.image_analyzer import analyze_image
+    issues, scores = analyze_image(image_info, job_id=request.job_id)
+
+    # Update scores
+    image_info.performance_score = scores["performance_score"]
+    image_info.accessibility_score = scores["accessibility_score"]
+    image_info.semantic_score = scores["semantic_score"]
+    image_info.technical_score = scores["technical_score"]
+    image_info.overall_score = scores["overall_score"]
+    image_info.issues = [i.code for i in issues]
+
+    # Save updated image
+    await store.save_images([image_info])
+
+    return {
+        "success": True,
+        "message": "GEO metadata applied successfully",
+        "new_alt": image_info.alt,
+        "new_scores": {
+            "accessibility_score": image_info.accessibility_score,
+            "overall_score": image_info.overall_score,
+        }
     }
