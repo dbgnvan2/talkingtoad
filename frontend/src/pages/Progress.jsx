@@ -69,6 +69,31 @@ export default function Progress() {
             </p>
           )}
 
+          {status?.phase === 'checking_external_links' && status?.external_links_total > 0 && (
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+              <p className="text-sm font-medium text-blue-800 mb-1">
+                Checking external links...
+              </p>
+              <p className="text-xs text-blue-600">
+                {status.external_links_checked} of {status.external_links_total} links checked
+              </p>
+              <div className="mt-2 w-full bg-blue-200 rounded-full h-1.5 overflow-hidden">
+                <div
+                  className="bg-blue-600 h-full transition-all duration-300"
+                  style={{ width: `${(status.external_links_checked / status.external_links_total) * 100}%` }}
+                />
+              </div>
+            </div>
+          )}
+
+          {status?.phase === 'analyzing_images' && (
+            <div className="bg-purple-50 border border-purple-200 rounded-lg p-3">
+              <p className="text-sm font-medium text-purple-800">
+                Analyzing images...
+              </p>
+            </div>
+          )}
+
           {cancelError && (
             <p className="text-sm text-red-600 bg-red-50 rounded px-3 py-2">{cancelError}</p>
           )}

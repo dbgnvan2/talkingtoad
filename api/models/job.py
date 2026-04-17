@@ -38,6 +38,7 @@ class CrawlSettings(BaseModel):
 
 
 JobStatus = Literal["queued", "running", "complete", "failed", "cancelled"]
+CrawlPhase = Literal["queued", "crawling_pages", "checking_external_links", "analyzing_images", "saving_results", "complete"]
 
 
 class CrawlJob(BaseModel):
@@ -50,6 +51,9 @@ class CrawlJob(BaseModel):
     pages_crawled: int = 0
     pages_total: int | None = None
     current_url: str | None = None   # most recently fetched URL (for progress display)
+    phase: CrawlPhase = "queued"  # current phase of the crawl for detailed progress
+    external_links_checked: int = 0  # number of external links checked
+    external_links_total: int = 0    # total external links to check
     started_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     completed_at: datetime | None = None
     error_message: str | None = None

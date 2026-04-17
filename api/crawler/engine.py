@@ -345,6 +345,9 @@ async def run_crawl(
                     "pages_crawled": len(all_pages),
                     "pages_total": pages_total,
                     "current_url": url,
+                    "phase": "crawling_pages",
+                    "external_links_checked": 0,
+                    "external_links_total": 0,
                 }
                 result = on_progress(payload)
                 if inspect.isawaitable(result):
@@ -488,8 +491,23 @@ async def run_crawl(
 
         # ── 5. External link checking ─────────────────────────────────────
         external_checked = 0
+        external_total = min(len(external_link_queue), _EXTERNAL_LINK_CAP_PER_JOB)
         # (target_url, source_url, link_text) for every broken external link.
         broken_link_sources: list[tuple[str, str, str | None]] = []
+
+        # Update phase to external link checking
+        if on_progress and external_total > 0:
+            payload = {
+                "pages_crawled": len(all_pages),
+                "pages_total": pages_total,
+                "current_url": None,
+                "phase": "checking_external_links",
+                "external_links_checked": 0,
+                "external_links_total": external_total,
+            }
+            result = on_progress(payload)
+            if inspect.isawaitable(result):
+                await result
 
         for ext in external_link_queue:
             if cancel_event and cancel_event.is_set():
@@ -512,6 +530,20 @@ async def run_crawl(
 
             result = await _check_external_link(target, client)
             external_checked += 1
+
+            # Update progress every 10 links or on last link
+            if on_progress and (external_checked % 10 == 0 or external_checked == external_total):
+                payload = {
+                    "pages_crawled": len(all_pages),
+                    "pages_total": pages_total,
+                    "current_url": None,
+                    "phase": "checking_external_links",
+                    "external_links_checked": external_checked,
+                    "external_links_total": external_total,
+                }
+                result_prog = on_progress(payload)
+                if inspect.isawaitable(result_prog):
+                    await result_prog
 
             if result is not None:
                 source_url = ext["source_url"]
@@ -650,6 +682,20 @@ async def run_crawl(
 
             # Run batch analysis on HTML-level data (alt text checks work without fetch)
             if all_images:
+                # Update phase to analyzing images
+                if on_progress:
+                    payload = {
+                        "pages_crawled": len(all_pages),
+                        "pages_total": pages_total,
+                        "current_url": None,
+                        "phase": "analyzing_images",
+                        "external_links_checked": external_checked,
+                        "external_links_total": external_total,
+                    }
+                    result_prog = on_progress(payload)
+                    if inspect.isawaitable(result_prog):
+                        await result_prog
+
                 analyzed_images, image_issues = analyze_images(
                     all_images,
                     config=image_config,
@@ -703,6 +749,20 @@ async def run_crawl(
                 "external_links_checked": external_checked,
             },
         )
+
+        # Update phase to complete
+        if on_progress:
+            payload = {
+                "pages_crawled": len(all_pages),
+                "pages_total": pages_total,
+                "current_url": None,
+                "phase": "complete",
+                "external_links_checked": external_checked,
+                "external_links_total": external_total,
+            }
+            result_prog = on_progress(payload)
+            if inspect.isawaitable(result_prog):
+                await result_prog
 
         return CrawlResult(
             job_id=job_id,

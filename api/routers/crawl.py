@@ -155,6 +155,9 @@ async def _run_crawl_background(
                 pages_crawled=p["pages_crawled"],
                 pages_total=p["pages_total"],
                 current_url=p["current_url"],
+                phase=p.get("phase", "crawling_pages"),
+                external_links_checked=p.get("external_links_checked", 0),
+                external_links_total=p.get("external_links_total", 0),
             )
 
         result: CrawlResult = await run_crawl(

@@ -465,6 +465,9 @@ class SQLiteJobStore:
         # Job level migrations
         job_columns = [
             ("llms_txt_custom", "TEXT"),
+            ("phase", "TEXT NOT NULL DEFAULT 'queued'"),
+            ("external_links_checked", "INTEGER NOT NULL DEFAULT 0"),
+            ("external_links_total", "INTEGER NOT NULL DEFAULT 0"),
         ]
         for col, col_type in job_columns:
             try:
