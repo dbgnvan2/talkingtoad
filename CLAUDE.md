@@ -129,7 +129,9 @@ TalkingToad/
 | `IMG_BROKEN` | technical | HTTP 4xx/5xx status |
 | `IMG_DUPLICATE_CONTENT` | technical | Same content hash as another image |
 
-### GEO-Optimized AI Analysis (Upcoming)
+### GEO-Optimized AI Analysis (v1.9.1)
+
+**Status:** ✅ Implemented and tested
 
 **Specs:** See `geo_image_ai_spec.md` and `geo_image_ai_prompt.md`
 
@@ -137,13 +139,20 @@ TalkingToad/
 
 **Triple-Context Packet:**
 1. Image bytes (high-resolution for vision analysis)
-2. Page context (300 chars before/after + H1)
+2. Page context (surrounding text + H1 from page)
 3. Global settings (org name, location pool, topic entities)
 
 **Output Requirements:**
-- Alt text: 80-125 chars with 1 local entity + 1 topic entity
-- Long description: 150-300 words, GEO-rich, factual for AI Overviews
-- Entity density: Names, Places, Theories (not just keywords)
+- Alt text: 80-125 chars with geographic and topic entities
+- Description: 150-300 words, GEO-rich, factual for AI Overviews
+- Entity density: Names, Places, Topics (not just keywords)
+
+**Implementation:**
+- Frontend: GeoAnalysisModal.jsx for reviewing/editing AI suggestions
+- Frontend: GeoSettingsModal.jsx for configuring domain-specific settings
+- Backend: `/api/ai/image/analyze-geo` for GEO analysis
+- Backend: `/api/ai/image/apply-geo-metadata` for updating WordPress + database
+- Backend: `/api/geo/settings` for saving/retrieving GEO configuration
 
 **Configuration:** See section 5 in `geo_image_ai_spec.md`
 

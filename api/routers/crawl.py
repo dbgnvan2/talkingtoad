@@ -1429,6 +1429,8 @@ def _image_dict(img) -> dict:
         "http_status": img.http_status,
         "is_lazy_loaded": img.is_lazy_loaded,
         "has_srcset": img.has_srcset,
+        "srcset_candidates": img.srcset_candidates,
+        "surrounding_text": img.surrounding_text,
         "is_decorative": img.is_decorative,
         "content_hash": img.content_hash,
         "performance_score": img.performance_score,

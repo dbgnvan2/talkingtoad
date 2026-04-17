@@ -58,6 +58,18 @@ All endpoints require `Authorization: Bearer <token>`.
 | Method | Endpoint | Description |
 |---|---|---|
 | POST | `/api/ai/analyze` | Analyze a page using AI and provide remediation suggestions. |
+| GET | `/api/ai/test` | Test connectivity to AI provider (Gemini/OpenAI). |
+| POST | `/api/ai/page-advisor` | Get AI-generated SEO recommendations for a specific page. |
+| POST | `/api/ai/site-advisor` | Get AI-generated site-wide SEO recommendations. |
+
+## GEO Image AI (v1.9)
+
+| Method | Endpoint | Description |
+|---|---|---|
+| POST | `/api/ai/image/analyze-geo` | Analyze an image using GEO-optimized prompting with domain context. |
+| POST | `/api/ai/image/apply-geo-metadata` | Apply GEO-generated metadata to an image (updates WordPress + database). |
+| POST | `/api/geo/settings` | Save GEO configuration for a domain. |
+| GET | `/api/geo/settings?domain={domain}` | Retrieve GEO configuration for a domain. |
 
 #### Heading source analysis response
 

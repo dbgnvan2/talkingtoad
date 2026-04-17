@@ -10,7 +10,7 @@ CRITICAL: These tests document and enforce the TalkingToad architecture.
 
 import pytest
 from unittest.mock import AsyncMock, patch, MagicMock
-from api.crawler.engine import crawl_site
+from api.crawler.engine import run_crawl
 from api.models.job import CrawlJob
 
 
@@ -78,7 +78,7 @@ async def test_scan_never_calls_wordpress_api():
 
         # Run the crawler (limited to 1 page to keep test fast)
         try:
-            await crawl_site(
+            await run_crawl(
                 job_id=job.job_id,
                 target_url=job.target_url,
                 store=mock_store,

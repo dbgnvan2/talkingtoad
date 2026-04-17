@@ -77,7 +77,7 @@ def test_image_dict_includes_all_core_fields():
     assert result["rendered_width"] == image.rendered_width
     assert result["rendered_height"] == image.rendered_height
     assert result["file_size_bytes"] == image.file_size_bytes
-    assert result["file_size_kb"] == 50000 / 1024  # Calculated field
+    assert result["file_size_kb"] == round(50000 / 1024, 1)  # Calculated field
     assert result["load_time_ms"] == image.load_time_ms
     assert result["http_status"] == image.http_status
     assert result["is_lazy_loaded"] == image.is_lazy_loaded

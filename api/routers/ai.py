@@ -296,7 +296,8 @@ async def apply_geo_metadata(request: ApplyGeoMetadataRequest, store=Depends(get
     """
     import json
     from pathlib import Path
-    from api.services.wp_fixer import WPClient, update_image_metadata, WPAuthError
+    from api.services.wp_fixer import update_image_metadata
+    from api.services.wp_client import WPClient, WPAuthError
 
     # Get image info
     image_info = await store.get_image_by_url(request.job_id, request.image_url)
