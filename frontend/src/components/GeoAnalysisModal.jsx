@@ -8,18 +8,13 @@ import { useState } from 'react'
  */
 export default function GeoAnalysisModal({ geoResult, image, onSave, onClose }) {
   const [editedAlt, setEditedAlt] = useState(geoResult.alt_text || '')
-  const [editedDescription, setEditedDescription] = useState(geoResult.long_description || '')
+  const [editedDescription, setEditedDescription] = useState(geoResult.long_description || geoResult.description || '')
   const [saving, setSaving] = useState(false)
 
   const handleSave = async () => {
     setSaving(true)
     try {
-      await onSave(
-        editedAlt,
-        editedDescription,
-        geoResult.entities_used || [],
-        geoResult.geographic_anchor || ''
-      )
+      await onSave(editedAlt, editedDescription)
     } finally {
       setSaving(false)
     }
@@ -118,10 +113,10 @@ export default function GeoAnalysisModal({ geoResult, image, onSave, onClose }) 
             </p>
           </div>
 
-          {/* Editable Long Description */}
+          {/* Editable Description */}
           <div>
             <label className="block text-sm font-bold text-gray-700 mb-2">
-              Long Description (150-300 words)
+              Description (150-300 words)
               <span
                 className={`ml-2 text-xs font-normal ${
                   descStatus === 'good' ? 'text-green-600' : descStatus === 'short' ? 'text-amber-600' : 'text-red-600'
