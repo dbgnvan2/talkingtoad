@@ -277,9 +277,7 @@ export default function ImageAnalysisPanel({ jobId, onPageClick, onShowHelp }) {
           >
             {analyzingAI
               ? `Analyzing ${aiProgress.current}/${aiProgress.total}...`
-              : selectedImages.size === 0
-                ? '🤖 AI Analyze (Select images first)'
-                : `🤖 Analyze ${selectedImages.size} with AI`
+              : '🤖 AI Analyse'
             }
           </button>
           <button
