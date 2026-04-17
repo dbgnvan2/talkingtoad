@@ -38,6 +38,8 @@ export default function FixBrokenLinkPanel({ jobId, brokenUrl, onClose }) {
   const [applying,     setApplying]     = useState(false)
   const [applyError,   setApplyError]   = useState(null)
   const [appliedSrcs,  setAppliedSrcs]  = useState(new Set())
+  const [rescanning,   setRescanning]   = useState(null) // URL being rescanned
+  const [rescannedSrcs, setRescannedSrcs] = useState(new Set())
   const inputRef = useRef(null)
 
   useEffect(() => {
@@ -91,6 +93,26 @@ export default function FixBrokenLinkPanel({ jobId, brokenUrl, onClose }) {
       setApplyError(err.message)
     } finally {
       setApplying(false)
+    }
+  }
+
+  async function handleRescan(sourceUrl) {
+    setRescanning(sourceUrl)
+    try {
+      const params = new URLSearchParams({ url: sourceUrl })
+      const res = await fetch(`/api/crawl/${jobId}/rescan-url?${params}`, {
+        method: 'POST',
+        headers: authHeaders(),
+      })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        throw new Error(data.error?.message || `HTTP ${res.status}`)
+      }
+      setRescannedSrcs(prev => new Set([...prev, sourceUrl]))
+    } catch (err) {
+      alert('Rescan failed: ' + err.message)
+    } finally {
+      setRescanning(null)
     }
   }
 
@@ -156,6 +178,8 @@ export default function FixBrokenLinkPanel({ jobId, brokenUrl, onClose }) {
               <div className="space-y-1">
                 {sources.map(s => {
                   const done = appliedSrcs.has(s.source_url)
+                  const rescanned = rescannedSrcs.has(s.source_url)
+                  const isRescanning = rescanning === s.source_url
                   return (
                     <label
                       key={s.source_url}
@@ -180,6 +204,18 @@ export default function FixBrokenLinkPanel({ jobId, brokenUrl, onClose }) {
                         {shortenUrl(s.source_url)}
                         {s.link_text && <span className="text-gray-400 ml-1">— "{s.link_text}"</span>}
                       </span>
+                      <button
+                        onClick={e => { e.stopPropagation(); e.preventDefault(); handleRescan(s.source_url) }}
+                        disabled={isRescanning}
+                        className={`flex-shrink-0 text-xs px-2 py-0.5 rounded ${
+                          rescanned
+                            ? 'bg-green-100 text-green-700'
+                            : 'bg-blue-100 text-blue-700 hover:bg-blue-200'
+                        } disabled:opacity-50`}
+                        title="Rescan this page to confirm fix"
+                      >
+                        {isRescanning ? '...' : rescanned ? '✓ Rescanned' : 'Rescan'}
+                      </button>
                       <a
                         href={s.source_url}
                         target="_blank"
@@ -200,6 +236,18 @@ export default function FixBrokenLinkPanel({ jobId, brokenUrl, onClose }) {
                   {shortenUrl(sources[0].source_url)}
                   {sources[0].link_text && <span className="text-gray-400 ml-1">— "{sources[0].link_text}"</span>}
                 </span>
+                <button
+                  onClick={() => handleRescan(sources[0].source_url)}
+                  disabled={rescanning === sources[0].source_url}
+                  className={`flex-shrink-0 text-xs px-2 py-0.5 rounded ${
+                    rescannedSrcs.has(sources[0].source_url)
+                      ? 'bg-green-100 text-green-700'
+                      : 'bg-blue-100 text-blue-700 hover:bg-blue-200'
+                  } disabled:opacity-50`}
+                  title="Rescan this page to confirm fix"
+                >
+                  {rescanning === sources[0].source_url ? '...' : rescannedSrcs.has(sources[0].source_url) ? '✓ Rescanned' : 'Rescan'}
+                </button>
                 <a
                   href={sources[0].source_url}
                   target="_blank"

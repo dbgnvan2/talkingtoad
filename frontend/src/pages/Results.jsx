@@ -4,6 +4,7 @@ import SeverityBadge from '../components/SeverityBadge.jsx'
 import IssueHelpPanel from '../components/IssueHelpPanel.jsx'
 import FixManager from '../components/FixManager.jsx'
 import FixInlinePanel, { FIXABLE_CODES } from '../components/FixInlinePanel.jsx'
+import FixBrokenLinkPanel, { FIXABLE_LINK_CODES } from '../components/FixBrokenLinkPanel.jsx'
 import SettingsPanel from '../components/SettingsPanel.jsx'
 import GeoSettings from '../components/GeoSettings.jsx'
 import ImageAnalysisPanel from '../components/ImageAnalysisPanel.jsx'
@@ -1306,6 +1307,12 @@ function IssueCard({ issue: iss, jobId, pageUrl, isOpen, onToggleFix, onFixCompl
         <div className="mt-4 pt-4 border-t border-gray-200 animate-slide-in">
           {isImageIssue ? (
             <ImageFixPanel jobId={jobId} imageUrl={iss.extra?.image_url || pageUrl} issueCode={iss.issue_code} onClose={onFixComplete} />
+          ) : FIXABLE_LINK_CODES.has(iss.issue_code) ? (
+            <FixBrokenLinkPanel
+              jobId={jobId}
+              brokenUrl={iss.extra?.link_url || iss.extra?.href || pageUrl}
+              onClose={onFixComplete}
+            />
           ) : (
             <FixInlinePanel jobId={jobId} pageUrl={pageUrl} issueCode={iss.issue_code} onClose={onFixComplete} />
           )}
