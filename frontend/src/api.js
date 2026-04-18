@@ -371,6 +371,18 @@ export async function getOrphanedMedia(jobId) {
   return checkResponse(res)
 }
 
+// Orphaned pages — pages with no internal links pointing to them
+export async function getOrphanedPages(jobId) {
+  const params = new URLSearchParams({ category: 'crawlability', limit: '5000' })
+  const res = await fetch(`/api/crawl/${jobId}/results/crawlability?${params}`, {
+    headers: authHeaders(),
+  })
+  const data = await checkResponse(res)
+  // Filter to just ORPHAN_PAGE issues
+  const orphans = (data.issues || []).filter(i => i.issue_code === 'ORPHAN_PAGE')
+  return { count: orphans.length, pages: orphans }
+}
+
 export async function downloadCsv(jobId, category) {
   const url = category
     ? `/api/crawl/${jobId}/export/csv/${category}`

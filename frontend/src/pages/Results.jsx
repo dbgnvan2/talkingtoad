@@ -22,7 +22,7 @@ import {
   addExemptAnchorUrl, removeExemptAnchorUrl, markFixed,
   getPageAdvisor, getSiteAdvisor, verifyBrokenLinks, markBrokenLinkFixed, markIssueFixed, markAnchorFixed,
   getIgnoredImagePatterns, addIgnoredImagePattern, removeIgnoredImagePattern,
-  getOrphanedMedia
+  getOrphanedMedia, getOrphanedPages
 } from '../api.js'
 
 const IMAGE_FIXABLE_CODES = new Set(['IMG_OVERSIZED', 'IMG_ALT_MISSING'])
@@ -41,10 +41,12 @@ const CATEGORIES = [
   { key: 'ai_readiness',  label: 'AI Readiness' },
 ]
 
-const TAB_SUMMARY    = 0
-const TAB_BY_PAGE    = CATEGORIES.length + 1
-const TAB_FIX_MGR    = CATEGORIES.length + 2
-const TAB_HISTORY    = CATEGORIES.length + 3
+const TAB_SUMMARY        = 0
+const TAB_BY_PAGE        = CATEGORIES.length + 1
+const TAB_ORPHAN_IMAGES  = CATEGORIES.length + 2
+const TAB_ORPHAN_PAGES   = CATEGORIES.length + 3
+const TAB_FIX_MGR        = CATEGORIES.length + 4
+const TAB_HISTORY        = CATEGORIES.length + 5
 
 export default function Results() {
   const { jobId } = useParams()
@@ -96,7 +98,7 @@ export default function Results() {
     )
   }
 
-  const tabs = ['Summary', ...CATEGORIES.map(c => c.label), 'By Page', 'Fix Manager', 'Fix History']
+  const tabs = ['Summary', ...CATEGORIES.map(c => c.label), 'By Page', 'Orphaned Images', 'Orphaned Pages', 'Fix Manager', 'Fix History']
 
   return (
     <div className="max-w-6xl mx-auto px-4 py-8">
@@ -147,6 +149,12 @@ export default function Results() {
         )}
         {!activeSeverity && activeTab === TAB_BY_PAGE && (
           <ByPageTab jobId={jobId} onPageClick={setFocusedPageUrl} />
+        )}
+        {!activeSeverity && activeTab === TAB_ORPHAN_IMAGES && (
+          <OrphanedImagesTab jobId={jobId} />
+        )}
+        {!activeSeverity && activeTab === TAB_ORPHAN_PAGES && (
+          <OrphanedPagesTab jobId={jobId} onPageClick={setFocusedPageUrl} />
         )}
         {!activeSeverity && activeTab === TAB_FIX_MGR && <FixManager jobId={jobId} />}
         {!activeSeverity && activeTab === TAB_HISTORY && <div className="py-12 text-center text-gray-400">History view coming soon.</div>}
@@ -298,6 +306,9 @@ function SummaryTab({ summary: s, onCategoryClick, onSeverityClick, onPageClick,
           ))}
         </div>
       </section>
+
+      {/* Orphaned Content Summary */}
+      <OrphanedSummaryCards jobId={jobId} onOrphanImagesClick={() => onCategoryClick(TAB_ORPHAN_IMAGES - 1)} onOrphanPagesClick={() => onCategoryClick(TAB_ORPHAN_PAGES - 1)} />
 
       <TopPriorityGroups jobId={jobId} onPageClick={onPageClick} />
       <Top10Pages jobId={jobId} onPageClick={onPageClick} />
@@ -2708,3 +2719,236 @@ function SiteRecommendationsPanel({ recommendations, onClose }) {
 }
 
 function Spinner() { return <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-green-600 mx-auto" /> }
+
+
+// ---------------------------------------------------------------------------
+// Orphaned Content Components
+// ---------------------------------------------------------------------------
+
+function OrphanedSummaryCards({ jobId, onOrphanImagesClick, onOrphanPagesClick }) {
+  const { getFontClass } = useTheme()
+  const [orphanPages, setOrphanPages] = useState(null)
+
+  useEffect(() => {
+    getOrphanedPages(jobId).then(setOrphanPages).catch(() => {})
+  }, [jobId])
+
+  return (
+    <section>
+      <h2 className="font-black text-gray-400 uppercase tracking-widest mb-4" style={getFontClass('headingSize')}>Orphaned Content</h2>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <button
+          onClick={onOrphanImagesClick}
+          className="bg-white border border-gray-200 rounded-2xl p-5 hover:border-purple-400 hover:shadow-md transition-all text-left group"
+        >
+          <p className="text-3xl font-black text-purple-600 group-hover:text-purple-700">?</p>
+          <p className="font-black text-gray-800 uppercase tracking-wider mt-1 group-hover:text-purple-600" style={getFontClass('headingSize')}>
+            Orphaned Images
+          </p>
+          <p className="text-xs text-gray-400 mt-1">Images in WP Media Library not used on any page. Click to scan.</p>
+        </button>
+        <button
+          onClick={onOrphanPagesClick}
+          className="bg-white border border-gray-200 rounded-2xl p-5 hover:border-amber-400 hover:shadow-md transition-all text-left group"
+        >
+          <p className="text-3xl font-black text-amber-600 group-hover:text-amber-700">{orphanPages?.count ?? '...'}</p>
+          <p className="font-black text-gray-800 uppercase tracking-wider mt-1 group-hover:text-amber-600" style={getFontClass('headingSize')}>
+            Orphaned Pages
+          </p>
+          <p className="text-xs text-gray-400 mt-1">Pages with no internal links pointing to them.</p>
+        </button>
+      </div>
+    </section>
+  )
+}
+
+
+function OrphanedImagesTab({ jobId }) {
+  const [data, setData] = useState(null)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState(null)
+
+  async function handleScan() {
+    setLoading(true)
+    setError(null)
+    try {
+      const result = await getOrphanedMedia(jobId)
+      setData(result)
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-xl font-bold text-gray-800">Orphaned Images</h2>
+          <p className="text-sm text-gray-500 mt-1">Images in the WordPress Media Library that are not referenced on any crawled page.</p>
+        </div>
+        <button
+          onClick={handleScan}
+          disabled={loading}
+          className="px-5 py-2.5 bg-purple-600 text-white font-bold rounded-lg hover:bg-purple-700 disabled:opacity-50 flex items-center gap-2"
+        >
+          {loading ? (
+            <>
+              <span className="animate-spin">&#8635;</span>
+              Scanning WordPress...
+            </>
+          ) : (
+            <>Scan Media Library</>
+          )}
+        </button>
+      </div>
+
+      {error && (
+        <div className="p-4 bg-red-50 border border-red-200 rounded-xl">
+          <p className="text-red-700 font-medium">Error: {error}</p>
+        </div>
+      )}
+
+      {!data && !loading && !error && (
+        <div className="py-20 text-center bg-white rounded-2xl border border-gray-100">
+          <p className="text-5xl mb-4">🖼</p>
+          <p className="text-gray-400 font-medium">Click "Scan Media Library" to compare WordPress images against crawled pages.</p>
+        </div>
+      )}
+
+      {data && (
+        <div className="space-y-4">
+          {/* Stats bar */}
+          <div className="grid grid-cols-3 gap-4">
+            <div className="bg-white p-4 rounded-xl border border-gray-200 text-center">
+              <p className="text-2xl font-bold text-gray-800">{data.orphaned_media?.length + (data.count - (data.orphaned_media?.length || 0)) || data.count}</p>
+              <p className="text-xs text-gray-500 uppercase font-bold">Total WP Media</p>
+            </div>
+            <div className="bg-white p-4 rounded-xl border border-red-200 text-center">
+              <p className="text-2xl font-bold text-red-600">{data.count}</p>
+              <p className="text-xs text-red-500 uppercase font-bold">Orphaned</p>
+            </div>
+            <div className="bg-white p-4 rounded-xl border border-green-200 text-center">
+              <p className="text-2xl font-bold text-green-600">{(data.orphaned_media?.length + (data.count - (data.orphaned_media?.length || 0)) || 0) - data.count}</p>
+              <p className="text-xs text-green-500 uppercase font-bold">In Use</p>
+            </div>
+          </div>
+
+          {data.count === 0 ? (
+            <div className="py-12 bg-white rounded-2xl border border-green-200 text-center">
+              <p className="text-green-600 text-2xl mb-2">✓</p>
+              <p className="text-green-700 font-medium">All WordPress media images are referenced on at least one crawled page.</p>
+            </div>
+          ) : (
+            <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
+              <div className="px-6 py-4 border-b border-gray-100 bg-gray-50">
+                <p className="text-sm font-bold text-gray-700">{data.count} orphaned image{data.count !== 1 ? 's' : ''}</p>
+              </div>
+              <div className="divide-y divide-gray-100 max-h-[600px] overflow-y-auto">
+                {(data.orphaned_media || []).map(item => (
+                  <div key={item.id} className="flex items-center gap-4 px-6 py-3 hover:bg-gray-50">
+                    <img
+                      src={item.url}
+                      alt={item.alt_text || ''}
+                      className="w-14 h-14 object-cover rounded-lg border border-gray-200 flex-shrink-0"
+                      onError={e => { e.target.src = 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1 1"><rect fill="%23f3f4f6"/></svg>' }}
+                    />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-bold text-gray-800 truncate">{item.title}</p>
+                      <p className="text-xs font-mono text-gray-400 truncate">{item.url.split('/').pop()}</p>
+                      <div className="flex items-center gap-3 mt-0.5">
+                        <span className="text-xs text-gray-400">{item.mime_type}</span>
+                        {item.file_size_kb && <span className="text-xs text-gray-400">{item.file_size_kb} KB</span>}
+                        {item.dimensions && <span className="text-xs text-gray-400">{item.dimensions}</span>}
+                        {item.post_parent === 0 && <span className="text-xs text-red-500 font-bold">Unattached</span>}
+                      </div>
+                    </div>
+                    <a
+                      href={item.admin_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="px-3 py-1.5 text-xs font-bold bg-purple-100 text-purple-700 rounded-lg hover:bg-purple-200 flex-shrink-0"
+                    >
+                      Edit in WP
+                    </a>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+
+function OrphanedPagesTab({ jobId, onPageClick }) {
+  const [data, setData] = useState(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    getOrphanedPages(jobId).then(setData).catch(() => setData({ count: 0, pages: [] })).finally(() => setLoading(false))
+  }, [jobId])
+
+  if (loading) return <div className="py-20"><Spinner /></div>
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h2 className="text-xl font-bold text-gray-800">Orphaned Pages</h2>
+        <p className="text-sm text-gray-500 mt-1">Pages discovered during the crawl that have no internal links pointing to them. Search engines may not find these pages.</p>
+      </div>
+
+      <div className="grid grid-cols-2 gap-4">
+        <div className="bg-white p-4 rounded-xl border border-amber-200 text-center">
+          <p className="text-2xl font-bold text-amber-600">{data.count}</p>
+          <p className="text-xs text-amber-500 uppercase font-bold">Orphaned Pages</p>
+        </div>
+        <div className="bg-white p-4 rounded-xl border border-gray-200 text-center">
+          <p className="text-xs text-gray-500 mt-2">These pages are reachable only via the sitemap or direct URL — no other page on your site links to them.</p>
+        </div>
+      </div>
+
+      {data.count === 0 ? (
+        <div className="py-12 bg-white rounded-2xl border border-green-200 text-center">
+          <p className="text-green-600 text-2xl mb-2">✓</p>
+          <p className="text-green-700 font-medium">All crawled pages have at least one internal link pointing to them.</p>
+        </div>
+      ) : (
+        <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
+          <div className="px-6 py-4 border-b border-gray-100 bg-gray-50">
+            <p className="text-sm font-bold text-gray-700">{data.count} orphaned page{data.count !== 1 ? 's' : ''}</p>
+          </div>
+          <div className="divide-y divide-gray-100 max-h-[600px] overflow-y-auto">
+            {data.pages.map((issue, idx) => (
+              <div key={idx} className="flex items-center gap-4 px-6 py-3 hover:bg-gray-50">
+                <span className="text-amber-500 font-bold text-sm w-8 text-center flex-shrink-0">{idx + 1}</span>
+                <div className="flex-1 min-w-0">
+                  <button
+                    onClick={() => onPageClick?.(issue.page_url)}
+                    className="text-sm font-mono text-blue-600 hover:underline truncate block text-left w-full"
+                  >
+                    {issue.page_url}
+                  </button>
+                  {issue.extra?.title && (
+                    <p className="text-xs text-gray-400 truncate">{issue.extra.title}</p>
+                  )}
+                </div>
+                <a
+                  href={issue.page_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="px-3 py-1.5 text-xs font-bold bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 flex-shrink-0"
+                >
+                  Visit
+                </a>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
