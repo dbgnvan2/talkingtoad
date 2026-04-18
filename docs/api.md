@@ -40,6 +40,7 @@ All endpoints require `Authorization: Bearer <token>`.
 | POST | `/api/fixes/update-image-meta?image_url={url}&alt_text={txt}` | Update alt text, title, or caption for a WordPress media item. |
 | POST | `/api/fixes/optimize-image?job_id={id}&image_url={url}&new_filename={name}` | Download, optimize, rename, and replace an image across all WP posts. |
 | PATCH | `/api/fixes/{fix_id}` | Update a single fix — change `proposed_value` or `status`. |
+| POST | `/api/fixes/mark-anchor-fixed` | Mark a single empty-anchor link as fixed. Removes from the issue's anchor list; deletes issue when none remain. |
 | POST | `/api/fixes/apply/{job_id}` | Apply all approved fixes to WordPress. Stops on first failure. |
 | DELETE | `/api/fixes/{job_id}` | Delete all fixes for a job (to regenerate from scratch). |
 
@@ -50,6 +51,7 @@ All endpoints require `Authorization: Bearer <token>`.
 | GET | `/api/fixes/analyze-heading-sources?page_url={url}&job_id={id}` | Identify where each heading lives (post content, widget, theme, etc.) |
 | POST | `/api/fixes/heading-to-bold?page_url={url}&heading_text={text}&level={n}` | Convert a heading to bold text. Level 1-6, default 4. |
 | POST | `/api/fixes/change-heading-level?page_url={url}&heading_text={text}&from_level={n}&to_level={n}` | Change a heading from one level to another (H1-H6). |
+| POST | `/api/fixes/change-heading-text?page_url={url}&old_text={text}&new_text={text}&level={n}` | Change the text of a heading in WordPress post content. |
 | GET | `/api/fixes/find-heading?job_id={id}&heading_text={text}&level={n}` | Find all pages containing a specific heading. |
 | POST | `/api/fixes/bulk-replace-heading?job_id={id}&heading_text={text}&from_level={n}&to_level={n}` | Change a heading level across all pages in a crawl job. Omit `to_level` to convert to bold. |
 
@@ -255,6 +257,14 @@ The credentials file format:
 
 Only the fields you include are updated.
 
+## Ignored Image Patterns
+
+| Method | Endpoint | Description |
+|---|---|---|
+| GET | `/api/ignored-image-patterns` | List all ignored image URL patterns. |
+| POST | `/api/ignored-image-patterns` | Add a URL substring pattern. Images matching any pattern are excluded from `IMG_ALT_MISSING` and other image checks. Body: `{"pattern": "/icon.svg", "note": "theme icons"}`. |
+| DELETE | `/api/ignored-image-patterns?pattern={pat}` | Remove a pattern from the ignored list. |
+
 ## Utility
 
 | Method | Endpoint | Description |
@@ -353,7 +363,16 @@ The `security` category always runs regardless of toggles.
     "total_issues": 17,
     "health_score": 74,
     "by_severity": { "critical": 2, "warning": 8, "info": 7 },
-    "by_category": { "metadata": 5, "heading": 3, "broken_link": 2 }
+    "by_category": { "metadata": 5, "heading": 3, "broken_link": 2 },
+    "robots_txt": {
+      "found": true,
+      "rules": ["Disallow: /wp-admin/", "Allow: /wp-admin/admin-ajax.php"]
+    },
+    "sitemap": {
+      "found": true,
+      "url": "https://example.com/sitemap.xml",
+      "url_count": 38
+    }
   },
   "issues": [
     {
@@ -373,7 +392,9 @@ The `security` category always runs regardless of toggles.
 }
 ```
 
-`health_score` is 0–100. Formula: `max(0, 100 − Σ issue impacts)` across all issues.
+`health_score` is 0–100. Formula: `max(0, 100 − Σ issue impacts)` across all issues. The health score calculation normalises trailing slashes on page URLs so that issues and pages always match correctly.
+
+The `robots_txt` and `sitemap` objects are included in the summary when discovery data is available. Both may be `null` if the crawl has not yet completed the discovery phase.
 
 `priority_rank` formula: `(impact × 10) − (effort × 2)`. Higher = fix sooner.
 

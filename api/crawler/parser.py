@@ -91,6 +91,7 @@ class ParsedPage:
 
     # v1.7 AI-Readiness fields
     text_to_html_ratio: float | None = None
+    code_breakdown: dict | None = None  # KB breakdown: text, script, style, svg, markup
     has_json_ld: bool = False
     pdf_metadata: dict | None = None
 
@@ -148,12 +149,28 @@ def parse_page(
 
     is_indexable, robots_directive, robots_source = _parse_robots_signals(soup, result.headers)
 
-    # Calculate text-to-html ratio
+    # Calculate text-to-html ratio and code breakdown
     text_to_html_ratio = None
+    _code_breakdown = None
     if result.html:
         visible_text = soup.get_text()
         if result.response_size_bytes > 0:
             text_to_html_ratio = len(visible_text) / result.response_size_bytes
+            # Calculate what's taking up the space
+            script_bytes = sum(len(str(s)) for s in soup.find_all("script"))
+            style_bytes = sum(len(str(s)) for s in soup.find_all("style"))
+            svg_bytes = sum(len(str(s)) for s in soup.find_all("svg"))
+            html_total = result.response_size_bytes
+            text_bytes = len(visible_text.encode("utf-8", errors="replace"))
+            markup_bytes = html_total - script_bytes - style_bytes - svg_bytes - text_bytes
+            _code_breakdown = {
+                "html_total_kb": round(html_total / 1024, 1),
+                "text_kb": round(max(0, text_bytes) / 1024, 1),
+                "script_kb": round(script_bytes / 1024, 1),
+                "style_kb": round(style_bytes / 1024, 1),
+                "svg_kb": round(svg_bytes / 1024, 1),
+                "markup_kb": round(max(0, markup_bytes) / 1024, 1),
+            }
 
     # PDF metadata
     pdf_metadata = None
@@ -198,6 +215,7 @@ def parse_page(
         lang_attr=_extract_lang(soup),
         # v1.7 AI-Readiness fields
         text_to_html_ratio=text_to_html_ratio,
+        code_breakdown=_code_breakdown,
         has_json_ld=_has_json_ld_script(soup),
         pdf_metadata=pdf_metadata,
         # v1.9 Image Intelligence
@@ -252,7 +270,11 @@ def _extract_headings_outline(soup: BeautifulSoup) -> list[dict]:
     outline = []
     for tag in soup.find_all(["h1", "h2", "h3", "h4", "h5", "h6"]):
         level = int(tag.name[1])
-        outline.append({"level": level, "text": tag.get_text(strip=True)})
+        classes = " ".join(tag.get("class", []))
+        entry: dict = {"level": level, "text": tag.get_text(strip=True)}
+        if classes:
+            entry["classes"] = classes
+        outline.append(entry)
     return outline
 
 
@@ -556,16 +578,25 @@ def _extract_image_urls(soup: BeautifulSoup, page_url: str) -> list[str]:
 
 def _count_empty_anchors(soup: BeautifulSoup) -> int:
     """Count <a href> tags whose visible text (and alt text of any child img) is empty."""
-    return len(_find_empty_anchors(soup))
+    anchors = _find_empty_anchors(soup)
+    # Only count those without an aria-label as truly empty
+    return sum(1 for a in anchors if not a.get("aria_label"))
 
 
-def _find_empty_anchors(soup: BeautifulSoup, page_url: str = "") -> list[str]:
-    """Return absolute URLs of <a> tags with no visible anchor text or img alt text.
+def _find_empty_anchors(soup: BeautifulSoup, page_url: str = "") -> list[dict]:
+    """Return info about <a> tags with no visible anchor text or img alt text.
 
-    Relative hrefs (e.g. "/" or "/about") are resolved to absolute URLs using
-    *page_url* so the stored values are always actionable.
+    Each entry is a dict with:
+      - href: absolute URL of the link
+      - aria_label: aria-label value if present, else None
+      - has_children: bool — True if the <a> contains child elements (icons, SVGs, etc.)
+
+    Links with a non-empty aria-label are still included (so the user can see
+    them and decide), but flagged so the UI can display them differently.
+
+    Relative hrefs are resolved to absolute URLs using *page_url*.
     """
-    found: list[str] = []
+    found: list[dict] = []
     for tag in soup.find_all("a", href=True):
         href = tag["href"].strip()
         if not href or href.startswith(("#", "javascript:", "mailto:", "tel:", "data:")):
@@ -579,7 +610,13 @@ def _find_empty_anchors(soup: BeautifulSoup, page_url: str = "") -> list[str]:
             continue
         # Resolve relative hrefs to absolute URLs
         absolute = urljoin(page_url, href) if page_url else href
-        found.append(absolute)
+        aria_label = (tag.get("aria-label") or "").strip() or None
+        has_children = len(tag.find_all()) > 0
+        found.append({
+            "href": absolute,
+            "aria_label": aria_label,
+            "has_children": has_children,
+        })
     return found
 
 

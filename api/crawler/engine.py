@@ -122,6 +122,9 @@ class CrawlSettings:
     # Href URLs exempt from LINK_EMPTY_ANCHOR — for icon links (social media etc.)
     # that intentionally have no anchor text.
     exempt_anchor_urls: set[str] = field(default_factory=set)
+    # URL patterns for images to ignore in issue checks (e.g. theme SVG icons).
+    # Substring match — "/location.svg" matches any URL containing that string.
+    ignored_image_patterns: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -137,6 +140,12 @@ class CrawlResult:
     broken_link_sources: list[tuple[str, str, str | None]] = field(default_factory=list)
     # v1.9image: Analyzed images with scores and issues
     images: list[ImageInfo] = field(default_factory=list)
+    # Crawl discovery info for display
+    robots_txt_found: bool = False
+    robots_txt_rules: list[str] = field(default_factory=list)
+    sitemap_found: bool = False
+    sitemap_url_found: str | None = None
+    sitemap_url_count: int = 0
 
 
 # ---------------------------------------------------------------------------
@@ -200,6 +209,18 @@ async def run_crawl(
                 sitemap_url_set.add(_su)
         pages_total: int | None = len(sitemap_url_set) if sitemap_url_set else None
 
+        # Collect discovery info for display
+        _robots_found = robots_data is not None and robots_data.raw_text is not None
+        _robots_rules: list[str] = []
+        if _robots_found and robots_data and robots_data.raw_text:
+            for line in robots_data.raw_text.splitlines():
+                stripped = line.strip()
+                if stripped and not stripped.startswith("#"):
+                    _robots_rules.append(stripped)
+        _sitemap_found = sitemap_result.found
+        _sitemap_url_found = sitemap_result.source_url if _sitemap_found else None
+        _sitemap_url_count = len(sitemap_url_set)
+
         all_pages: list[ParsedPage] = []
         all_issues: list[Issue] = []
         favicon_emitted = False
@@ -216,7 +237,9 @@ async def run_crawl(
                     and http_result.final_url.startswith("https://")
                 )
                 if not redirects_to_https:
-                    all_issues.append(make_issue("HTTPS_REDIRECT_MISSING", normalised_start))
+                    all_issues.append(make_issue("HTTPS_REDIRECT_MISSING", normalised_start,
+                                                 extra={"http_url": http_url,
+                                                        "redirected_to": http_result.final_url}))
             except Exception:
                 pass  # network error — cannot determine redirect behaviour
 
@@ -228,7 +251,9 @@ async def run_crawl(
             llms_txt_url = f"{root_url}/llms.txt"
             llms_res = await fetch_page(llms_txt_url, client)
             if llms_res.status_code != 200:
-                all_issues.append(make_issue("LLMS_TXT_MISSING", normalised_start))
+                all_issues.append(make_issue("LLMS_TXT_MISSING", normalised_start,
+                                           extra={"expected_url": llms_txt_url,
+                                                  "status_code": llms_res.status_code}))
             else:
                 # Validation Logic:
                 # MIME Type: Must be text/plain.
@@ -276,18 +301,24 @@ async def run_crawl(
         variant_tracker = QueryVariantTracker()
         depth_map: dict[str, int | None] = {normalised_start: 0}
 
+        # Track which page discovered each URL (for broken link source reporting)
+        discovered_from: dict[str, str] = {}
+
         # Seed from sitemap so pages not reachable via HTML links are crawled
         for norm in sitemap_url_set:
             if norm != normalised_start and is_same_domain(norm, normalised_start):
                 queue.append((norm, None))
                 if norm not in depth_map:
                     depth_map[norm] = None
+                discovered_from.setdefault(norm, "(sitemap)")
 
         # External links: collected during internal crawl, checked after
         # Format: {"source_url": str, "target_url": str, "link_text": str|None}
         external_link_queue: list[dict] = []
         external_per_page_count: dict[str, int] = {}
         external_targets_seen: set[str] = set()  # deduplicate by target URL
+        # (target_url, source_url, link_text) for every broken link (internal + external)
+        broken_link_sources: list[tuple[str, str, str | None]] = []
 
         # Image data: collected during internal crawl, analyzed after
         # Format: dict from parser with url, page_url, alt, srcset, etc.
@@ -306,6 +337,11 @@ async def run_crawl(
                     pages_crawled=len(all_pages),
                     external_links_checked=0,
                     cancelled=True,
+                    robots_txt_found=_robots_found,
+                    robots_txt_rules=_robots_rules,
+                    sitemap_found=_sitemap_found,
+                    sitemap_url_found=_sitemap_url_found,
+                    sitemap_url_count=_sitemap_url_count,
                 )
 
             url, current_depth = queue.popleft()
@@ -328,7 +364,8 @@ async def run_crawl(
 
             if robots_data and not robots_data.is_allowed(url):
                 log.info("robots_blocked", extra={"url": url})
-                all_issues.append(make_issue("ROBOTS_BLOCKED", url))
+                all_issues.append(make_issue("ROBOTS_BLOCKED", url,
+                                           extra={"blocked_url": url}))
                 continue
 
             if len(all_pages) >= settings.max_pages:
@@ -373,13 +410,15 @@ async def run_crawl(
             if result.error and result.status_code == 0:
                 log.warning("fetch_failed", extra={"url": url, "error": result.error})
                 # Emit a PAGE_TIMEOUT issue so the user knows the page was attempted
-                timeout_issue = make_issue("PAGE_TIMEOUT", url)
+                timeout_issue = make_issue("PAGE_TIMEOUT", url,
+                                           extra={"error": result.error})
                 all_issues.append(timeout_issue)
                 continue
 
             # Login redirect
             if result.is_login_redirect:
-                all_issues.append(make_issue("LOGIN_REDIRECT", url))
+                all_issues.append(make_issue("LOGIN_REDIRECT", url,
+                                           extra={"redirect_to": result.final_url}))
                 continue
 
             # Redirect issues
@@ -419,6 +458,13 @@ async def run_crawl(
                 # page is broken.
                 if result.status_code >= 400:
                     broken = issue_for_status(result.status_code, url)
+                    if broken:
+                        source = discovered_from.get(url)
+                        broken.extra = {"source_url": source} if source else {}
+                        # Store in broken_link_sources so the links table gets populated
+                        # (enables "Show Source Pages" for internal broken links)
+                        if source and source != "(sitemap)":
+                            broken_link_sources.append((url, source, None))
                     page_issues = [broken] if broken else []
                 else:
                     try:
@@ -431,6 +477,7 @@ async def run_crawl(
                             suppress_h1_strings=settings.suppress_h1_strings,
                             suppress_banner_h1=settings.suppress_banner_h1,
                             exempt_anchor_urls=settings.exempt_anchor_urls or None,
+                            ignored_image_patterns=settings.ignored_image_patterns or None,
                         )
                     except Exception as exc:
                         log.warning("issue_check_exception", extra={"url": url, "error": str(exc)})
@@ -464,6 +511,7 @@ async def run_crawl(
                         # (first discovery via HTML gives the shallowest depth)
                         if norm not in depth_map:
                             depth_map[norm] = child_depth
+                        discovered_from.setdefault(norm, url)
                         queue.append((norm, depth_map[norm]))
                 else:
                     # Collect external links for later checking (subject to caps)
@@ -492,8 +540,6 @@ async def run_crawl(
         # ── 5. External link checking ─────────────────────────────────────
         external_checked = 0
         external_total = min(len(external_link_queue), _EXTERNAL_LINK_CAP_PER_JOB)
-        # (target_url, source_url, link_text) for every broken external link.
-        broken_link_sources: list[tuple[str, str, str | None]] = []
 
         # Update phase to external link checking
         if on_progress and external_total > 0:
@@ -772,6 +818,11 @@ async def run_crawl(
             external_links_checked=external_checked,
             broken_link_sources=broken_link_sources,
             images=all_images,
+            robots_txt_found=_robots_found,
+            robots_txt_rules=_robots_rules,
+            sitemap_found=_sitemap_found,
+            sitemap_url_found=_sitemap_url_found,
+            sitemap_url_count=_sitemap_url_count,
         )
 
 

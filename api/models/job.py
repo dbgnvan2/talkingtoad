@@ -31,7 +31,7 @@ class CrawlSettings(BaseModel):
     # treated as a banner/navigation heading and ignored in all H1 checks.
     # Handles themes (Salient, Avada, Divi, etc.) that inject a parent-page title
     # as an H1 banner on every sub-page without requiring explicit suppress strings.
-    suppress_banner_h1: bool = False
+    suppress_banner_h1: bool = True
     # Report customization
     client_name: str = ""
     prepared_by: str = ""
@@ -58,5 +58,11 @@ class CrawlJob(BaseModel):
     completed_at: datetime | None = None
     error_message: str | None = None
     settings: CrawlSettings = Field(default_factory=CrawlSettings)
+    # Crawl discovery results
+    robots_txt_found: bool | None = None
+    robots_txt_rules: list[str] | None = None  # summary of key rules
+    sitemap_found: bool | None = None
+    sitemap_url_found: str | None = None  # actual sitemap URL discovered
+    sitemap_url_count: int | None = None  # number of URLs in sitemap
     # Persisted custom llms.txt content
     llms_txt_custom: str | None = None

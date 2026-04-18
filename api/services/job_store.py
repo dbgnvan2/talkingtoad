@@ -72,23 +72,24 @@ async def _compute_v15_health_score(
 
     Returns (site_health_score, page_count).
     """
-    # Sum of impacts per page that has issues, excluding suppressed codes
+    # Sum of impacts per page that has issues, excluding suppressed codes.
+    # Normalize trailing slashes so issues and pages always match.
     if suppressed_codes:
         placeholders = ",".join("?" * len(suppressed_codes))
         sql = f"""
-            SELECT page_url, SUM(impact) AS total_impact
+            SELECT RTRIM(page_url, '/') AS norm_url, SUM(impact) AS total_impact
             FROM issues
             WHERE job_id = ? AND page_url IS NOT NULL
               AND issue_code NOT IN ({placeholders})
-            GROUP BY page_url
+            GROUP BY norm_url
         """
         params: tuple = (job_id, *suppressed_codes)
     else:
         sql = """
-            SELECT page_url, SUM(impact) AS total_impact
+            SELECT RTRIM(page_url, '/') AS norm_url, SUM(impact) AS total_impact
             FROM issues
             WHERE job_id = ? AND page_url IS NOT NULL
-            GROUP BY page_url
+            GROUP BY norm_url
         """
         params = (job_id,)
 
@@ -116,7 +117,9 @@ async def _compute_v15_health_score(
 
     page_scores = []
     for (url,) in page_rows:
-        total_impact = impact_by_url.get(url, 0)
+        # Normalize trailing slash to match issue page_url
+        norm_url = url.rstrip("/")
+        total_impact = impact_by_url.get(norm_url, 0)
         page_health = max(0, 100 - total_impact)
         page_scores.append(page_health)
 
@@ -147,6 +150,7 @@ class JobStore(Protocol):
     async def get_links_by_target(self, job_id: str, target_url: str) -> list[dict]: ...
     async def delete_issues_for_url(self, job_id: str, page_url: str) -> int: ...
     async def delete_issues_by_code_and_url(self, job_id: str, issue_code: str, page_url: str) -> int: ...
+    async def update_issue_extra(self, job_id: str, issue_code: str, page_url: str, extra: dict) -> bool: ...
     async def delete_broken_link_issues_for_source(self, job_id: str, source_url: str) -> int: ...
     async def get_broken_link_codes_for_source(self, job_id: str, source_url: str) -> set[str]: ...
 
@@ -361,6 +365,12 @@ CREATE TABLE IF NOT EXISTS exempt_anchor_urls (
     added_at     TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+CREATE TABLE IF NOT EXISTS ignored_image_patterns (
+    pattern      TEXT PRIMARY KEY,
+    note         TEXT,
+    added_at     TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 CREATE TABLE IF NOT EXISTS images (
     id                    INTEGER PRIMARY KEY AUTOINCREMENT,
     job_id                TEXT NOT NULL,
@@ -468,6 +478,11 @@ class SQLiteJobStore:
             ("phase", "TEXT NOT NULL DEFAULT 'queued'"),
             ("external_links_checked", "INTEGER NOT NULL DEFAULT 0"),
             ("external_links_total", "INTEGER NOT NULL DEFAULT 0"),
+            ("robots_txt_found", "INTEGER"),
+            ("robots_txt_rules", "TEXT"),
+            ("sitemap_found", "INTEGER"),
+            ("sitemap_url_found", "TEXT"),
+            ("sitemap_url_count", "INTEGER"),
         ]
         for col, col_type in job_columns:
             try:
@@ -580,16 +595,21 @@ class SQLiteJobStore:
         _ALLOWED = {
             "status", "pages_crawled", "pages_total", "current_url",
             "completed_at", "error_message", "llms_txt_custom",
+            "phase", "external_links_checked", "external_links_total",
+            "robots_txt_found", "robots_txt_rules", "sitemap_found",
+            "sitemap_url_found", "sitemap_url_count",
         }
         unknown = set(fields) - _ALLOWED
         if unknown:
             raise ValueError(f"update_job: unknown fields {unknown}")
 
-        # Serialise datetime values
+        # Serialise datetime and list values
         serialised = {}
         for k, v in fields.items():
             if isinstance(v, datetime):
                 serialised[k] = v.isoformat()
+            elif isinstance(v, list):
+                serialised[k] = json.dumps(v)
             else:
                 serialised[k] = v
 
@@ -731,6 +751,16 @@ class SQLiteJobStore:
         )
         await self._db.commit()
         return count
+
+    async def update_issue_extra(self, job_id: str, issue_code: str, page_url: str, extra: dict) -> bool:
+        """Update the extra JSON field for a specific issue. Returns True if a row was updated."""
+        import json as _json
+        result = await self._db.execute(
+            "UPDATE issues SET extra = ? WHERE job_id = ? AND issue_code = ? AND page_url = ?",
+            (_json.dumps(extra), job_id, issue_code, page_url),
+        )
+        await self._db.commit()
+        return result.rowcount > 0
 
     async def delete_broken_link_issues_for_source(self, job_id: str, source_url: str) -> int:
         """Delete broken-link issues linked to *source_url* as the source page.
@@ -880,6 +910,28 @@ class SQLiteJobStore:
             suppressed_codes=set(suppressed) if suppressed else None,
         )
 
+        # Load discovery info from job record
+        robots_info = None
+        sitemap_info = None
+        try:
+            async with self._db.execute(
+                "SELECT robots_txt_found, robots_txt_rules, sitemap_found, sitemap_url_found, sitemap_url_count FROM crawl_jobs WHERE job_id = ?",
+                (job_id,),
+            ) as cursor:
+                row = await cursor.fetchone()
+            if row:
+                robots_info = {
+                    "found": bool(row[0]) if row[0] is not None else None,
+                    "rules": json.loads(row[1]) if row[1] else [],
+                }
+                sitemap_info = {
+                    "found": bool(row[2]) if row[2] is not None else None,
+                    "url": row[3],
+                    "url_count": row[4] or 0,
+                }
+        except Exception:
+            pass
+
         return {
             "pages_crawled": job.pages_crawled,
             "pages_with_errors": pages_with_errors,
@@ -887,6 +939,8 @@ class SQLiteJobStore:
             "by_severity": by_severity,
             "by_category": by_category,
             "health_score": health_score,
+            "robots_txt": robots_info,
+            "sitemap": sitemap_info,
         }
 
     # ── By-page views ─────────────────────────────────────────────────────
@@ -1281,6 +1335,40 @@ class SQLiteJobStore:
         rows = await self.get_exempt_anchor_urls()
         return {r["url"] for r in rows}
 
+    # ── Ignored image patterns ──────────────────────────────────────────────
+
+    async def get_ignored_image_patterns(self) -> list[dict]:
+        """Return all ignored image URL patterns (global, not per-job)."""
+        db = self._db
+        assert db is not None
+        async with db.execute(
+            "SELECT pattern, note, added_at FROM ignored_image_patterns ORDER BY added_at DESC"
+        ) as cursor:
+            rows = await cursor.fetchall()
+        return [{"pattern": r[0], "note": r[1], "added_at": r[2]} for r in rows]
+
+    async def add_ignored_image_pattern(self, pattern: str, note: str = "") -> None:
+        """Add a URL pattern to the ignored list (substring match)."""
+        db = self._db
+        assert db is not None
+        await db.execute(
+            "INSERT OR REPLACE INTO ignored_image_patterns (pattern, note) VALUES (?, ?)",
+            (pattern.strip(), note),
+        )
+        await db.commit()
+
+    async def remove_ignored_image_pattern(self, pattern: str) -> None:
+        """Remove a pattern from the ignored list."""
+        db = self._db
+        assert db is not None
+        await db.execute("DELETE FROM ignored_image_patterns WHERE pattern = ?", (pattern.strip(),))
+        await db.commit()
+
+    async def get_ignored_image_pattern_list(self) -> list[str]:
+        """Return patterns as a list for filtering during issue checks."""
+        rows = await self.get_ignored_image_patterns()
+        return [r["pattern"] for r in rows]
+
     # ── Image analysis (v1.9image) ──────────────────────────────────────────
 
     async def save_images(self, images: list[ImageInfo]) -> None:
@@ -1382,14 +1470,15 @@ class SQLiteJobStore:
             row = await cursor.fetchone()
         images_with_metadata = row[0] if row else 0
 
-        # Average scores (only for analyzed images)
+        # Average scores — include all images that have been scored
+        # (file_size_bytes is populated from HEAD requests during crawl)
         async with db.execute(
             """
             SELECT
                 AVG(overall_score) as avg_score,
                 AVG(load_time_ms) as avg_load_time
             FROM images
-            WHERE job_id = ? AND http_status > 0
+            WHERE job_id = ? AND file_size_bytes IS NOT NULL
             """,
             (job_id,),
         ) as cursor:
@@ -1937,6 +2026,9 @@ class RedisJobStore:
 
     async def delete_issues_by_code_and_url(self, job_id: str, issue_code: str, page_url: str) -> int:
         return 0  # Not implemented for Redis MVP
+
+    async def update_issue_extra(self, job_id: str, issue_code: str, page_url: str, extra: dict) -> bool:
+        return False  # Not implemented for Redis MVP
 
     async def delete_broken_link_issues_for_source(self, job_id: str, source_url: str) -> int:
         return 0  # Not implemented for Redis MVP

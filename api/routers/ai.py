@@ -126,11 +126,20 @@ async def get_page_advisor(request: PageAdvisorRequest, store=Depends(get_store)
 
     # Get AI recommendations
     import json
+    import re
     suggestion = await analyze_with_ai("page_advisor", context)
+
+    # Strip markdown code blocks if present (```json ... ``` or ``` ... ```)
+    cleaned = suggestion.strip()
+    if cleaned.startswith("```"):
+        # Remove opening fence (with optional language identifier)
+        cleaned = re.sub(r'^```(?:json)?\s*\n?', '', cleaned)
+        # Remove closing fence
+        cleaned = re.sub(r'\n?```\s*$', '', cleaned)
 
     # Try to parse JSON response
     try:
-        recommendations = json.loads(suggestion)
+        recommendations = json.loads(cleaned)
     except json.JSONDecodeError:
         # Fallback if AI doesn't return valid JSON
         recommendations = {"raw_response": suggestion}
@@ -154,9 +163,7 @@ async def get_site_advisor(request: SiteAdvisorRequest, store=Depends(get_store)
         return {"error": f"Job not found: {request.job_id}"}
 
     # Get all issues to find common patterns
-    all_issues = []
-    async for issue in store.get_all_issues(request.job_id):
-        all_issues.append(issue)
+    all_issues = await store.get_all_issues(request.job_id)
 
     # Count issue types
     from collections import Counter
@@ -164,15 +171,10 @@ async def get_site_advisor(request: SiteAdvisorRequest, store=Depends(get_store)
     common_issues = [f"{code} ({count} occurrences)" for code, count in issue_counts.most_common(10)]
 
     # Get sample pages
-    pages = []
-    async for page in store.get_all_pages(request.job_id):
-        pages.append(page)
-        if len(pages) >= 5:
-            break
-
+    pages = await store.get_pages(request.job_id)
     sample_pages = [
         f"{page.url} (Title: {page.title or 'none'}, Issues: {len([i for i in all_issues if i.page_url == page.url])})"
-        for page in pages
+        for page in pages[:5]
     ]
 
     context = {
@@ -183,11 +185,18 @@ async def get_site_advisor(request: SiteAdvisorRequest, store=Depends(get_store)
 
     # Get AI recommendations
     import json
+    import re
     suggestion = await analyze_with_ai("site_advisor", context)
+
+    # Strip markdown code blocks if present (```json ... ``` or ``` ... ```)
+    cleaned = suggestion.strip()
+    if cleaned.startswith("```"):
+        cleaned = re.sub(r'^```(?:json)?\s*\n?', '', cleaned)
+        cleaned = re.sub(r'\n?```\s*$', '', cleaned)
 
     # Try to parse JSON response
     try:
-        recommendations = json.loads(suggestion)
+        recommendations = json.loads(cleaned)
     except json.JSONDecodeError:
         # Fallback if AI doesn't return valid JSON
         recommendations = [{"recommendation": suggestion, "priority": "high", "category": "general", "impact": "Unknown"}]

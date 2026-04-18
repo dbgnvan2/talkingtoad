@@ -101,6 +101,40 @@ TalkingToad/
 
 ---
 
+## Recent Enhancements (v1.9.2)
+
+### Banner H1 Suppression
+`suppress_banner_h1` defaults to `True` everywhere (model, frontend, rescan, standalone scan). Only the first H1 is considered a banner candidate. CSS classes (`entry-title`, `page-title`, etc.) are also used as a signal. Single-H1 pages never have their only H1 removed.
+
+### Fix Panel Enhancements
+- **TITLE_H1_MISMATCH:** Dual editor (SEO Title + Content H1 Heading) with individual and combined apply buttons. Uses `change_heading_text` endpoint.
+- **LINK_EMPTY_ANCHOR:** Per-link "Fixed" buttons that remove individual hrefs from the issue. Backend: `POST /api/fixes/mark-anchor-fixed`. Empty anchors now capture `aria_label` and `has_children` data.
+- **Duplicate Issues:** TITLE_DUPLICATE, META_DESC_DUPLICATE, TITLE_META_DUPLICATE_PAIR now show the duplicate URLs in the UI.
+- **SEMANTIC_DENSITY_LOW:** Full KB breakdown (text, scripts, styles, SVG, markup) with a visual bar and diagnosis of the biggest contributor.
+- **Issue Extra Data:** All 50+ issue codes now include diagnostic data in `extra` so the user can see what triggered the issue.
+
+### Auto-Rescan After Fix
+After any WP fix (heading, title, meta, image), the page is automatically rescanned to update issues in the database. Health score refreshes live.
+
+### Broken Link Source Tracking
+Internal broken links track which page discovered them via `discovered_from` dict in engine. `extra.source_url` is populated. "Show Source Pages" endpoint has fallback to issue extra when links table is empty.
+
+### Ignored Image Patterns
+Global config: `POST/GET/DELETE /api/ignored-image-patterns`. Substring match patterns (e.g. `/location.svg`) to exclude theme icons from IMG_ALT_MISSING. Stored in `ignored_image_patterns` table. UI in Settings > "Ignored Imgs" tab.
+
+### Sitemap & Robots.txt Discovery Display
+Sitemap and Crawlability category tabs show what was found (sitemap URL, URL count, robots.txt rules) even when there are no issues. Data stored on job record.
+
+### Scoring Fixes
+- **Image Scoring:** Performance score no longer requires `load_time_ms` -- `file_size_bytes` alone (from HEAD requests) is sufficient. Image health score includes all images with file size data, not just fully-fetched ones.
+- **Health Score:** Trailing slashes are normalized when matching issues to crawled pages.
+
+### WordPress Integration Fixes
+- **`find_post_by_url`:** Falls back to single-slug match when exact URL doesn't match (handles different parent paths). Image attachment finder strips WP size suffixes (e.g. `-600x403`) from filenames.
+- **Heading Text Change:** `POST /api/fixes/change-heading-text` endpoint. Handles inline HTML, entity encoding, and whitespace normalization. Preserves `<h1>` tag attributes.
+
+---
+
 ## Image Intelligence Engine (v1.9)
 
 ### Architecture: 3-Level Data Model

@@ -39,6 +39,7 @@ from api.services.wp_fixer import (
     apply_fix,
     bulk_trim_titles,
     change_heading_level,
+    change_heading_text,
     convert_heading_to_bold,
     detect_seo_plugin,
     find_orphaned_media,
@@ -343,9 +344,31 @@ async def get_link_sources(
 
     Used by the broken-link Fix panel to show where the broken link lives
     before the user chooses a replacement URL.
+
+    Checks the links table first, then falls back to scanning issue extra
+    fields for source_url (covers internal broken links not in the links table).
     """
+    import json as _json
+
     rows = await store.get_links_by_target(job_id, target_url)
-    return [LinkSource(source_url=r["source_url"], link_text=r.get("link_text")) for r in rows]
+    sources = [LinkSource(source_url=r["source_url"], link_text=r.get("link_text")) for r in rows]
+
+    # Fallback: check issue extra.source_url for broken link issues targeting this URL
+    if not sources:
+        all_issues = await store.get_all_issues(job_id)
+        seen = set()
+        for iss in all_issues:
+            if iss.page_url != target_url:
+                continue
+            extra = iss.extra
+            if isinstance(extra, str):
+                extra = _json.loads(extra)
+            src = extra.get("source_url") if extra else None
+            if src and src != "(sitemap)" and src not in seen:
+                seen.add(src)
+                sources.append(LinkSource(source_url=src, link_text=None))
+
+    return sources
 
 
 @router.post("/replace-link", response_model=ReplaceLinkResponse)
@@ -382,6 +405,300 @@ async def replace_link_endpoint(
         )
         return ReplaceLinkResponse(success=True)
     return ReplaceLinkResponse(success=False, error=error_msg)
+
+
+class MarkAnchorFixedRequest(BaseModel):
+    job_id: str
+    page_url: str
+    link_href: str
+
+
+class MarkAnchorFixedResponse(BaseModel):
+    success: bool
+    remaining: int
+    error: str | None = None
+
+
+@router.post("/mark-anchor-fixed", response_model=MarkAnchorFixedResponse)
+async def mark_anchor_fixed(
+    body: MarkAnchorFixedRequest,
+    store=Depends(get_store),
+) -> MarkAnchorFixedResponse | JSONResponse:
+    """Mark a single empty-anchor link as fixed.
+
+    Removes the href from the issue's empty_anchors list.
+    If no anchors remain, deletes the issue entirely.
+    """
+    import json as _json
+
+    job = await store.get_job(body.job_id)
+    if not job:
+        return _err("JOB_NOT_FOUND", f"No job with ID {body.job_id}", 404)
+
+    # Find the LINK_EMPTY_ANCHOR issue for this page
+    all_issues = await store.get_all_issues(body.job_id)
+    anchor_issue = next(
+        (i for i in all_issues if i.issue_code == "LINK_EMPTY_ANCHOR" and i.page_url == body.page_url),
+        None,
+    )
+    if not anchor_issue:
+        return MarkAnchorFixedResponse(success=True, remaining=0)
+
+    extra = anchor_issue.extra or {}
+    if isinstance(extra, str):
+        extra = _json.loads(extra)
+
+    # Remove from both empty_anchors (new format) and empty_anchor_hrefs (legacy)
+    anchors = extra.get("empty_anchors", [])
+    hrefs = extra.get("empty_anchor_hrefs", [])
+
+    anchors = [a for a in anchors if (a.get("href") if isinstance(a, dict) else a) != body.link_href]
+    hrefs = [h for h in hrefs if h != body.link_href]
+
+    remaining = max(len(anchors), len(hrefs))
+
+    if remaining == 0:
+        # No more empty anchors — delete the issue entirely
+        await store.delete_issues_by_code_and_url(body.job_id, "LINK_EMPTY_ANCHOR", body.page_url)
+        logger.info("anchor_issue_deleted", extra={"job_id": body.job_id, "page_url": body.page_url})
+    else:
+        # Update the extra field with the reduced list
+        extra["empty_anchors"] = anchors
+        extra["empty_anchor_hrefs"] = hrefs
+        extra["empty_anchor_count"] = remaining
+        await store.update_issue_extra(body.job_id, "LINK_EMPTY_ANCHOR", body.page_url, extra)
+        logger.info("anchor_marked_fixed", extra={
+            "job_id": body.job_id, "page_url": body.page_url,
+            "link_href": body.link_href, "remaining": remaining,
+        })
+
+    return MarkAnchorFixedResponse(success=True, remaining=remaining)
+
+
+class VerifyResult(BaseModel):
+    url: str
+    previous_status: int | None = None
+    current_status: int | None = None
+    is_fixed: bool
+    error: str | None = None
+
+
+class VerifyBrokenLinksResponse(BaseModel):
+    total: int
+    checked: int
+    fixed: int
+    still_broken: int
+    errors: int
+    results: list[VerifyResult]
+
+
+@router.post("/verify-broken-links/{job_id}", response_model=VerifyBrokenLinksResponse)
+async def verify_broken_links(
+    job_id: str,
+    store=Depends(get_store),
+) -> VerifyBrokenLinksResponse | JSONResponse:
+    """Quick check if broken URLs are still broken.
+
+    Makes HEAD requests to all broken link URLs from the crawl and reports
+    which ones are now working (fixed) vs still broken.
+
+    Does NOT update the database - this is just a verification check.
+    Use rescan-url to update individual pages in the database.
+    """
+    import httpx
+
+    # Get all broken link issues from the job
+    job = await store.get_job(job_id)
+    if not job:
+        return _err("JOB_NOT_FOUND", f"No job with ID {job_id}", 404)
+
+    issues = await store.get_all_issues(job_id)
+    broken_codes = {"BROKEN_LINK_404", "BROKEN_LINK_410", "BROKEN_LINK_5XX", "BROKEN_LINK_503"}
+
+    # Collect unique broken URLs
+    broken_urls = set()
+    url_to_status = {}
+    for iss in issues:
+        if iss.issue_code in broken_codes:
+            url = iss.page_url
+            if url:
+                broken_urls.add(url)
+                # Store original status from extra if available
+                extra = iss.extra or {}
+                url_to_status[url] = extra.get("status_code") if isinstance(extra, dict) else None
+
+    if not broken_urls:
+        return VerifyBrokenLinksResponse(
+            total=0, checked=0, fixed=0, still_broken=0, errors=0, results=[]
+        )
+
+    results = []
+    fixed_count = 0
+    still_broken_count = 0
+    error_count = 0
+
+    async with httpx.AsyncClient(
+        timeout=10.0,
+        follow_redirects=True,
+        headers={"User-Agent": "Mozilla/5.0 (compatible; TalkingToad/1.9)"}
+    ) as client:
+        for url in broken_urls:
+            try:
+                # Use HEAD for speed, fall back to GET if HEAD fails
+                try:
+                    resp = await client.head(url)
+                except httpx.HTTPStatusError:
+                    resp = await client.get(url)
+
+                current_status = resp.status_code
+                is_fixed = 200 <= current_status < 400
+
+                if is_fixed:
+                    fixed_count += 1
+                else:
+                    still_broken_count += 1
+
+                results.append(VerifyResult(
+                    url=url,
+                    previous_status=url_to_status.get(url),
+                    current_status=current_status,
+                    is_fixed=is_fixed,
+                ))
+            except Exception as exc:
+                error_count += 1
+                results.append(VerifyResult(
+                    url=url,
+                    previous_status=url_to_status.get(url),
+                    current_status=None,
+                    is_fixed=False,
+                    error=str(exc),
+                ))
+
+    logger.info(
+        "verify_broken_links_complete",
+        extra={
+            "job_id": job_id,
+            "total": len(broken_urls),
+            "fixed": fixed_count,
+            "still_broken": still_broken_count,
+        }
+    )
+
+    return VerifyBrokenLinksResponse(
+        total=len(broken_urls),
+        checked=len(results),
+        fixed=fixed_count,
+        still_broken=still_broken_count,
+        errors=error_count,
+        results=results,
+    )
+
+
+class MarkBrokenLinkFixedRequest(BaseModel):
+    job_id: str
+    broken_url: str
+    codes: list[str] = ["BROKEN_LINK_404", "BROKEN_LINK_410", "BROKEN_LINK_5XX"]
+
+
+class MarkBrokenLinkFixedResponse(BaseModel):
+    success: bool
+    broken_url: str
+    deleted_count: int
+
+
+@router.post("/mark-broken-link-fixed", response_model=MarkBrokenLinkFixedResponse)
+async def mark_broken_link_fixed(
+    request: MarkBrokenLinkFixedRequest,
+    store=Depends(get_store),
+) -> MarkBrokenLinkFixedResponse | JSONResponse:
+    """Mark a broken link as fixed by deleting it from the issues table.
+
+    Unlike the general mark-fixed endpoint which just records in history,
+    this actually removes the broken link issues from the database.
+    """
+    job = await store.get_job(request.job_id)
+    if not job:
+        return _err("JOB_NOT_FOUND", f"No job with ID {request.job_id}", 404)
+
+    total_deleted = 0
+    for code in request.codes:
+        deleted = await store.delete_issues_by_code_and_url(
+            request.job_id, code, request.broken_url
+        )
+        total_deleted += deleted
+
+    # Also record in fix history
+    if total_deleted > 0:
+        await store.record_fixed_issues(request.job_id, request.broken_url, request.codes)
+
+    logger.info(
+        "mark_broken_link_fixed",
+        extra={
+            "job_id": request.job_id,
+            "broken_url": request.broken_url,
+            "deleted_count": total_deleted,
+        }
+    )
+
+    return MarkBrokenLinkFixedResponse(
+        success=True,
+        broken_url=request.broken_url,
+        deleted_count=total_deleted,
+    )
+
+
+class MarkIssueFixedRequest(BaseModel):
+    job_id: str
+    page_url: str
+    issue_codes: list[str]
+
+
+class MarkIssueFixedResponse(BaseModel):
+    success: bool
+    page_url: str
+    deleted_count: int
+
+
+@router.post("/mark-issue-fixed", response_model=MarkIssueFixedResponse)
+async def mark_issue_fixed(
+    request: MarkIssueFixedRequest,
+    store=Depends(get_store),
+) -> MarkIssueFixedResponse | JSONResponse:
+    """Mark an issue as fixed by deleting it from the issues table.
+
+    This is a generic endpoint that can be used for any issue type (images, etc.)
+    when the user has manually verified the issue is resolved or doesn't apply.
+    """
+    job = await store.get_job(request.job_id)
+    if not job:
+        return _err("JOB_NOT_FOUND", f"No job with ID {request.job_id}", 404)
+
+    total_deleted = 0
+    for code in request.issue_codes:
+        deleted = await store.delete_issues_by_code_and_url(
+            request.job_id, code, request.page_url
+        )
+        total_deleted += deleted
+
+    # Record in fix history
+    if total_deleted > 0:
+        await store.record_fixed_issues(request.job_id, request.page_url, request.issue_codes)
+
+    logger.info(
+        "mark_issue_fixed",
+        extra={
+            "job_id": request.job_id,
+            "page_url": request.page_url,
+            "issue_codes": request.issue_codes,
+            "deleted_count": total_deleted,
+        }
+    )
+
+    return MarkIssueFixedResponse(
+        success=True,
+        page_url=request.page_url,
+        deleted_count=total_deleted,
+    )
 
 
 @router.get("/predefined-codes", response_model=None)
@@ -694,6 +1011,29 @@ async def change_heading_level_endpoint(
         return _err("WP_AUTH_FAILED", str(exc), 400)
     except Exception as exc:
         logger.exception("change_heading_level_error", extra={"page_url": page_url})
+        return _err("WP_ERROR", str(exc), 500)
+
+    return result
+
+
+@router.post("/change-heading-text", response_model=None)
+async def change_heading_text_endpoint(
+    page_url:  str = Query(..., description="URL of the page to edit"),
+    old_text:  str = Query(..., description="Current heading text"),
+    new_text:  str = Query(..., description="New heading text"),
+    level:     int = Query(1, description="Heading level (1–6)"),
+) -> dict | JSONResponse:
+    """Change the text of a heading in WordPress post content."""
+    if not _CREDS_PATH.exists():
+        return _err("NO_CREDENTIALS", "wp-credentials.json not found.", 400)
+
+    try:
+        async with WPClient.from_credentials_file(_CREDS_PATH) as wp:
+            result = await change_heading_text(wp, page_url, old_text, new_text, level)
+    except WPAuthError as exc:
+        return _err("WP_AUTH_FAILED", str(exc), 400)
+    except Exception as exc:
+        logger.exception("change_heading_text_error", extra={"page_url": page_url})
         return _err("WP_ERROR", str(exc), 500)
 
     return result

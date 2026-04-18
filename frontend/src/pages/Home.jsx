@@ -30,7 +30,7 @@ export default function Home() {
   const [crawlDelay, setCrawlDelay] = useState('')
   const [imgSizeLimit, setImgSizeLimit] = useState('')
   const [suppressH1Input, setSuppressH1Input] = useState('')
-  const [suppressBannerH1, setSuppressBannerH1] = useState(false)
+  const [suppressBannerH1, setSuppressBannerH1] = useState(true)
   // All analyses enabled by default (null = all on)
   const [analyses, setAnalyses] = useState(() =>
     Object.fromEntries(ANALYSIS_TOGGLES.map(t => [t.key, true]))

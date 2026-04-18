@@ -148,6 +148,8 @@ async def _run_crawl_background(
         engine_settings.verified_link_urls = await store.get_verified_link_urls()
         # Load exempt anchor URLs so icon links don't flood LINK_EMPTY_ANCHOR.
         engine_settings.exempt_anchor_urls = await store.get_exempt_anchor_url_set()
+        # Load ignored image patterns so theme icons don't flood IMG_ALT_MISSING.
+        engine_settings.ignored_image_patterns = await store.get_ignored_image_pattern_list()
 
         async def on_progress(p: dict) -> None:
             await store.update_job(
@@ -199,6 +201,11 @@ async def _run_crawl_background(
             status=final_status,
             pages_crawled=result.pages_crawled,
             completed_at=datetime.now(timezone.utc),
+            robots_txt_found=result.robots_txt_found,
+            robots_txt_rules=result.robots_txt_rules,
+            sitemap_found=result.sitemap_found,
+            sitemap_url_found=result.sitemap_url_found,
+            sitemap_url_count=result.sitemap_url_count,
         )
         logger.info("crawl_persisted", extra={"job_id": job_id, "status": final_status})
 
@@ -601,7 +608,9 @@ async def rescan_url(
     base_url = job.target_url
     is_homepage = url.rstrip("/") == base_url.rstrip("/")
     suppress_h1s: list[str] = job.settings.suppress_h1_strings if job.settings else []
-    suppress_banner: bool = job.settings.suppress_banner_h1 if job.settings else False
+    # Always suppress banner H1s — this is now the default behavior.
+    # Old jobs may have stored False before this became the default.
+    suppress_banner: bool = True
 
     try:
         async with make_client() as client:
@@ -626,11 +635,13 @@ async def rescan_url(
 
     # Run issue checks (single-page — no cross-page or sitemap checks)
     exempt_urls = await store.get_exempt_anchor_url_set()
+    ignored_img_patterns = await store.get_ignored_image_pattern_list()
     eng_issues = check_page(
         page,
         suppress_h1_strings=suppress_h1s or None,
         suppress_banner_h1=suppress_banner,
         exempt_anchor_urls=exempt_urls or None,
+        ignored_image_patterns=ignored_img_patterns or None,
     )
 
     # Re-check external links found on this page (up to per-page cap)
@@ -830,7 +841,7 @@ async def scan_single_page(
     # completed job for this origin so that theme-injected headings stay suppressed
     # in ad-hoc single-page scans.
     suppress_h1s: list[str] = []
-    suppress_banner: bool = False
+    suppress_banner: bool = True
     try:
         recent = await store.list_recent_jobs(limit=20)
         for rj in recent:
@@ -842,11 +853,13 @@ async def scan_single_page(
         pass
 
     exempt_urls = await store.get_exempt_anchor_url_set()
+    ignored_img_patterns = await store.get_ignored_image_pattern_list()
     eng_issues = check_page(
         page,
         suppress_h1_strings=suppress_h1s or None,
         suppress_banner_h1=suppress_banner,
         exempt_anchor_urls=exempt_urls or None,
+        ignored_image_patterns=ignored_img_patterns or None,
     )
 
     verified_link_urls: set[str] = set()

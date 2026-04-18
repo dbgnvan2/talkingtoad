@@ -790,10 +790,14 @@ function ImageCard({ image, jobId, isExpanded, onToggle, onPageClick, isSelected
         <div className="px-4 pb-3 flex flex-wrap gap-1">
           {image.issues.slice(0, 3).map(code => {
             const help = getIssueHelp(code)
+            const sev = help?.severity || 'info'
+            const colors = sev === 'critical' ? 'bg-red-100 text-red-700'
+              : sev === 'warning' ? 'bg-amber-100 text-amber-700'
+              : 'bg-blue-100 text-blue-600'
             return (
               <span
                 key={code}
-                className="text-[10px] px-2 py-0.5 bg-amber-100 text-amber-700 rounded-full font-bold"
+                className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${colors}`}
                 title={help?.title || code}
               >
                 {code.replace('IMG_', '')}

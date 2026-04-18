@@ -197,6 +197,20 @@ export async function changeHeadingLevel(pageUrl, headingText, fromLevel, toLeve
   return checkResponse(res)
 }
 
+export async function changeHeadingText(pageUrl, oldText, newText, level = 1) {
+  const params = new URLSearchParams({
+    page_url: pageUrl,
+    old_text: oldText,
+    new_text: newText,
+    level: level,
+  })
+  const res = await fetch(`/api/fixes/change-heading-text?${params}`, {
+    method: 'POST',
+    headers: authHeaders(),
+  })
+  return checkResponse(res)
+}
+
 export async function getVerifiedLinks() {
   const res = await fetch('/api/verified-links', { headers: authHeaders() })
   return checkResponse(res)
@@ -316,6 +330,33 @@ export async function optimizeImage(jobId, imageUrl, targetWidth = null, newFile
 export async function removeExemptAnchorUrl(url) {
   const params = new URLSearchParams({ url })
   const res = await fetch(`/api/exempt-anchor-urls?${params}`, {
+    method: 'DELETE',
+    headers: authHeaders(),
+  })
+  return checkResponse(res)
+}
+
+// ---------------------------------------------------------------------------
+// Ignored Image Patterns
+// ---------------------------------------------------------------------------
+
+export async function getIgnoredImagePatterns() {
+  const res = await fetch('/api/ignored-image-patterns', { headers: authHeaders() })
+  return checkResponse(res)
+}
+
+export async function addIgnoredImagePattern(pattern, note = '') {
+  const res = await fetch('/api/ignored-image-patterns', {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify({ pattern, note }),
+  })
+  return checkResponse(res)
+}
+
+export async function removeIgnoredImagePattern(pattern) {
+  const params = new URLSearchParams({ pattern })
+  const res = await fetch(`/api/ignored-image-patterns?${params}`, {
     method: 'DELETE',
     headers: authHeaders(),
   })
@@ -675,6 +716,61 @@ export async function listBatches(jobId = null) {
   const params = jobId ? `?job_id=${jobId}` : ''
   const res = await fetch(`/api/fixes/batch-optimize/list${params}`, {
     headers: authHeaders(),
+  })
+  return checkResponse(res)
+}
+
+// ---------------------------------------------------------------------------
+// Broken Link Verification
+// ---------------------------------------------------------------------------
+
+// Verify all broken links to see which are fixed
+export async function verifyBrokenLinks(jobId) {
+  const res = await fetch(`/api/fixes/verify-broken-links/${jobId}`, {
+    method: 'POST',
+    headers: authHeaders(),
+  })
+  return checkResponse(res)
+}
+
+// Mark a broken link as fixed (actually deletes from database)
+export async function markBrokenLinkFixed(jobId, brokenUrl) {
+  const res = await fetch('/api/fixes/mark-broken-link-fixed', {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify({
+      job_id: jobId,
+      broken_url: brokenUrl,
+      codes: ['BROKEN_LINK_404', 'BROKEN_LINK_410', 'BROKEN_LINK_5XX'],
+    }),
+  })
+  return checkResponse(res)
+}
+
+// Mark a single empty-anchor link as fixed (removes from issue in DB)
+export async function markAnchorFixed(jobId, pageUrl, linkHref) {
+  const res = await fetch('/api/fixes/mark-anchor-fixed', {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify({
+      job_id: jobId,
+      page_url: pageUrl,
+      link_href: linkHref,
+    }),
+  })
+  return checkResponse(res)
+}
+
+// Mark any issue as fixed (actually deletes from database)
+export async function markIssueFixed(jobId, pageUrl, issueCodes) {
+  const res = await fetch('/api/fixes/mark-issue-fixed', {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify({
+      job_id: jobId,
+      page_url: pageUrl,
+      issue_codes: issueCodes,
+    }),
   })
   return checkResponse(res)
 }

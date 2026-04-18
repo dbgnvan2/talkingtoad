@@ -233,3 +233,42 @@ async def remove_exempt_anchor_url(
     """Remove a URL from the exempt list."""
     await store.remove_exempt_anchor_url(url.strip())
     return {"url": url.strip(), "status": "removed"}
+
+
+# ── Ignored image patterns ─────────────────────────────────────────────────
+
+
+class IgnoredImageRequest(BaseModel):
+    pattern: str
+    note: str = ""
+
+
+@router.get("/ignored-image-patterns")
+async def list_ignored_image_patterns(store=Depends(get_store)) -> list[dict]:
+    """Return all ignored image URL patterns."""
+    return await store.get_ignored_image_patterns()
+
+
+@router.post("/ignored-image-patterns")
+async def add_ignored_image_pattern(body: IgnoredImageRequest, store=Depends(get_store)) -> dict:
+    """Add a URL pattern to the ignored list. Images matching this pattern
+    will be excluded from IMG_ALT_MISSING and other image issue checks.
+    Matching is by substring — e.g. '/location.svg' matches any URL containing that string."""
+    pattern = body.pattern.strip()
+    if not pattern:
+        return JSONResponse(
+            status_code=400,
+            content={"error": {"code": "EMPTY_PATTERN", "message": "Pattern cannot be empty.", "http_status": 400}},
+        )
+    await store.add_ignored_image_pattern(pattern, body.note)
+    return {"pattern": pattern, "note": body.note, "status": "added"}
+
+
+@router.delete("/ignored-image-patterns")
+async def remove_ignored_image_pattern(
+    pattern: str = Query(..., description="Pattern to remove from ignored list"),
+    store=Depends(get_store),
+) -> dict:
+    """Remove a pattern from the ignored list."""
+    await store.remove_ignored_image_pattern(pattern.strip())
+    return {"pattern": pattern.strip(), "status": "removed"}

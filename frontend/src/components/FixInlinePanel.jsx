@@ -62,7 +62,11 @@ function authHeaders(extra = {}) {
   return h
 }
 
-export default function FixInlinePanel({ jobId, pageUrl, issueCode, predefinedValue, onClose }) {
+export default function FixInlinePanel({ jobId, pageUrl, issueCode, issueExtra, predefinedValue, onClose }) {
+  // Special dual-editor for title/heading mismatch
+  if (issueCode === 'TITLE_H1_MISMATCH') {
+    return <MismatchFixPanel jobId={jobId} pageUrl={pageUrl} issueExtra={issueExtra} onClose={onClose} />
+  }
   const field = CODE_TO_FIELD[issueCode]
   const fieldLabel = FIELD_LABELS[field] ?? field
   const limits = FIELD_LIMITS[field]
@@ -268,6 +272,239 @@ export default function FixInlinePanel({ jobId, pageUrl, issueCode, predefinedVa
             </button>
           </div>
         </>
+      )}
+    </div>
+  )
+}
+
+
+/**
+ * MismatchFixPanel — dual editor for TITLE_H1_MISMATCH issues.
+ *
+ * Shows both the SEO title and content H1 side by side, lets the user
+ * edit either or both, and applies changes to WordPress.
+ */
+function MismatchFixPanel({ jobId, pageUrl, issueExtra, onClose }) {
+  const currentTitle = issueExtra?.title || ''
+  const currentH1    = issueExtra?.h1 || ''
+
+  const [wpTitle,      setWpTitle]      = useState(null)
+  const [newTitle,     setNewTitle]     = useState('')
+  const [newH1,        setNewH1]        = useState(currentH1)
+  const [loading,      setLoading]      = useState(true)
+  const [applying,     setApplying]     = useState(null) // 'title' | 'h1' | 'both' | null
+  const [titleResult,  setTitleResult]  = useState(null) // 'success' | error string
+  const [h1Result,     setH1Result]     = useState(null)
+  const [fetchError,   setFetchError]   = useState(null)
+
+  // Fetch current WP SEO title value
+  useEffect(() => {
+    const params = new URLSearchParams({ job_id: jobId, page_url: pageUrl, field: 'seo_title' })
+    fetch(`/api/fixes/wp-value?${params}`, { headers: authHeaders() })
+      .then(async res => {
+        const data = await res.json().catch(() => ({}))
+        if (!res.ok) throw new Error(data.error?.message || `HTTP ${res.status}`)
+        return data
+      })
+      .then(data => {
+        const cur = data.current_value ?? currentTitle
+        setWpTitle(cur)
+        setNewTitle(cur)
+        setLoading(false)
+      })
+      .catch(err => {
+        setFetchError(err.message)
+        setNewTitle(currentTitle)
+        setLoading(false)
+      })
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function applyTitle() {
+    if (!newTitle.trim()) return
+    setApplying('title')
+    setTitleResult(null)
+    try {
+      const res = await fetch('/api/fixes/apply-one', {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({
+          job_id: jobId,
+          page_url: pageUrl,
+          field: 'seo_title',
+          proposed_value: newTitle.trim(),
+          issue_code: 'TITLE_H1_MISMATCH',
+        }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok || !data.success) throw new Error(data.error?.message || data.error || 'Failed')
+      setTitleResult('success')
+    } catch (err) {
+      setTitleResult(err.message)
+    } finally {
+      setApplying(null)
+    }
+  }
+
+  async function applyH1() {
+    if (!newH1.trim() || newH1.trim() === currentH1) return
+    setApplying('h1')
+    setH1Result(null)
+    try {
+      const params = new URLSearchParams({
+        page_url: pageUrl,
+        old_text: currentH1,
+        new_text: newH1.trim(),
+        level: '1',
+      })
+      const res = await fetch(`/api/fixes/change-heading-text?${params}`, {
+        method: 'POST',
+        headers: authHeaders(),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!data.success) throw new Error(data.error || 'Failed')
+      setH1Result('success')
+    } catch (err) {
+      setH1Result(err.message)
+    } finally {
+      setApplying(null)
+    }
+  }
+
+  async function applyBoth() {
+    setApplying('both')
+    setTitleResult(null)
+    setH1Result(null)
+    // Apply title first, then H1
+    if (newTitle.trim() && newTitle.trim() !== (wpTitle || currentTitle)) {
+      try {
+        const res = await fetch('/api/fixes/apply-one', {
+          method: 'POST',
+          headers: authHeaders(),
+          body: JSON.stringify({
+            job_id: jobId,
+            page_url: pageUrl,
+            field: 'seo_title',
+            proposed_value: newTitle.trim(),
+            issue_code: 'TITLE_H1_MISMATCH',
+          }),
+        })
+        const data = await res.json().catch(() => ({}))
+        if (!res.ok || !data.success) throw new Error(data.error?.message || data.error || 'Failed')
+        setTitleResult('success')
+      } catch (err) {
+        setTitleResult(err.message)
+      }
+    }
+    if (newH1.trim() && newH1.trim() !== currentH1) {
+      try {
+        const params = new URLSearchParams({
+          page_url: pageUrl,
+          old_text: currentH1,
+          new_text: newH1.trim(),
+          level: '1',
+        })
+        const res = await fetch(`/api/fixes/change-heading-text?${params}`, {
+          method: 'POST',
+          headers: authHeaders(),
+        })
+        const data = await res.json().catch(() => ({}))
+        if (!data.success) throw new Error(data.error || 'Failed')
+        setH1Result('success')
+      } catch (err) {
+        setH1Result(err.message)
+      }
+    }
+    setApplying(null)
+  }
+
+  const titleCharCount = newTitle.length
+  const titleOver = titleCharCount > 60
+
+  return (
+    <div className="mx-4 mb-2 mt-0.5 bg-amber-50 border border-amber-200 rounded-lg p-4 text-sm shadow-sm">
+      <div className="flex items-center justify-between mb-3">
+        <span className="text-xs font-semibold text-amber-800 uppercase tracking-wide">
+          Fix — Title & Heading Mismatch
+        </span>
+        <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl leading-none">&times;</button>
+      </div>
+
+      {loading && <p className="text-xs text-amber-700 py-2">Loading current values…</p>}
+      {fetchError && <p className="text-xs text-yellow-600 py-1">Could not fetch WP title: {fetchError}</p>}
+
+      {!loading && (
+        <div className="space-y-4">
+          {/* SEO Title editor */}
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-xs font-bold text-gray-700">SEO Title</label>
+              <span className={`text-xs font-mono ${titleOver ? 'text-red-600 font-semibold' : 'text-gray-400'}`}>
+                {titleCharCount} / 60
+              </span>
+            </div>
+            <p className="text-xs text-gray-400 mb-1">Current: <span className="text-gray-600">{wpTitle || currentTitle || <em>empty</em>}</span></p>
+            <textarea
+              className={`w-full border rounded px-2 py-1.5 text-xs text-gray-800 resize-none focus:outline-none focus:ring-1 ${
+                titleOver ? 'border-red-300 focus:ring-red-300' : 'border-gray-300 focus:ring-amber-400'
+              }`}
+              rows={2}
+              value={newTitle}
+              onChange={e => setNewTitle(e.target.value)}
+              placeholder="Enter new SEO title…"
+            />
+            {titleResult && (
+              <p className={`text-xs mt-1 ${titleResult === 'success' ? 'text-green-600' : 'text-red-600'}`}>
+                {titleResult === 'success' ? '✓ Title updated in WordPress' : titleResult}
+              </p>
+            )}
+            <button
+              onClick={applyTitle}
+              disabled={applying || !newTitle.trim()}
+              className="mt-1 px-3 py-1 text-xs font-medium bg-amber-600 text-white rounded hover:bg-amber-700 disabled:opacity-50"
+            >
+              {applying === 'title' ? 'Applying…' : 'Apply Title'}
+            </button>
+          </div>
+
+          {/* H1 Heading editor */}
+          <div>
+            <label className="text-xs font-bold text-gray-700 block mb-1">Content H1 Heading</label>
+            <p className="text-xs text-gray-400 mb-1">Current: <span className="text-gray-600">{currentH1 || <em>none</em>}</span></p>
+            <textarea
+              className="w-full border border-gray-300 rounded px-2 py-1.5 text-xs text-gray-800 resize-none focus:outline-none focus:ring-1 focus:ring-amber-400"
+              rows={2}
+              value={newH1}
+              onChange={e => setNewH1(e.target.value)}
+              placeholder="Enter new H1 heading text…"
+            />
+            {h1Result && (
+              <p className={`text-xs mt-1 ${h1Result === 'success' ? 'text-green-600' : 'text-red-600'}`}>
+                {h1Result === 'success' ? '✓ Heading updated in WordPress' : h1Result}
+              </p>
+            )}
+            <button
+              onClick={applyH1}
+              disabled={applying || !newH1.trim() || newH1.trim() === currentH1}
+              className="mt-1 px-3 py-1 text-xs font-medium bg-amber-600 text-white rounded hover:bg-amber-700 disabled:opacity-50"
+            >
+              {applying === 'h1' ? 'Applying…' : 'Apply Heading'}
+            </button>
+          </div>
+
+          {/* Apply Both */}
+          <div className="pt-3 border-t border-amber-200 flex items-center gap-2">
+            <button
+              onClick={applyBoth}
+              disabled={applying}
+              className="px-4 py-1.5 text-xs font-bold bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50"
+            >
+              {applying === 'both' ? 'Applying…' : 'Apply Both to WordPress'}
+            </button>
+            <button onClick={onClose} className="px-3 py-1.5 text-xs text-gray-500 hover:text-gray-700">
+              Cancel
+            </button>
+          </div>
+        </div>
       )}
     </div>
   )

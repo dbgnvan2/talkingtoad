@@ -420,9 +420,9 @@ def _calculate_scores(img: ImageInfo, issues: list[Issue], cfg: dict) -> dict:
     """
     issue_codes = {i.code for i in issues}
 
-    # Performance score requires file_size_bytes and load_time_ms
-    # If we don't have this data, we can't evaluate performance → score = 0
-    has_perf_data = img.file_size_bytes is not None and img.load_time_ms is not None
+    # Performance score — file_size_bytes alone is enough to evaluate size issues.
+    # load_time_ms adds slow-load detection but isn't required.
+    has_perf_data = img.file_size_bytes is not None
     if has_perf_data:
         perf = 100
         if "IMG_OVERSIZED" in issue_codes:

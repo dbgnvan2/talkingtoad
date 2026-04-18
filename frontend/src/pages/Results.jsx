@@ -20,7 +20,8 @@ import {
   rescanUrl, analyzeHeadingSources, changeHeadingLevel, convertHeadingToBold,
   addVerifiedLink, removeVerifiedLink, addSuppressedCode, removeSuppressedCode,
   addExemptAnchorUrl, removeExemptAnchorUrl, markFixed,
-  getPageAdvisor, getSiteAdvisor
+  getPageAdvisor, getSiteAdvisor, verifyBrokenLinks, markBrokenLinkFixed, markIssueFixed, markAnchorFixed,
+  getIgnoredImagePatterns, addIgnoredImagePattern, removeIgnoredImagePattern
 } from '../api.js'
 
 const IMAGE_FIXABLE_CODES = new Set(['IMG_OVERSIZED', 'IMG_ALT_MISSING'])
@@ -141,7 +142,7 @@ export default function Results() {
         {!activeSeverity && activeTab >= 1 && activeTab <= CATEGORIES.length && (
           CATEGORIES[activeTab - 1].key === 'image'
             ? <ImageAnalysisPanel jobId={jobId} onPageClick={setFocusedPageUrl} onShowHelp={() => setShowCategoryHelp('image')} />
-            : <CategoryTab jobId={jobId} category={CATEGORIES[activeTab - 1]} onPageClick={setFocusedPageUrl} onShowHelp={() => setShowCategoryHelp(CATEGORIES[activeTab - 1].key)} />
+            : <CategoryTab jobId={jobId} category={CATEGORIES[activeTab - 1]} onPageClick={setFocusedPageUrl} onShowHelp={() => setShowCategoryHelp(CATEGORIES[activeTab - 1].key)} onSummaryRefresh={loadSummary} />
         )}
         {!activeSeverity && activeTab === TAB_BY_PAGE && (
           <ByPageTab jobId={jobId} onPageClick={setFocusedPageUrl} />
@@ -152,7 +153,7 @@ export default function Results() {
 
       {/* Slide-over Page Audit Panel (The "Right Side Panel") */}
       {focusedPageUrl && (
-        <PageFocusPanel jobId={jobId} pageUrl={focusedPageUrl} onClose={() => setFocusedPageUrl(null)} onRescan={() => loadSummary()} />
+        <PageFocusPanel jobId={jobId} pageUrl={focusedPageUrl} onClose={() => { setFocusedPageUrl(null); loadSummary() }} onRescan={() => loadSummary()} />
       )}
 
       {showPdfModal && (
@@ -501,14 +502,70 @@ function Top10Pages({ jobId, onPageClick }) {
   )
 }
 
-function CategoryTab({ jobId, category, onPageClick, onShowHelp }) {
+function CategoryTab({ jobId, category, onPageClick, onShowHelp, onSummaryRefresh }) {
   const [data, setData] = useState(null)
   const [expandedCode, setExpandedCode] = useState(null)
+  const [verifying, setVerifying] = useState(false)
+  const [verifyResult, setVerifyResult] = useState(null)
+  const [markingFixed, setMarkingFixed] = useState(false)
+  const [markedFixed, setMarkedFixed] = useState(new Set())
 
   useEffect(() => {
     setData(null)
+    setVerifyResult(null) // Reset verification when category changes
+    setMarkedFixed(new Set())
     getResultsByCategory(jobId, category.key).then(setData).catch(() => setData({ issues: [] }))
   }, [jobId, category.key])
+
+  async function handleVerifyBrokenLinks() {
+    setVerifying(true)
+    setVerifyResult(null)
+    setMarkedFixed(new Set())
+    try {
+      const result = await verifyBrokenLinks(jobId)
+      setVerifyResult(result)
+    } catch (err) {
+      setVerifyResult({ error: err.message })
+    } finally {
+      setVerifying(false)
+    }
+  }
+
+  async function handleMarkAllFixed() {
+    if (!verifyResult || verifyResult.fixed === 0) return
+    setMarkingFixed(true)
+    const fixedUrls = verifyResult.results.filter(r => r.is_fixed).map(r => r.url)
+    const newMarked = new Set(markedFixed)
+
+    for (const url of fixedUrls) {
+      try {
+        // Mark broken link as fixed (deletes from database)
+        await markBrokenLinkFixed(jobId, url)
+        newMarked.add(url)
+      } catch (err) {
+        console.error('Failed to mark as fixed:', url, err)
+      }
+    }
+
+    setMarkedFixed(newMarked)
+    setMarkingFixed(false)
+
+    // Refresh the data and health score
+    getResultsByCategory(jobId, category.key).then(setData).catch(() => {})
+    onSummaryRefresh?.()
+  }
+
+  async function handleMarkOneFixed(url) {
+    try {
+      await markBrokenLinkFixed(jobId, url)
+      setMarkedFixed(prev => new Set([...prev, url]))
+      // Refresh data and health score
+      getResultsByCategory(jobId, category.key).then(setData).catch(() => {})
+      onSummaryRefresh?.()
+    } catch (err) {
+      alert('Failed to mark as fixed: ' + err.message)
+    }
+  }
 
   if (!data) return <div className="py-20"><Spinner /></div>
 
@@ -523,14 +580,161 @@ function CategoryTab({ jobId, category, onPageClick, onShowHelp }) {
     <div className="space-y-4">
       <div className="flex items-center justify-between mb-6">
         <h2 className="text-xl font-bold text-gray-800">{category.label} Details</h2>
-        <button
-          onClick={onShowHelp}
-          className="w-8 h-8 flex items-center justify-center rounded-full bg-indigo-100 text-indigo-600 hover:bg-indigo-200 transition-all font-bold"
-          title={`Learn about ${category.label}`}
-        >
-          ?
-        </button>
+        <div className="flex items-center gap-3">
+          {category.key === 'broken_link' && (
+            <button
+              onClick={handleVerifyBrokenLinks}
+              disabled={verifying}
+              className="px-4 py-2 bg-blue-600 text-white text-sm font-bold rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2"
+              title="Quick check if broken links are still broken without a full crawl"
+            >
+              {verifying ? (
+                <>
+                  <span className="animate-spin">⟳</span>
+                  Checking...
+                </>
+              ) : (
+                <>🔍 Verify All</>
+              )}
+            </button>
+          )}
+          <button
+            onClick={onShowHelp}
+            className="w-8 h-8 flex items-center justify-center rounded-full bg-indigo-100 text-indigo-600 hover:bg-indigo-200 transition-all font-bold"
+            title={`Learn about ${category.label}`}
+          >
+            ?
+          </button>
+        </div>
       </div>
+
+      {/* Verification Results Panel */}
+      {verifyResult && (
+        <div className={`p-4 rounded-xl border ${verifyResult.error ? 'bg-red-50 border-red-200' : 'bg-blue-50 border-blue-200'}`}>
+          {verifyResult.error ? (
+            <p className="text-red-700 font-medium">Error: {verifyResult.error}</p>
+          ) : (
+            <>
+              <div className="flex items-center gap-4 mb-3">
+                <span className="text-lg font-bold text-gray-800">Verification Results</span>
+                <button
+                  onClick={() => setVerifyResult(null)}
+                  className="text-gray-400 hover:text-gray-600 text-xl ml-auto"
+                >×</button>
+              </div>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+                <div className="bg-white p-3 rounded-lg border border-gray-200 text-center">
+                  <p className="text-2xl font-bold text-gray-800">{verifyResult.total}</p>
+                  <p className="text-xs text-gray-500 uppercase font-bold">Total</p>
+                </div>
+                <div className="bg-white p-3 rounded-lg border border-green-200 text-center">
+                  <p className="text-2xl font-bold text-green-600">{verifyResult.fixed}</p>
+                  <p className="text-xs text-green-600 uppercase font-bold">Fixed</p>
+                </div>
+                <div className="bg-white p-3 rounded-lg border border-red-200 text-center">
+                  <p className="text-2xl font-bold text-red-600">{verifyResult.still_broken}</p>
+                  <p className="text-xs text-red-600 uppercase font-bold">Still Broken</p>
+                </div>
+                <div className="bg-white p-3 rounded-lg border border-yellow-200 text-center">
+                  <p className="text-2xl font-bold text-yellow-600">{verifyResult.errors}</p>
+                  <p className="text-xs text-yellow-600 uppercase font-bold">Errors</p>
+                </div>
+              </div>
+              {verifyResult.fixed > 0 && (
+                <div className="bg-green-100 border border-green-300 rounded-lg p-3">
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-sm font-bold text-green-800">✓ Fixed Links (now returning 2xx):</p>
+                    <button
+                      onClick={handleMarkAllFixed}
+                      disabled={markingFixed || verifyResult.results.filter(r => r.is_fixed).every(r => markedFixed.has(r.url))}
+                      className="px-3 py-1.5 bg-green-600 text-white text-xs font-bold rounded-lg hover:bg-green-700 disabled:opacity-50"
+                    >
+                      {markingFixed ? 'Marking...' : markedFixed.size === verifyResult.fixed ? '✓ All Marked' : 'Mark All as Fixed'}
+                    </button>
+                  </div>
+                  <ul className="space-y-2">
+                    {verifyResult.results.filter(r => r.is_fixed).map(r => (
+                      <li key={r.url} className="text-xs text-green-700 font-mono flex items-center gap-2 bg-white p-2 rounded-lg border border-green-200">
+                        <span className="text-green-500 text-lg">{markedFixed.has(r.url) ? '✅' : '✓'}</span>
+                        <span className="truncate flex-1" title={r.url}>{r.url}</span>
+                        <span className="text-green-600 text-[10px] flex-shrink-0">({r.previous_status} → {r.current_status})</span>
+                        {!markedFixed.has(r.url) && (
+                          <button
+                            onClick={() => handleMarkOneFixed(r.url)}
+                            className="px-2 py-1 bg-green-500 text-white text-[10px] font-bold rounded hover:bg-green-600 flex-shrink-0"
+                          >
+                            Mark Fixed
+                          </button>
+                        )}
+                        {markedFixed.has(r.url) && (
+                          <span className="text-[10px] font-bold text-green-600 flex-shrink-0">Marked ✓</span>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      )}
+      {/* Discovery info panels for sitemap and robots */}
+      {category.key === 'sitemap' && data.summary?.sitemap && (
+        <div className="p-4 bg-white rounded-2xl border border-gray-200 mb-4">
+          <h3 className="text-sm font-bold text-gray-700 mb-3">Sitemap</h3>
+          {data.summary.sitemap.found ? (
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <span className="text-green-500 text-lg">✓</span>
+                <span className="text-sm text-gray-700">Sitemap found</span>
+              </div>
+              {data.summary.sitemap.url && (
+                <p className="text-xs text-gray-500 ml-7">
+                  URL: <a href={data.summary.sitemap.url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline font-mono">{data.summary.sitemap.url}</a>
+                </p>
+              )}
+              <p className="text-xs text-gray-500 ml-7">
+                {data.summary.sitemap.url_count} URLs in sitemap
+              </p>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2">
+              <span className="text-red-500 text-lg">✗</span>
+              <span className="text-sm text-gray-700">No sitemap found</span>
+            </div>
+          )}
+        </div>
+      )}
+
+      {category.key === 'crawlability' && data.summary?.robots_txt && (
+        <div className="p-4 bg-white rounded-2xl border border-gray-200 mb-4">
+          <h3 className="text-sm font-bold text-gray-700 mb-3">robots.txt</h3>
+          {data.summary.robots_txt.found ? (
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <span className="text-green-500 text-lg">✓</span>
+                <span className="text-sm text-gray-700">robots.txt found</span>
+              </div>
+              {data.summary.robots_txt.rules?.length > 0 && (
+                <details className="ml-7">
+                  <summary className="text-xs text-gray-500 cursor-pointer hover:text-gray-700">
+                    {data.summary.robots_txt.rules.length} rules
+                  </summary>
+                  <pre className="mt-2 p-3 bg-gray-50 rounded-lg text-xs text-gray-600 font-mono overflow-x-auto max-h-48 overflow-y-auto">
+                    {data.summary.robots_txt.rules.join('\n')}
+                  </pre>
+                </details>
+              )}
+            </div>
+          ) : (
+            <div className="flex items-center gap-2">
+              <span className="text-yellow-500 text-lg">!</span>
+              <span className="text-sm text-gray-700">No robots.txt found</span>
+            </div>
+          )}
+        </div>
+      )}
+
       {Object.values(groups).length === 0 ? (
         <div className="py-12 bg-white rounded-2xl border border-gray-100 text-center text-gray-400 font-medium font-serif italic">No issues found in this category.</div>
       ) : (
@@ -559,7 +763,16 @@ function CategoryTab({ jobId, category, onPageClick, onShowHelp }) {
                       <h4 className="text-sm font-bold text-gray-700 mb-4">Broken URLs — click "Show Source Pages" to see where these links are</h4>
                       <div className="space-y-3">
                         {group.pages.map(brokenUrl => (
-                          <BrokenLinkItem key={brokenUrl} jobId={jobId} brokenUrl={brokenUrl} />
+                          <BrokenLinkItem
+                            key={brokenUrl}
+                            jobId={jobId}
+                            brokenUrl={brokenUrl}
+                            onMarkedFixed={() => {
+                              // Refresh category data and health score after marking fixed
+                              getResultsByCategory(jobId, category.key).then(setData).catch(() => {})
+                              onSummaryRefresh?.()
+                            }}
+                          />
                         ))}
                       </div>
                     </>
@@ -586,7 +799,7 @@ function CategoryTab({ jobId, category, onPageClick, onShowHelp }) {
   )
 }
 
-function BrokenLinkItem({ jobId, brokenUrl }) {
+function BrokenLinkItem({ jobId, brokenUrl, onMarkedFixed }) {
   const [expanded, setExpanded] = useState(false)
   const [loading, setLoading] = useState(false)
   const [sources, setSources] = useState(null)
@@ -594,6 +807,21 @@ function BrokenLinkItem({ jobId, brokenUrl }) {
   const [rescanning, setRescanning] = useState(null)
   const [rescanned, setRescanned] = useState(new Set())
   const [manualUrl, setManualUrl] = useState('')
+  const [markingFixed, setMarkingFixed] = useState(false)
+  const [isMarkedFixed, setIsMarkedFixed] = useState(false)
+
+  async function handleMarkFixed() {
+    setMarkingFixed(true)
+    try {
+      await markBrokenLinkFixed(jobId, brokenUrl)
+      setIsMarkedFixed(true)
+      if (onMarkedFixed) onMarkedFixed(brokenUrl)
+    } catch (err) {
+      alert('Failed to mark as fixed: ' + err.message)
+    } finally {
+      setMarkingFixed(false)
+    }
+  }
 
   async function loadSources() {
     if (sources) {
@@ -633,6 +861,16 @@ function BrokenLinkItem({ jobId, brokenUrl }) {
     }
   }
 
+  if (isMarkedFixed) {
+    return (
+      <div className="border border-green-200 rounded-xl overflow-hidden bg-green-50 px-4 py-3 flex items-center gap-3">
+        <span className="text-green-500 text-xl">✓</span>
+        <span className="font-mono text-sm text-green-700 truncate flex-1 line-through">{brokenUrl}</span>
+        <span className="text-sm font-bold text-green-600">Marked as Fixed</span>
+      </div>
+    )
+  }
+
   return (
     <div className="border border-red-200 rounded-xl overflow-hidden bg-white">
       {/* Broken URL header */}
@@ -647,6 +885,14 @@ function BrokenLinkItem({ jobId, brokenUrl }) {
         >
           Test ↗
         </a>
+        <button
+          onClick={handleMarkFixed}
+          disabled={markingFixed}
+          className="px-3 py-2 bg-green-500 text-white text-sm font-bold rounded-lg hover:bg-green-600 disabled:opacity-50"
+          title="Mark this broken link as fixed (removes from issue list)"
+        >
+          {markingFixed ? '...' : '✓ Fixed'}
+        </button>
         <button
           onClick={loadSources}
           disabled={loading}
@@ -803,20 +1049,24 @@ function SettingsToolbar({ jobId, pageUrl, onUpdate }) {
   const [verifiedLinks, setVerifiedLinks] = useState([])
   const [suppressedCodes, setSuppressedCodes] = useState([])
   const [exemptAnchors, setExemptAnchors] = useState([])
+  const [ignoredImages, setIgnoredImages] = useState([])
+  const [newPattern, setNewPattern] = useState('')
   const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState('ai')
 
   useEffect(() => {
     async function loadSettings() {
       try {
-        const [vl, sc, ea] = await Promise.all([
+        const [vl, sc, ea, ii] = await Promise.all([
           getVerifiedLinks().catch(() => ({ links: [] })),
           getSuppressedCodes().catch(() => ({ codes: [] })),
-          getExemptAnchorUrls().catch(() => ({ urls: [] }))
+          getExemptAnchorUrls().catch(() => ({ urls: [] })),
+          getIgnoredImagePatterns().catch(() => [])
         ])
         setVerifiedLinks(vl.links || [])
         setSuppressedCodes(sc.codes || [])
         setExemptAnchors(ea.urls || [])
+        setIgnoredImages(Array.isArray(ii) ? ii : [])
       } finally {
         setLoading(false)
       }
@@ -866,10 +1116,33 @@ function SettingsToolbar({ jobId, pageUrl, onUpdate }) {
     }
   }
 
+  async function handleAddIgnoredImage() {
+    const pattern = newPattern.trim()
+    if (!pattern) return
+    try {
+      await addIgnoredImagePattern(pattern)
+      setIgnoredImages(prev => [{ pattern, note: '', added_at: new Date().toISOString() }, ...prev])
+      setNewPattern('')
+      onUpdate?.()
+    } catch (err) {
+      alert('Failed to add: ' + err.message)
+    }
+  }
+
+  async function handleRemoveIgnoredImage(pattern) {
+    try {
+      await removeIgnoredImagePattern(pattern)
+      setIgnoredImages(prev => prev.filter(i => i.pattern !== pattern))
+      onUpdate?.()
+    } catch (err) {
+      alert('Failed to remove: ' + err.message)
+    }
+  }
+
   return (
     <div className="mt-4 pt-4 border-t border-gray-100 animate-slide-in">
-      <div className="flex gap-2 mb-3">
-        {['ai', 'verified', 'suppressed', 'exempt'].map(tab => (
+      <div className="flex gap-2 mb-3 flex-wrap">
+        {['ai', 'verified', 'suppressed', 'exempt', 'images'].map(tab => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
@@ -877,7 +1150,7 @@ function SettingsToolbar({ jobId, pageUrl, onUpdate }) {
               activeTab === tab ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
             }`}
           >
-            {tab === 'ai' ? 'AI Test' : tab === 'verified' ? `Verified (${verifiedLinks.length})` : tab === 'suppressed' ? `Suppressed (${suppressedCodes.length})` : `Exempt (${exemptAnchors.length})`}
+            {tab === 'ai' ? 'AI Test' : tab === 'verified' ? `Verified (${verifiedLinks.length})` : tab === 'suppressed' ? `Suppressed (${suppressedCodes.length})` : tab === 'exempt' ? `Exempt (${exemptAnchors.length})` : `Ignored Imgs (${ignoredImages.length})`}
           </button>
         ))}
       </div>
@@ -933,6 +1206,39 @@ function SettingsToolbar({ jobId, pageUrl, onUpdate }) {
           ))}
         </div>
       )}
+
+      {activeTab === 'images' && (
+        <div className="space-y-2">
+          <p className="text-xs text-gray-500">Images matching these patterns are excluded from issue checks (substring match).</p>
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={newPattern}
+              onChange={e => setNewPattern(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && handleAddIgnoredImage()}
+              placeholder="e.g. /location.svg or /uploads/2024/04/"
+              className="flex-1 border border-gray-300 rounded-lg px-3 py-1.5 text-xs focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 outline-none"
+            />
+            <button
+              onClick={handleAddIgnoredImage}
+              disabled={!newPattern.trim()}
+              className="px-3 py-1.5 text-xs font-bold bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50"
+            >
+              Add
+            </button>
+          </div>
+          <div className="max-h-32 overflow-y-auto space-y-1">
+            {loading ? <Spinner /> : ignoredImages.length === 0 ? (
+              <p className="text-xs text-gray-400">No ignored image patterns</p>
+            ) : ignoredImages.map(item => (
+              <div key={item.pattern} className="flex items-center justify-between p-2 bg-white rounded-lg text-xs">
+                <span className="truncate flex-1 text-gray-600 font-mono">{item.pattern}</span>
+                <button onClick={() => handleRemoveIgnoredImage(item.pattern)} className="text-red-500 hover:text-red-700 ml-2 flex-shrink-0">×</button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -943,10 +1249,25 @@ function PageDetail({ jobId, pageUrl, onRescan }) {
   const [expandedSections, setExpandedSections] = useState({ metadata: false, headings: true, issues: true })
   const [aiRecommendations, setAiRecommendations] = useState(null)
   const [loadingAI, setLoadingAI] = useState(false)
+  const [rescanning, setRescanning] = useState(false)
 
   const load = useCallback(() => {
     getPageIssues(jobId, pageUrl).then(setData).catch(() => {})
   }, [jobId, pageUrl])
+
+  // After a WP fix, rescan the page to update issues in the database
+  const rescanAfterFix = useCallback(async () => {
+    setRescanning(true)
+    try {
+      await rescanUrl(jobId, pageUrl)
+      load()
+      onRescan?.()
+    } catch (err) {
+      console.error('Auto-rescan after fix failed:', err)
+    } finally {
+      setRescanning(false)
+    }
+  }, [jobId, pageUrl, load, onRescan])
 
   useEffect(() => { load() }, [load])
 
@@ -984,6 +1305,14 @@ function PageDetail({ jobId, pageUrl, onRescan }) {
 
   return (
     <div className="space-y-6">
+      {/* Rescan indicator */}
+      {rescanning && (
+        <div className="flex items-center gap-2 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+          <span className="animate-spin text-blue-600">&#8635;</span>
+          <span className="text-sm text-blue-700 font-medium">Rescanning page to update issues...</span>
+        </div>
+      )}
+
       {/* AI Recommendations Button */}
       <div className="flex justify-end">
         <button
@@ -1031,7 +1360,7 @@ function PageDetail({ jobId, pageUrl, onRescan }) {
           <span className="text-[9px] px-2 py-0.5 bg-indigo-100 text-indigo-600 rounded-full font-bold">{pageData.headings_outline.length} headings</span>
         )}
       >
-        <HeadingsPanel jobId={jobId} pageUrl={pageUrl} headings={pageData.headings_outline || []} onUpdate={() => { load(); onRescan?.() }} />
+        <HeadingsPanel jobId={jobId} pageUrl={pageUrl} headings={pageData.headings_outline || []} onUpdate={rescanAfterFix} />
       </CollapsibleSection>
 
       {/* Issues Section */}
@@ -1062,7 +1391,7 @@ function PageDetail({ jobId, pageUrl, onRescan }) {
                       pageUrl={pageUrl}
                       isOpen={openFixCode === `${iss.issue_code}-${idx}`}
                       onToggleFix={() => setOpenFixCode(openFixCode === `${iss.issue_code}-${idx}` ? null : `${iss.issue_code}-${idx}`)}
-                      onFixComplete={() => { setOpenFixCode(null); load(); onRescan?.() }}
+                      onFixComplete={() => { setOpenFixCode(null); rescanAfterFix() }}
                     />
                   ))}
                 </div>
@@ -1138,7 +1467,11 @@ function HeadingsPanel({ jobId, pageUrl, headings, onUpdate }) {
   async function handleChangeLevel(heading, newLevel) {
     setActionLoading(true)
     try {
-      await changeHeadingLevel(pageUrl, heading.text, heading.level, newLevel)
+      const result = await changeHeadingLevel(pageUrl, heading.text, heading.level, newLevel)
+      if (!result.success) {
+        alert('Failed to change heading level: ' + (result.error || 'Unknown error'))
+        return
+      }
       setEditingIdx(null)
       onUpdate?.()
     } catch (err) {
@@ -1151,7 +1484,11 @@ function HeadingsPanel({ jobId, pageUrl, headings, onUpdate }) {
   async function handleConvertToBold(heading) {
     setActionLoading(true)
     try {
-      await convertHeadingToBold(pageUrl, heading.text, heading.level)
+      const result = await convertHeadingToBold(pageUrl, heading.text, heading.level)
+      if (!result.success) {
+        alert('Failed to convert to bold: ' + (result.error || 'Unknown error'))
+        return
+      }
       setEditingIdx(null)
       onUpdate?.()
     } catch (err) {
@@ -1267,6 +1604,8 @@ function IssueCard({ issue: iss, jobId, pageUrl, isOpen, onToggleFix, onFixCompl
   const [showHelp, setShowHelp] = useState(false)
   const [aiResult, setAiResult] = useState(null)
   const [aiLoading, setAiLoading] = useState(false)
+  // Per-link fix state for empty anchors: { [idx]: { text, loading, fixed, error } }
+  const [anchorFixes, setAnchorFixes] = useState({})
 
   const canFix = FIXABLE_CODES.has(iss.issue_code) || IMAGE_FIXABLE_CODES.has(iss.issue_code) || FIXABLE_LINK_CODES.has(iss.issue_code)
   const isBrokenLink = ['BROKEN_LINK_404', 'BROKEN_LINK_410', 'BROKEN_LINK_5XX', 'BROKEN_LINK_503', 'EXTERNAL_LINK_TIMEOUT', 'EXTERNAL_LINK_SKIPPED'].includes(iss.issue_code)
@@ -1322,14 +1661,40 @@ function IssueCard({ issue: iss, jobId, pageUrl, isOpen, onToggleFix, onFixCompl
   async function handleMarkFixed() {
     setActionLoading('markfixed')
     try {
-      await markFixed(jobId, pageUrl, [iss.issue_code])
-      alert('Issue marked as manually fixed.')
+      // Use markIssueFixed to actually delete from database
+      await markIssueFixed(jobId, pageUrl, [iss.issue_code])
+      alert('Issue marked as fixed and removed from report.')
       onFixComplete?.()
     } catch (err) {
       alert('Failed to mark as fixed: ' + err.message)
     } finally {
       setActionLoading(null)
     }
+  }
+
+  // Generate suggested anchor text from URL
+  function suggestAnchorText(url) {
+    try {
+      const u = new URL(url)
+      // Extract path, remove extension, convert to readable text
+      let path = u.pathname.replace(/\/$/, '').split('/').pop() || u.hostname
+      path = path.replace(/[-_]/g, ' ').replace(/\.[^.]+$/, '')
+      // Capitalize first letter
+      return path.charAt(0).toUpperCase() + path.slice(1)
+    } catch {
+      return 'Link'
+    }
+  }
+
+  // Generate the full <a> tag with suggested text
+  function suggestFullLink(url) {
+    const text = suggestAnchorText(url)
+    return `<a href="${url}">${text}</a>`
+  }
+
+  function copyToClipboard(text) {
+    navigator.clipboard.writeText(text)
+    alert('Copied to clipboard!')
   }
 
   async function handleAiAnalyze() {
@@ -1376,8 +1741,176 @@ function IssueCard({ issue: iss, jobId, pageUrl, isOpen, onToggleFix, onFixCompl
       <p className="text-gray-500 leading-relaxed mb-1" style={getFontClass('bodySize')}>{iss.description}</p>
       <p className="font-bold text-green-600 italic" style={getFontClass('bodySize')}>Recommendation: {iss.recommendation}</p>
 
-      {/* Extra data display */}
-      {iss.extra && Object.keys(iss.extra).length > 0 && (
+      {/* Special display for Empty Anchor issues */}
+      {isEmptyAnchor && (iss.extra?.empty_anchors || iss.extra?.empty_anchor_hrefs) && (
+        <div className="mt-3 p-4 bg-orange-50 border border-orange-200 rounded-lg">
+          <p className="text-sm font-bold text-orange-800 mb-3">
+            {iss.extra.empty_anchor_count} link{iss.extra.empty_anchor_count !== 1 ? 's' : ''} with empty text:
+          </p>
+          <div className="space-y-3">
+            {(iss.extra.empty_anchors || iss.extra.empty_anchor_hrefs.map(h => ({ href: h }))).map((anchor, idx) => {
+              const href = typeof anchor === 'string' ? anchor : anchor.href
+              const ariaLabel = typeof anchor === 'object' ? anchor.aria_label : null
+              const fix = anchorFixes[idx] || {}
+
+              if (fix.fixed) {
+                return (
+                  <div key={idx} className="p-3 bg-green-50 rounded-lg border border-green-200 flex items-center gap-2">
+                    <span className="text-green-500 text-lg">✓</span>
+                    <span className="font-mono text-sm text-green-700 truncate flex-1 line-through">{href}</span>
+                    <span className="text-sm font-bold text-green-600">Marked Fixed</span>
+                  </div>
+                )
+              }
+
+              return (
+                <div key={idx} className="p-3 bg-white rounded-lg border border-orange-100">
+                  <div className="flex items-start gap-2">
+                    <span className="text-orange-500 font-bold">{idx + 1}.</span>
+                    <div className="flex-1 min-w-0">
+                      <a
+                        href={href}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-sm font-mono text-blue-600 hover:underline break-all"
+                      >
+                        {href}
+                      </a>
+                      {ariaLabel && (
+                        <div className="flex items-center gap-2 mt-1">
+                          <span className="text-xs text-purple-600 font-bold">aria-label:</span>
+                          <code className="px-2 py-0.5 bg-purple-50 text-purple-800 rounded text-sm">{ariaLabel}</code>
+                        </div>
+                      )}
+                      <div className="flex items-center gap-2 mt-1">
+                        <span className="text-xs text-gray-500">Suggested:</span>
+                        <code className="px-2 py-0.5 bg-green-100 text-green-800 rounded text-xs break-all">
+                          {suggestFullLink(href)}
+                        </code>
+                        <button
+                          onClick={() => copyToClipboard(suggestFullLink(href))}
+                          className="px-2 py-0.5 text-xs bg-gray-200 text-gray-700 rounded hover:bg-gray-300 flex-shrink-0"
+                          title="Copy link HTML"
+                        >
+                          Copy
+                        </button>
+                      </div>
+                    </div>
+                    {fix.error && (
+                      <p className="text-xs text-red-600 font-medium flex-shrink-0">{fix.error}</p>
+                    )}
+                    <button
+                      onClick={async () => {
+                        setAnchorFixes(prev => ({ ...prev, [idx]: { loading: true, error: null } }))
+                        try {
+                          const result = await markAnchorFixed(jobId, pageUrl, href)
+                          if (result.success) {
+                            setAnchorFixes(prev => ({ ...prev, [idx]: { loading: false, fixed: true } }))
+                            if (result.remaining === 0) {
+                              // Issue fully resolved — refresh
+                              onFixComplete?.()
+                            }
+                          } else {
+                            setAnchorFixes(prev => ({ ...prev, [idx]: { loading: false, error: result.error || 'Failed' } }))
+                          }
+                        } catch (err) {
+                          setAnchorFixes(prev => ({ ...prev, [idx]: { loading: false, error: err.message } }))
+                        }
+                      }}
+                      disabled={fix.loading}
+                      className="px-3 py-1.5 bg-green-600 text-white text-xs font-bold rounded-lg hover:bg-green-700 disabled:opacity-50 flex-shrink-0"
+                    >
+                      {fix.loading ? '...' : '✓ Fixed'}
+                    </button>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+          <div className="mt-4 pt-3 border-t border-orange-200">
+            <button
+              onClick={handleMarkFixed}
+              disabled={actionLoading === 'markfixed'}
+              className="w-full py-2 bg-green-600 text-white rounded-lg text-sm font-bold hover:bg-green-700 disabled:opacity-50"
+            >
+              {actionLoading === 'markfixed' ? 'Marking...' : '✓ Mark All as Fixed'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Duplicate issue display — show which pages share the same title/description */}
+      {iss.extra?.duplicate_urls?.length > 0 && (
+        <div className="mt-3 p-4 bg-amber-50 border border-amber-200 rounded-lg">
+          <p className="text-sm font-bold text-amber-800 mb-2">
+            Also used on {iss.extra.duplicate_urls.length} other page{iss.extra.duplicate_urls.length !== 1 ? 's' : ''}:
+          </p>
+          {iss.extra.title && (
+            <p className="text-xs text-gray-600 mb-1"><span className="font-bold">Title:</span> {iss.extra.title}</p>
+          )}
+          {iss.extra.description && (
+            <p className="text-xs text-gray-600 mb-2"><span className="font-bold">Description:</span> {iss.extra.description}</p>
+          )}
+          <ul className="space-y-1">
+            {iss.extra.duplicate_urls.map((url, idx) => (
+              <li key={idx} className="flex items-center gap-2 p-2 bg-white rounded-lg border border-amber-100">
+                <span className="text-amber-500 font-bold text-xs">{idx + 1}.</span>
+                <a
+                  href={url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-sm font-mono text-blue-600 hover:underline break-all flex-1"
+                >
+                  {url}
+                </a>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {/* Code breakdown display for SEMANTIC_DENSITY_LOW */}
+      {iss.extra?.breakdown && (
+        <div className="mt-3 p-4 bg-orange-50 border border-orange-200 rounded-lg">
+          <div className="flex items-center gap-2 mb-3">
+            <span className="text-sm font-bold text-orange-800">
+              Text-to-HTML Ratio: {iss.extra.ratio_pct || `${(iss.extra.ratio * 100).toFixed(1)}%`}
+            </span>
+            <span className="text-xs text-gray-500">(target: above 10%)</span>
+          </div>
+          {iss.extra.diagnosis && (
+            <p className="text-sm text-orange-700 mb-3 italic">{iss.extra.diagnosis}</p>
+          )}
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+            {[
+              { label: 'Total Page', value: iss.extra.breakdown.html_total_kb, color: 'gray' },
+              { label: 'Visible Text', value: iss.extra.breakdown.text_kb, color: 'green' },
+              { label: 'HTML Markup', value: iss.extra.breakdown.markup_kb, color: 'blue' },
+              { label: 'Scripts', value: iss.extra.breakdown.script_kb, color: 'red' },
+              { label: 'Styles', value: iss.extra.breakdown.style_kb, color: 'purple' },
+              { label: 'SVG Graphics', value: iss.extra.breakdown.svg_kb, color: 'amber' },
+            ].filter(p => p.value > 0).map(p => (
+              <div key={p.label} className={`p-2 bg-white rounded-lg border border-${p.color}-200 text-center`}>
+                <p className={`text-lg font-bold text-${p.color}-600`}>{p.value} KB</p>
+                <p className={`text-[10px] text-${p.color}-500 uppercase font-bold`}>{p.label}</p>
+              </div>
+            ))}
+          </div>
+          {/* Visual bar */}
+          {iss.extra.breakdown.html_total_kb > 0 && (
+            <div className="mt-3 w-full h-4 rounded-full overflow-hidden flex" title="Page composition">
+              <div className="bg-green-400 h-full" style={{ width: `${(iss.extra.breakdown.text_kb / iss.extra.breakdown.html_total_kb) * 100}%` }} title={`Text: ${iss.extra.breakdown.text_kb} KB`} />
+              <div className="bg-blue-400 h-full" style={{ width: `${(iss.extra.breakdown.markup_kb / iss.extra.breakdown.html_total_kb) * 100}%` }} title={`Markup: ${iss.extra.breakdown.markup_kb} KB`} />
+              <div className="bg-red-400 h-full" style={{ width: `${(iss.extra.breakdown.script_kb / iss.extra.breakdown.html_total_kb) * 100}%` }} title={`Scripts: ${iss.extra.breakdown.script_kb} KB`} />
+              <div className="bg-purple-400 h-full" style={{ width: `${(iss.extra.breakdown.style_kb / iss.extra.breakdown.html_total_kb) * 100}%` }} title={`Styles: ${iss.extra.breakdown.style_kb} KB`} />
+              <div className="bg-amber-400 h-full" style={{ width: `${(iss.extra.breakdown.svg_kb / iss.extra.breakdown.html_total_kb) * 100}%` }} title={`SVG: ${iss.extra.breakdown.svg_kb} KB`} />
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Extra data display (for non-empty-anchor, non-duplicate, non-breakdown issues) */}
+      {!isEmptyAnchor && !iss.extra?.duplicate_urls && !iss.extra?.breakdown && iss.extra && Object.keys(iss.extra).length > 0 && (
         <div className="mt-2 p-3 bg-gray-100 rounded-lg">
           <p className="text-xs font-bold text-gray-400 uppercase mb-1">Details</p>
           {iss.extra.link_url && <p className="text-sm text-gray-600 font-mono truncate">Link: {iss.extra.link_url}</p>}
@@ -1462,7 +1995,14 @@ function IssueCard({ issue: iss, jobId, pageUrl, isOpen, onToggleFix, onFixCompl
       {isOpen && (
         <div className="mt-4 pt-4 border-t border-gray-200 animate-slide-in">
           {isImageIssue ? (
-            <ImageFixPanel jobId={jobId} imageUrl={iss.extra?.image_url || pageUrl} issueCode={iss.issue_code} onClose={onFixComplete} />
+            <ImageFixPanel
+              jobId={jobId}
+              pageUrl={pageUrl}
+              imageUrl={iss.extra?.image_url || (iss.extra?.img_missing_alt_srcs?.[0]) || pageUrl}
+              issueCode={iss.issue_code}
+              allImageUrls={iss.extra?.img_missing_alt_srcs}
+              onClose={onFixComplete}
+            />
           ) : FIXABLE_LINK_CODES.has(iss.issue_code) ? (
             <FixBrokenLinkPanel
               jobId={jobId}
@@ -1470,7 +2010,7 @@ function IssueCard({ issue: iss, jobId, pageUrl, isOpen, onToggleFix, onFixCompl
               onClose={onFixComplete}
             />
           ) : (
-            <FixInlinePanel jobId={jobId} pageUrl={pageUrl} issueCode={iss.issue_code} onClose={onFixComplete} />
+            <FixInlinePanel jobId={jobId} pageUrl={pageUrl} issueCode={iss.issue_code} issueExtra={iss.extra} onClose={onFixComplete} />
           )}
         </div>
       )}
@@ -1589,7 +2129,8 @@ function LLMSTxtGenerator({ jobId }) {
   )
 }
 
-function ImageFixPanel({ jobId, imageUrl, issueCode, onClose }) {
+function ImageFixPanel({ jobId, pageUrl, imageUrl: initialImageUrl, issueCode, allImageUrls, onClose }) {
+  const [selectedUrl, setSelectedUrl] = useState(initialImageUrl)
   const [imageInfo, setImageInfo] = useState(null)
   const [loading, setLoading] = useState(true)
   const [altText, setAltText] = useState('')
@@ -1599,18 +2140,44 @@ function ImageFixPanel({ jobId, imageUrl, issueCode, onClose }) {
   const [saving, setSaving] = useState(false)
   const [optimizing, setOptimizing] = useState(false)
   const [error, setError] = useState(null)
+  const [markingFixed, setMarkingFixed] = useState(false)
+  const [markedFixed, setMarkedFixed] = useState(false)
 
+  const imageUrl = selectedUrl
   const isOversized = issueCode === 'IMG_OVERSIZED'
   const isAltMissing = issueCode === 'IMG_ALT_MISSING'
+  const hasMultipleImages = allImageUrls && allImageUrls.length > 1
+
+  async function handleMarkFixed() {
+    setMarkingFixed(true)
+    try {
+      await markIssueFixed(jobId, imageUrl, [issueCode])
+      setMarkedFixed(true)
+      // Auto-close after a short delay
+      setTimeout(() => onClose?.(), 1500)
+    } catch (err) {
+      alert('Failed to mark as fixed: ' + err.message)
+    } finally {
+      setMarkingFixed(false)
+    }
+  }
 
   useEffect(() => {
+    setLoading(true)
+    setError(null)
+    setImageInfo(null)
     async function loadInfo() {
       try {
-        const info = await getImageInfo(imageUrl)
-        setImageInfo(info)
-        setAltText(info.alt_text || '')
-        setTitle(info.title || '')
-        setCaption(info.caption || '')
+        const info = await getImageInfo(selectedUrl)
+        if (info.success === false) {
+          setError(info.error || 'Image not found in WordPress Media Library')
+          setImageInfo(null)
+        } else {
+          setImageInfo(info)
+          setAltText(info.alt_text || '')
+          setTitle(info.title || '')
+          setCaption(info.caption || '')
+        }
       } catch (err) {
         setError('Failed to load image info: ' + err.message)
       } finally {
@@ -1618,13 +2185,21 @@ function ImageFixPanel({ jobId, imageUrl, issueCode, onClose }) {
       }
     }
     loadInfo()
-  }, [imageUrl])
+  }, [selectedUrl])
 
   async function handleSaveMeta() {
     setSaving(true)
     setError(null)
     try {
       await updateImageMeta(imageUrl, { altText, title, caption, jobId })
+      // Mark the image issue as fixed in the database so it drops from the list
+      if (pageUrl && issueCode) {
+        try {
+          await markIssueFixed(jobId, pageUrl, [issueCode])
+        } catch (_) {
+          // Non-critical — the WP update succeeded
+        }
+      }
       alert('Image metadata updated successfully!')
       onClose?.()
     } catch (err) {
@@ -1665,14 +2240,40 @@ function ImageFixPanel({ jobId, imageUrl, issueCode, onClose }) {
     <div className="bg-blue-50 border border-blue-100 rounded-2xl p-5 space-y-4">
       <p className="text-base font-black text-blue-800 uppercase tracking-widest">Image Intelligence Engine</p>
 
-      {error && (
-        <div className="p-3 bg-red-100 border border-red-200 rounded-lg text-sm text-red-700">{error}</div>
+      {/* Image selector for multi-image issues (e.g. IMG_ALT_MISSING with multiple images) */}
+      {hasMultipleImages && (
+        <div className="p-3 bg-white rounded-lg border border-blue-200">
+          <p className="text-xs font-bold text-blue-700 uppercase mb-2">{allImageUrls.length} images — select one to fix:</p>
+          <div className="space-y-1 max-h-40 overflow-y-auto">
+            {allImageUrls.map((url, idx) => (
+              <button
+                key={idx}
+                onClick={() => setSelectedUrl(url)}
+                className={`w-full text-left flex items-center gap-2 px-2 py-1.5 rounded text-xs transition-colors ${
+                  url === selectedUrl
+                    ? 'bg-blue-100 border border-blue-300 text-blue-800 font-bold'
+                    : 'bg-gray-50 border border-gray-200 text-gray-600 hover:bg-gray-100'
+                }`}
+              >
+                <img src={url} alt="" className="w-6 h-6 object-cover rounded flex-shrink-0" />
+                <span className="font-mono truncate">{url.split('/').pop()}</span>
+              </button>
+            ))}
+          </div>
+        </div>
       )}
 
-      {/* Image preview and info */}
-      {imageInfo && (
-        <div className="flex gap-4">
-          <img src={imageUrl} alt="" className="w-24 h-24 object-cover rounded-lg border border-blue-200" />
+      {error && (
+        <div className="p-3 bg-yellow-100 border border-yellow-300 rounded-lg text-sm text-yellow-800">
+          <p className="font-bold mb-1">⚠️ {error}</p>
+          <p className="text-xs">This may be an external image or the URL doesn't match WordPress Media Library. You can still view the image below.</p>
+        </div>
+      )}
+
+      {/* Image preview - always show */}
+      <div className="flex gap-4">
+        <img src={imageUrl} alt="" className="w-24 h-24 object-cover rounded-lg border border-blue-200" />
+        {imageInfo ? (
           <div className="text-sm text-gray-600 space-y-1">
             <p><strong>Filename:</strong> {imageInfo.filename || 'Unknown'}</p>
             {imageInfo.width && imageInfo.height && (
@@ -1684,51 +2285,94 @@ function ImageFixPanel({ jobId, imageUrl, issueCode, onClose }) {
             {imageInfo.mime_type && (
               <p><strong>Type:</strong> {imageInfo.mime_type}</p>
             )}
+            {imageInfo.edit_url && (
+              <a href={imageInfo.edit_url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
+                Edit in WordPress →
+              </a>
+            )}
           </div>
+        ) : (
+          <div className="text-sm text-gray-500">
+            <p className="font-mono text-xs break-all">{imageUrl}</p>
+            <p className="mt-2 italic">WordPress metadata unavailable</p>
+          </div>
+        )}
+      </div>
+
+      {/* Alt text / metadata editing - only when image found in WP */}
+      {imageInfo ? (
+        <div className="space-y-3">
+          <p className="text-sm font-bold text-blue-700">Image Metadata</p>
+          <div>
+            <label className="block text-sm font-bold text-blue-600 uppercase mb-1">Alt Text</label>
+            <input
+              type="text"
+              value={altText}
+              onChange={e => setAltText(e.target.value)}
+              placeholder="Describe this image for screen readers..."
+              className="w-full border border-blue-200 rounded-lg text-base p-3 bg-white focus:ring-2 focus:ring-blue-100 outline-none"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-bold text-blue-600 uppercase mb-1">Title</label>
+            <input
+              type="text"
+              value={title}
+              onChange={e => setTitle(e.target.value)}
+              placeholder="Image title..."
+              className="w-full border border-blue-200 rounded-lg text-base p-3 bg-white focus:ring-2 focus:ring-blue-100 outline-none"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-bold text-blue-600 uppercase mb-1">Caption</label>
+            <input
+              type="text"
+              value={caption}
+              onChange={e => setCaption(e.target.value)}
+              placeholder="Caption (optional)..."
+              className="w-full border border-blue-200 rounded-lg text-base p-3 bg-white focus:ring-2 focus:ring-blue-100 outline-none"
+            />
+          </div>
+          <button
+            onClick={handleSaveMeta}
+            disabled={saving}
+            className="w-full py-3 bg-blue-600 text-white rounded-lg text-base font-bold hover:bg-blue-700 disabled:opacity-50"
+          >
+            {saving ? 'Saving...' : 'Save Metadata'}
+          </button>
+        </div>
+      ) : (
+        <div className="p-4 bg-gray-100 rounded-lg text-sm text-gray-600">
+          <p className="font-bold mb-1">Cannot edit metadata</p>
+          <p>This image is not in the WordPress Media Library. To fix alt text:</p>
+          <ul className="list-disc list-inside mt-2 text-xs">
+            <li>If it's an external image, download and re-upload to WordPress</li>
+            <li>If it's a plugin-generated image, edit in the plugin settings</li>
+            <li>Check if the URL is correct in the page editor</li>
+          </ul>
         </div>
       )}
 
-      {/* Alt text / metadata editing - always show for all image issues */}
-      <div className="space-y-3">
-        <p className="text-sm font-bold text-blue-700">Image Metadata</p>
-        <div>
-          <label className="block text-sm font-bold text-blue-600 uppercase mb-1">Alt Text</label>
-          <input
-            type="text"
-            value={altText}
-            onChange={e => setAltText(e.target.value)}
-            placeholder="Describe this image for screen readers..."
-            className="w-full border border-blue-200 rounded-lg text-base p-3 bg-white focus:ring-2 focus:ring-blue-100 outline-none"
-          />
+      {/* Mark as Fixed button - for decorative images, icons, etc. */}
+      {markedFixed ? (
+        <div className="p-4 bg-green-100 border border-green-300 rounded-lg text-center">
+          <p className="text-green-700 font-bold">✓ Marked as Fixed</p>
+          <p className="text-sm text-green-600">This issue has been removed from the report.</p>
         </div>
-        <div>
-          <label className="block text-sm font-bold text-blue-600 uppercase mb-1">Title</label>
-          <input
-            type="text"
-            value={title}
-            onChange={e => setTitle(e.target.value)}
-            placeholder="Image title..."
-            className="w-full border border-blue-200 rounded-lg text-base p-3 bg-white focus:ring-2 focus:ring-blue-100 outline-none"
-          />
+      ) : (
+        <div className="pt-4 border-t border-blue-200">
+          <p className="text-sm text-gray-600 mb-2">
+            If this image doesn't need alt text (decorative, icon, etc.), you can dismiss this issue:
+          </p>
+          <button
+            onClick={handleMarkFixed}
+            disabled={markingFixed}
+            className="w-full py-3 bg-gray-500 text-white rounded-lg text-base font-bold hover:bg-gray-600 disabled:opacity-50"
+          >
+            {markingFixed ? 'Marking...' : '✓ Mark as Fixed / Dismiss'}
+          </button>
         </div>
-        <div>
-          <label className="block text-sm font-bold text-blue-600 uppercase mb-1">Caption</label>
-          <input
-            type="text"
-            value={caption}
-            onChange={e => setCaption(e.target.value)}
-            placeholder="Caption (optional)..."
-            className="w-full border border-blue-200 rounded-lg text-base p-3 bg-white focus:ring-2 focus:ring-blue-100 outline-none"
-          />
-        </div>
-        <button
-          onClick={handleSaveMeta}
-          disabled={saving}
-          className="w-full py-3 bg-blue-600 text-white rounded-lg text-base font-bold hover:bg-blue-700 disabled:opacity-50"
-        >
-          {saving ? 'Saving...' : 'Save Metadata'}
-        </button>
-      </div>
+      )}
 
       {/* Optimization (for OVERSIZED) */}
       {isOversized && (

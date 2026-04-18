@@ -8,6 +8,37 @@ Each entry includes: what the issue is, why it matters for a nonprofit site, and
 
 ---
 
+## Diagnostic `extra` data
+
+All issue codes now include an optional `extra` field containing diagnostic data specific to the issue type. This allows the frontend to display contextual details without a second API call. When no extra data applies, the field is `null`.
+
+**Common `extra` fields by issue:**
+
+| Issue code | Extra fields | Example |
+|---|---|---|
+| `TITLE_TOO_SHORT` / `TITLE_TOO_LONG` | `title`, `length` | `{"title": "About", "length": 5}` |
+| `META_DESC_TOO_SHORT` / `META_DESC_TOO_LONG` | `description`, `length` | `{"description": "...", "length": 42}` |
+| `TITLE_H1_MISMATCH` | `title`, `h1` | `{"title": "About Us | Org", "h1": "Welcome"}` |
+| `H1_MISSING` | `headings_found` | `{"headings_found": [{"level": 2, "text": "..."}]}` |
+| `H1_MULTIPLE` | `h1_tags`, `count` | `{"h1_tags": ["About", "Welcome"], "count": 2}` |
+| `HEADING_SKIP` | `outline_snippet`, `skip_detail` | `{"skip_detail": "H1 → H3 (skipped H2)"}` |
+| `BROKEN_LINK_404` / `_410` / `_5XX` / `_503` | `status_code`, `source_url` | `{"status_code": 404, "source_url": "https://..."}` |
+| `URL_UPPERCASE` | `path` | Included implicitly via the issue's `page_url` |
+| `THIN_CONTENT` | `word_count` | `{"word_count": 87}` |
+| `HIGH_CRAWL_DEPTH` | `crawl_depth` | `{"crawl_depth": 6}` |
+| `IMG_ALT_MISSING` | `missing_alt_count`, `images` | `{"missing_alt_count": 3, "images": [...]}` |
+| `LINK_EMPTY_ANCHOR` | `empty_anchor_count`, `empty_anchors` | `{"empty_anchor_count": 2, "empty_anchors": [...]}` |
+| `SEMANTIC_DENSITY_LOW` | `ratio`, `breakdown`, `diagnosis` | `{"ratio": 0.08, "diagnosis": "..."}` |
+| `PAGE_SIZE_LARGE` | `size_bytes`, `size_kb` | `{"size_bytes": 350000, "size_kb": 342}` |
+| `CANONICAL_EXTERNAL` | `canonical_url` | `{"canonical_url": "https://other.com/page"}` |
+| `NOINDEX_META` / `NOINDEX_HEADER` | `source`, `content` | `{"source": "meta robots tag", "content": "noindex"}` |
+| `META_REFRESH_REDIRECT` | `refresh_url` | `{"refresh_url": "https://..."}` |
+| `DOCUMENT_PROPS_MISSING` | PDF metadata fields | `{"title": null, "subject": null}` |
+| `CONVERSATIONAL_H2_MISSING` | `h2_headings` | `{"h2_headings": ["Our Mission", ...]}` |
+| `PDF_TOO_LARGE` | `size_kb`, `limit_kb` | `{"size_kb": 12500, "limit_kb": 10240}` |
+
+---
+
 ## Severity levels
 
 - 🔴 **Critical** — Fix first; directly harms search visibility or breaks the page for visitors
@@ -786,4 +817,4 @@ Rewrite some subheadings as questions. For example, change `Our Impact` to `What
 
 ---
 
-*Last updated: April 2026 — covers all active issue codes in spec v1.4 + v1.5 + v1.6 + v1.7*
+*Last updated: April 2026 — covers all active issue codes in spec v1.4 + v1.5 + v1.6 + v1.7. All issues now include diagnostic `extra` data.*

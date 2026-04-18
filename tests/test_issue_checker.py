@@ -56,6 +56,7 @@ def _page(
     has_hsts: bool | None = None,
     # v1.5 new fields
     img_missing_alt_count: int = 0,
+    img_missing_alt_srcs: list | None = None,
     image_urls: list | None = None,
     empty_anchor_count: int = 0,
     empty_anchor_hrefs: list | None = None,
@@ -63,6 +64,9 @@ def _page(
     # v1.6 new fields
     lang_attr: str | None = "en",
     redirect_url: str | None = None,
+    # v1.7 AI-readiness fields
+    text_to_html_ratio: float | None = None,
+    code_breakdown: dict | None = None,
 ) -> ParsedPage:
     return ParsedPage(
         url=url,
@@ -95,11 +99,14 @@ def _page(
         unsafe_cross_origin_count=unsafe_cross_origin_count,
         has_hsts=has_hsts,
         img_missing_alt_count=img_missing_alt_count,
+        img_missing_alt_srcs=img_missing_alt_srcs if img_missing_alt_srcs is not None else ([f"https://example.com/img{i}.jpg" for i in range(img_missing_alt_count)] if img_missing_alt_count > 0 else []),
         image_urls=image_urls if image_urls is not None else [],
         empty_anchor_count=empty_anchor_count,
         empty_anchor_hrefs=empty_anchor_hrefs if empty_anchor_hrefs is not None else (["https://example.com/icon"] * empty_anchor_count if empty_anchor_count else []),
         internal_nofollow_count=internal_nofollow_count,
         lang_attr=lang_attr,
+        text_to_html_ratio=text_to_html_ratio,
+        code_breakdown=code_breakdown,
     )
 
 
@@ -1253,24 +1260,32 @@ class TestTitleH1Mismatch:
 
 
 class TestSuppressBannerH1:
-    def test_banner_h1_suppressed_when_flag_set(self):
-        # H1 is a parent-page banner, real content H1 absent — should not flag mismatch
+    def test_single_h1_banner_not_removed(self):
+        # When there is only ONE H1 (even if it's a banner), it should NOT be
+        # removed — removing the only H1 just creates a confusing H1_MISSING.
+        # The mismatch is flagged instead.
         page = _page(
             title="Bowen Family Systems Theory Training",
             h1_tags=["Clinical Internship Programs"],
         )
         codes = _codes(check_page(page, suppress_banner_h1=True))
-        assert "TITLE_H1_MISMATCH" not in codes
+        assert "H1_MISSING" not in codes
+        assert "TITLE_H1_MISMATCH" in codes
 
-    def test_banner_h1_removed_triggers_h1_missing(self):
-        # If the only H1 is a banner and suppress_banner_h1 is True, the real
-        # content H1 is absent — H1_MISSING should fire
+    def test_banner_plus_content_h1_no_missing(self):
+        # Two H1s where both mismatch the title — banner (first) is removed,
+        # content H1 (second) is kept.  No H1_MISSING.
         page = _page(
-            title="Bowen Family Systems Theory Training",
-            h1_tags=["Clinical Internship Programs"],
+            title="Spring 2024 Conference",
+            h1_tags=["Conferences & Recordings", "Reactivity & Relationships"],
+            headings_outline=[
+                {"level": 1, "text": "Conferences & Recordings"},
+                {"level": 1, "text": "Reactivity & Relationships"},
+            ],
         )
         codes = _codes(check_page(page, suppress_banner_h1=True))
-        assert "H1_MISSING" in codes
+        assert "H1_MISSING" not in codes
+        assert "H1_MULTIPLE" not in codes
 
     def test_content_h1_kept_banner_h1_removed(self):
         # Page has both a banner H1 and a real content H1 — only banner removed
@@ -1287,6 +1302,21 @@ class TestSuppressBannerH1:
         assert "H1_MISSING" not in codes
         assert "H1_MULTIPLE" not in codes
         assert "TITLE_H1_MISMATCH" not in codes
+
+    def test_banner_class_triggers_removal(self):
+        # First H1 has a theme banner class (entry-title) — removed even if
+        # we can't compare title words (both share words here, but class wins)
+        page = _page(
+            title="Conferences & Recordings",
+            h1_tags=["Conferences & Recordings", "Spring 2024 Conference"],
+            headings_outline=[
+                {"level": 1, "text": "Conferences & Recordings", "classes": "entry-title"},
+                {"level": 1, "text": "Spring 2024 Conference"},
+            ],
+        )
+        codes = _codes(check_page(page, suppress_banner_h1=True))
+        assert "H1_MULTIPLE" not in codes
+        assert "H1_MISSING" not in codes
 
     def test_flag_off_banner_h1_still_triggers_mismatch(self):
         # Without the flag, the parent-page banner H1 does cause a mismatch
@@ -1401,3 +1431,182 @@ class TestImgOversized:
         result = _image_result("https://example.com/photo.jpg", 0)
         codes = _codes(check_asset(result))
         assert "IMG_OVERSIZED" not in codes
+
+
+# ---------------------------------------------------------------------------
+# Issue extra data completeness
+# ---------------------------------------------------------------------------
+
+class TestIssueExtraData:
+    """Verify all issues include diagnostic data in extra."""
+
+    def test_title_missing_includes_h1(self):
+        page = _page(title=None, h1_tags=["My Heading"])
+        issues = check_page(page)
+        issue = next(i for i in issues if i.code == "TITLE_MISSING")
+        assert issue.extra is not None
+        assert issue.extra.get("h1") == "My Heading"
+
+    def test_h1_missing_includes_headings_found(self):
+        page = _page(h1_tags=[], headings_outline=[
+            {"level": 2, "text": "About Us"},
+            {"level": 3, "text": "Our Team"},
+        ])
+        issues = check_page(page)
+        issue = next(i for i in issues if i.code == "H1_MISSING")
+        assert issue.extra is not None
+        assert "headings_found" in issue.extra
+        assert len(issue.extra["headings_found"]) == 2
+
+    def test_og_title_missing_includes_title(self):
+        page = _page(og_title=None)
+        issues = check_page(page)
+        issue = next(i for i in issues if i.code == "OG_TITLE_MISSING")
+        assert issue.extra is not None
+        assert issue.extra.get("title") is not None
+
+    def test_url_too_long_includes_length(self):
+        long_url = "https://example.com/" + "a" * 200
+        issues = check_url_structure(long_url)
+        issue = next(i for i in issues if i.code == "URL_TOO_LONG")
+        assert issue.extra["length"] > 200
+        assert issue.extra["limit"] == 200
+
+    def test_url_uppercase_includes_path(self):
+        issues = check_url_structure("https://example.com/About-Us")
+        issue = next(i for i in issues if i.code == "URL_UPPERCASE")
+        assert issue.extra["path"] == "/About-Us"
+
+    def test_broken_link_404_includes_status(self):
+        issue = issue_for_status(404, "https://example.com/gone")
+        assert issue is not None
+        assert issue.extra["status_code"] == 404
+
+    def test_broken_link_5xx_includes_status(self):
+        issue = issue_for_status(502, "https://example.com/error")
+        assert issue is not None
+        assert issue.extra["status_code"] == 502
+
+    def test_redirect_trailing_slash_includes_from_to(self):
+        issues = issues_for_redirect(
+            "https://example.com/about",
+            301, [], final_url="https://example.com/about/"
+        )
+        issue = next(i for i in issues if i.code == "REDIRECT_TRAILING_SLASH")
+        assert issue.extra["from"] == "https://example.com/about"
+        assert issue.extra["to"] == "https://example.com/about/"
+
+    def test_conversational_h2_missing_includes_h2s(self):
+        page = _page(headings_outline=[
+            {"level": 1, "text": "Main"},
+            {"level": 2, "text": "Our Services"},
+            {"level": 2, "text": "About Us"},
+        ])
+        issues = check_page(page)
+        issue = next((i for i in issues if i.code == "CONVERSATIONAL_H2_MISSING"), None)
+        if issue:
+            assert "h2_headings" in issue.extra
+            assert "Our Services" in issue.extra["h2_headings"]
+
+    def test_semantic_density_low_includes_breakdown(self):
+        page = _page(
+            text_to_html_ratio=0.03,
+            code_breakdown={
+                "html_total_kb": 200.0,
+                "text_kb": 6.0,
+                "script_kb": 80.0,
+                "style_kb": 90.0,
+                "svg_kb": 0.0,
+                "markup_kb": 24.0,
+            },
+        )
+        issues = check_page(page)
+        issue = next(i for i in issues if i.code == "SEMANTIC_DENSITY_LOW")
+        assert issue.extra["ratio_pct"] == "3.0%"
+        assert "breakdown" in issue.extra
+        assert "diagnosis" in issue.extra
+        assert issue.extra["breakdown"]["script_kb"] == 80.0
+
+
+# ---------------------------------------------------------------------------
+# Ignored image patterns
+# ---------------------------------------------------------------------------
+
+class TestIgnoredImagePatterns:
+    def test_matching_pattern_filters_out_image(self):
+        page = _page(
+            img_missing_alt_count=3,
+            img_missing_alt_srcs=[
+                "https://example.com/wp-content/uploads/location.svg",
+                "https://example.com/wp-content/uploads/call.svg",
+                "https://example.com/wp-content/uploads/photo.jpg",
+            ],
+        )
+        issues = check_page(page, ignored_image_patterns=["/location.svg", "/call.svg"])
+        alt_issue = next((i for i in issues if i.code == "IMG_ALT_MISSING"), None)
+        assert alt_issue is not None
+        # Only photo.jpg should remain
+        assert alt_issue.extra["missing_alt_count"] == 1
+        assert "photo.jpg" in alt_issue.extra["img_missing_alt_srcs"][0]
+
+    def test_all_images_filtered_no_issue(self):
+        page = _page(
+            img_missing_alt_count=2,
+            img_missing_alt_srcs=[
+                "https://example.com/wp-content/uploads/location.svg",
+                "https://example.com/wp-content/uploads/call.svg",
+            ],
+        )
+        issues = check_page(page, ignored_image_patterns=[".svg"])
+        codes = _codes(issues)
+        assert "IMG_ALT_MISSING" not in codes
+
+    def test_no_pattern_no_filtering(self):
+        page = _page(img_missing_alt_count=2)
+        issues = check_page(page)
+        codes = _codes(issues)
+        assert "IMG_ALT_MISSING" in codes
+
+
+# ---------------------------------------------------------------------------
+# Banner H1 CSS class detection
+# ---------------------------------------------------------------------------
+
+class TestBannerH1CssClass:
+    def test_entry_title_class_triggers_removal(self):
+        page = _page(
+            title="Spring Conference",
+            h1_tags=["Conferences", "Spring Conference"],
+            headings_outline=[
+                {"level": 1, "text": "Conferences", "classes": "entry-title"},
+                {"level": 1, "text": "Spring Conference"},
+            ],
+        )
+        codes = _codes(check_page(page, suppress_banner_h1=True))
+        assert "H1_MULTIPLE" not in codes
+        assert "H1_MISSING" not in codes
+
+    def test_page_header_class_triggers_removal(self):
+        page = _page(
+            title="About Us",
+            h1_tags=["Navigation Title", "About Us"],
+            headings_outline=[
+                {"level": 1, "text": "Navigation Title", "classes": "page-header"},
+                {"level": 1, "text": "About Us"},
+            ],
+        )
+        codes = _codes(check_page(page, suppress_banner_h1=True))
+        assert "H1_MULTIPLE" not in codes
+
+    def test_no_banner_class_uses_mismatch_logic(self):
+        # First H1 has no banner class but mismatches title — still removed
+        page = _page(
+            title="About Us",
+            h1_tags=["Completely Different", "About Us"],
+            headings_outline=[
+                {"level": 1, "text": "Completely Different"},
+                {"level": 1, "text": "About Us"},
+            ],
+        )
+        codes = _codes(check_page(page, suppress_banner_h1=True))
+        assert "H1_MULTIPLE" not in codes

@@ -797,6 +797,7 @@ def check_page(
     suppress_h1_strings: list[str] | None = None,
     suppress_banner_h1: bool = False,
     exempt_anchor_urls: set[str] | None = None,
+    ignored_image_patterns: list[str] | None = None,
 ) -> list[Issue]:
     """Run all per-page issue checks.
 
@@ -832,34 +833,46 @@ def check_page(
         if not (h["level"] == 1 and h["text"].strip().casefold() in _suppress_norm)
     ]
 
-    # When suppress_banner_h1 is enabled, additionally filter out any H1 that
-    # shares no significant words with the page title.  These are structural /
-    # navigation headings (parent-page banners injected by themes like Salient,
-    # Avada, Divi) rather than content headings.  If removing them leaves zero
-    # H1s the page will correctly trigger H1_MISSING — the content H1 is absent.
-    if suppress_banner_h1 and page.title and effective_h1s:
-        _banner_texts = {
-            h.strip().casefold()
-            for h in effective_h1s
-            if _titles_mismatch(page.title, h)
-        }
-        if _banner_texts:
-            effective_h1s = [
-                h for h in effective_h1s
-                if h.strip().casefold() not in _banner_texts
-            ]
+    # When suppress_banner_h1 is enabled, detect and remove the theme-injected
+    # banner H1.  Two signals identify a banner:
+    #   1. Position: the first H1 in the DOM (themes inject banners before content)
+    #   2. CSS class: common theme banner classes (entry-title, page-title, etc.)
+    # The first H1 is removed if it mismatches the title OR has a banner class.
+    # Only applied when there are 2+ H1s so we never remove the only heading.
+    _BANNER_CLASSES = re.compile(
+        r'entry-title|page-title|page-header|banner-title|hero-title|archive-title',
+        re.IGNORECASE,
+    )
+
+    if suppress_banner_h1 and page.title and len(effective_h1s) >= 2:
+        first_h1 = effective_h1s[0]
+        # Check CSS classes on the first H1 in the outline
+        first_h1_outline = next(
+            (h for h in effective_outline if h.get("level") == 1),
+            None,
+        )
+        has_banner_class = bool(
+            first_h1_outline
+            and _BANNER_CLASSES.search(first_h1_outline.get("classes", ""))
+        )
+        is_mismatch = _titles_mismatch(page.title, first_h1)
+
+        if is_mismatch or has_banner_class:
+            _banner_text = first_h1.strip().casefold()
+            effective_h1s = effective_h1s[1:]
             effective_outline = [
                 h for h in effective_outline
                 if not (
                     h["level"] == 1
-                    and h.get("text", "").strip().casefold() in _banner_texts
+                    and h.get("text", "").strip().casefold() == _banner_text
                 )
             ]
 
     if is_indexable:
         # ── Title ──────────────────────────────────────────────────────────
         if not page.title:
-            issues.append(make_issue("TITLE_MISSING", url))
+            issues.append(make_issue("TITLE_MISSING", url,
+                                     extra={"h1": effective_h1s[0] if effective_h1s else None}))
         else:
             length = len(page.title)
             if length < 30:
@@ -887,9 +900,11 @@ def check_page(
 
         # ── OG tags ────────────────────────────────────────────────────────
         if not page.og_title:
-            issues.append(make_issue("OG_TITLE_MISSING", url))
+            issues.append(make_issue("OG_TITLE_MISSING", url,
+                                     extra={"title": page.title}))
         if not page.og_description:
-            issues.append(make_issue("OG_DESC_MISSING", url))
+            issues.append(make_issue("OG_DESC_MISSING", url,
+                                     extra={"meta_description": page.meta_description}))
 
         # ── Canonical tag ──────────────────────────────────────────────────
         _check_canonical(page, issues)
@@ -898,7 +913,8 @@ def check_page(
         # Only emit if CANONICAL_MISSING hasn't already fired — that issue is
         # more specific and actionable; emitting both on the same page is redundant.
         if page.canonical_url is None and not any(i.code == "CANONICAL_MISSING" for i in issues):
-            issues.append(make_issue("CANONICAL_SELF_MISSING", url))
+            issues.append(make_issue("CANONICAL_SELF_MISSING", url,
+                                     extra={"expected_canonical": url}))
 
         # ── Language attribute ─────────────────────────────────────────────
         if not page.lang_attr:
@@ -969,17 +985,20 @@ def check_page(
     # ── Image alt text ────────────────────────────────────────────────────
     if page.img_missing_alt_count > 0:
         srcs = page.img_missing_alt_srcs or []
-        issue = make_issue("IMG_ALT_MISSING", url,
-                           extra={"missing_alt_count": page.img_missing_alt_count,
-                                  "img_missing_alt_srcs": srcs[:10]})
+        # Filter out images matching ignored patterns (e.g. theme SVG icons)
+        if ignored_image_patterns:
+            srcs = [s for s in srcs if not any(p in s for p in ignored_image_patterns)]
         if srcs:
+            issue = make_issue("IMG_ALT_MISSING", url,
+                               extra={"missing_alt_count": len(srcs),
+                                      "img_missing_alt_srcs": srcs[:10]})
             listed = ", ".join(srcs[:5])
             suffix = f" and {len(srcs) - 5} more" if len(srcs) > 5 else ""
             issue.description = (
-                f"{page.img_missing_alt_count} image{'s' if page.img_missing_alt_count > 1 else ''} "
+                f"{len(srcs)} image{'s' if len(srcs) > 1 else ''} "
                 f"missing alt text: {listed}{suffix}"
             )
-        issues.append(issue)
+            issues.append(issue)
 
     # ── Viewport meta (mobile-friendliness) ──────────────────────────────
     if not page.has_viewport_meta:
@@ -991,18 +1010,24 @@ def check_page(
 
     # ── Empty anchor text ─────────────────────────────────────────────────
     if page.empty_anchor_count > 0:
-        hrefs = page.empty_anchor_hrefs or []
+        anchors = page.empty_anchor_hrefs or []
+        # Support both old format (list[str]) and new format (list[dict])
+        if anchors and isinstance(anchors[0], str):
+            anchors = [{"href": h, "aria_label": None, "has_children": False} for h in anchors]
         # Filter out URLs the user has explicitly exempted (e.g. social media icon links)
         if exempt_anchor_urls:
-            hrefs = [h for h in hrefs if h not in exempt_anchor_urls]
-        if hrefs:
+            anchors = [a for a in anchors if a["href"] not in exempt_anchor_urls]
+        if anchors:
             issue = make_issue("LINK_EMPTY_ANCHOR", url,
-                               extra={"empty_anchor_count": len(hrefs),
-                                      "empty_anchor_hrefs": hrefs[:10]})
-            listed = ", ".join(hrefs[:5])
-            suffix = f" and {len(hrefs) - 5} more" if len(hrefs) > 5 else ""
+                               extra={"empty_anchor_count": len(anchors),
+                                      "empty_anchors": anchors[:10],
+                                      # Keep legacy field for backwards compat
+                                      "empty_anchor_hrefs": [a["href"] for a in anchors[:10]]})
+            href_list = [a["href"] for a in anchors[:5]]
+            listed = ", ".join(href_list)
+            suffix = f" and {len(anchors) - 5} more" if len(anchors) > 5 else ""
             issue.description = (
-                f"{len(hrefs)} link{'s' if len(hrefs) > 1 else ''} "
+                f"{len(anchors)} link{'s' if len(anchors) > 1 else ''} "
                 f"with no anchor text: {listed}{suffix}"
             )
             issues.append(issue)
@@ -1026,8 +1051,31 @@ def check_page(
     # ── AI Readiness (§1.7) ───────────────────────────────────────────────
     # Semantic Density (Text-to-HTML ratio < 10%)
     if page.text_to_html_ratio is not None and page.text_to_html_ratio < 0.10 and page.is_indexable:
-        issues.append(make_issue("SEMANTIC_DENSITY_LOW", url,
-                                 extra={"ratio": round(page.text_to_html_ratio, 4)}))
+        extra: dict = {
+            "ratio": round(page.text_to_html_ratio, 4),
+            "ratio_pct": f"{page.text_to_html_ratio * 100:.1f}%",
+        }
+        if page.code_breakdown:
+            extra["breakdown"] = page.code_breakdown
+            # Diagnose the biggest contributor
+            bd = page.code_breakdown
+            parts = [
+                ("Inline scripts", bd.get("script_kb", 0)),
+                ("Inline styles", bd.get("style_kb", 0)),
+                ("SVG graphics", bd.get("svg_kb", 0)),
+                ("HTML markup", bd.get("markup_kb", 0)),
+            ]
+            parts.sort(key=lambda x: x[1], reverse=True)
+            biggest = parts[0]
+            total = bd.get("html_total_kb", 1)
+            if biggest[1] > 0:
+                extra["diagnosis"] = (
+                    f"{biggest[0]} ({biggest[1]} KB) account for "
+                    f"{biggest[1] / total * 100:.0f}% of the page. "
+                    f"Visible text is only {bd.get('text_kb', 0)} KB "
+                    f"out of {total} KB total."
+                )
+        issues.append(make_issue("SEMANTIC_DENSITY_LOW", url, extra=extra))
 
     # JSON-LD Missing
     if not page.has_json_ld and page.is_indexable and not url.endswith(".pdf"):
@@ -1039,7 +1087,8 @@ def check_page(
         if h2s:
             interrogatives = re.compile(r"\b(how|what|why|who|where|when|which)\b", re.I)
             if not any(interrogatives.search(h) for h in h2s):
-                issues.append(make_issue("CONVERSATIONAL_H2_MISSING", url))
+                issues.append(make_issue("CONVERSATIONAL_H2_MISSING", url,
+                                         extra={"h2_headings": h2s[:8]}))
 
     # PDF Metadata
     if url.lower().endswith(".pdf") and page.pdf_metadata is not None:
@@ -1060,7 +1109,9 @@ def _check_security(
 
     # HTTP_PAGE — non-HTTPS final URL
     if url.startswith("http://"):
-        issues.append(make_issue("HTTP_PAGE", url))
+        issues.append(make_issue("HTTP_PAGE", url,
+                                 extra={"http_url": url,
+                                        "https_url": "https://" + url[7:]}))
         return  # HTTPS-only checks below don't apply
 
     # MIXED_CONTENT
@@ -1072,7 +1123,8 @@ def _check_security(
     if page.has_hsts is False:
         host = urlparse(url).netloc
         if hsts_checked_hosts is None or host not in hsts_checked_hosts:
-            issues.append(make_issue("MISSING_HSTS", url))
+            issues.append(make_issue("MISSING_HSTS", url,
+                                     extra={"host": host}))
             if hsts_checked_hosts is not None:
                 hsts_checked_hosts.add(host)
 
@@ -1114,7 +1166,10 @@ def _check_headings(
 
     h1_count = len(h1s)
     if h1_count == 0:
-        issues.append(make_issue("H1_MISSING", url))
+        # Include first few headings so user can see what exists
+        top_headings = [f"H{h['level']}: {h['text']}" for h in outline[:5]]
+        issues.append(make_issue("H1_MISSING", url,
+                                 extra={"headings_found": top_headings} if top_headings else None))
     elif h1_count > 1:
         issue = make_issue("H1_MULTIPLE", url)
         issue.extra = {"h1_tags": h1s, "count": h1_count}
@@ -1138,9 +1193,13 @@ def _check_crawlability(page: ParsedPage, issues: list[Issue]) -> None:
     url = page.url
     if not page.is_indexable:
         if page.robots_source == "header":
-            issues.append(make_issue("NOINDEX_HEADER", url))
+            issues.append(make_issue("NOINDEX_HEADER", url,
+                                     extra={"source": "X-Robots-Tag HTTP header",
+                                            "directive": page.robots_directive}))
         else:
-            issues.append(make_issue("NOINDEX_META", url))
+            issues.append(make_issue("NOINDEX_META", url,
+                                     extra={"source": "meta robots tag",
+                                            "directive": page.robots_directive}))
 
 
 # ---------------------------------------------------------------------------
@@ -1251,7 +1310,8 @@ def check_cross_page(pages: list[ParsedPage], start_url: str | None = None) -> l
         if norm == start_url:
             continue  # homepage is always the entry point
         if norm not in linked_urls:
-            issues.append(make_issue("ORPHAN_PAGE", page.url))
+            issues.append(make_issue("ORPHAN_PAGE", page.url,
+                                     extra={"title": page.title}))
 
     return issues
 
@@ -1269,13 +1329,13 @@ def issue_for_status(status_code: int, url: str) -> Issue | None:
     bot-protection layers and CDNs even when the page loads fine for real visitors.
     """
     if status_code == 404:
-        return make_issue("BROKEN_LINK_404", url)
+        return make_issue("BROKEN_LINK_404", url, extra={"status_code": status_code})
     if status_code == 410:
-        return make_issue("BROKEN_LINK_410", url)
+        return make_issue("BROKEN_LINK_410", url, extra={"status_code": status_code})
     if status_code == 503:
-        return make_issue("BROKEN_LINK_503", url)
+        return make_issue("BROKEN_LINK_503", url, extra={"status_code": status_code})
     if 500 <= status_code <= 599:
-        return make_issue("BROKEN_LINK_5XX", url)
+        return make_issue("BROKEN_LINK_5XX", url, extra={"status_code": status_code})
     return None
 
 
@@ -1347,13 +1407,17 @@ def check_url_structure(url: str) -> list[Issue]:
     path = urlparse(url).path
 
     if len(url) > 200:
-        issues.append(make_issue("URL_TOO_LONG", url))
+        issues.append(make_issue("URL_TOO_LONG", url,
+                                 extra={"length": len(url), "limit": 200}))
     if any(c.isupper() for c in path):
-        issues.append(make_issue("URL_UPPERCASE", url))
+        issues.append(make_issue("URL_UPPERCASE", url,
+                                 extra={"path": path}))
     if "%20" in urlparse(url).path:
-        issues.append(make_issue("URL_HAS_SPACES", url))
+        issues.append(make_issue("URL_HAS_SPACES", url,
+                                 extra={"path": path}))
     if "_" in path:
-        issues.append(make_issue("URL_HAS_UNDERSCORES", url))
+        issues.append(make_issue("URL_HAS_UNDERSCORES", url,
+                                 extra={"path": path}))
 
     return issues
 
@@ -1407,11 +1471,12 @@ def issues_for_redirect(
     # so we can flag it as informational rather than actionable.
     if final_url and first_status == 301 and len(redirect_chain) <= 1:
         if _is_trailing_slash_only(url, final_url):
-            result.append(make_issue("REDIRECT_TRAILING_SLASH", url))
-            # Still check for chains involving more than just the slash correction
+            result.append(make_issue("REDIRECT_TRAILING_SLASH", url,
+                                     extra={"from": url, "to": final_url}))
             return result
         if _is_case_normalise_only(url, final_url):
-            result.append(make_issue("REDIRECT_CASE_NORMALISE", url))
+            result.append(make_issue("REDIRECT_CASE_NORMALISE", url,
+                                     extra={"from": url, "to": final_url}))
             return result
 
     if first_status == 301:
