@@ -6,7 +6,7 @@
  */
 
 import React, { useState, useEffect, useCallback } from 'react'
-import { getImages, getImagesSummary, fetchImageDetails, analyzeImageWithAI, updateImageMeta, downloadAIImagePDF, analyzeImageWithGeo, applyGeoMetadata, getGeoSettings } from '../api.js'
+import { getImages, getImagesSummary, fetchImageDetails, analyzeImageWithAI, updateImageMeta, downloadAIImagePDF, analyzeImageWithGeo, applyGeoMetadata, getGeoSettings, getOrphanedMedia } from '../api.js'
 import { getIssueHelp } from '../data/issueHelp.js'
 import SeverityBadge from './SeverityBadge.jsx'
 import GeoAnalysisModal from './GeoAnalysisModal.jsx'
@@ -33,6 +33,8 @@ export default function ImageAnalysisPanel({ jobId, onPageClick, onShowHelp }) {
   const [wpLoginCallback, setWpLoginCallback] = useState(null)
   const [showBatchOptimize, setShowBatchOptimize] = useState(false)
   const [showUploadModal, setShowUploadModal] = useState(false)
+  const [orphanedMedia, setOrphanedMedia] = useState(null)
+  const [loadingOrphans, setLoadingOrphans] = useState(false)
 
   const loadData = useCallback(async () => {
     setLoading(true)
@@ -243,6 +245,61 @@ export default function ImageAnalysisPanel({ jobId, onPageClick, onShowHelp }) {
         </div>
       )}
 
+      {/* Orphaned Media Results */}
+      {orphanedMedia && (
+        <div className={`p-4 rounded-xl border ${orphanedMedia.error ? 'bg-red-50 border-red-200' : 'bg-purple-50 border-purple-200'}`}>
+          {orphanedMedia.error ? (
+            <div className="flex items-center justify-between">
+              <p className="text-red-700 font-medium">Error: {orphanedMedia.error}</p>
+              <button onClick={() => setOrphanedMedia(null)} className="text-gray-400 hover:text-gray-600 text-xl">×</button>
+            </div>
+          ) : (
+            <>
+              <div className="flex items-center justify-between mb-3">
+                <span className="text-lg font-bold text-gray-800">
+                  Orphaned Media: {orphanedMedia.count} image{orphanedMedia.count !== 1 ? 's' : ''} not used on any page
+                </span>
+                <button onClick={() => setOrphanedMedia(null)} className="text-gray-400 hover:text-gray-600 text-xl">×</button>
+              </div>
+              {orphanedMedia.count === 0 ? (
+                <p className="text-sm text-green-700 font-medium">All WordPress media images are referenced on at least one crawled page.</p>
+              ) : (
+                <div className="space-y-2 max-h-96 overflow-y-auto">
+                  {orphanedMedia.orphaned_media.map(item => (
+                    <div key={item.id} className="flex items-center gap-3 p-3 bg-white rounded-lg border border-purple-100">
+                      <img
+                        src={item.url}
+                        alt={item.alt_text || ''}
+                        className="w-12 h-12 object-cover rounded border border-gray-200 flex-shrink-0"
+                        onError={e => { e.target.style.display = 'none' }}
+                      />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-bold text-gray-800 truncate">{item.title}</p>
+                        <p className="text-xs font-mono text-gray-500 truncate">{item.url.split('/').pop()}</p>
+                        <div className="flex items-center gap-3 mt-0.5">
+                          <span className="text-xs text-gray-400">{item.mime_type}</span>
+                          {item.file_size_kb && <span className="text-xs text-gray-400">{item.file_size_kb} KB</span>}
+                          {item.dimensions && <span className="text-xs text-gray-400">{item.dimensions}</span>}
+                          {item.post_parent === 0 && <span className="text-xs text-red-500 font-bold">Unattached</span>}
+                        </div>
+                      </div>
+                      <a
+                        href={item.admin_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="px-3 py-1.5 text-xs font-bold bg-purple-100 text-purple-700 rounded-lg hover:bg-purple-200 flex-shrink-0"
+                      >
+                        Edit in WP
+                      </a>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      )}
+
       {/* Sort Controls */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
@@ -292,6 +349,24 @@ export default function ImageAnalysisPanel({ jobId, onPageClick, onShowHelp }) {
                 ? `Fetch ${selectedImages.size} Images`
                 : 'Fetch All Images'
             }
+          </button>
+          <button
+            onClick={async () => {
+              setLoadingOrphans(true)
+              try {
+                const result = await getOrphanedMedia(jobId)
+                setOrphanedMedia(result)
+              } catch (err) {
+                setOrphanedMedia({ error: err.message })
+              } finally {
+                setLoadingOrphans(false)
+              }
+            }}
+            disabled={loadingOrphans}
+            className="px-4 py-2 bg-purple-600 text-white rounded-lg text-sm font-bold hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+            title="Find images in WordPress Media Library not used on any crawled page"
+          >
+            {loadingOrphans ? 'Scanning WP...' : 'Find Orphaned'}
           </button>
           <button
             onClick={() => setShowBatchOptimize(true)}
