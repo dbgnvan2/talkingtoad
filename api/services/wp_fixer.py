@@ -1808,6 +1808,31 @@ async def find_attachment_by_url(wp: WPClient, image_url: str, cache_bust: bool 
                         print(f"[WP FETCH] ✓ DIRECTORY+BASENAME MATCH! WP ID: {wp_id}")
                         return wp_data
 
+        # Slug queries failed — fall back to search API.
+        # This catches cases where the WP slug doesn't match the filename
+        # (e.g. file renamed after upload, or slug auto-generated from
+        # a different original name like "Screenshot-17").
+        search_term = name_base.replace('-', ' ')
+        print(f"[WP FETCH] Slug queries failed, trying search: {search_term}")
+        try:
+            r = await wp.get(
+                f"media?search={search_term}&_fields=id,source_url,alt_text,title,caption,description{cache_param}"
+            )
+            if r.status_code == 200:
+                for item in r.json():
+                    wp_data = _attachment_dict(item, wp.site_url)
+                    wp_url = wp_data.get('source_url', '')
+                    # Exact URL match required for search results (search is fuzzy)
+                    if wp_url == image_url:
+                        print(f"[WP FETCH] ✓ SEARCH MATCH! WP ID: {wp_data.get('id')}")
+                        return wp_data
+                    # Size-variant match
+                    if base_url and wp_url == base_url:
+                        print(f"[WP FETCH] ✓ SEARCH SIZE-VARIANT MATCH! WP ID: {wp_data.get('id')}")
+                        return wp_data
+        except Exception:
+            pass
+
         print(f"[WP FETCH] ✗ No match found for {image_url}")
         return None
     except Exception as e:
