@@ -260,7 +260,8 @@ def test_issue_codes_are_unique():
     """
     from api.crawler.issue_checker import _CATALOGUE
 
-    all_codes = [issue["code"] for issue in _CATALOGUE.values()]
+    # _CATALOGUE is a dict[str, _IssueSpec] where keys are issue codes
+    all_codes = list(_CATALOGUE.keys())
     unique_codes = set(all_codes)
 
     duplicates = []

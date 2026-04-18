@@ -1979,6 +1979,9 @@ class RedisJobStore:
         _ALLOWED = {
             "status", "pages_crawled", "pages_total", "current_url",
             "completed_at", "error_message", "llms_txt_custom",
+            "phase", "external_links_checked", "external_links_total",
+            "robots_txt_found", "robots_txt_rules", "sitemap_found",
+            "sitemap_url_found", "sitemap_url_count",
         }
         unknown = set(fields) - _ALLOWED
         if unknown:
@@ -2038,6 +2041,41 @@ class RedisJobStore:
 
     async def get_links_by_target(self, job_id: str, target_url: str) -> list[dict]:
         return []  # Links not stored in Redis MVP
+
+    # ── Ignored image patterns (Redis) ────────────────────────────────────
+
+    _IMG_PATTERNS_KEY = "tt:ignored_image_patterns"
+
+    async def get_ignored_image_patterns(self) -> list[dict]:
+        """Return all ignored image URL patterns stored in Redis."""
+        raw = await self._r.get(self._IMG_PATTERNS_KEY)
+        if not raw:
+            return []
+        return json.loads(raw)
+
+    async def add_ignored_image_pattern(self, pattern: str, note: str = "") -> None:
+        """Add a URL pattern to the ignored list."""
+        from datetime import datetime, timezone
+        patterns = await self.get_ignored_image_patterns()
+        # Replace if exists, else append
+        patterns = [p for p in patterns if p["pattern"] != pattern.strip()]
+        patterns.append({
+            "pattern": pattern.strip(),
+            "note": note,
+            "added_at": datetime.now(timezone.utc).isoformat(),
+        })
+        await self._r.set(self._IMG_PATTERNS_KEY, json.dumps(patterns))
+
+    async def remove_ignored_image_pattern(self, pattern: str) -> None:
+        """Remove a pattern from the ignored list."""
+        patterns = await self.get_ignored_image_patterns()
+        patterns = [p for p in patterns if p["pattern"] != pattern.strip()]
+        await self._r.set(self._IMG_PATTERNS_KEY, json.dumps(patterns))
+
+    async def get_ignored_image_pattern_list(self) -> list[str]:
+        """Return patterns as a list of strings for filtering."""
+        rows = await self.get_ignored_image_patterns()
+        return [r["pattern"] for r in rows]
 
     # ── Query helpers ──────────────────────────────────────────────────────
 

@@ -27,6 +27,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, Query, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from api.crawler.engine import CrawlResult, CrawlSettings as EngineCrawlSettings, run_crawl
+from api.crawler.fetcher import is_ssrf_safe
 from api.crawler.issue_checker import Issue as EngIssue
 from api.crawler.parser import ParsedPage as EngPage
 from api.models.issue import PHASE_1_CATEGORIES, Issue
@@ -309,6 +310,9 @@ async def start_crawl(
     target_url = body.get("target_url", "").strip()
     if not target_url or not target_url.startswith(("http://", "https://")):
         return _err("INVALID_URL", "target_url must be a valid http or https URL.", 422)
+
+    if not is_ssrf_safe(target_url):
+        return _err("BLOCKED_URL", "URLs targeting private or internal networks are not allowed.", 403)
 
     sitemap_url = body.get("sitemap_url")
     settings_data: dict = body.get("settings") or {}
@@ -1059,7 +1063,7 @@ async def export_pdf_report(
 
     # Fetch image data for the report
     image_summary = await store.get_image_summary(job_id)
-    top_images, _ = await store.get_images(job_id, page=1, limit=20, sort_by="score")
+    top_images = await store.get_images(job_id, page=1, limit=20, sort_by="score")
 
     # summary_only is a shortcut for disabling help and pages
     if summary_only:
@@ -1107,7 +1111,7 @@ async def export_excel_report(
 
     # Fetch image data for the report
     image_summary = await store.get_image_summary(job_id)
-    images_list, _ = await store.get_images(job_id, page=1, limit=500, sort_by="score")
+    images_list = await store.get_images(job_id, page=1, limit=500, sort_by="score")
 
     try:
         excel_bytes = generate_excel_report(

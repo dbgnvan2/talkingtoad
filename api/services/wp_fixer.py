@@ -1525,7 +1525,7 @@ async def change_heading_text(
             return m.group(0)
         count += 1
         attrs = m.group(1) or ''  # group(1) is None when <h1> has no attributes
-        return f'<h{level}{attrs}>{new_text.strip()}</h{level}>'
+        return f'<h{level}{attrs}>{html_module.escape(new_text.strip())}</h{level}>'
 
     pattern = re.compile(
         rf'<h{level}(\s[^>]*)?>(.+?)</h{level}>',

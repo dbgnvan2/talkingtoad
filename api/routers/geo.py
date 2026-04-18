@@ -14,10 +14,11 @@ from pydantic import BaseModel, Field
 
 from api.models.geo_config import GeoConfig
 from api.routers.crawl import get_store
+from api.services.auth import require_auth
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api/geo")
+router = APIRouter(prefix="/api/geo", dependencies=[Depends(require_auth)])
 
 
 # ── Request/Response Models ────────────────────────────────────────────────

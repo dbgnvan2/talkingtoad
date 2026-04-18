@@ -82,35 +82,35 @@ class TestAltTextAnalysis:
         """IMG_ALT_MISSING should be flagged when alt is None."""
         img = make_image(alt=None)
         issues = _check_alt_text(img, DEFAULT_CONFIG, "test")
-        codes = [i.issue_code for i in issues]
+        codes = [i.code for i in issues]
         assert "IMG_ALT_MISSING" in codes
 
     def test_empty_alt_flagged(self):
         """IMG_ALT_MISSING should be flagged when alt is empty string."""
         img = make_image(alt="")
         issues = _check_alt_text(img, DEFAULT_CONFIG, "test")
-        codes = [i.issue_code for i in issues]
+        codes = [i.code for i in issues]
         assert "IMG_ALT_MISSING" in codes
 
     def test_decorative_with_missing_alt_not_flagged(self):
         """Decorative images without alt should NOT be flagged for missing alt."""
         img = make_image(alt=None, is_decorative=True)
         issues = _check_alt_text(img, DEFAULT_CONFIG, "test")
-        codes = [i.issue_code for i in issues]
+        codes = [i.code for i in issues]
         assert "IMG_ALT_MISSING" not in codes
 
     def test_decorative_with_alt_flagged(self):
         """IMG_ALT_MISUSED should be flagged when decorative image has alt."""
         img = make_image(alt="Some text", is_decorative=True)
         issues = _check_alt_text(img, DEFAULT_CONFIG, "test")
-        codes = [i.issue_code for i in issues]
+        codes = [i.code for i in issues]
         assert "IMG_ALT_MISUSED" in codes
 
     def test_short_alt_flagged(self):
         """IMG_ALT_TOO_SHORT should be flagged when alt is < 5 chars."""
         img = make_image(alt="Hi")
         issues = _check_alt_text(img, DEFAULT_CONFIG, "test")
-        codes = [i.issue_code for i in issues]
+        codes = [i.code for i in issues]
         assert "IMG_ALT_TOO_SHORT" in codes
 
     def test_long_alt_flagged(self):
@@ -118,7 +118,7 @@ class TestAltTextAnalysis:
         long_alt = "A" * 150
         img = make_image(alt=long_alt)
         issues = _check_alt_text(img, DEFAULT_CONFIG, "test")
-        codes = [i.issue_code for i in issues]
+        codes = [i.code for i in issues]
         assert "IMG_ALT_TOO_LONG" in codes
 
     def test_generic_alt_flagged(self):
@@ -126,7 +126,7 @@ class TestAltTextAnalysis:
         for generic in ["image", "photo", "picture", "icon", "logo"]:
             img = make_image(alt=generic)
             issues = _check_alt_text(img, DEFAULT_CONFIG, "test")
-            codes = [i.issue_code for i in issues]
+            codes = [i.code for i in issues]
             assert "IMG_ALT_GENERIC" in codes, f"'{generic}' should be flagged as generic"
 
     def test_duplicate_filename_alt_flagged(self):
@@ -137,7 +137,7 @@ class TestAltTextAnalysis:
             filename="my-photo.jpg"
         )
         issues = _check_alt_text(img, DEFAULT_CONFIG, "test")
-        codes = [i.issue_code for i in issues]
+        codes = [i.code for i in issues]
         assert "IMG_ALT_DUP_FILENAME" in codes
 
     def test_good_alt_no_issues(self):
@@ -158,42 +158,42 @@ class TestPerformanceAnalysis:
         """IMG_OVERSIZED should be flagged for images > 200KB."""
         img = make_image(file_size_bytes=300_000)  # 300KB
         issues = _check_performance(img, DEFAULT_CONFIG, "test")
-        codes = [i.issue_code for i in issues]
+        codes = [i.code for i in issues]
         assert "IMG_OVERSIZED" in codes
 
     def test_normal_size_not_flagged(self):
         """Images under 200KB should not be flagged."""
         img = make_image(file_size_bytes=150_000)  # 150KB
         issues = _check_performance(img, DEFAULT_CONFIG, "test")
-        codes = [i.issue_code for i in issues]
+        codes = [i.code for i in issues]
         assert "IMG_OVERSIZED" not in codes
 
     def test_slow_load_flagged(self):
         """IMG_SLOW_LOAD should be flagged for images > 1000ms."""
         img = make_image(load_time_ms=1500)
         issues = _check_performance(img, DEFAULT_CONFIG, "test")
-        codes = [i.issue_code for i in issues]
+        codes = [i.code for i in issues]
         assert "IMG_SLOW_LOAD" in codes
 
     def test_fast_load_not_flagged(self):
         """Images loading under 1000ms should not be flagged."""
         img = make_image(load_time_ms=500)
         issues = _check_performance(img, DEFAULT_CONFIG, "test")
-        codes = [i.issue_code for i in issues]
+        codes = [i.code for i in issues]
         assert "IMG_SLOW_LOAD" not in codes
 
     def test_overscaled_flagged(self):
         """IMG_OVERSCALED should be flagged when intrinsic > 2x rendered."""
         img = make_image(width=2000, rendered_width=400)  # 5x ratio
         issues = _check_performance(img, DEFAULT_CONFIG, "test")
-        codes = [i.issue_code for i in issues]
+        codes = [i.code for i in issues]
         assert "IMG_OVERSCALED" in codes
 
     def test_not_overscaled(self):
         """Images with reasonable scaling should not be flagged."""
         img = make_image(width=800, rendered_width=600)  # 1.33x ratio
         issues = _check_performance(img, DEFAULT_CONFIG, "test")
-        codes = [i.issue_code for i in issues]
+        codes = [i.code for i in issues]
         assert "IMG_OVERSCALED" not in codes
 
     def test_poor_compression_flagged(self):
@@ -201,7 +201,7 @@ class TestPerformanceAnalysis:
         # 500KB for 400x400 = 3.125 BPP (way over 0.5 threshold)
         img = make_image(file_size_bytes=500_000, width=400, height=400)
         issues = _check_performance(img, DEFAULT_CONFIG, "test")
-        codes = [i.issue_code for i in issues]
+        codes = [i.code for i in issues]
         assert "IMG_POOR_COMPRESSION" in codes
 
     def test_good_compression_not_flagged(self):
@@ -209,7 +209,7 @@ class TestPerformanceAnalysis:
         # 50KB for 800x600 = 0.1 BPP (well under threshold)
         img = make_image(file_size_bytes=50_000, width=800, height=600)
         issues = _check_performance(img, DEFAULT_CONFIG, "test")
-        codes = [i.issue_code for i in issues]
+        codes = [i.code for i in issues]
         assert "IMG_POOR_COMPRESSION" not in codes
 
 
@@ -224,14 +224,14 @@ class TestFormatAnalysis:
         """IMG_FORMAT_LEGACY should be flagged for large JPEG/PNG files."""
         img = make_image(format="jpeg", file_size_bytes=100_000)  # 100KB > 50KB threshold
         issues = _check_format(img, DEFAULT_CONFIG, "test")
-        codes = [i.issue_code for i in issues]
+        codes = [i.code for i in issues]
         assert "IMG_FORMAT_LEGACY" in codes
 
     def test_legacy_format_small_not_flagged(self):
         """Small JPEG/PNG files should not be flagged."""
         img = make_image(format="png", file_size_bytes=30_000)  # 30KB < 50KB threshold
         issues = _check_format(img, DEFAULT_CONFIG, "test")
-        codes = [i.issue_code for i in issues]
+        codes = [i.code for i in issues]
         assert "IMG_FORMAT_LEGACY" not in codes
 
     def test_modern_format_not_flagged(self):
@@ -239,7 +239,7 @@ class TestFormatAnalysis:
         for fmt in ["webp", "avif"]:
             img = make_image(format=fmt, file_size_bytes=200_000)
             issues = _check_format(img, DEFAULT_CONFIG, "test")
-            codes = [i.issue_code for i in issues]
+            codes = [i.code for i in issues]
             assert "IMG_FORMAT_LEGACY" not in codes
 
 
@@ -254,21 +254,21 @@ class TestResponsiveAnalysis:
         """IMG_NO_SRCSET should be flagged when image is scaled down without srcset."""
         img = make_image(has_srcset=False, width=1600, rendered_width=400)
         issues = _check_responsive(img, DEFAULT_CONFIG, "test")
-        codes = [i.issue_code for i in issues]
+        codes = [i.code for i in issues]
         assert "IMG_NO_SRCSET" in codes
 
     def test_has_srcset_not_flagged(self):
         """Images with srcset should not be flagged."""
         img = make_image(has_srcset=True, width=1600, rendered_width=400)
         issues = _check_responsive(img, DEFAULT_CONFIG, "test")
-        codes = [i.issue_code for i in issues]
+        codes = [i.code for i in issues]
         assert "IMG_NO_SRCSET" not in codes
 
     def test_no_srcset_not_scaled_not_flagged(self):
         """Images not being scaled down should not be flagged."""
         img = make_image(has_srcset=False, width=400, rendered_width=400)
         issues = _check_responsive(img, DEFAULT_CONFIG, "test")
-        codes = [i.issue_code for i in issues]
+        codes = [i.code for i in issues]
         assert "IMG_NO_SRCSET" not in codes
 
 
@@ -283,14 +283,14 @@ class TestBrokenAnalysis:
         """IMG_BROKEN should be flagged for 404 responses."""
         img = make_image(http_status=404)
         issues = _check_broken(img, "test")
-        codes = [i.issue_code for i in issues]
+        codes = [i.code for i in issues]
         assert "IMG_BROKEN" in codes
 
     def test_500_flagged(self):
         """IMG_BROKEN should be flagged for 500 responses."""
         img = make_image(http_status=500)
         issues = _check_broken(img, "test")
-        codes = [i.issue_code for i in issues]
+        codes = [i.code for i in issues]
         assert "IMG_BROKEN" in codes
 
     def test_200_not_flagged(self):
@@ -315,7 +315,7 @@ class TestDuplicateDetection:
             make_image(url="https://example.com/img3.jpg", content_hash="abc123"),
         ]
         issues = _check_duplicates(images, "test")
-        codes = [i.issue_code for i in issues]
+        codes = [i.code for i in issues]
         assert codes.count("IMG_DUPLICATE_CONTENT") == 2  # First one is original
 
     def test_same_hash_same_url_not_flagged(self):
@@ -366,17 +366,22 @@ class TestScoringEngine:
         assert scores["technical_score"] == 50
 
     def test_oversized_reduces_performance(self):
-        """Oversized image should reduce performance score by 30."""
+        """Oversized image should reduce performance score by 30 (+ poor compression + legacy)."""
+        # 300KB for 800x600 = 0.625 BPP (> 0.5 → IMG_POOR_COMPRESSION -20)
+        # jpeg > 50KB → IMG_FORMAT_LEGACY -10
+        # Total: -30 -20 -10 = -60 → score 40
         img = make_image(file_size_bytes=300_000)
         issues, scores = analyze_image(img)
-        assert scores["performance_score"] == 70
+        assert scores["performance_score"] == 40
 
     def test_multiple_issues_stack(self):
         """Multiple issues should stack their penalties."""
-        # Oversized (-30 perf) + slow (-25 perf)
+        # Oversized (-30) + slow (-25) + poor compression (-20) + legacy format (-10)
+        # 300KB for 800x600 = 0.625 BPP, jpeg > 50KB
+        # Total: -30 -25 -20 -10 = -85 → score 15
         img = make_image(file_size_bytes=300_000, load_time_ms=1500)
         issues, scores = analyze_image(img)
-        assert scores["performance_score"] == 45  # 100 - 30 - 25
+        assert scores["performance_score"] == 15  # 100 - 30 - 25 - 20 - 10
 
     def test_scores_dont_go_negative(self):
         """Scores should bottom out at 0, not go negative."""
@@ -422,7 +427,7 @@ class TestBatchAnalysis:
         ]
         updated, all_issues = analyze_batch(images)
 
-        codes = [i.issue_code for i in all_issues]
+        codes = [i.code for i in all_issues]
         assert "IMG_DUPLICATE_CONTENT" in codes
         assert "IMG_DUPLICATE_CONTENT" in updated[1].issues
 
@@ -468,7 +473,7 @@ class TestAnalyzeImageIntegration:
         )
         issues, scores = analyze_image(img)
 
-        codes = [i.issue_code for i in issues]
+        codes = [i.code for i in issues]
         assert "IMG_ALT_MISSING" in codes
         assert "IMG_OVERSIZED" in codes
         assert "IMG_SLOW_LOAD" in codes

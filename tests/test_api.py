@@ -445,7 +445,7 @@ class TestCsvExport:
 # ── Utility: robots and sitemap ────────────────────────────────────────────
 
 class TestUtilityEndpoints:
-    async def test_robots_endpoint_mocked(self, api_client):
+    async def test_robots_endpoint_mocked(self, api_client, auth_headers):
         import respx
         import httpx
 
@@ -453,13 +453,13 @@ class TestUtilityEndpoints:
             respx.get("https://example.com/robots.txt").mock(
                 return_value=httpx.Response(200, text="User-agent: *\nDisallow:\n")
             )
-            r = await api_client.get("/api/robots", params={"url": "https://example.com"})
+            r = await api_client.get("/api/robots", params={"url": "https://example.com"}, headers=auth_headers)
 
         assert r.status_code == 200
         data = r.json()
         assert "sitemap_urls" in data
 
-    async def test_sitemap_endpoint_mocked(self, api_client):
+    async def test_sitemap_endpoint_mocked(self, api_client, auth_headers):
         import respx
         import httpx
 
@@ -471,7 +471,7 @@ class TestUtilityEndpoints:
             respx.get("https://example.com/sitemap.xml").mock(
                 return_value=httpx.Response(200, text=xml)
             )
-            r = await api_client.get("/api/sitemap", params={"url": "https://example.com"})
+            r = await api_client.get("/api/sitemap", params={"url": "https://example.com"}, headers=auth_headers)
 
         assert r.status_code == 200
         data = r.json()

@@ -4,8 +4,10 @@ Async HTTP page fetcher for the TalkingToad crawler.
 Implements spec §2.4, §2.5, §2.9, and logging from §8.2.
 """
 
+import ipaddress
 import logging
 import os
+import socket
 from dataclasses import dataclass, field
 from urllib.parse import urlparse
 
@@ -27,6 +29,39 @@ _MAX_REDIRECTS = 10
 _LOGIN_PATHS: frozenset[str] = frozenset(
     ["/login", "/logout", "/signin", "/signout", "/wp-login.php", "/user/login", "/user/logout"]
 )
+
+
+def _is_private_ip(ip_str: str) -> bool:
+    """Return True if *ip_str* is a private, loopback, or link-local address."""
+    try:
+        addr = ipaddress.ip_address(ip_str)
+    except ValueError:
+        return False
+    return addr.is_private or addr.is_loopback or addr.is_link_local or addr.is_reserved
+
+
+def is_ssrf_safe(url: str) -> bool:
+    """Return True if the URL's hostname does **not** resolve to a private IP.
+
+    Used to block SSRF attacks where a user-supplied URL targets internal
+    services (localhost, 169.254.x.x, 10.x.x.x, 192.168.x.x, etc.).
+    """
+    try:
+        hostname = urlparse(url).hostname
+        if not hostname:
+            return False
+        # Quick check for obvious private hostnames
+        if hostname in ("localhost", "127.0.0.1", "0.0.0.0", "::1"):
+            return False
+        # Resolve and check all addresses
+        for family, _, _, _, sockaddr in socket.getaddrinfo(hostname, None):
+            ip_str = sockaddr[0]
+            if _is_private_ip(ip_str):
+                return False
+    except (socket.gaierror, OSError):
+        # Can't resolve — allow (will fail at fetch time with a clear error)
+        pass
+    return True
 
 
 @dataclass
@@ -112,6 +147,16 @@ async def fetch_page(
         ) as response:
             redirect_chain = [str(r.url) for r in response.history]
             final_url = str(response.url)
+
+            # SSRF protection: reject if any redirect hop resolves to a private IP
+            for hop_url in redirect_chain + [final_url]:
+                if not is_ssrf_safe(hop_url):
+                    logger.warning("ssrf_redirect_blocked", extra={"url": url, "blocked_hop": hop_url})
+                    return FetchResult(
+                        url=url, final_url=hop_url, status_code=0,
+                        error="SSRF_BLOCKED: redirect to private/internal network",
+                    )
+
             is_login_redirect = _check_login_redirect(redirect_chain + [final_url])
             first_status = response.history[0].status_code if response.history else response.status_code
             content_type = response.headers.get("content-type", "").split(";")[0].strip().lower()

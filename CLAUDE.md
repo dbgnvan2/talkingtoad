@@ -34,8 +34,8 @@ TalkingToad is a lightweight, web-based SEO crawler for nonprofit organisations.
 TalkingToad/
 ├── api/                         # FastAPI backend
 │   ├── crawler/                 # Async crawl engine + issue detection
-│   │   ├── engine.py            # Async BFS crawler (~600 lines)
-│   │   ├── issue_checker.py     # SEO issue detection (~1100 lines)
+│   │   ├── engine.py            # Async BFS crawler (~1000 lines)
+│   │   ├── issue_checker.py     # SEO issue detection (~1500 lines)
 │   │   ├── image_analyzer.py    # Image analysis and scoring (~500 lines)
 │   │   ├── parser.py            # BeautifulSoup HTML extraction
 │   │   ├── normaliser.py        # URL normalization + WP noise detection
@@ -45,7 +45,7 @@ TalkingToad/
 │   │   └── image.py             # ImageInfo data model
 │   ├── routers/                 # API endpoints (crawl, fixes, utility, verified, ai)
 │   └── services/                # Business logic
-│       ├── wp_fixer.py          # WordPress REST API integration (~1200 lines)
+│       ├── wp_fixer.py          # WordPress REST API integration (~2500 lines)
 │       ├── ai_analyzer.py       # Gemini/OpenAI integration
 │       ├── report_generator.py  # PDF audit generation (fpdf2)
 │       ├── excel_generator.py   # Excel export (openpyxl)
@@ -131,7 +131,17 @@ Sitemap and Crawlability category tabs show what was found (sitemap URL, URL cou
 
 ### WordPress Integration Fixes
 - **`find_post_by_url`:** Falls back to single-slug match when exact URL doesn't match (handles different parent paths). Image attachment finder strips WP size suffixes (e.g. `-600x403`) from filenames.
-- **Heading Text Change:** `POST /api/fixes/change-heading-text` endpoint. Handles inline HTML, entity encoding, and whitespace normalization. Preserves `<h1>` tag attributes.
+- **Heading Text Change:** `POST /api/fixes/change-heading-text` endpoint. Handles inline HTML, entity encoding, and whitespace normalization. Preserves `<h1>` tag attributes. Heading text is HTML-escaped before insertion to prevent XSS.
+
+### Security Hardening (v1.9.3)
+- **SSRF Protection:** `target_url` is validated against private/internal IPs (localhost, 169.254.x.x, 10.x.x.x, 192.168.x.x) via DNS resolution before crawl starts. Redirect chains are also validated — each hop is checked and blocked if it resolves to a private IP. Validation lives in `api/crawler/fetcher.py:is_ssrf_safe()`.
+- **Authentication:** AI (`/api/ai/*`), GEO (`/api/geo/*`), and utility (`/api/*`) routers now require `AUTH_TOKEN` bearer auth. The `/api/health` endpoint is exempt (on a separate public router).
+- **XSS Prevention:** `change_heading_text` in `wp_fixer.py` now HTML-escapes `new_text` before inserting into `<h{level}>` tags, preventing stored XSS via WordPress post content.
+- **RedisJobStore Parity:** Added missing `get_ignored_image_patterns()`, `add_ignored_image_pattern()`, `remove_ignored_image_pattern()`, `get_ignored_image_pattern_list()` methods. Updated `update_job()` `_ALLOWED` whitelist to match SQLite (added `phase`, `external_links_checked`, `external_links_total`, `robots_txt_found`, `robots_txt_rules`, `sitemap_found`).
+
+### Bug Fixes (v1.9.3)
+- **Missing `import re`:** Added module-level `import re` in `engine.py` — was only imported inside `_fetch_image_full()` but used at top-level for `/llms.txt` parsing.
+- **PDF/Excel Export:** Fixed `get_images()` unpacking in export endpoints — method returns `list[ImageInfo]`, not a tuple.
 
 ---
 

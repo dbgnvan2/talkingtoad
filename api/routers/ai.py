@@ -10,10 +10,11 @@ from pydantic import BaseModel
 
 from api.routers.crawl import get_store
 from api.services.ai_analyzer import analyze_with_ai, analyze_image_with_geo
+from api.services.auth import require_auth
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api/ai")
+router = APIRouter(prefix="/api/ai", dependencies=[Depends(require_auth)])
 
 
 class AIAnalysisRequest(BaseModel):

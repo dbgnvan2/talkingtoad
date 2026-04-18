@@ -14,10 +14,14 @@ from api.crawler.normaliser import is_wp_noise_path
 from api.crawler.robots import fetch_robots
 from api.crawler.sitemap import fetch_sitemap_recursive
 from api.routers.crawl import get_store
+from api.services.auth import require_auth
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api")
+router = APIRouter(prefix="/api", dependencies=[Depends(require_auth)])
+
+# Public router for endpoints that must not require auth (health checks, etc.)
+public_router = APIRouter(prefix="/api")
 
 
 class LLMSTxtSaveRequest(BaseModel):
@@ -97,9 +101,9 @@ async def save_llms_txt(
     return {"success": True, "job_id": body.job_id}
 
 
-@router.get("/health")
+@public_router.get("/health")
 async def health() -> dict:
-    """Health check endpoint (spec §6.3)."""
+    """Health check endpoint (spec §6.3). No auth required."""
     return {"status": "ok", "version": "1.8"}
 
 

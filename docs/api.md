@@ -3,7 +3,7 @@
 Base URL: `https://yourcrawler.vercel.app` (prod) / `http://localhost:8000` (dev)
 
 All POST/PATCH requests require `Content-Type: application/json`.
-All endpoints require `Authorization: Bearer <token>`.
+All endpoints require `Authorization: Bearer <token>` except `/api/health`.
 
 ---
 
@@ -27,6 +27,18 @@ All endpoints require `Authorization: Bearer <token>`.
 | GET | `/api/crawl/{job_id}/export/csv/{category}` | Category results as CSV. |
 | GET | `/api/crawl/{job_id}/export/pdf` | Professional PDF report. Query params: `include_help`, `include_pages`, `summary_only`. |
 | GET | `/api/crawl/{job_id}/export/excel` | Tabbed Excel report grouped by category. |
+| GET | `/api/crawl/{job_id}/export/ai-images-pdf` | Export AI image analysis results as a PDF report. |
+
+## Image Intelligence (v1.9)
+
+| Method | Endpoint | Description |
+|---|---|---|
+| GET | `/api/crawl/{job_id}/images` | Paginated list of images with scores. Query params: `page`, `limit`, `sort_by` (score/size/load_time). |
+| GET | `/api/crawl/{job_id}/images/summary` | Image analysis summary: totals, scores, breakdowns by issue and format. |
+| POST | `/api/crawl/{job_id}/images/fetch` | Fetch live image details from WordPress + image file (Level 2 data). Body: `{"image_urls": [...]}`. |
+| POST | `/api/crawl/{job_id}/images/analyze-ai` | Analyze an image with AI vision model (Level 3 data). Body: `{"image_url": "..."}`. |
+| GET | `/api/crawl/{job_id}/orphaned-images` | List images in WordPress media library not found on any crawled page. |
+| GET | `/api/crawl/{job_id}/orphaned-pages` | List crawled pages not linked from any other crawled page. |
 
 ## Fix Manager (WordPress integration)
 
@@ -285,6 +297,7 @@ Only the fields you include are updated.
 | `JOB_ALREADY_RUNNING` | 409 | Crawl already in progress |
 | `JOB_ALREADY_COMPLETE` | 409 | Job finished — cannot cancel |
 | `INVALID_URL` | 422 | Malformed or unreachable URL |
+| `BLOCKED_URL` | 403 | URL targets a private or internal network (SSRF protection) |
 | `INVALID_CATEGORY` | 422 | Unrecognised category slug |
 | `CRAWL_LIMIT_EXCEEDED` | 429 | Rate limit reached |
 | `CRAWL_FAILED` | 500 | Unrecoverable crawler error |
