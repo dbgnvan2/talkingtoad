@@ -105,6 +105,31 @@ The Fix Manager connects directly to a WordPress site and applies SEO fixes:
 4. **Fix deduplication** — Multiple issue codes can point to the same fix field (e.g., `TITLE_MISSING`, `TITLE_TOO_SHORT`, and `TITLE_TOO_LONG` all fix `seo_title`). Deduplication is by `(page_url, field)` tuple.
 5. **Stop-on-failure apply** — The apply step applies fixes sequentially and stops on the first failure, marking subsequent fixes as pending. The user corrects the error and retries.
 
+### Banner H1 suppression
+
+When `suppress_banner_h1` is enabled (default: `true`), the issue checker detects and removes theme-injected banner H1 headings before running H1 checks. Detection uses two signals:
+
+1. **Position:** Only the first H1 in the DOM is a candidate (themes inject banners before content).
+2. **CSS class:** Common banner classes (`entry-title`, `page-title`, `page-header`, `banner-title`, `hero-title`, `archive-title`).
+
+The first H1 is suppressed if it mismatches the page title OR carries a banner CSS class. Suppression is only applied when there are 2+ H1s, so it never removes the only heading on the page.
+
+### `discovered_from` tracking for internal broken links
+
+The crawler maintains a `discovered_from` map that records which page first linked to each internal URL. When an internal URL returns a 4xx/5xx status, the source page URL is attached to the issue's `extra.source_url` field. This enables the frontend to display "source pages" for internal broken links and offer a one-click rescan of the linking page after the issue is fixed. URLs seeded from the sitemap are recorded as `"(sitemap)"`.
+
+### Image scoring with partial data
+
+Image performance scoring no longer requires a full fetch (Level 2) to produce useful results. When only `file_size_bytes` is available from the Level 1 scan (HTTP HEAD request), the scorer can still flag `IMG_OVERSIZED` issues. This means oversized images are caught during the initial crawl without needing WordPress API calls.
+
+### Health score trailing slash normalisation
+
+The health score calculation normalises trailing slashes on both page URLs and issue URLs using `RTRIM(page_url, '/')` in SQL queries. This prevents mismatches where the crawled page URL has a trailing slash but the stored issue URL does not (or vice versa), which previously caused some pages to appear healthier than they actually were.
+
+### Auto-rescan after fix
+
+The frontend supports rescanning individual pages after fixes are applied. When a broken link source page is displayed, the user can click "Rescan Page" to re-fetch and re-check that page via `POST /api/crawl/{job_id}/rescan-url`. The rescan sends cache-bypass headers and updates stored issues, so the results view reflects the current state of the page. A manual URL input is also available for cases where source pages are not automatically tracked.
+
 ### Issue scoring and priority
 
 Every issue has:
