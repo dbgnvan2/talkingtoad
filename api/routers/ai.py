@@ -5,12 +5,13 @@ Router for AI-assisted analysis and remediation (spec §4).
 import logging
 from typing import Any
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 from pydantic import BaseModel
 
 from api.routers.crawl import get_store
 from api.services.ai_analyzer import analyze_with_ai, analyze_image_with_geo
 from api.services.auth import require_auth
+from api.services.rate_limiter import AI_ANALYSIS_LIMIT, limiter
 
 logger = logging.getLogger(__name__)
 
@@ -24,32 +25,33 @@ class AIAnalysisRequest(BaseModel):
 
 
 @router.post("/analyze")
-async def analyze_page(request: AIAnalysisRequest, store=Depends(get_store)):
+@limiter.limit(AI_ANALYSIS_LIMIT)
+async def analyze_page(request: Request, body: AIAnalysisRequest, store=Depends(get_store)):
     """Analyze a page using AI and provide fix suggestions."""
     # Load page data
-    page_data, _ = await store.get_page_issues_by_url(request.job_id, request.page_url)
+    page_data, _ = await store.get_page_issues_by_url(body.job_id, body.page_url)
     if not page_data:
-        return {"error": f"Page not found: {request.page_url}"}
+        return {"error": f"Page not found: {body.page_url}"}
 
     context = {}
-    if request.analysis_type == "title_meta_optimize":
+    if body.analysis_type == "title_meta_optimize":
         context = {
             "title": page_data.title or "",
             "meta_description": page_data.meta_description or "",
             "content_summary": (page_data.h1_tags[0] if page_data.h1_tags else "") + " " + (page_data.og_description or "")
         }
-    elif request.analysis_type == "semantic_alignment":
+    elif body.analysis_type == "semantic_alignment":
         context = {
             "h1": page_data.h1_tags[0] if page_data.h1_tags else "None",
             "body_snippet": page_data.meta_description or "None"
         }
     else:
-        return {"error": f"Invalid analysis type: {request.analysis_type}"}
+        return {"error": f"Invalid analysis type: {body.analysis_type}"}
 
-    suggestion = await analyze_with_ai(request.analysis_type, context)
+    suggestion = await analyze_with_ai(body.analysis_type, context)
     return {
-        "page_url": request.page_url,
-        "analysis_type": request.analysis_type,
+        "page_url": body.page_url,
+        "analysis_type": body.analysis_type,
         "suggestion": suggestion
     }
 
@@ -95,16 +97,17 @@ class SiteAdvisorRequest(BaseModel):
 
 
 @router.post("/page-advisor")
-async def get_page_advisor(request: PageAdvisorRequest, store=Depends(get_store)):
+@limiter.limit(AI_ANALYSIS_LIMIT)
+async def get_page_advisor(request: Request, body: PageAdvisorRequest, store=Depends(get_store)):
     """
     Get AI-generated SEO recommendations for a specific page.
 
     Returns specific content suggestions for title, meta description, headings, and alt text.
     """
     # Load page data
-    page_data, issues_by_category = await store.get_page_issues_by_url(request.job_id, request.page_url)
+    page_data, issues_by_category = await store.get_page_issues_by_url(body.job_id, body.page_url)
     if not page_data:
-        return {"error": f"Page not found: {request.page_url}"}
+        return {"error": f"Page not found: {body.page_url}"}
 
     # Format issues for AI context - issues_by_category is a dict[str, list[Issue]]
     issue_summary = []
@@ -117,7 +120,7 @@ async def get_page_advisor(request: PageAdvisorRequest, store=Depends(get_store)
     h2_tags = [h["text"] for h in (page_data.headings_outline or []) if h.get("level") == 2]
 
     context = {
-        "url": request.page_url,
+        "url": body.page_url,
         "title": page_data.title or "(none)",
         "meta_description": page_data.meta_description or "(none)",
         "h1_tags": ", ".join(page_data.h1_tags) if page_data.h1_tags else "(none)",
@@ -146,25 +149,26 @@ async def get_page_advisor(request: PageAdvisorRequest, store=Depends(get_store)
         recommendations = {"raw_response": suggestion}
 
     return {
-        "page_url": request.page_url,
+        "page_url": body.page_url,
         "recommendations": recommendations
     }
 
 
 @router.post("/site-advisor")
-async def get_site_advisor(request: SiteAdvisorRequest, store=Depends(get_store)):
+@limiter.limit(AI_ANALYSIS_LIMIT)
+async def get_site_advisor(request: Request, body: SiteAdvisorRequest, store=Depends(get_store)):
     """
     Get AI-generated site-wide SEO recommendations.
 
     Analyzes patterns across the entire site and provides high-level strategic advice.
     """
     # Get job summary
-    summary = await store.get_summary(request.job_id)
+    summary = await store.get_summary(body.job_id)
     if not summary:
-        return {"error": f"Job not found: {request.job_id}"}
+        return {"error": f"Job not found: {body.job_id}"}
 
     # Get all issues to find common patterns
-    all_issues = await store.get_all_issues(request.job_id)
+    all_issues = await store.get_all_issues(body.job_id)
 
     # Count issue types
     from collections import Counter
@@ -172,7 +176,7 @@ async def get_site_advisor(request: SiteAdvisorRequest, store=Depends(get_store)
     common_issues = [f"{code} ({count} occurrences)" for code, count in issue_counts.most_common(10)]
 
     # Get sample pages
-    pages = await store.get_pages(request.job_id)
+    pages = await store.get_pages(body.job_id)
     sample_pages = [
         f"{page.url} (Title: {page.title or 'none'}, Issues: {len([i for i in all_issues if i.page_url == page.url])})"
         for page in pages[:5]
@@ -203,7 +207,7 @@ async def get_site_advisor(request: SiteAdvisorRequest, store=Depends(get_store)
         recommendations = [{"recommendation": suggestion, "priority": "high", "category": "general", "impact": "Unknown"}]
 
     return {
-        "job_id": request.job_id,
+        "job_id": body.job_id,
         "total_pages": summary.get("total_pages", 0),
         "total_issues": len(all_issues),
         "recommendations": recommendations
@@ -216,7 +220,8 @@ class GeoImageAnalysisRequest(BaseModel):
 
 
 @router.post("/image/analyze-geo")
-async def analyze_image_geo(request: GeoImageAnalysisRequest, store=Depends(get_store)):
+@limiter.limit(AI_ANALYSIS_LIMIT)
+async def analyze_image_geo(request: Request, body: GeoImageAnalysisRequest, store=Depends(get_store)):
     """
     Analyze an image using GEO-optimized prompting.
 
@@ -234,7 +239,7 @@ async def analyze_image_geo(request: GeoImageAnalysisRequest, store=Depends(get_
         }
     """
     # Get job to extract domain
-    job = await store.get_job(request.job_id)
+    job = await store.get_job(body.job_id)
     if not job:
         return {"error": "Job not found", "success": False}
 
@@ -259,12 +264,12 @@ async def analyze_image_geo(request: GeoImageAnalysisRequest, store=Depends(get_
         }
 
     # Get image info to extract page context
-    image_info = await store.get_image_by_url(request.job_id, request.image_url)
+    image_info = await store.get_image_by_url(body.job_id, body.image_url)
     if not image_info:
         return {"error": "Image not found in crawl data", "success": False}
 
     # Get page data to extract H1
-    page_data, _ = await store.get_page_issues_by_url(request.job_id, image_info.page_url)
+    page_data, _ = await store.get_page_issues_by_url(body.job_id, image_info.page_url)
     h1 = page_data.h1_tags[0] if page_data and page_data.h1_tags else ""
 
     # Build GEO config dict
@@ -277,7 +282,7 @@ async def analyze_image_geo(request: GeoImageAnalysisRequest, store=Depends(get_
 
     # Analyze image with GEO
     result = await analyze_image_with_geo(
-        image_url=request.image_url,
+        image_url=body.image_url,
         page_h1=h1,
         surrounding_text=image_info.surrounding_text,
         geo_config=geo_dict,
@@ -294,7 +299,7 @@ class ApplyGeoMetadataRequest(BaseModel):
 
 
 @router.post("/image/apply-geo-metadata")
-async def apply_geo_metadata(request: ApplyGeoMetadataRequest, store=Depends(get_store)):
+async def apply_geo_metadata(body: ApplyGeoMetadataRequest, store=Depends(get_store)):
     """
     Apply GEO-generated metadata to an image.
 
@@ -310,7 +315,7 @@ async def apply_geo_metadata(request: ApplyGeoMetadataRequest, store=Depends(get
     from api.services.wp_client import WPClient, WPAuthError
 
     # Get image info
-    image_info = await store.get_image_by_url(request.job_id, request.image_url)
+    image_info = await store.get_image_by_url(body.job_id, body.image_url)
     if not image_info:
         return {"error": "Image not found", "success": False}
 
@@ -335,9 +340,9 @@ async def apply_geo_metadata(request: ApplyGeoMetadataRequest, store=Depends(get
                 # Update WordPress with GEO-optimized metadata
                 await update_image_metadata(
                     wp,
-                    request.image_url,
-                    alt_text=request.alt_text,
-                    description=request.description,
+                    body.image_url,
+                    alt_text=body.alt_text,
+                    description=body.description,
                 )
                 wp_updated = True
 
@@ -347,13 +352,13 @@ async def apply_geo_metadata(request: ApplyGeoMetadataRequest, store=Depends(get
             wp_error = f"WordPress update failed: {str(e)}"
 
     # Update local database (always, even if WP update failed)
-    image_info.alt = request.alt_text
-    image_info.description = request.description
+    image_info.alt = body.alt_text
+    image_info.description = body.description
     image_info.data_source = "geo_analyzed"
 
     # Re-analyze with updated alt text
     from api.crawler.image_analyzer import analyze_image
-    issues, scores = analyze_image(image_info, job_id=request.job_id)
+    issues, scores = analyze_image(image_info, job_id=body.job_id)
 
     # Update scores
     image_info.performance_score = scores["performance_score"]

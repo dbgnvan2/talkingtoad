@@ -23,3 +23,5 @@ limiter = Limiter(key_func=get_remote_address, enabled=_enabled)
 
 # Limit strings applied per endpoint
 CRAWL_START_LIMIT = "10/hour" if _enabled else "10000/hour"
+EXPORT_LIMIT = "30/hour" if _enabled else "10000/hour"
+AI_ANALYSIS_LIMIT = "60/hour" if _enabled else "10000/hour"

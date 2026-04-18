@@ -353,17 +353,18 @@ function SeverityTab({ jobId, severity, onPageClick, onBack }) {
 
   if (!data) return <div className="py-20"><Spinner /></div>
 
-  // Group issues by issue_code (subcategories)
-  const groups = (data.issues || []).reduce((acc, iss) => {
-    if (!acc[iss.issue_code]) acc[iss.issue_code] = { ...iss, count: 0, pages: [] }
-    acc[iss.issue_code].count++
-    if (iss.page_url && !acc[iss.issue_code].pages.includes(iss.page_url)) {
-      acc[iss.issue_code].pages.push(iss.page_url)
-    }
-    return acc
-  }, {})
-
-  const sortedGroups = Object.values(groups).sort((a, b) => (b.priority_rank || 0) - (a.priority_rank || 0))
+  // Group issues by issue_code (subcategories) — memoized to avoid recompute on expand/collapse
+  const sortedGroups = useMemo(() => {
+    const groups = (data.issues || []).reduce((acc, iss) => {
+      if (!acc[iss.issue_code]) acc[iss.issue_code] = { ...iss, count: 0, pages: [] }
+      acc[iss.issue_code].count++
+      if (iss.page_url && !acc[iss.issue_code].pages.includes(iss.page_url)) {
+        acc[iss.issue_code].pages.push(iss.page_url)
+      }
+      return acc
+    }, {})
+    return Object.values(groups).sort((a, b) => (b.priority_rank || 0) - (a.priority_rank || 0))
+  }, [data])
 
   return (
     <div className="space-y-4">
@@ -583,12 +584,15 @@ function CategoryTab({ jobId, category, onPageClick, onShowHelp, onSummaryRefres
 
   if (!data) return <div className="py-20"><Spinner /></div>
 
-  const groups = data.issues.reduce((acc, iss) => {
-    if (!acc[iss.issue_code]) acc[iss.issue_code] = { ...iss, count: 0, pages: [] }
-    acc[iss.issue_code].count++
-    acc[iss.issue_code].pages.push(iss.page_url)
-    return acc
-  }, {})
+  // Memoize grouping to avoid recompute on expand/collapse re-renders
+  const groups = useMemo(() => {
+    return data.issues.reduce((acc, iss) => {
+      if (!acc[iss.issue_code]) acc[iss.issue_code] = { ...iss, count: 0, pages: [] }
+      acc[iss.issue_code].count++
+      acc[iss.issue_code].pages.push(iss.page_url)
+      return acc
+    }, {})
+  }, [data])
 
   return (
     <div className="space-y-4">

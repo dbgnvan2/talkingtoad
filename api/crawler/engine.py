@@ -556,36 +556,47 @@ async def run_crawl(
             if inspect.isawaitable(result):
                 await result
 
+        # Pre-filter bot-blocking domains (no network call needed)
+        links_to_check: list[dict] = []
         for ext in external_link_queue:
-            if cancel_event and cancel_event.is_set():
-                break
             if external_checked >= _EXTERNAL_LINK_CAP_PER_JOB:
                 log.info("external_link_cap_reached", extra={"cap": _EXTERNAL_LINK_CAP_PER_JOB})
                 break
-
             target = ext["target_url"]
             if _is_bot_blocking_domain(target):
-                # If the user has verified this URL, skip the notice entirely.
                 if target not in settings.verified_link_urls:
-                    # page_url = source page (internal), target_url in extra = external link
                     issue = make_issue("EXTERNAL_LINK_SKIPPED", ext["source_url"])
                     issue.extra = {"target_url": target}
                     issue.description = f"Link to {target} was skipped — the site may block bots"
                     all_issues.append(issue)
                 external_checked += 1
                 continue
-
-            result = await _check_external_link(target, client)
+            links_to_check.append(ext)
             external_checked += 1
 
-            # Update progress every 10 links or on last link
-            if on_progress and (external_checked % 10 == 0 or external_checked == external_total):
+        # Check remaining links concurrently (10 at a time)
+        _EXT_CONCURRENCY = 10
+        sem = asyncio.Semaphore(_EXT_CONCURRENCY)
+
+        async def _check_one(ext: dict) -> tuple[dict, FetchResult | None]:
+            async with sem:
+                if cancel_event and cancel_event.is_set():
+                    return ext, None
+                return ext, await _check_external_link(ext["target_url"], client)
+
+        tasks = [_check_one(ext) for ext in links_to_check]
+        completed = 0
+        for coro in asyncio.as_completed(tasks):
+            ext, result = await coro
+            completed += 1
+
+            if on_progress and (completed % 10 == 0 or completed == len(links_to_check)):
                 payload = {
                     "pages_crawled": len(all_pages),
                     "pages_total": pages_total,
                     "current_url": None,
                     "phase": "checking_external_links",
-                    "external_links_checked": external_checked,
+                    "external_links_checked": external_checked - len(links_to_check) + completed,
                     "external_links_total": external_total,
                 }
                 result_prog = on_progress(payload)
@@ -593,10 +604,9 @@ async def run_crawl(
                     await result_prog
 
             if result is not None:
+                target = ext["target_url"]
                 source_url = ext["source_url"]
                 if result.status_code == 0 and result.error:
-                    # Timeout or connection failure — report as an info notice
-                    # page_url = source page (internal), target_url in extra = broken link
                     issue = make_issue("EXTERNAL_LINK_TIMEOUT", source_url)
                     issue.extra = {"target_url": target}
                     issue.description = f"Link to {target} did not respond — destination may be slow or unavailable"
@@ -605,10 +615,8 @@ async def run_crawl(
                 else:
                     issue = issue_for_status(result.status_code, target)
                     if issue:
-                        # page_url = source page (internal), target_url in extra = broken link
                         issue.page_url = source_url
                         issue.extra = {"target_url": target}
-                        # Update description to include the broken URL
                         issue.description = f"Link to {target} returns {result.status_code}"
                         all_issues.append(issue)
                         broken_link_sources.append((target, source_url, ext.get("link_text")))

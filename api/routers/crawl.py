@@ -19,6 +19,7 @@ import csv
 import io
 import logging
 import math
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
 from uuid import uuid4
@@ -26,17 +27,22 @@ from uuid import uuid4
 from fastapi import APIRouter, BackgroundTasks, Depends, Query, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 
-from api.crawler.engine import CrawlResult, CrawlSettings as EngineCrawlSettings, run_crawl
-from api.crawler.fetcher import is_ssrf_safe
-from api.crawler.issue_checker import Issue as EngIssue
-from api.crawler.parser import ParsedPage as EngPage
+from api.crawler.engine import (
+    CrawlResult, CrawlSettings as EngineCrawlSettings, run_crawl,
+    _check_external_link, _is_bot_blocking_domain, _EXTERNAL_LINK_CAP_PER_PAGE,
+    _guess_format_from_url, _extract_filename,
+)
+from api.crawler.fetcher import is_ssrf_safe, fetch_page, make_client, _RESCAN_TIMEOUT
+from api.crawler.issue_checker import Issue as EngIssue, check_page, issue_for_status, make_issue
+from api.crawler.normaliser import normalise_url
+from api.crawler.parser import ParsedPage as EngPage, parse_page
 from api.models.issue import PHASE_1_CATEGORIES, Issue
 from api.models.job import CrawlJob, CrawlSettings
 from api.models.link import Link
 from api.models.page import CrawledPage
 from api.services.auth import require_auth
 from api.services.job_store import SQLiteJobStore, RedisJobStore
-from api.services.rate_limiter import CRAWL_START_LIMIT, limiter
+from api.services.rate_limiter import CRAWL_START_LIMIT, EXPORT_LIMIT, AI_ANALYSIS_LIMIT, limiter
 from api.services.report_generator import generate_pdf_report
 from api.services.excel_generator import generate_excel_report
 
@@ -129,6 +135,142 @@ def _engine_issue_to_model(issue: EngIssue, job_id: str) -> Issue:
         priority_rank=issue.priority_rank,
         human_description=issue.human_description,
         extra=issue.extra,
+    )
+
+
+# ── Single-page fetch + check helper ─────────────────────────────────────
+
+@dataclass
+class _PageCheckResult:
+    """Result of fetching a single page and running issue checks."""
+    page: EngPage                           # parsed page data
+    fetch_result: Any                       # raw FetchResult from fetcher
+    issues: list[Issue] = field(default_factory=list)   # Pydantic Issue models
+    exempt_urls: set[str] = field(default_factory=set)  # for exempt anchor filtering
+
+
+async def _fetch_and_check_page(
+    *,
+    url: str,
+    job_id: str,
+    base_url: str,
+    store: SQLiteJobStore | RedisJobStore,
+    suppress_h1_strings: list[str] | None = None,
+    suppress_banner_h1: bool = True,
+    bypass_cache: bool = False,
+) -> _PageCheckResult | JSONResponse:
+    """Fetch a URL, parse it, run issue checks and external link checks.
+
+    Returns a _PageCheckResult on success, or a JSONResponse error on failure.
+    Both rescan_url and scan_single_page delegate their core work here.
+
+    Parameters
+    ----------
+    url : str
+        Already-normalised URL to fetch.
+    job_id : str
+        Job this page belongs to.
+    base_url : str
+        Site origin (scheme + host) used as base for parse_page.
+    store : job store
+        For loading exempt anchors, ignored image patterns, verified links.
+    suppress_h1_strings / suppress_banner_h1 : H1 suppression settings.
+    bypass_cache : bool
+        If True, send cache-bypass headers (used by rescan).
+    """
+    is_homepage = url.rstrip("/") == base_url.rstrip("/")
+
+    # ── Fetch ─────────────────────────────────────────────────────────
+    try:
+        async with make_client() as client:
+            result = await fetch_page(
+                url, client, timeout=_RESCAN_TIMEOUT, bypass_cache=bypass_cache,
+            )
+    except Exception as exc:
+        return _err("FETCH_ERROR", str(exc), 500)
+
+    if result.status_code == 0:
+        error_msg = result.error or "Unknown error"
+        if "timeout" in error_msg.lower() or "timed out" in error_msg.lower():
+            friendly = (
+                f"Page timed out after {int(_RESCAN_TIMEOUT)}s "
+                "— the site may be slow. Try again in a moment."
+            )
+        elif "connect" in error_msg.lower():
+            friendly = "Could not connect to the site — check that it is online."
+        else:
+            friendly = f"Could not fetch page: {error_msg}"
+        return _err("FETCH_ERROR", friendly, 502)
+
+    # ── Parse ─────────────────────────────────────────────────────────
+    try:
+        page = parse_page(result, base_url, is_homepage=is_homepage)
+    except Exception as exc:
+        return _err("PARSE_ERROR", f"Could not parse page: {exc}", 500)
+
+    # ── Issue checks ──────────────────────────────────────────────────
+    exempt_urls = await store.get_exempt_anchor_url_set()
+    ignored_img_patterns = await store.get_ignored_image_pattern_list()
+    eng_issues = check_page(
+        page,
+        suppress_h1_strings=suppress_h1_strings or None,
+        suppress_banner_h1=suppress_banner_h1,
+        exempt_anchor_urls=exempt_urls or None,
+        ignored_image_patterns=ignored_img_patterns or None,
+    )
+
+    # ── External link checks ──────────────────────────────────────────
+    verified_link_urls: set[str] = set()
+    try:
+        vl = await store.get_verified_links()
+        verified_link_urls = {v["url"] for v in vl} if vl else set()
+    except Exception:
+        pass
+
+    external_links = [lnk for lnk in (page.links or []) if not lnk.is_internal]
+    ext_checked = 0
+    async with make_client() as ext_client:
+        for lnk in external_links:
+            if ext_checked >= _EXTERNAL_LINK_CAP_PER_PAGE:
+                break
+            target = lnk.url
+            if _is_bot_blocking_domain(target):
+                if target not in verified_link_urls:
+                    skip_issue = make_issue("EXTERNAL_LINK_SKIPPED", target)
+                    skip_issue.extra = {"source_url": url}
+                    eng_issues.append(skip_issue)
+                ext_checked += 1
+                continue
+            try:
+                ext_result = await _check_external_link(target, ext_client)
+            except Exception:
+                ext_checked += 1
+                continue
+            ext_checked += 1
+            if ext_result is None:
+                continue
+            if ext_result.status_code == 0 and ext_result.error:
+                timeout_issue = make_issue("EXTERNAL_LINK_TIMEOUT", target)
+                timeout_issue.extra = {"source_url": url}
+                eng_issues.append(timeout_issue)
+            else:
+                broken = issue_for_status(ext_result.status_code, target)
+                if broken:
+                    broken.extra = {"source_url": url}
+                    eng_issues.append(broken)
+
+    # ── Convert engine issues → Pydantic models ──────────────────────
+    _BROKEN_LINK_CATEGORIES = {"broken_link"}
+    new_issues = [_engine_issue_to_model(i, job_id) for i in eng_issues]
+    for issue in new_issues:
+        if issue.category not in _BROKEN_LINK_CATEGORIES:
+            issue.page_url = url
+
+    return _PageCheckResult(
+        page=page,
+        fetch_result=result,
+        issues=new_issues,
+        exempt_urls=exempt_urls,
     )
 
 
@@ -581,17 +723,7 @@ async def rescan_url(
     Useful for verifying that a fix worked. Replaces the stored issues for
     this URL with the results from a fresh fetch and issue check.
     """
-    from api.crawler.fetcher import fetch_page, make_client, _RESCAN_TIMEOUT
-    from api.crawler.parser import parse_page
-    from api.crawler.issue_checker import check_page, issue_for_status, make_issue
-    from api.crawler.engine import (
-        _check_external_link, _is_bot_blocking_domain,
-        _EXTERNAL_LINK_CAP_PER_PAGE,
-    )
-    from api.crawler.normaliser import normalise_url
-
     # Normalize the URL to match how it was stored during the original crawl.
-    # e.g. trailing slashes may differ between what the UI sends and what's in DB.
     try:
         url = normalise_url(url)
     except Exception:
@@ -610,107 +742,30 @@ async def rescan_url(
     old_codes |= await store.get_broken_link_codes_for_source(job_id, url)
 
     base_url = job.target_url
-    is_homepage = url.rstrip("/") == base_url.rstrip("/")
     suppress_h1s: list[str] = job.settings.suppress_h1_strings if job.settings else []
-    # Always suppress banner H1s — this is now the default behavior.
-    # Old jobs may have stored False before this became the default.
-    suppress_banner: bool = True
 
-    try:
-        async with make_client() as client:
-            result = await fetch_page(url, client, timeout=_RESCAN_TIMEOUT, bypass_cache=True)
-    except Exception as exc:
-        return _err("FETCH_ERROR", str(exc), 500)
-
-    if result.status_code == 0:
-        error_msg = result.error or "Unknown error"
-        if "timeout" in error_msg.lower() or "timed out" in error_msg.lower():
-            friendly = f"Page timed out after {int(_RESCAN_TIMEOUT)}s — the site may be slow. Try again in a moment."
-        elif "connect" in error_msg.lower():
-            friendly = "Could not connect to the site — check that it is online."
-        else:
-            friendly = f"Could not fetch page: {error_msg}"
-        return _err("FETCH_ERROR", friendly, 502)
-
-    try:
-        page = parse_page(result, base_url, is_homepage=is_homepage)
-    except Exception as exc:
-        return _err("PARSE_ERROR", f"Could not parse page: {exc}", 500)
-
-    # Run issue checks (single-page — no cross-page or sitemap checks)
-    exempt_urls = await store.get_exempt_anchor_url_set()
-    ignored_img_patterns = await store.get_ignored_image_pattern_list()
-    eng_issues = check_page(
-        page,
-        suppress_h1_strings=suppress_h1s or None,
-        suppress_banner_h1=suppress_banner,
-        exempt_anchor_urls=exempt_urls or None,
-        ignored_image_patterns=ignored_img_patterns or None,
+    # ── Fetch, parse, check issues (shared logic) ─────────────────────
+    check = await _fetch_and_check_page(
+        url=url,
+        job_id=job_id,
+        base_url=base_url,
+        store=store,
+        suppress_h1_strings=suppress_h1s,
+        suppress_banner_h1=True,
+        bypass_cache=True,
     )
+    if isinstance(check, JSONResponse):
+        return check
 
-    # Re-check external links found on this page (up to per-page cap)
-    # This ensures broken links that were removed get cleared, and any still
-    # present are re-verified. Mirrors the engine's external link phase.
-    verified_link_urls: set[str] = set()
-    try:
-        vl = await store.get_verified_links()
-        verified_link_urls = {v["url"] for v in vl} if vl else set()
-    except Exception:
-        pass
-
-    external_links = [lnk for lnk in (page.links or []) if not lnk.is_internal]
-    ext_checked = 0
-    async with make_client() as ext_client:
-        for lnk in external_links:
-            if ext_checked >= _EXTERNAL_LINK_CAP_PER_PAGE:
-                break
-            target = lnk.url
-            if _is_bot_blocking_domain(target):
-                if target not in verified_link_urls:
-                    skip_issue = make_issue("EXTERNAL_LINK_SKIPPED", target)
-                    skip_issue.extra = {"source_url": url}
-                    eng_issues.append(skip_issue)
-                ext_checked += 1
-                continue
-            try:
-                ext_result = await _check_external_link(target, ext_client)
-            except Exception:
-                ext_checked += 1
-                continue
-            ext_checked += 1
-            if ext_result is None:
-                continue
-            if ext_result.status_code == 0 and ext_result.error:
-                timeout_issue = make_issue("EXTERNAL_LINK_TIMEOUT", target)
-                timeout_issue.extra = {"source_url": url}
-                eng_issues.append(timeout_issue)
-            else:
-                broken = issue_for_status(ext_result.status_code, target)
-                if broken:
-                    broken.extra = {"source_url": url}
-                    eng_issues.append(broken)
-
-    # Convert engine dataclasses → Pydantic models, stamping job/page context.
-    # For broken-link/skipped/timeout issues the page_url is the dead target URL
-    # (set by make_issue/issue_for_status) — keep that as-is so the category view
-    # can group by target URL.  For all other issues set page_url to the source page.
-    _BROKEN_LINK_CATEGORIES = {"broken_link"}
-    new_issues = [
-        _engine_issue_to_model(i, job_id)
-        for i in eng_issues
-    ]
-    for issue in new_issues:
-        if issue.category not in _BROKEN_LINK_CATEGORIES:
-            issue.page_url = url
-        # broken-link issues keep page_url = dead_url (from make_issue/issue_for_status)
-        # and have extra.source_url = url (already set above)
+    page = check.page
+    result = check.fetch_result
+    new_issues = check.issues
+    exempt_urls = check.exempt_urls
 
     # Update the stored page record with fresh data from the rescan.
-    # This ensures headings_outline, title, meta_description, etc. reflect
-    # the current state of the page — not the original crawl snapshot.
     # crawl_depth is preserved from the original record (single-page rescan has no depth context).
     updated_page = _engine_page_to_model(page, job_id)
-    updated_page.url = url  # use the normalised URL
+    updated_page.url = url
     updated_page.status_code = result.status_code
     updated_page.redirect_url = result.final_url if result.is_redirect else None
     if crawled_page:
@@ -725,7 +780,6 @@ async def rescan_url(
     old_count = await store.delete_issues_for_url(job_id, url)
     old_count += await store.delete_broken_link_issues_for_source(job_id, url)
     await store.save_issues(new_issues)
-    new_count = len(new_issues)
 
     # Record which issue codes were resolved (present before, gone after)
     new_codes: set[str] = {i.issue_code for i in new_issues}
@@ -787,14 +841,6 @@ async def scan_single_page(
     because the scan runs synchronously before this endpoint returns.
     """
     from urllib.parse import urlparse
-    from api.crawler.fetcher import fetch_page, make_client, _RESCAN_TIMEOUT
-    from api.crawler.parser import parse_page
-    from api.crawler.issue_checker import check_page, issue_for_status, make_issue
-    from api.crawler.engine import (
-        _check_external_link, _is_bot_blocking_domain,
-        _EXTERNAL_LINK_CAP_PER_PAGE,
-    )
-    from api.crawler.normaliser import normalise_url
 
     if not url or not url.startswith(("http://", "https://")):
         return _err("INVALID_URL", "url must be a valid http or https URL.", 422)
@@ -816,31 +862,6 @@ async def scan_single_page(
     await store.create_job(job)
     job_id = job.job_id
 
-    try:
-        async with make_client() as client:
-            result = await fetch_page(url, client, timeout=_RESCAN_TIMEOUT)
-    except Exception as exc:
-        await store.update_job(job_id, status="failed", error_message=str(exc))
-        return _err("FETCH_ERROR", str(exc), 500)
-
-    if result.status_code == 0:
-        error_msg = result.error or "Unknown error"
-        await store.update_job(job_id, status="failed", error_message=error_msg)
-        if "timeout" in error_msg.lower() or "timed out" in error_msg.lower():
-            friendly = f"Page timed out after {int(_RESCAN_TIMEOUT)}s."
-        elif "connect" in error_msg.lower():
-            friendly = "Could not connect to the site — check that it is online."
-        else:
-            friendly = f"Could not fetch page: {error_msg}"
-        return _err("FETCH_ERROR", friendly, 502)
-
-    is_homepage = url.rstrip("/") == origin.rstrip("/")
-    try:
-        page = parse_page(result, origin, is_homepage=is_homepage)
-    except Exception as exc:
-        await store.update_job(job_id, status="failed", error_message=str(exc))
-        return _err("PARSE_ERROR", f"Could not parse page: {exc}", 500)
-
     # Inherit suppress_h1_strings and suppress_banner_h1 from the most recent
     # completed job for this origin so that theme-injected headings stay suppressed
     # in ad-hoc single-page scans.
@@ -856,65 +877,27 @@ async def scan_single_page(
     except Exception:
         pass
 
-    exempt_urls = await store.get_exempt_anchor_url_set()
-    ignored_img_patterns = await store.get_ignored_image_pattern_list()
-    eng_issues = check_page(
-        page,
-        suppress_h1_strings=suppress_h1s or None,
+    # ── Fetch, parse, check issues (shared logic) ─────────────────────
+    check = await _fetch_and_check_page(
+        url=url,
+        job_id=job_id,
+        base_url=origin,
+        store=store,
+        suppress_h1_strings=suppress_h1s,
         suppress_banner_h1=suppress_banner,
-        exempt_anchor_urls=exempt_urls or None,
-        ignored_image_patterns=ignored_img_patterns or None,
+        bypass_cache=False,
     )
+    if isinstance(check, JSONResponse):
+        await store.update_job(job_id, status="failed", error_message="Fetch/parse failed")
+        return check
 
-    verified_link_urls: set[str] = set()
-    try:
-        vl = await store.get_verified_links()
-        verified_link_urls = {v["url"] for v in vl} if vl else set()
-    except Exception:
-        pass
-
-    external_links = [lnk for lnk in (page.links or []) if not lnk.is_internal]
-    ext_checked = 0
-    async with make_client() as ext_client:
-        for lnk in external_links:
-            if ext_checked >= _EXTERNAL_LINK_CAP_PER_PAGE:
-                break
-            target = lnk.url
-            if _is_bot_blocking_domain(target):
-                if target not in verified_link_urls:
-                    skip_issue = make_issue("EXTERNAL_LINK_SKIPPED", target)
-                    skip_issue.extra = {"source_url": url}
-                    eng_issues.append(skip_issue)
-                ext_checked += 1
-                continue
-            try:
-                ext_result = await _check_external_link(target, ext_client)
-            except Exception:
-                ext_checked += 1
-                continue
-            ext_checked += 1
-            if ext_result is None:
-                continue
-            if ext_result.status_code == 0 and ext_result.error:
-                timeout_issue = make_issue("EXTERNAL_LINK_TIMEOUT", target)
-                timeout_issue.extra = {"source_url": url}
-                eng_issues.append(timeout_issue)
-            else:
-                broken = issue_for_status(ext_result.status_code, target)
-                if broken:
-                    broken.extra = {"source_url": url}
-                    eng_issues.append(broken)
-
-    _BROKEN_LINK_CATEGORIES = {"broken_link"}
-    new_issues = [_engine_issue_to_model(i, job_id) for i in eng_issues]
-    for issue in new_issues:
-        if issue.category not in _BROKEN_LINK_CATEGORIES:
-            issue.page_url = url
+    page = check.page
+    result = check.fetch_result
+    new_issues = check.issues
 
     # ── Image collection (v1.9image) ────────────────────────────────────
     from api.models.image import ImageInfo
     from api.crawler.image_analyzer import analyze_batch as analyze_images
-    from api.crawler.engine import _guess_format_from_url, _extract_filename
 
     all_images: list[ImageInfo] = []
     if page.image_data:
@@ -1026,7 +1009,9 @@ async def export_csv_full(
 
 
 @router.get("/{job_id}/export/pdf", response_model=None)
+@limiter.limit(EXPORT_LIMIT)
 async def export_pdf_report(
+    request: Request,
     job_id: str,
     include_help: bool = Query(True, description="Include detailed help text for each issue category"),
     include_pages: bool = Query(True, description="List affected URLs for each issue type"),
@@ -1097,7 +1082,9 @@ async def export_pdf_report(
 
 
 @router.get("/{job_id}/export/excel", response_model=None)
+@limiter.limit(EXPORT_LIMIT)
 async def export_excel_report(
+    request: Request,
     job_id: str,
     store: SQLiteJobStore | RedisJobStore = Depends(get_store),
 ) -> StreamingResponse | JSONResponse:
@@ -1494,7 +1481,9 @@ def _csv_response(issues: list[Issue], filename: str) -> StreamingResponse:
 
 
 @router.post("/{job_id}/images/analyze-ai")
+@limiter.limit(AI_ANALYSIS_LIMIT)
 async def analyze_image_with_ai_endpoint(
+    request: Request,
     job_id: str,
     image_url: str = Query(..., description="URL of the image to analyze"),
     store=Depends(get_store)

@@ -440,7 +440,7 @@ class SQLiteJobStore:
 
     async def init(self) -> None:
         """Open the database and create schema if needed."""
-        self._db = await aiosqlite.connect(self._db_path)
+        self._db = await aiosqlite.connect(self._db_path, timeout=30)
         self._db.row_factory = aiosqlite.Row
         await self._db.executescript(_SCHEMA)
         await self._db.commit()
@@ -724,33 +724,21 @@ class SQLiteJobStore:
 
     async def delete_issues_for_url(self, job_id: str, page_url: str) -> int:
         """Delete all issues for a specific page URL and return the count deleted."""
-        async with self._db.execute(
-            "SELECT COUNT(*) FROM issues WHERE job_id = ? AND page_url = ?",
-            (job_id, page_url),
-        ) as cursor:
-            row = await cursor.fetchone()
-        count = row[0] if row else 0
-        await self._db.execute(
+        cursor = await self._db.execute(
             "DELETE FROM issues WHERE job_id = ? AND page_url = ?",
             (job_id, page_url),
         )
         await self._db.commit()
-        return count
+        return cursor.rowcount
 
     async def delete_issues_by_code_and_url(self, job_id: str, issue_code: str, page_url: str) -> int:
         """Delete issues matching a specific code and page_url. Returns count deleted."""
-        async with self._db.execute(
-            "SELECT COUNT(*) FROM issues WHERE job_id = ? AND issue_code = ? AND page_url = ?",
-            (job_id, issue_code, page_url),
-        ) as cursor:
-            row = await cursor.fetchone()
-        count = row[0] if row else 0
-        await self._db.execute(
+        cursor = await self._db.execute(
             "DELETE FROM issues WHERE job_id = ? AND issue_code = ? AND page_url = ?",
             (job_id, issue_code, page_url),
         )
         await self._db.commit()
-        return count
+        return cursor.rowcount
 
     async def update_issue_extra(self, job_id: str, issue_code: str, page_url: str, extra: dict) -> bool:
         """Update the extra JSON field for a specific issue. Returns True if a row was updated."""
@@ -771,33 +759,21 @@ class SQLiteJobStore:
            — covers issues from crawls before the extra column was added
         """
         # Strategy 1: extra.source_url match
-        async with self._db.execute(
+        cursor1 = await self._db.execute(
             """
-            SELECT COUNT(*) FROM issues
+            DELETE FROM issues
             WHERE job_id = ?
               AND category = 'broken_link'
               AND json_extract(extra, '$.source_url') = ?
             """,
             (job_id, source_url),
-        ) as cursor:
-            row = await cursor.fetchone()
-        count = row[0] if row else 0
-        if count:
-            await self._db.execute(
-                """
-                DELETE FROM issues
-                WHERE job_id = ?
-                  AND category = 'broken_link'
-                  AND json_extract(extra, '$.source_url') = ?
-                """,
-                (job_id, source_url),
-            )
+        )
+        count = cursor1.rowcount
 
         # Strategy 2: cross-reference links table (covers legacy data without extra column)
-        # Count first, then delete
-        async with self._db.execute(
+        cursor2 = await self._db.execute(
             """
-            SELECT COUNT(*) FROM issues
+            DELETE FROM issues
             WHERE job_id = ?
               AND category = 'broken_link'
               AND page_url IN (
@@ -806,23 +782,8 @@ class SQLiteJobStore:
               )
             """,
             (job_id, job_id, source_url),
-        ) as cursor:
-            row2 = await cursor.fetchone()
-        count2 = row2[0] if row2 else 0
-        if count2:
-            await self._db.execute(
-                """
-                DELETE FROM issues
-                WHERE job_id = ?
-                  AND category = 'broken_link'
-                  AND page_url IN (
-                      SELECT target_url FROM links
-                      WHERE job_id = ? AND source_url = ?
-                  )
-                """,
-                (job_id, job_id, source_url),
-            )
-            count += count2
+        )
+        count += cursor2.rowcount
 
         await self._db.commit()
         return count
@@ -1075,7 +1036,7 @@ class SQLiteJobStore:
             return 0
 
         placeholders = ",".join("?" * len(expired_ids))
-        for table in ("issues", "crawled_pages", "links"):
+        for table in ("issues", "crawled_pages", "links", "fixes", "fixed_issues", "images"):
             await self._db.execute(
                 f"DELETE FROM {table} WHERE job_id IN ({placeholders})", expired_ids
             )
