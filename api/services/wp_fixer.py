@@ -134,6 +134,11 @@ async def find_orphaned_media(
 ) -> list[dict]:
     """Return a list of media items from WordPress not found in the crawl.
 
+    Compares WP Media Library against all image URLs found on crawled pages.
+    Handles WordPress size variants (e.g. -600x403.jpg) in both directions:
+    - Crawled page has the size variant, WP stores the original
+    - WP source_url is the original, crawled page references a variant
+
     Args:
         wp: Authenticated WordPress client.
         job_id: ID of the crawl job to compare against.
@@ -146,13 +151,16 @@ async def find_orphaned_media(
 
     # 2. Fetch all image URLs found during the crawl
     pages = await store.get_pages(job_id)
-    crawled_image_urls = set()
+    crawled_image_urls: set[str] = set()
+    crawled_base_urls: set[str] = set()  # without size suffix
     for p in pages:
-        for img_url in p.image_urls:
-            # Normalise: strip query params and trailing slash for comparison
+        for img_url in (p.image_urls or []):
             u = urlparse(img_url)
             norm = f"{u.scheme}://{u.netloc}{u.path}".rstrip("/")
             crawled_image_urls.add(norm)
+            # Also store the base (without size suffix) for variant matching
+            base = re.sub(r"-\d+x\d+(\.[a-zA-Z0-9]+)$", r"\1", norm)
+            crawled_base_urls.add(base)
 
     # 3. Identify orphaned media
     orphans = []
@@ -164,23 +172,38 @@ async def find_orphaned_media(
         u = urlparse(source_url)
         norm_wp = f"{u.scheme}://{u.netloc}{u.path}".rstrip("/")
 
-        is_linked = norm_wp in crawled_image_urls
-        # Also check common WordPress resized versions (e.g. -150x150.jpg)
-        if not is_linked:
-            # Pattern: -[width]x[height].[ext]
-            base_norm = re.sub(r"-\d+x\d+(\.[a-zA-Z0-9]+)$", r"\1", norm_wp)
-            is_linked = base_norm in crawled_image_urls
+        # Check: exact match
+        if norm_wp in crawled_image_urls:
+            continue
+        # Check: WP original matches a crawled size variant's base
+        wp_base = re.sub(r"-\d+x\d+(\.[a-zA-Z0-9]+)$", r"\1", norm_wp)
+        if wp_base in crawled_base_urls or norm_wp in crawled_base_urls:
+            continue
+        # Check: crawled pages reference a size variant of this WP image
+        # (crawled has -600x403.jpg, WP has the original .jpg)
+        if any(norm_wp == re.sub(r"-\d+x\d+(\.[a-zA-Z0-9]+)$", r"\1", cu)
+               for cu in crawled_image_urls
+               if norm_wp.rsplit("/", 1)[0] == cu.rsplit("/", 1)[0]):
+            continue
 
-        if not is_linked:
-            orphans.append({
-                "id": item.get("id"),
-                "title": item.get("title", {}).get("rendered", "Untitled"),
-                "url": source_url,
-                "alt_text": item.get("alt_text"),
-                "post_parent": item.get("post"), # 0 means unattached
-                "mime_type": item.get("mime_type"),
-                "date": item.get("date"),
-            })
+        # Extract file size from media_details if available
+        details = item.get("media_details", {})
+        file_size = details.get("filesize")
+        width = details.get("width")
+        height = details.get("height")
+
+        orphans.append({
+            "id": item.get("id"),
+            "title": item.get("title", {}).get("rendered", "Untitled"),
+            "url": source_url,
+            "alt_text": item.get("alt_text", ""),
+            "post_parent": item.get("post", 0),
+            "mime_type": item.get("mime_type", ""),
+            "date": item.get("date", ""),
+            "file_size_kb": round(file_size / 1024, 1) if file_size else None,
+            "dimensions": f"{width}x{height}" if width and height else None,
+            "admin_url": f"{wp.site_url.rstrip('/')}/wp-admin/post.php?post={item.get('id')}&action=edit",
+        })
 
     return orphans
 

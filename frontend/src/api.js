@@ -363,6 +363,14 @@ export async function removeIgnoredImagePattern(pattern) {
   return checkResponse(res)
 }
 
+// Orphaned media — images in WP Media Library not used on any crawled page
+export async function getOrphanedMedia(jobId) {
+  const res = await fetch(`/api/fixes/orphaned-media/${jobId}`, {
+    headers: authHeaders(),
+  })
+  return checkResponse(res)
+}
+
 export async function downloadCsv(jobId, category) {
   const url = category
     ? `/api/crawl/${jobId}/export/csv/${category}`

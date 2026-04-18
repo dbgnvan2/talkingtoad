@@ -278,6 +278,30 @@ class WPClient:
         self._check_auth(r)
         return r
 
+    async def list_media(self, per_page: int = 100, max_pages: int = 20) -> list[dict]:
+        """Fetch all media items from the WordPress Media Library.
+
+        Paginates through results up to *max_pages* pages of *per_page* items.
+        Returns the raw WP REST API media objects.
+        """
+        all_items: list[dict] = []
+        for page in range(1, max_pages + 1):
+            r = await self.get(
+                f"media?per_page={per_page}&page={page}"
+                f"&_fields=id,source_url,title,alt_text,mime_type,date,post,media_details"
+            )
+            if r.status_code != 200:
+                break
+            items = r.json()
+            if not items:
+                break
+            all_items.extend(items)
+            # Check if we've reached the last page
+            total_pages = int(r.headers.get("x-wp-totalpages", "1"))
+            if page >= total_pages:
+                break
+        return all_items
+
     async def delete_media(self, media_id: int, force: bool = True) -> bool:
         """Delete a media item from WordPress.
 

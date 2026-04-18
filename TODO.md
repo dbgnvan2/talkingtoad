@@ -14,38 +14,40 @@ This file tracks infrastructure improvements, testing gaps, and future features 
 - The WP backend database structure for post content and media references is too complex and risky to automate
 - DO NOT attempt to "be helpful" by automatically updating post content with new image URLs
 
-## 🔴 High Priority: GEO & Image Intelligence
-
-- [ ] **Orphaned Content Detection:**
-    - [ ] Add ability to list suspected orphaned pages (pages with no internal links pointing to them)
-    - [ ] Add ability to list suspected orphaned images (images not used on any crawled page)
-- [ ] **Image Download & Optimization Module:**
-    - [ ] Build module to download image from site
-    - [ ] Apply SEO/GEO fixes (resize, compress, rename)
-    - [ ] Generate GEO-optimized alt text and description
-    - [ ] Add geo-tagging metadata (EXIF GPS data)
-    - [ ] **Two-Step WP API Upload:**
-        - [ ] Step 1: POST binary to `/wp-json/wp/v2/media` with `Content-Disposition` header → get Media ID
-        - [ ] Step 2: POST metadata to `/wp-json/wp/v2/media/{id}` with alt_text, caption, description, title
-    - [ ] **Pre-upload Validation:**
-        - [ ] Ensure file size under server limit (check PHP max upload, target <2MB for safety)
-        - [ ] Verify EXIF GPS data is present before upload
-        - [ ] Standardize naming: strip "Screenshot", use `{keyword}-{city}.jpg` pattern
-    - [ ] **Security:** Use WordPress Application Passwords (not main login)
-    - [ ] **User Workflow:** Download → Optimize → Preview metadata → Upload via API → Success confirmation
-    - [ ] **Goal:** 100% consistent, zero-manual-entry media library uploads with AI-generated SEO/GEO metadata
-
 ## 🔴 High Priority: Stability & QA
 - [ ] **Frontend Component Testing:** Set up Vitest and React Testing Library.
     - [ ] Add "smoke tests" for `Results.jsx` to ensure it handles null/loading states without crashing.
     - [ ] Test the `ExportReportModal` and `LLMSTxtGenerator` components.
 - [ ] **API Error Boundaries:** Implement a React Error Boundary around the main `Results` view to catch and report crashes rather than showing a white screen.
 - [ ] **End-to-End (E2E) Testing:** Set up Playwright to test the full "Start Crawl -> View Results -> Export PDF" happy path.
+- [ ] **WP Integration Tests:** Build test suite that runs against the `/test-page/` on livingsystems.ca to catch real-world issues (URL resolution, entity encoding, heading changes).
 
 ## 🟡 Medium Priority: UX & Polish
+- [ ] **Rescan All Pages:** Add button to re-check all pages in an existing crawl without re-crawling from scratch.
 - [ ] **Persistent Settings:** Save the user's preferred PDF export options (Help Text ON/OFF) in localStorage.
 - [ ] **Real-time Log Streaming:** Instead of just a progress bar, show a "Live Console" during the crawl for power users.
 
 ## 🟢 Low Priority: Tech Debt
 - [ ] **Type Safety:** Migrate `Results.jsx` and other large components to TypeScript.
 - [ ] **CSS Refactoring:** Clean up duplicate Tailwind classes in `Results.jsx` into shared base components.
+
+---
+
+## ✅ Completed
+
+- [x] **Orphaned Page Detection:** `ORPHAN_PAGE` issue code detects pages with no internal links pointing to them (v1.5)
+- [x] **Orphaned Image Detection:** WP Media Library scan for images not used on any crawled page (v1.9.2)
+- [x] **Image Download & Optimization Module:** Download → resize → WebP → GPS EXIF → SEO rename → upload (v1.9.1)
+- [x] **Pre-upload Validation:** File size, GPS, format checks (v1.9.1)
+- [x] **GEO Metadata Generation:** AI-powered alt text, description, caption with geographic entities (v1.9.1)
+- [x] **Two-Step WP API Upload:** Binary upload + metadata PATCH (v1.9.1)
+- [x] **Batch Processing:** Parallel execution with pause/resume/cancel (v1.9.1)
+- [x] **Banner H1 Suppression:** Auto-detect theme-injected banner headings (v1.9.2)
+- [x] **Fix Panel Enhancements:** Title/H1 dual editor, per-link anchor fix, duplicate URL display (v1.9.2)
+- [x] **Auto-rescan After Fix:** Pages rescan automatically after WP fixes, health score refreshes live (v1.9.2)
+- [x] **Issue Extra Data:** All 50+ issue codes include diagnostic data in `extra` (v1.9.2)
+- [x] **Ignored Image Patterns:** Global config to exclude theme SVG icons from issue checks (v1.9.2)
+- [x] **Image Scoring Fix:** Performance score works with file_size_bytes alone (v1.9.2)
+- [x] **Health Score Fix:** Trailing slash normalization in URL matching (v1.9.2)
+- [x] **Broken Link Source Tracking:** `discovered_from` dict + Show Source Pages fallback (v1.9.2)
+- [x] **Sitemap & Robots.txt Display:** Discovery data shown even with no issues (v1.9.2)
