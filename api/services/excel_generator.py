@@ -143,17 +143,19 @@ def generate_excel_report(
                 cell.alignment = Alignment(horizontal="center")
 
             for img in images:
-                # Handle both ImageInfo objects and dicts
-                score = img.overall_score if hasattr(img, 'overall_score') else img.get('overall_score', 0)
-                filename = img.filename if hasattr(img, 'filename') else img.get('filename', '')
-                url = img.url if hasattr(img, 'url') else img.get('url', '')
-                alt = img.alt if hasattr(img, 'alt') else img.get('alt', '')
-                size_kb = img.file_size_kb if hasattr(img, 'file_size_kb') else img.get('file_size_kb', 0)
-                width = img.width if hasattr(img, 'width') else img.get('width', 0)
-                height = img.height if hasattr(img, 'height') else img.get('height', 0)
-                fmt = img.format if hasattr(img, 'format') else img.get('format', '')
-                load_time = img.load_time_ms if hasattr(img, 'load_time_ms') else img.get('load_time_ms', 0)
-                issues_list = img.issues if hasattr(img, 'issues') else img.get('issues', [])
+                # Normalize to dict if ImageInfo object
+                d = img.to_dict() if hasattr(img, 'to_dict') else img if isinstance(img, dict) else {}
+                score = d.get('overall_score', 0)
+                filename = d.get('filename', '')
+                url = d.get('url', '')
+                alt = d.get('alt', '')
+                size_bytes = d.get('file_size_bytes')
+                size_kb = round(size_bytes / 1024, 1) if size_bytes else 0
+                width = d.get('width', 0)
+                height = d.get('height', 0)
+                fmt = d.get('format', '')
+                load_time = d.get('load_time_ms', 0)
+                issues_list = d.get('issues', [])
 
                 dimensions = f"{width}x{height}" if width and height else ""
                 issues_str = ", ".join(issues_list) if issues_list else ""

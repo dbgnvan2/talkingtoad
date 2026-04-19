@@ -63,10 +63,6 @@ function authHeaders(extra = {}) {
 }
 
 export default function FixInlinePanel({ jobId, pageUrl, issueCode, issueExtra, predefinedValue, onClose }) {
-  // Special dual-editor for title/heading mismatch
-  if (issueCode === 'TITLE_H1_MISMATCH') {
-    return <MismatchFixPanel jobId={jobId} pageUrl={pageUrl} issueExtra={issueExtra} onClose={onClose} />
-  }
   const field = CODE_TO_FIELD[issueCode]
   const fieldLabel = FIELD_LABELS[field] ?? field
   const limits = FIELD_LIMITS[field]
@@ -82,6 +78,7 @@ export default function FixInlinePanel({ jobId, pageUrl, issueCode, issueExtra, 
   const textareaRef = useRef(null)
 
   useEffect(() => {
+    if (issueCode === 'TITLE_H1_MISMATCH') return  // handled by MismatchFixPanel
     if (isPredefined) return   // no need to fetch current WP value for one-click fixes
     if (!field) {
       setFetchError(`No fix available for issue code: ${issueCode}`)
@@ -114,6 +111,11 @@ export default function FixInlinePanel({ jobId, pageUrl, issueCode, issueExtra, 
       textareaRef.current.select()
     }
   }, [loading, fetchError])
+
+  // Special dual-editor for title/heading mismatch — after hooks
+  if (issueCode === 'TITLE_H1_MISMATCH') {
+    return <MismatchFixPanel jobId={jobId} pageUrl={pageUrl} issueExtra={issueExtra} onClose={onClose} />
+  }
 
   async function handleApply() {
     if (!proposedValue.trim() && field !== 'indexable') return

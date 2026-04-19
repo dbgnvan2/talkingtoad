@@ -1050,9 +1050,8 @@ async def export_pdf_report(
     image_summary = await store.get_image_summary(job_id)
     top_images = await store.get_images(job_id, page=1, limit=20, sort_by="score")
 
-    # summary_only is a shortcut for disabling help and pages
+    # summary_only disables per-page URL listings; help text is independent
     if summary_only:
-        include_help = False
         include_pages = False
 
     try:

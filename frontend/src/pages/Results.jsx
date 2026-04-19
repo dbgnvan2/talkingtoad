@@ -100,14 +100,18 @@ export default function Results() {
 
   const tabs = ['Summary', ...CATEGORIES.map(c => c.label), 'By Page', 'Orphaned Images', 'Orphaned Pages', 'Fix Manager', 'Fix History']
 
+  // Domain extracted from backend job data — used in all section headers
+  const domain = summary.target_url?.replace(/^https?:\/\//, '').replace(/\/+$/, '') || ''
+
   return (
     <div className="max-w-6xl mx-auto px-4 py-8">
       {/* Header */}
       <div className="flex justify-between items-end mb-8">
         <div>
           <button onClick={() => navigate('/')} className="text-xs font-bold text-green-600 uppercase tracking-widest hover:underline mb-1">← Start New Scan</button>
-          <h1 className="text-2xl font-bold text-gray-800">Audit Results</h1>
-          <p className="text-sm text-gray-500 font-mono">{summary.target_url?.replace(/^https?:\/\//, '')}</p>
+          <h1 className="text-2xl font-bold text-gray-800">
+            {domain ? `Audit Results - ${domain}` : 'Audit Results'}
+          </h1>
         </div>
         <div className="flex gap-2">
           {csvError && <span className="text-red-600 text-xs self-center mr-2">{csvError}</span>}
@@ -137,26 +141,26 @@ export default function Results() {
       {/* Tab Content */}
       <div className="min-h-[400px]">
         {activeSeverity && (
-          <SeverityTab jobId={jobId} severity={activeSeverity} onPageClick={setFocusedPageUrl} onBack={() => setActiveSeverity(null)} />
+          <SeverityTab jobId={jobId} severity={activeSeverity} domain={domain} onPageClick={setFocusedPageUrl} onBack={() => setActiveSeverity(null)} />
         )}
         {!activeSeverity && activeTab === TAB_SUMMARY && (
-          <SummaryTab summary={summary} onCategoryClick={i => { setActiveSeverity(null); setActiveTab(i + 1) }} onSeverityClick={sev => { setActiveTab(TAB_SUMMARY); setActiveSeverity(sev) }} onPageClick={setFocusedPageUrl} jobId={jobId} onShowPdfModal={() => setShowPdfModal(true)} onShowCategoryHelp={setShowCategoryHelp} />
+          <SummaryTab summary={summary} domain={domain} onCategoryClick={i => { setActiveSeverity(null); setActiveTab(i + 1) }} onSeverityClick={sev => { setActiveTab(TAB_SUMMARY); setActiveSeverity(sev) }} onPageClick={setFocusedPageUrl} jobId={jobId} onShowPdfModal={() => setShowPdfModal(true)} onShowCategoryHelp={setShowCategoryHelp} />
         )}
         {!activeSeverity && activeTab >= 1 && activeTab <= CATEGORIES.length && (
           CATEGORIES[activeTab - 1].key === 'image'
-            ? <ImageAnalysisPanel jobId={jobId} onPageClick={setFocusedPageUrl} onShowHelp={() => setShowCategoryHelp('image')} />
-            : <CategoryTab jobId={jobId} category={CATEGORIES[activeTab - 1]} onPageClick={setFocusedPageUrl} onShowHelp={() => setShowCategoryHelp(CATEGORIES[activeTab - 1].key)} onSummaryRefresh={loadSummary} />
+            ? <ImageAnalysisPanel jobId={jobId} domain={domain} onPageClick={setFocusedPageUrl} onShowHelp={() => setShowCategoryHelp('image')} />
+            : <CategoryTab jobId={jobId} category={CATEGORIES[activeTab - 1]} domain={domain} onPageClick={setFocusedPageUrl} onShowHelp={() => setShowCategoryHelp(CATEGORIES[activeTab - 1].key)} onSummaryRefresh={loadSummary} />
         )}
         {!activeSeverity && activeTab === TAB_BY_PAGE && (
-          <ByPageTab jobId={jobId} onPageClick={setFocusedPageUrl} />
+          <ByPageTab jobId={jobId} domain={domain} onPageClick={setFocusedPageUrl} />
         )}
         {!activeSeverity && activeTab === TAB_ORPHAN_IMAGES && (
-          <OrphanedImagesTab jobId={jobId} />
+          <OrphanedImagesTab jobId={jobId} domain={domain} />
         )}
         {!activeSeverity && activeTab === TAB_ORPHAN_PAGES && (
-          <OrphanedPagesTab jobId={jobId} onPageClick={setFocusedPageUrl} />
+          <OrphanedPagesTab jobId={jobId} domain={domain} onPageClick={setFocusedPageUrl} />
         )}
-        {!activeSeverity && activeTab === TAB_FIX_MGR && <FixManager jobId={jobId} />}
+        {!activeSeverity && activeTab === TAB_FIX_MGR && <FixManager jobId={jobId} domain={domain} />}
         {!activeSeverity && activeTab === TAB_HISTORY && <div className="py-12 text-center text-gray-400">History view coming soon.</div>}
       </div>
 
@@ -188,7 +192,7 @@ export default function Results() {
   )
 }
 
-function SummaryTab({ summary: s, onCategoryClick, onSeverityClick, onPageClick, jobId, onShowPdfModal, onShowCategoryHelp }) {
+function SummaryTab({ summary: s, domain, onCategoryClick, onSeverityClick, onPageClick, jobId, onShowPdfModal, onShowCategoryHelp }) {
   const { getFontClass } = useTheme()
   const [aiTesting, setAiTesting] = useState(false)
   const [aiStatus, setAiStatus] = useState(null)
@@ -284,7 +288,7 @@ function SummaryTab({ summary: s, onCategoryClick, onSeverityClick, onPageClick,
 
       {/* Category Drill-down Boxes */}
       <section>
-        <h2 className="font-black text-gray-400 uppercase tracking-widest mb-4" style={getFontClass('headingSize')}>Issues by Category</h2>
+        <h2 className="font-black text-gray-400 uppercase tracking-widest mb-4" style={getFontClass('headingSize')}>{domain ? `Issues by Category - ${domain}` : 'Issues by Category'}</h2>
         <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
           {CATEGORIES.map((cat, i) => (
             <div key={cat.key} className="relative bg-white border border-gray-200 rounded-2xl p-5 hover:border-green-400 hover:shadow-md transition-all group">
@@ -338,7 +342,7 @@ function SeverityStatCard({ label, value, severity, onClick }) {
   )
 }
 
-function SeverityTab({ jobId, severity, onPageClick, onBack }) {
+function SeverityTab({ jobId, severity, domain, onPageClick, onBack }) {
   const [data, setData] = useState(null)
   const [expandedCode, setExpandedCode] = useState(null)
 
@@ -351,11 +355,10 @@ function SeverityTab({ jobId, severity, onPageClick, onBack }) {
       .catch(() => setData({ issues: [] }))
   }, [jobId, severity])
 
-  if (!data) return <div className="py-20"><Spinner /></div>
-
-  // Group issues by issue_code (subcategories) — memoized to avoid recompute on expand/collapse
+  // Group issues — must be above early return to keep hook order stable
   const sortedGroups = useMemo(() => {
-    const groups = (data.issues || []).reduce((acc, iss) => {
+    if (!data?.issues) return []
+    const groups = data.issues.reduce((acc, iss) => {
       if (!acc[iss.issue_code]) acc[iss.issue_code] = { ...iss, count: 0, pages: [] }
       acc[iss.issue_code].count++
       if (iss.page_url && !acc[iss.issue_code].pages.includes(iss.page_url)) {
@@ -366,11 +369,13 @@ function SeverityTab({ jobId, severity, onPageClick, onBack }) {
     return Object.values(groups).sort((a, b) => (b.priority_rank || 0) - (a.priority_rank || 0))
   }, [data])
 
+  if (!data) return <div className="py-20"><Spinner /></div>
+
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-4 mb-6">
         <button onClick={onBack} className="text-xs font-bold text-green-600 uppercase tracking-widest hover:underline">← Back to Summary</button>
-        <h2 className="text-xl font-bold text-gray-800">{labels[severity]} Details</h2>
+        <h2 className="text-xl font-bold text-gray-800">{labels[severity]}{domain ? ` - ${domain}` : ''}</h2>
       </div>
       {sortedGroups.length === 0 ? (
         <div className="py-12 bg-white rounded-2xl border border-gray-100 text-center text-gray-400 font-medium font-serif italic">No {severity} issues found.</div>
@@ -465,7 +470,7 @@ function Top10Pages({ jobId, onPageClick }) {
             {pagesWithIssues.map((p, idx) => {
               const total = (p.issue_counts?.critical || 0) + (p.issue_counts?.warning || 0) + (p.issue_counts?.info || 0)
               let pathname = p.url
-              try { pathname = new URL(p.url).pathname || '/' } catch {}
+              try { pathname = new URL(p.url).pathname || '/' } catch (_e) { /* ignore invalid URLs */ }
 
               return (
                 <tr
@@ -515,7 +520,7 @@ function Top10Pages({ jobId, onPageClick }) {
   )
 }
 
-function CategoryTab({ jobId, category, onPageClick, onShowHelp, onSummaryRefresh }) {
+function CategoryTab({ jobId, category, domain, onPageClick, onShowHelp, onSummaryRefresh }) {
   const [data, setData] = useState(null)
   const [expandedCode, setExpandedCode] = useState(null)
   const [verifying, setVerifying] = useState(false)
@@ -582,10 +587,9 @@ function CategoryTab({ jobId, category, onPageClick, onShowHelp, onSummaryRefres
     }
   }
 
-  if (!data) return <div className="py-20"><Spinner /></div>
-
-  // Memoize grouping to avoid recompute on expand/collapse re-renders
+  // Memoize grouping — must be above early return to keep hook order stable
   const groups = useMemo(() => {
+    if (!data?.issues) return {}
     return data.issues.reduce((acc, iss) => {
       if (!acc[iss.issue_code]) acc[iss.issue_code] = { ...iss, count: 0, pages: [] }
       acc[iss.issue_code].count++
@@ -594,10 +598,12 @@ function CategoryTab({ jobId, category, onPageClick, onShowHelp, onSummaryRefres
     }, {})
   }, [data])
 
+  if (!data) return <div className="py-20"><Spinner /></div>
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between mb-6">
-        <h2 className="text-xl font-bold text-gray-800">{category.label} Details</h2>
+        <h2 className="text-xl font-bold text-gray-800">{category.label}{domain ? ` - ${domain}` : ''}</h2>
         <div className="flex items-center gap-3">
           {category.key === 'broken_link' && (
             <button
@@ -2118,7 +2124,7 @@ function IssueCard({ issue: iss, jobId, pageUrl, isOpen, onToggleFix, onFixCompl
   )
 }
 
-function ByPageTab({ jobId, onPageClick }) {
+function ByPageTab({ jobId, domain, onPageClick }) {
   const [data, setData] = useState(null)
   useEffect(() => {
     getPages(jobId, { limit: 200 }).then(setData).catch(() => setData({ pages: [] }))
@@ -2127,7 +2133,9 @@ function ByPageTab({ jobId, onPageClick }) {
   if (!data) return <Spinner />
 
   return (
-    <div className="bg-white border border-gray-200 rounded-3xl overflow-hidden shadow-sm">
+    <div className="space-y-4">
+      <h2 className="text-xl font-bold text-gray-800">{domain ? `By Page - ${domain}` : 'By Page'}</h2>
+      <div className="bg-white border border-gray-200 rounded-3xl overflow-hidden shadow-sm">
       <table className="min-w-full divide-y divide-gray-200 text-sm">
         <thead className="bg-gray-50">
           <tr><th className="px-6 py-5 text-left font-bold text-gray-400 uppercase tracking-widest text-[9px]">Page URL</th><th className="px-6 py-5 text-center font-bold text-gray-400 uppercase tracking-widest text-[9px]">Issues Found</th></tr>
@@ -2147,6 +2155,7 @@ function ByPageTab({ jobId, onPageClick }) {
           ))}
         </tbody>
       </table>
+      </div>
     </div>
   )
 }
@@ -2516,12 +2525,10 @@ function ExportReportModal({ onClose, onDownload }) {
       <div className="bg-white rounded-3xl shadow-2xl max-w-sm w-full p-8" onClick={e => e.stopPropagation()}>
         <h3 className="text-xl font-black text-gray-800 mb-6">PDF Report Options</h3>
         <div className="space-y-5 mb-8">
-          <OptionToggle label="Summary Only" desc="Stats and top priority pages only" checked={opts.summaryOnly} onChange={v => setOpts({...opts, summaryOnly: v})} />
+          <OptionToggle label="Summary Only" desc="Skip per-page URL listings" checked={opts.summaryOnly} onChange={v => setOpts({...opts, summaryOnly: v})} />
+          <OptionToggle label="Help Text" desc="Include explanation for each issue type" checked={opts.includeHelp} onChange={v => setOpts({...opts, includeHelp: v})} />
           {!opts.summaryOnly && (
-            <>
-              <OptionToggle label="Help Text" desc="Include 'What it is' boxes" checked={opts.includeHelp} onChange={v => setOpts({...opts, includeHelp: v})} />
-              <OptionToggle label="Affected Pages" desc="List URLs for each issue" checked={opts.includePages} onChange={v => setOpts({...opts, includePages: v})} />
-            </>
+            <OptionToggle label="Affected Pages" desc="List URLs for each issue" checked={opts.includePages} onChange={v => setOpts({...opts, includePages: v})} />
           )}
         </div>
         <div className="flex gap-3">
@@ -2767,7 +2774,7 @@ function OrphanedSummaryCards({ jobId, onOrphanImagesClick, onOrphanPagesClick }
 }
 
 
-function OrphanedImagesTab({ jobId }) {
+function OrphanedImagesTab({ jobId, domain }) {
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
@@ -2789,7 +2796,7 @@ function OrphanedImagesTab({ jobId }) {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-xl font-bold text-gray-800">Orphaned Images</h2>
+          <h2 className="text-xl font-bold text-gray-800">{domain ? `Orphaned Images - ${domain}` : 'Orphaned Images'}</h2>
           <p className="text-sm text-gray-500 mt-1">Images in the WordPress Media Library that are not referenced on any crawled page.</p>
         </div>
         <button
@@ -2888,7 +2895,7 @@ function OrphanedImagesTab({ jobId }) {
 }
 
 
-function OrphanedPagesTab({ jobId, onPageClick }) {
+function OrphanedPagesTab({ jobId, domain, onPageClick }) {
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
 
@@ -2901,7 +2908,7 @@ function OrphanedPagesTab({ jobId, onPageClick }) {
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-xl font-bold text-gray-800">Orphaned Pages</h2>
+        <h2 className="text-xl font-bold text-gray-800">{domain ? `Orphaned Pages - ${domain}` : 'Orphaned Pages'}</h2>
         <p className="text-sm text-gray-500 mt-1">Pages discovered during the crawl that have no internal links pointing to them. Search engines may not find these pages.</p>
       </div>
 

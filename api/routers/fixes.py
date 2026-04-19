@@ -12,9 +12,11 @@ DELETE /api/fixes/{job_id}            — clear fixes so they can be regenerated
 
 from __future__ import annotations
 
+import json as _json_mod
 import logging
 from datetime import datetime, timezone
 from pathlib import Path
+from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, Query, Body, UploadFile, Form
 from fastapi.responses import JSONResponse, StreamingResponse
@@ -88,6 +90,66 @@ def _err(code: str, message: str, http_status: int) -> JSONResponse:
     )
 
 
+def _get_wp_creds_domain() -> str | None:
+    """Return the netloc from wp-credentials.json's site_url, or None."""
+    if not _CREDS_PATH.exists():
+        return None
+    try:
+        with open(_CREDS_PATH) as f:
+            creds = _json_mod.load(f)
+        return urlparse(creds.get("site_url", "")).netloc
+    except Exception:
+        return None
+
+
+def _domain_mismatch_error(target_domain: str, creds_domain: str) -> JSONResponse:
+    """Return a standard DOMAIN_MISMATCH error response."""
+    return _err(
+        "DOMAIN_MISMATCH",
+        f"WordPress credentials are for {creds_domain}, but you are working on "
+        f"{target_domain}. Update wp-credentials.json or provide credentials for "
+        f"{target_domain}.",
+        403,
+    )
+
+
+async def _validate_wp_domain_for_job(store, job_id: str) -> JSONResponse | None:
+    """Check that the WP credentials domain matches the crawl job's target domain.
+
+    Returns a JSONResponse error if there's a mismatch, or None if OK.
+    """
+    creds_domain = _get_wp_creds_domain()
+    if not creds_domain:
+        return None  # no creds file — let downstream handle FileNotFoundError
+
+    job = await store.get_job(job_id)
+    if not job:
+        return None  # let downstream handle missing job
+
+    job_domain = urlparse(job.target_url).netloc
+    if job_domain != creds_domain:
+        return _domain_mismatch_error(job_domain, creds_domain)
+    return None
+
+
+def _validate_wp_domain_for_url(url: str) -> JSONResponse | None:
+    """Check that the WP credentials domain matches a page/image URL's domain.
+
+    Returns a JSONResponse error if there's a mismatch, or None if OK.
+    """
+    creds_domain = _get_wp_creds_domain()
+    if not creds_domain:
+        return None
+
+    url_domain = urlparse(url).netloc
+    if not url_domain:
+        return None  # relative URL — can't validate
+
+    if url_domain != creds_domain:
+        return _domain_mismatch_error(url_domain, creds_domain)
+    return None
+
+
 # ── Helper: row dict → Fix model ───────────────────────────────────────────
 
 def _row_to_fix(row: dict) -> Fix:
@@ -134,6 +196,10 @@ async def generate_fixes_endpoint(
             "wp-credentials.json not found. Create it with site_url, login_url, username, password.",
             400,
         )
+
+    domain_err = await _validate_wp_domain_for_job(store, job_id)
+    if domain_err:
+        return domain_err
 
     # On first batch, clear any stale fixes so regeneration is idempotent
     if offset == 0:
@@ -244,6 +310,10 @@ async def get_wp_value(
     if not _CREDS_PATH.exists():
         return _err("NO_CREDENTIALS", "wp-credentials.json not found.", 400)
 
+    domain_err = await _validate_wp_domain_for_job(store, job_id)
+    if domain_err:
+        return domain_err
+
     try:
         async with WPClient.from_credentials_file(_CREDS_PATH) as wp:
             seo_plugin = await detect_seo_plugin(wp)
@@ -298,6 +368,10 @@ async def apply_one_fix(
 
     if not _CREDS_PATH.exists():
         return _err("NO_CREDENTIALS", "wp-credentials.json not found.", 400)
+
+    domain_err = _validate_wp_domain_for_url(body.page_url)
+    if domain_err:
+        return domain_err
 
     try:
         async with WPClient.from_credentials_file(_CREDS_PATH) as wp:
@@ -386,6 +460,10 @@ async def replace_link_endpoint(
 
     if not body.new_url.strip():
         return _err("EMPTY_URL", "Replacement URL cannot be empty.", 400)
+
+    domain_err = _validate_wp_domain_for_url(body.source_url)
+    if domain_err:
+        return domain_err
 
     try:
         async with WPClient.from_credentials_file(_CREDS_PATH) as wp:
@@ -732,6 +810,10 @@ async def bulk_trim_titles_endpoint(
     if not _CREDS_PATH.exists():
         return _err("NO_CREDENTIALS", "wp-credentials.json not found.", 400)
 
+    domain_err = await _validate_wp_domain_for_job(store, job_id)
+    if domain_err:
+        return domain_err
+
     # Collect all distinct page URLs with TITLE_TOO_LONG issues for this job
     issues, _ = await store.get_issues(
         job_id, category="metadata", page=1, limit=5000
@@ -787,6 +869,10 @@ async def trim_title_one_endpoint(
     if not _CREDS_PATH.exists():
         return _err("NO_CREDENTIALS", "wp-credentials.json not found.", 400)
 
+    domain_err = _validate_wp_domain_for_url(page_url)
+    if domain_err:
+        return domain_err
+
     try:
         async with WPClient.from_credentials_file(_CREDS_PATH) as wp:
             seo_plugin = await detect_seo_plugin(wp)
@@ -813,6 +899,10 @@ async def heading_to_bold_endpoint(
     """
     if not _CREDS_PATH.exists():
         return _err("NO_CREDENTIALS", "wp-credentials.json not found.", 400)
+
+    domain_err = _validate_wp_domain_for_url(page_url)
+    if domain_err:
+        return domain_err
 
     try:
         async with WPClient.from_credentials_file(_CREDS_PATH) as wp:
@@ -844,6 +934,10 @@ async def analyze_heading_sources_endpoint(
     If job_id is provided, uses the crawler's heading list. Otherwise fetches
     the page and extracts headings from rendered HTML.
     """
+    domain_err = _validate_wp_domain_for_url(page_url)
+    if domain_err:
+        return domain_err
+
     if not _CREDS_PATH.exists():
         return _err("NO_CREDENTIALS", "wp-credentials.json not found.", 400)
 
@@ -941,6 +1035,10 @@ async def bulk_replace_heading_endpoint(
     if not _CREDS_PATH.exists():
         return _err("NO_CREDENTIALS", "wp-credentials.json not found.", 400)
 
+    domain_err = await _validate_wp_domain_for_job(store, job_id)
+    if domain_err:
+        return domain_err
+
     job = await store.get_job(job_id)
     if job is None:
         return _err("JOB_NOT_FOUND", "No crawl job found with the given ID.", 404)
@@ -1004,6 +1102,10 @@ async def change_heading_level_endpoint(
     if not _CREDS_PATH.exists():
         return _err("NO_CREDENTIALS", "wp-credentials.json not found.", 400)
 
+    domain_err = _validate_wp_domain_for_url(page_url)
+    if domain_err:
+        return domain_err
+
     try:
         async with WPClient.from_credentials_file(_CREDS_PATH) as wp:
             result = await change_heading_level(wp, page_url, heading_text, from_level, to_level)
@@ -1026,6 +1128,10 @@ async def change_heading_text_endpoint(
     """Change the text of a heading in WordPress post content."""
     if not _CREDS_PATH.exists():
         return _err("NO_CREDENTIALS", "wp-credentials.json not found.", 400)
+
+    domain_err = _validate_wp_domain_for_url(page_url)
+    if domain_err:
+        return domain_err
 
     try:
         async with WPClient.from_credentials_file(_CREDS_PATH) as wp:
@@ -1051,6 +1157,11 @@ async def get_image_info(
     """
     if not _CREDS_PATH.exists():
         return _err("NO_CREDENTIALS", "wp-credentials.json not found.", 400)
+
+    domain_err = _validate_wp_domain_for_url(image_url)
+    if domain_err:
+        return domain_err
+
     try:
         async with WPClient.from_credentials_file(_CREDS_PATH) as wp:
             result = await get_attachment_info(wp, image_url)
@@ -1076,7 +1187,6 @@ async def update_image_meta_endpoint(
 
     Accepts WordPress credentials in POST body (wp_credentials) or uses wp-credentials.json.
     """
-    from urllib.parse import urlparse
     import json
 
     # Determine which credentials to use
@@ -1098,12 +1208,12 @@ async def update_image_meta_endpoint(
             creds_to_use = json.load(f)
         using_provided_creds = False
 
-    # CRITICAL: Validate domain if job_id is provided
+    # Validate domain: prefer job_id check, fall back to image_url check
+    creds_domain = urlparse(creds_to_use.get("site_url", "")).netloc
     if job_id:
         job = await store.get_job(job_id)
         if job:
             job_domain = urlparse(job.target_url).netloc
-            creds_domain = urlparse(creds_to_use.get("site_url", "")).netloc
 
             if job_domain != creds_domain:
                 return _err(
@@ -1112,6 +1222,11 @@ async def update_image_meta_endpoint(
                     f"Please provide credentials for {job_domain}.",
                     403
                 )
+    else:
+        # No job_id — validate against the image URL domain
+        image_domain = urlparse(image_url).netloc
+        if image_domain and image_domain != creds_domain:
+            return _domain_mismatch_error(image_domain, creds_domain)
 
     # Create WPClient with credentials
     try:
@@ -1182,8 +1297,7 @@ async def refresh_image_from_wp_endpoint(
     store=Depends(get_store),
 ) -> dict | JSONResponse:
     """Fetch fresh image metadata (alt text, title, caption) from WordPress and update our database."""
-    from urllib.parse import urlparse
-    import json
+    import json as _json_local
 
     # Determine which credentials to use
     if body and body.wp_credentials:
@@ -1197,15 +1311,15 @@ async def refresh_image_from_wp_endpoint(
         if not _CREDS_PATH.exists():
             return _err("NO_CREDENTIALS", "wp-credentials.json not found. Please provide WordPress credentials.", 400)
         with open(_CREDS_PATH) as f:
-            creds_to_use = json.load(f)
+            creds_to_use = _json_local.load(f)
 
     # Validate domain
     job = await store.get_job(job_id)
     if not job:
         return _err("JOB_NOT_FOUND", f"No job with id {job_id}", 404)
 
-    job_domain = urlparse(job.target_url).netloc
     creds_domain = urlparse(creds_to_use.get("site_url", "")).netloc
+    job_domain = urlparse(job.target_url).netloc
 
     if job_domain != creds_domain:
         return _err(
@@ -1356,6 +1470,10 @@ async def apply_fixes_endpoint(
     if not _CREDS_PATH.exists():
         return _err("NO_CREDENTIALS", "wp-credentials.json not found.", 400)
 
+    domain_err = await _validate_wp_domain_for_job(store, job_id)
+    if domain_err:
+        return domain_err
+
     rows = await store.get_fixes(job_id)
     approved = [r for r in rows if r["status"] == "approved"]
 
@@ -1441,8 +1559,12 @@ async def get_orphaned_media(
     if not job:
         return _err("JOB_NOT_FOUND", f"No job with id {job_id}", 404)
 
+    domain_err = await _validate_wp_domain_for_job(store, job_id)
+    if domain_err:
+        return domain_err
+
     try:
-        async with WPClient.from_credentials_file() as wp:
+        async with WPClient.from_credentials_file(_CREDS_PATH) as wp:
             orphans = await find_orphaned_media(wp, job_id, store)
             return {
                 "job_id": job_id,
@@ -1459,11 +1581,17 @@ async def get_orphaned_media(
 @router.delete("/media/{media_id}")
 async def delete_media_item(
     media_id: int,
+    job_id: str = Query(..., description="Crawl job ID (required to verify WP domain)"),
     force: bool = Query(True),
+    store=Depends(get_store),
 ) -> JSONResponse:
     """Permanently delete a media item from WordPress."""
+    domain_err = await _validate_wp_domain_for_job(store, job_id)
+    if domain_err:
+        return domain_err
+
     try:
-        async with WPClient.from_credentials_file() as wp:
+        async with WPClient.from_credentials_file(_CREDS_PATH) as wp:
             success = await wp.delete_media(media_id, force=force)
             if success:
                 return JSONResponse({"message": f"Media item {media_id} deleted."})
@@ -1486,8 +1614,12 @@ async def export_orphaned_media_csv(
     if not job:
         return _err("JOB_NOT_FOUND", f"No job with id {job_id}", 404)
 
+    domain_err = await _validate_wp_domain_for_job(store, job_id)
+    if domain_err:
+        return domain_err
+
     try:
-        async with WPClient.from_credentials_file() as wp:
+        async with WPClient.from_credentials_file(_CREDS_PATH) as wp:
             orphans = await find_orphaned_media(wp, job_id, store)
             
             import io
@@ -1537,6 +1669,11 @@ async def optimize_image_endpoint(
     """
     if not _CREDS_PATH.exists():
         return _err("NO_CREDENTIALS", "wp-credentials.json not found.", 400)
+
+    domain_err = await _validate_wp_domain_for_job(store, job_id)
+    if domain_err:
+        return domain_err
+
     try:
         async with WPClient.from_credentials_file(_CREDS_PATH) as wp:
             result = await optimize_media_item(
@@ -1587,6 +1724,10 @@ async def optimize_existing_endpoint(
     if not _CREDS_PATH.exists():
         return _err("NO_CREDENTIALS", "wp-credentials.json not found.", 400)
 
+    domain_err = await _validate_wp_domain_for_job(store, request.job_id)
+    if domain_err:
+        return domain_err
+
     # Get image info to find page URLs
     image_info = await store.get_image_by_url(request.job_id, request.image_url)
     page_urls = [image_info.page_url] if image_info else []
@@ -1595,7 +1736,6 @@ async def optimize_existing_endpoint(
     job = await store.get_job(request.job_id)
     geo_config = None
     if job:
-        from urllib.parse import urlparse
         domain = urlparse(job.target_url).netloc.replace("www.", "")
         geo_config = await store.get_geo_config(domain)
 
@@ -1650,7 +1790,6 @@ async def optimize_existing_preview_endpoint(
     job = await store.get_job(job_id)
     geo_location = None
     if job:
-        from urllib.parse import urlparse
         domain = urlparse(job.target_url).netloc.replace("www.", "")
         geo_config = await store.get_geo_config(domain)
         if geo_config:
@@ -1694,12 +1833,16 @@ async def optimize_upload_endpoint(
     if not _CREDS_PATH.exists():
         return _err("NO_CREDENTIALS", "wp-credentials.json not found.", 400)
 
+    if job_id:
+        domain_err = await _validate_wp_domain_for_job(store, job_id)
+        if domain_err:
+            return domain_err
+
     # Get GEO config if job_id provided
     geo_config = None
     if job_id:
         job = await store.get_job(job_id)
         if job:
-            from urllib.parse import urlparse
             domain = urlparse(job.target_url).netloc.replace("www.", "")
             geo_config = await store.get_geo_config(domain)
 
@@ -1805,6 +1948,10 @@ async def batch_optimize_start(
     if not _CREDS_PATH.exists():
         return _err("NO_CREDENTIALS", "wp-credentials.json not found.", 400)
 
+    domain_err = await _validate_wp_domain_for_job(store, request.job_id)
+    if domain_err:
+        return domain_err
+
     if not request.image_urls:
         return _err("NO_IMAGES", "No image URLs provided.", 400)
 
@@ -1812,7 +1959,6 @@ async def batch_optimize_start(
     job = await store.get_job(request.job_id)
     geo_config = None
     if job:
-        from urllib.parse import urlparse
         domain = urlparse(job.target_url).netloc.replace("www.", "")
         geo_config = await store.get_geo_config(domain)
 

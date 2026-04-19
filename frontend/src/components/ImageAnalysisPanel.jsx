@@ -15,7 +15,7 @@ import OptimizeExistingModal from './OptimizeExistingModal.jsx'
 import UploadNewImageModal from './UploadNewImageModal.jsx'
 import BatchOptimizePanel from './BatchOptimizePanel.jsx'
 
-export default function ImageAnalysisPanel({ jobId, onPageClick, onShowHelp }) {
+export default function ImageAnalysisPanel({ jobId, domain, onPageClick, onShowHelp }) {
   const [summary, setSummary] = useState(null)
   const [images, setImages] = useState([])
   const [loading, setLoading] = useState(true)
@@ -303,7 +303,7 @@ export default function ImageAnalysisPanel({ jobId, onPageClick, onShowHelp }) {
       {/* Sort Controls */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <h2 className="text-lg font-bold text-gray-800">All Images</h2>
+          <h2 className="text-lg font-bold text-gray-800">{domain ? `Images - ${domain}` : 'Images'}</h2>
           {onShowHelp && (
             <button
               onClick={onShowHelp}

@@ -199,7 +199,7 @@ function PageGroup({ pageUrl, fixes, onUpdate }) {
 
 const BATCH_SIZE = 20
 
-export default function FixManager({ jobId }) {
+export default function FixManager({ jobId, domain }) {
   const [fixes, setFixes] = useState([])
   const [seoPlugin, setSeoPlugin] = useState(null)
   const [generating, setGenerating] = useState(false)
@@ -303,7 +303,9 @@ export default function FixManager({ jobId }) {
 
   // Group fixes by page
   const byPage = fixes.reduce((acc, fix) => {
-    ;(acc[fix.page_url] = acc[fix.page_url] || []).push(fix)
+    const key = fix.page_url
+    if (!acc[key]) acc[key] = []
+    acc[key].push(fix)
     return acc
   }, {})
 
@@ -318,7 +320,7 @@ export default function FixManager({ jobId }) {
       {/* Header */}
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
-          <h2 className="text-lg font-bold text-gray-900">Fix Manager</h2>
+          <h2 className="text-lg font-bold text-gray-900">{domain ? `Fix Manager - ${domain}` : 'Fix Manager'}</h2>
           <p className="text-sm text-gray-500 mt-0.5">
             Review issues found in this crawl and apply fixes directly to WordPress.
             {seoPlugin && (

@@ -143,6 +143,24 @@ Health Score = `max(0, 100 − Σ issue impacts)` across all issues on the site.
 
 A bearer token (`Authorization: Bearer <token>`) gates all crawl endpoints. Set `AUTH_TOKEN` in environment variables. This is a deployment gate, not user authentication — it prevents the public from using the API without a token.
 
+### WordPress domain validation
+
+All WordPress-touching endpoints validate that the `wp-credentials.json` `site_url` domain matches either the crawl job's `target_url` or the request URL's domain. This prevents cross-site operations when scanning multiple client domains — without it, changing the scan target while `wp-credentials.json` still points to the previous client's WordPress would silently read/write the wrong site.
+
+**Implementation:** Two helper functions in `api/routers/fixes.py`:
+- `_validate_wp_domain_for_job(store, job_id)` — compares job target domain vs credentials domain
+- `_validate_wp_domain_for_url(url)` — compares URL domain vs credentials domain
+
+Both return a 403 `DOMAIN_MISMATCH` error on mismatch. Applied to all 22 WP endpoints including orphaned media, fix generation, image optimization, and batch processing.
+
+### PDF report help text
+
+PDF reports pull issue help content from `api/services/issue_help_data.py` (auto-generated from `frontend/src/data/issueHelp.js`). This is the same content shown in the web UI. The DB fields (`what_it_is`, `how_to_fix`) are empty for most crawls — the `issue_help_data.py` lookup is the primary source.
+
+### ESLint hooks enforcement
+
+The frontend build pipeline (`npm run build`) runs `eslint --quiet` before `vite build`. The `.eslintrc.cjs` config enforces `react-hooks/rules-of-hooks: 'error'` — any hook called conditionally or after an early return blocks the build. This prevents the class of bug where `useMemo`/`useState` after `if (!data) return` causes React to crash with "Rendered more hooks than during the previous render."
+
 ---
 
 ## Vercel Deployment

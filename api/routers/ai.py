@@ -311,6 +311,7 @@ async def apply_geo_metadata(body: ApplyGeoMetadataRequest, store=Depends(get_st
     """
     import json
     from pathlib import Path
+    from urllib.parse import urlparse
     from api.services.wp_fixer import update_image_metadata
     from api.services.wp_client import WPClient, WPAuthError
 
@@ -329,22 +330,35 @@ async def apply_geo_metadata(body: ApplyGeoMetadataRequest, store=Depends(get_st
             with open(_CREDS_PATH) as f:
                 creds = json.load(f)
 
-            wp = WPClient(
-                site_url=creds["site_url"],
-                login_url=creds["login_url"],
-                username=creds["username"],
-                password=creds["password"],
-            )
+            # Validate domain matches crawl job
+            job = await store.get_job(body.job_id)
+            if job:
+                job_domain = urlparse(job.target_url).netloc
+                creds_domain = urlparse(creds.get("site_url", "")).netloc
+                if job_domain != creds_domain:
+                    wp_error = (
+                        f"WordPress credentials are for {creds_domain}, "
+                        f"but crawl job targets {job_domain}."
+                    )
+                    # Skip WP update but still update local DB below
 
-            async with wp:
-                # Update WordPress with GEO-optimized metadata
-                await update_image_metadata(
-                    wp,
-                    body.image_url,
-                    alt_text=body.alt_text,
-                    description=body.description,
+            if not wp_error:
+                wp = WPClient(
+                    site_url=creds["site_url"],
+                    login_url=creds["login_url"],
+                    username=creds["username"],
+                    password=creds["password"],
                 )
-                wp_updated = True
+
+                async with wp:
+                    # Update WordPress with GEO-optimized metadata
+                    await update_image_metadata(
+                        wp,
+                        body.image_url,
+                        alt_text=body.alt_text,
+                        description=body.description,
+                    )
+                    wp_updated = True
 
         except WPAuthError as e:
             wp_error = f"WordPress authentication failed: {str(e)}"

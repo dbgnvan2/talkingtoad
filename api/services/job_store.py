@@ -894,6 +894,7 @@ class SQLiteJobStore:
             pass
 
         return {
+            "target_url": job.target_url,
             "pages_crawled": job.pages_crawled,
             "pages_with_errors": pages_with_errors,
             "total_issues": total_issues,
@@ -2084,6 +2085,7 @@ class RedisJobStore:
         pages_with_errors = sum(1 for p in pages if p.status_code >= 400)
 
         return {
+            "target_url": job.target_url,
             "pages_crawled": job.pages_crawled,
             "pages_with_errors": pages_with_errors,
             "total_issues": len(issues),

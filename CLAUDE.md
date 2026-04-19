@@ -143,6 +143,32 @@ Sitemap and Crawlability category tabs show what was found (sitemap URL, URL cou
 - **Missing `import re`:** Added module-level `import re` in `engine.py` — was only imported inside `_fetch_image_full()` but used at top-level for `/llms.txt` parsing.
 - **PDF/Excel Export:** Fixed `get_images()` unpacking in export endpoints — method returns `list[ImageInfo]`, not a tuple.
 
+### Security: WordPress Domain Validation (v1.9.4)
+- **Cross-site protection:** All 22 WP-touching endpoints now validate that `wp-credentials.json` domain matches the crawl job's target domain. Prevents data leakage (reading wrong site's media library) and accidental writes (modifying wrong WordPress site) when scanning multiple client domains.
+- **Validation helpers:** `_validate_wp_domain_for_job(store, job_id)` for job-based endpoints, `_validate_wp_domain_for_url(url)` for URL-based endpoints. Returns 403 DOMAIN_MISMATCH on mismatch.
+- **DELETE media endpoint hardened:** Now requires `job_id` parameter for domain verification.
+- **AI router:** `apply-geo-metadata` validates domain before writing to WordPress.
+
+### UI: Domain Display (v1.9.4)
+- **Progress page:** Domain shown in prominent green badge during scanning.
+- **Results page:** Domain appended to all section headers from backend `summary.target_url` — "Audit Results - domain", "Metadata - domain", "Orphaned Images - domain", etc.
+- **Backend:** `get_summary()` now includes `target_url` in both SQLite and Redis stores.
+
+### Frontend Quality (v1.9.4)
+- **React hooks fix:** `useMemo` in `CategoryTab` and `SeverityTab` was placed after early return, violating Rules of Hooks and causing blank category pages. Moved above early return.
+- **FixInlinePanel hooks fix:** 10 hooks (`useState`/`useEffect`/`useRef`) were after an early return for `TITLE_H1_MISMATCH`. Moved conditional return after all hooks.
+- **ESLint:** Added `.eslintrc.cjs` with `react-hooks/rules-of-hooks: 'error'`. Build now runs `eslint --quiet` before `vite build` — hooks violations block the build.
+- **File Save dialog:** Downloads (CSV, PDF, Excel) use `showSaveFilePicker` API for a proper Save As dialog with filename/folder selection. Falls back to standard download on unsupported browsers.
+
+### Report Improvements (v1.9.4)
+- **PDF category pages:** Each issue type now shows count of affected pages, description, and full URL listings (was showing only issue names with no data).
+- **PDF help text:** Uses rich help content from `issueHelp.js` (via `api/services/issue_help_data.py`) instead of empty DB fields. Plain black text, no blue shading boxes. Sub-headings bold 9pt, body text regular 10pt.
+- **PDF Top 10 Pages:** Color-coded issue counts (red/amber/blue) on one line instead of truncated text. URLs in normal weight font.
+- **PDF orphan prevention:** Issue titles kept together with their help text — page breaks inserted before the title if insufficient room remains.
+- **PDF Help Text option:** Available for both full and summary-only reports (was hidden when Summary Only checked).
+- **PDF issue sorting:** Within each category, issues sorted by severity (critical first) then by affected page count.
+- **Excel export fix:** `ImageInfo` objects converted via `.to_dict()` instead of crashing on `.get()` call.
+
 ---
 
 ## Image Intelligence Engine (v1.9)

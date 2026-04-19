@@ -4,6 +4,7 @@ from datetime import datetime
 from fpdf import FPDF
 from api.models.job import CrawlJob
 from api.models.issue import Issue
+from api.services.issue_help_data import ISSUE_HELP
 
 logger = logging.getLogger(__name__)
 
@@ -59,23 +60,25 @@ class TalkingToadReport(FPDF):
         self.multi_cell(W, 10, self.clean_text(title))
         self.ln(2)
 
-    def draw_help_box(self, what, impact, how):
-        self.set_x(25.4)
-        if self.get_y() > 200:
-            self.add_page()
-
-        self.set_fill_color(*COLOR_BLUE_BG)
-        
+    def draw_help_section(self, what, impact, how):
         for label, content in [("WHAT IT IS", what), ("IMPACT", impact), ("HOW TO FIX", how)]:
+            if not content:
+                continue
+            if self.get_y() > 240:
+                self.add_page()
+            # Label: bold black
             self.set_x(25.4)
             self.set_font('helvetica', 'B', 9)
-            self.set_text_color(*COLOR_BLUE_TEXT)
-            
-            full_text = f"{label} - {content}"
-            self.multi_cell(W, 6, self.clean_text(full_text), fill=True)
-            self.ln(0.5)
-        
-        self.ln(2)
+            self.set_text_color(*COLOR_GRAY_800)
+            self.cell(W, 5, self.clean_text(label), new_x="LMARGIN", new_y="NEXT")
+            # Content: regular 10pt black
+            self.set_x(25.4)
+            self.set_font('helvetica', '', 10)
+            self.set_text_color(*COLOR_GRAY_800)
+            self.multi_cell(W, 5, self.clean_text(content))
+            self.ln(1)
+
+        self.ln(1)
 
 async def generate_pdf_report(
     job: CrawlJob,
@@ -177,15 +180,40 @@ async def generate_pdf_report(
         pdf.ln(5)
         
         for p in top_pages:
+            if pdf.get_y() > 230:
+                pdf.add_page()
             url = p.get("url", "")
             counts = p.get("issue_counts", {})
+            crit = counts.get("critical", 0)
+            warn = counts.get("warning", 0)
+            info = counts.get("info", 0)
+
             pdf.set_x(25.4)
-            pdf.set_font('helvetica', 'B', 10)
+            pdf.set_font('helvetica', '', 9)
             pdf.set_text_color(*COLOR_GRAY_800)
-            pdf.multi_cell(W, 6, pdf.clean_text(url))
-            
-            pdf.multi_cell(W, 5, f"Issues: {counts.get('critical')} Critical, {counts.get('warning')} Warnings, {counts.get('info')} Info")
-            pdf.ln(2)
+            pdf.multi_cell(W, 5, pdf.clean_text(url))
+
+            # Issue counts on one line with color coding
+            pdf.set_x(30)
+            pdf.set_font('helvetica', 'B', 9)
+            if crit:
+                pdf.set_text_color(*COLOR_CRITICAL)
+                pdf.cell(0, 5, f"{crit} Critical  ", new_x="END")
+            if warn:
+                pdf.set_text_color(*COLOR_WARNING)
+                pdf.cell(0, 5, f"{warn} Warning{'s' if warn != 1 else ''}  ", new_x="END")
+            if info:
+                pdf.set_text_color(*COLOR_INFO)
+                pdf.cell(0, 5, f"{info} Info", new_x="END")
+            if not crit and not warn and not info:
+                pdf.set_text_color(*COLOR_TOAD_GREEN)
+                pdf.cell(0, 5, "No issues", new_x="END")
+            pdf.ln(4)
+
+            pdf.set_draw_color(229, 231, 235)
+            pdf.set_x(25.4)
+            pdf.line(pdf.get_x(), pdf.get_y(), pdf.get_x() + W, pdf.get_y())
+            pdf.ln(3)
 
     # ── Page 4: AI Readiness (llms.txt) ───────────────────────────────────
     pdf.add_page()
@@ -342,52 +370,90 @@ async def generate_pdf_report(
         pdf.add_page()
         pdf.chapter_title(cat_slug.replace('_', ' ').title() + " Details", size=22)
         
-        for code in sorted(groups[cat_slug].keys()):
-            if pdf.get_y() > 220:
+        # Sort issue types by severity (critical first), then by count
+        sev_order = {"critical": 0, "warning": 1, "info": 2}
+        sorted_codes = sorted(
+            groups[cat_slug].keys(),
+            key=lambda c: (sev_order.get(groups[cat_slug][c][0].severity, 3), -len(groups[cat_slug][c]))
+        )
+
+        for code in sorted_codes:
+            # Prevent orphaned titles: need room for title + description + start of help
+            if pdf.get_y() > 200:
                 pdf.add_page()
-                
+
             examples = groups[cat_slug][code]
             first = examples[0]
-            
-            # Subcategory Name - SEVERITY
+            urls = sorted(list(set([str(i.page_url) for i in examples if i.page_url])))
+            count = len(urls)
+
+            # Severity color for the badge
+            sev_color = (
+                COLOR_CRITICAL if first.severity == "critical"
+                else COLOR_WARNING if first.severity == "warning"
+                else COLOR_INFO
+            )
+
+            # Issue title with count: "Dead Link - CRITICAL (23 pages)"
             pdf.set_x(25.4)
-            pdf.set_font('helvetica', 'B', 14)
+            pdf.set_font('helvetica', 'B', 12)
             pdf.set_text_color(*COLOR_GRAY_800)
-            
-            title_line = f"{first.human_description or code} - {first.severity.upper()}"
-            pdf.multi_cell(W, 10, pdf.clean_text(title_line))
-            
-            pdf.ln(1)
-            
-            if include_help:
-                what = first.what_it_is or first.description
-                impact = first.impact_desc or f"This issue has an impact score of {first.impact}/10."
-                how = first.how_to_fix or first.recommendation
-                pdf.draw_help_box(what, impact, how)
-            
-            if include_pages:
+            title = first.human_description or code
+            pdf.cell(0, 8, pdf.clean_text(title), new_x="END")
+
+            pdf.set_font('helvetica', 'B', 10)
+            pdf.set_text_color(*sev_color)
+            sev_label = f"  {first.severity.upper()}"
+            pdf.cell(0, 8, sev_label, new_x="END")
+
+            pdf.set_text_color(*COLOR_GRAY_500)
+            pdf.set_font('helvetica', '', 10)
+            pdf.cell(0, 8, f"  ({count} page{'s' if count != 1 else ''})", new_x="LMARGIN", new_y="NEXT")
+
+            # Description line (always shown — one line summary)
+            desc = first.description
+            if desc:
                 pdf.set_x(25.4)
-                pdf.set_font('helvetica', 'B', 10)
-                pdf.set_text_color(*COLOR_GRAY_600)
-                urls = sorted(list(set([str(i.page_url) for i in examples if i.page_url])))
-                pdf.cell(W, 8, f"Affected URLs ({len(urls)}):", new_x="LMARGIN", new_y="NEXT")
-                
                 pdf.set_font('helvetica', '', 9)
+                pdf.set_text_color(*COLOR_GRAY_600)
+                pdf.multi_cell(W, 5, pdf.clean_text(desc))
+                pdf.ln(1)
+
+            # Help text (optional)
+            if include_help:
+                help_entry = ISSUE_HELP.get(code, {})
+                what = help_entry.get("what") or first.what_it_is or first.description or ""
+                impact_text = help_entry.get("impact") or first.impact_desc or f"Impact score: {first.impact}/10."
+                how = help_entry.get("fix") or first.how_to_fix or first.recommendation or ""
+                if what or how:
+                    pdf.draw_help_section(what, impact_text, how)
+
+            # Affected URLs (always shown — this is the core value of the report)
+            if include_pages and urls:
+                pdf.set_x(25.4)
+                pdf.set_font('helvetica', 'B', 9)
+                pdf.set_text_color(*COLOR_GRAY_600)
+                pdf.cell(W, 6, f"Affected URLs:", new_x="LMARGIN", new_y="NEXT")
+
+                pdf.set_font('helvetica', '', 8)
                 pdf.set_text_color(*COLOR_GRAY_800)
                 for url in urls[:20]:
-                    pdf.set_x(30) # Further indent URLs
-                    pdf.multi_cell(W - 5, 5, pdf.clean_text(f"- {url}"))
-                
+                    if pdf.get_y() > 250:
+                        pdf.add_page()
+                    pdf.set_x(30)
+                    pdf.multi_cell(W - 5, 4, pdf.clean_text(url))
+
                 if len(urls) > 20:
                     pdf.set_x(30)
-                    pdf.set_font('helvetica', 'I', 9)
-                    pdf.cell(W - 5, 6, f"... and {len(urls)-20} more. See spreadsheet for full list.", new_x="LMARGIN", new_y="NEXT")
-                
-                pdf.ln(5)
-                pdf.set_draw_color(229, 231, 235)
-                pdf.set_x(25.4)
-                pdf.line(pdf.get_x(), pdf.get_y(), pdf.get_x() + W, pdf.get_y())
-                pdf.ln(5)
+                    pdf.set_font('helvetica', 'I', 8)
+                    pdf.set_text_color(*COLOR_GRAY_500)
+                    pdf.cell(W - 5, 5, f"... and {len(urls)-20} more. See spreadsheet for full list.", new_x="LMARGIN", new_y="NEXT")
+
+            pdf.ln(3)
+            pdf.set_draw_color(229, 231, 235)
+            pdf.set_x(25.4)
+            pdf.line(pdf.get_x(), pdf.get_y(), pdf.get_x() + W, pdf.get_y())
+            pdf.ln(4)
 
     pdf.set_x(25.4)
     pdf.ln(10)

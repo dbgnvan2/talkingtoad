@@ -49,7 +49,9 @@ export default function Progress() {
               {statusHeading(status?.status)}
             </h2>
             {status?.target_url && (
-              <p className="mt-1 text-sm text-gray-500 truncate">{status.target_url}</p>
+              <p className="mt-2 text-base font-bold text-green-700 bg-green-50 border border-green-200 rounded-lg px-3 py-1.5 inline-block">
+                {status.target_url.replace(/^https?:\/\//, '')}
+              </p>
             )}
           </div>
 

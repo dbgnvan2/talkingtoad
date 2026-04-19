@@ -18,7 +18,7 @@ async function checkResponse(res) {
     try {
       const data = await res.json()
       msg = data.error?.message || msg
-    } catch (_) {}
+    } catch (_e) { /* ignore parse errors on error responses */ }
     throw new Error(msg)
   }
   return res.json()
@@ -383,6 +383,46 @@ export async function getOrphanedPages(jobId) {
   return { count: orphans.length, pages: orphans }
 }
 
+/**
+ * Save a blob using the File System Access API (shows Save As dialog)
+ * with fallback to anchor-click download for unsupported browsers.
+ */
+async function saveBlob(blob, defaultName, mimeType) {
+  // Try modern File System Access API — gives a real Save As dialog
+  if (window.showSaveFilePicker) {
+    try {
+      const ext = defaultName.split('.').pop()
+      const types = {
+        csv:  { description: 'CSV file',   accept: { 'text/csv': ['.csv'] } },
+        pdf:  { description: 'PDF file',   accept: { 'application/pdf': ['.pdf'] } },
+        xlsx: { description: 'Excel file', accept: { 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx'] } },
+      }
+      const handle = await window.showSaveFilePicker({
+        suggestedName: defaultName,
+        types: types[ext] ? [types[ext]] : [],
+      })
+      const writable = await handle.createWritable()
+      await writable.write(blob)
+      await writable.close()
+      return
+    } catch (err) {
+      // User cancelled the dialog — don't fall through to anchor download
+      if (err.name === 'AbortError') return
+      // Other errors — fall through to anchor download
+    }
+  }
+
+  // Fallback: anchor download (goes to Downloads folder)
+  const objectUrl = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = objectUrl
+  a.download = defaultName
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  URL.revokeObjectURL(objectUrl)
+}
+
 export async function downloadCsv(jobId, category) {
   const url = category
     ? `/api/crawl/${jobId}/export/csv/${category}`
@@ -392,14 +432,7 @@ export async function downloadCsv(jobId, category) {
   const res = await fetch(url, { headers: h })
   if (!res.ok) throw new Error(`Export failed: HTTP ${res.status}`)
   const blob = await res.blob()
-  const objectUrl = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = objectUrl
-  a.download = category ? `crawl-${category}.csv` : 'crawl-full.csv'
-  document.body.appendChild(a)
-  a.click()
-  document.body.removeChild(a)
-  URL.revokeObjectURL(objectUrl)
+  await saveBlob(blob, category ? `crawl-${category}.csv` : 'crawl-full.csv')
 }
 
 export async function downloadPdfReport(jobId, { includeHelp = true, includePages = true, summaryOnly = false } = {}) {
@@ -413,14 +446,7 @@ export async function downloadPdfReport(jobId, { includeHelp = true, includePage
   const res = await fetch(url, { headers: h })
   if (!res.ok) throw new Error(`PDF Export failed: HTTP ${res.status}`)
   const blob = await res.blob()
-  const objectUrl = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = objectUrl
-  a.download = `TalkingToad-Audit-${jobId.slice(0, 8)}.pdf`
-  document.body.appendChild(a)
-  a.click()
-  document.body.removeChild(a)
-  URL.revokeObjectURL(objectUrl)
+  await saveBlob(blob, `TalkingToad-Audit-${jobId.slice(0, 8)}.pdf`)
 }
 
 export async function downloadExcelReport(jobId) {
@@ -429,14 +455,7 @@ export async function downloadExcelReport(jobId) {
   const res = await fetch(url, { headers: h })
   if (!res.ok) throw new Error(`Excel Export failed: HTTP ${res.status}`)
   const blob = await res.blob()
-  const objectUrl = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = objectUrl
-  a.download = `TalkingToad-Audit-${jobId.slice(0, 8)}.xlsx`
-  document.body.appendChild(a)
-  a.click()
-  document.body.removeChild(a)
-  URL.revokeObjectURL(objectUrl)
+  await saveBlob(blob, `TalkingToad-Audit-${jobId.slice(0, 8)}.xlsx`)
 }
 
 export async function analyzeWithAi(jobId, pageUrl, type) {
