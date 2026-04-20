@@ -96,7 +96,7 @@ TalkingToad/
    - GEO AI metadata generation (alt text, description, caption)
    - Batch processing with pause/resume/cancel controls
    - Local archiving of originals and optimized files
-5. **AI Readiness:** /llms.txt generator and AI semantic audit (Gemini/OpenAI).
+5. **AI Readiness:** /llms.txt generator (on-demand, not auto-generated) and AI semantic audit (Gemini/OpenAI). Shows "Retrieved" badge when saved content exists, "Recommendation" badge when generated from crawl data.
 6. **Reporting:** Professional 8.5" x 11" PDF audits and tabbed Excel workbooks.
 
 ---
@@ -167,7 +167,33 @@ Sitemap and Crawlability category tabs show what was found (sitemap URL, URL cou
 - **PDF orphan prevention:** Issue titles kept together with their help text — page breaks inserted before the title if insufficient room remains.
 - **PDF Help Text option:** Available for both full and summary-only reports (was hidden when Summary Only checked).
 - **PDF issue sorting:** Within each category, issues sorted by severity (critical first) then by affected page count.
+- **PDF filenames:** Use domain name instead of job ID (e.g. `TalkingToad-Audit-example.com.pdf`). Same for Excel and CSV exports. Frontend extracts filename from Content-Disposition header.
+- **PDF action checklist:** "What to Do Next" page with top 15 prioritized actions, checkboxes, severity colors, and recommendations.
+- **PDF AI executive summary:** Optional 3-5 sentence plain-language narrative generated via Gemini/OpenAI, inserted as Page 2. Skipped gracefully if no AI keys configured.
 - **Excel export fix:** `ImageInfo` objects converted via `.to_dict()` instead of crashing on `.get()` call.
+
+### New Issue Codes (v1.9.5)
+- **OG_IMAGE_MISSING:** Missing `og:image` meta tag — critical for social media sharing previews.
+- **TWITTER_CARD_MISSING:** Missing `twitter:card` meta tag for Twitter/X rich previews.
+- **CONTENT_STALE:** Page `Last-Modified` header older than 12 months.
+- **ANCHOR_TEXT_GENERIC:** Links use "click here", "read more", etc. (15 patterns matched).
+- **HEADING_EMPTY:** H1-H6 tags with no text content.
+- **WWW_CANONICALIZATION:** Both www and non-www versions resolve without redirecting to each other.
+- **Fixability tagging:** Every issue tagged as `wp_fixable` (20), `content_edit` (27), or `developer_needed` (40). Exposed in API responses via `fixability` field.
+- **Architecture parity test:** Enforces that every code in `issueHelp.js` matches `_CATALOGUE` and vice versa.
+
+### Crawl Comparison (v1.9.5)
+- `GET /api/crawl/{job_id}/comparison` — compares health score, issue counts, and severity breakdown against the previous crawl for the same domain.
+- `list_jobs_by_domain()` added to SQLite and Redis job stores.
+
+### AI Executive Summary (v1.9.5)
+- `GET /api/crawl/{job_id}/executive-summary` — generates and caches a plain-language summary via AI.
+- Cached on job record after first generation (`executive_summary` column).
+
+### UI Improvements (v1.9.5)
+- **Tab consolidation:** 17 flat tabs replaced with 5 grouped sections: Overview, Issues (10 categories), Media, Pages, Actions. "Fix History" placeholder removed.
+- **GEO Settings:** Pre-crawl blocking prompt removed from Home page. Non-blocking banner added to Results Summary tab instead.
+- **llms.txt generator:** No longer auto-generates on page load. User clicks "Generate Recommendation" button. Shows status badge: "llms.txt Retrieved" (green) when saved content exists, "llms.txt Recommendation" (amber) when generated from crawl data. "Save to Job Data" button only appears after generation.
 
 ---
 
