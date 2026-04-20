@@ -67,6 +67,10 @@ def _page(
     # v1.7 AI-readiness fields
     text_to_html_ratio: float | None = None,
     code_breakdown: dict | None = None,
+    # v1.9.2 new fields
+    og_image: str | None = "https://example.com/image.jpg",
+    twitter_card: str | None = "summary",
+    last_modified: str | None = None,
 ) -> ParsedPage:
     return ParsedPage(
         url=url,
@@ -78,6 +82,8 @@ def _page(
         meta_description=meta_description,
         og_title=og_title,
         og_description=og_description,
+        og_image=og_image,
+        twitter_card=twitter_card,
         canonical_url=canonical_url,
         h1_tags=h1_tags if h1_tags is not None else ["Good Page Title"],
         headings_outline=headings_outline if headings_outline is not None else [{"level": 1, "text": "Good Page Title"}],
@@ -107,6 +113,7 @@ def _page(
         lang_attr=lang_attr,
         text_to_html_ratio=text_to_html_ratio,
         code_breakdown=code_breakdown,
+        last_modified=last_modified,
     )
 
 
@@ -1610,3 +1617,212 @@ class TestBannerH1CssClass:
         )
         codes = _codes(check_page(page, suppress_banner_h1=True))
         assert "H1_MULTIPLE" not in codes
+
+
+# ---------------------------------------------------------------------------
+# OG Image checks
+# ---------------------------------------------------------------------------
+
+class TestOgImageMissing:
+    def test_og_image_missing_emits_info(self):
+        page = _page(og_image=None)
+        issues = check_page(page)
+        og_img_issues = [i for i in issues if i.code == "OG_IMAGE_MISSING"]
+        assert len(og_img_issues) == 1
+        assert og_img_issues[0].severity == "info"
+
+    def test_og_image_present_no_issue(self):
+        page = _page(og_image="https://example.com/img.jpg")
+        codes = _codes(check_page(page))
+        assert "OG_IMAGE_MISSING" not in codes
+
+    def test_og_image_empty_string_emits(self):
+        page = _page(og_image="")
+        codes = _codes(check_page(page))
+        assert "OG_IMAGE_MISSING" in codes
+
+
+# ---------------------------------------------------------------------------
+# Twitter Card checks
+# ---------------------------------------------------------------------------
+
+class TestTwitterCardMissing:
+    def test_twitter_card_missing_emits_info(self):
+        page = _page(twitter_card=None)
+        issues = check_page(page)
+        tc_issues = [i for i in issues if i.code == "TWITTER_CARD_MISSING"]
+        assert len(tc_issues) == 1
+        assert tc_issues[0].severity == "info"
+
+    def test_twitter_card_present_no_issue(self):
+        page = _page(twitter_card="summary_large_image")
+        codes = _codes(check_page(page))
+        assert "TWITTER_CARD_MISSING" not in codes
+
+    def test_twitter_card_empty_string_emits(self):
+        page = _page(twitter_card="")
+        codes = _codes(check_page(page))
+        assert "TWITTER_CARD_MISSING" in codes
+
+
+# ---------------------------------------------------------------------------
+# Content Stale checks
+# ---------------------------------------------------------------------------
+
+class TestContentStale:
+    def test_stale_content_emits_info(self):
+        """Page with last_modified > 365 days ago should emit CONTENT_STALE."""
+        from email.utils import format_datetime
+        from datetime import datetime, timezone, timedelta
+        old_date = datetime.now(timezone.utc) - timedelta(days=730)
+        page = _page(last_modified=format_datetime(old_date))
+        issues = check_page(page)
+        stale_issues = [i for i in issues if i.code == "CONTENT_STALE"]
+        assert len(stale_issues) == 1
+        assert stale_issues[0].severity == "info"
+        assert stale_issues[0].extra["age_days"] >= 729
+
+    def test_recent_content_no_issue(self):
+        """Page modified recently should not emit CONTENT_STALE."""
+        from email.utils import format_datetime
+        from datetime import datetime, timezone, timedelta
+        recent_date = datetime.now(timezone.utc) - timedelta(days=30)
+        page = _page(last_modified=format_datetime(recent_date))
+        codes = _codes(check_page(page))
+        assert "CONTENT_STALE" not in codes
+
+    def test_no_last_modified_no_issue(self):
+        """Page with no last_modified header should not emit CONTENT_STALE."""
+        page = _page(last_modified=None)
+        codes = _codes(check_page(page))
+        assert "CONTENT_STALE" not in codes
+
+    def test_malformed_date_no_crash(self):
+        """Malformed last_modified date should not crash or emit issue."""
+        page = _page(last_modified="not-a-valid-date")
+        codes = _codes(check_page(page))
+        assert "CONTENT_STALE" not in codes
+
+
+# ---------------------------------------------------------------------------
+# Phase 3: ANCHOR_TEXT_GENERIC
+# ---------------------------------------------------------------------------
+
+class TestAnchorTextGeneric:
+    def test_generic_anchor_emits_warning(self):
+        """Page with link text 'click here' should emit ANCHOR_TEXT_GENERIC."""
+        page = _page(links=[
+            ParsedLink(url="https://example.com/donate", text="click here", is_internal=True),
+        ])
+        issues = check_page(page)
+        codes = _codes(issues)
+        assert "ANCHOR_TEXT_GENERIC" in codes
+        issue = next(i for i in issues if i.code == "ANCHOR_TEXT_GENERIC")
+        assert issue.severity == "warning"
+        assert issue.extra["count"] == 1
+        assert issue.extra["examples"][0]["text"] == "click here"
+
+    def test_normal_anchor_no_issue(self):
+        """Page with descriptive link text should NOT emit ANCHOR_TEXT_GENERIC."""
+        page = _page(links=[
+            ParsedLink(url="https://example.com/services", text="View our services", is_internal=True),
+        ])
+        codes = _codes(check_page(page))
+        assert "ANCHOR_TEXT_GENERIC" not in codes
+
+    def test_generic_case_insensitive(self):
+        """'Read More' (capitalized) should match generic anchor text."""
+        page = _page(links=[
+            ParsedLink(url="https://example.com/blog", text="Read More", is_internal=True),
+        ])
+        codes = _codes(check_page(page))
+        assert "ANCHOR_TEXT_GENERIC" in codes
+
+    def test_no_links_no_issue(self):
+        """Page with empty links list should not emit ANCHOR_TEXT_GENERIC."""
+        page = _page(links=[])
+        codes = _codes(check_page(page))
+        assert "ANCHOR_TEXT_GENERIC" not in codes
+
+    def test_multiple_generic_links_counted(self):
+        """Multiple generic links should be counted and limited to 5 examples."""
+        page = _page(links=[
+            ParsedLink(url=f"https://example.com/{i}", text="click here", is_internal=True)
+            for i in range(7)
+        ])
+        issues = check_page(page)
+        issue = next(i for i in issues if i.code == "ANCHOR_TEXT_GENERIC")
+        assert issue.extra["count"] == 7
+        assert len(issue.extra["examples"]) == 5  # capped at 5
+
+    def test_noindex_page_skips_generic_anchor_check(self):
+        """Noindex pages should not be checked for generic anchor text."""
+        page = _page(
+            is_indexable=False,
+            links=[ParsedLink(url="https://example.com/donate", text="click here", is_internal=True)],
+        )
+        codes = _codes(check_page(page))
+        assert "ANCHOR_TEXT_GENERIC" not in codes
+
+
+# ---------------------------------------------------------------------------
+# Phase 3: HEADING_EMPTY
+# ---------------------------------------------------------------------------
+
+class TestHeadingEmpty:
+    def test_empty_heading_emits(self):
+        """Heading with empty text should emit HEADING_EMPTY."""
+        page = _page(
+            h1_tags=["Main Heading"],
+            headings_outline=[
+                {"level": 1, "text": "Main Heading"},
+                {"level": 2, "text": ""},
+            ],
+        )
+        issues = check_page(page)
+        codes = _codes(issues)
+        assert "HEADING_EMPTY" in codes
+        issue = next(i for i in issues if i.code == "HEADING_EMPTY")
+        assert issue.severity == "warning"
+        assert "H2" in issue.extra["empty_levels"]
+
+    def test_whitespace_heading_emits(self):
+        """Heading with only whitespace should emit HEADING_EMPTY."""
+        page = _page(
+            h1_tags=["Main Heading"],
+            headings_outline=[
+                {"level": 1, "text": "Main Heading"},
+                {"level": 3, "text": "   "},
+            ],
+        )
+        codes = _codes(check_page(page))
+        assert "HEADING_EMPTY" in codes
+
+    def test_normal_headings_no_issue(self):
+        """Normal headings with text should NOT emit HEADING_EMPTY."""
+        page = _page(
+            h1_tags=["Main Heading"],
+            headings_outline=[
+                {"level": 1, "text": "Main Heading"},
+                {"level": 2, "text": "Sub Heading"},
+                {"level": 3, "text": "Sub Sub Heading"},
+            ],
+        )
+        codes = _codes(check_page(page))
+        assert "HEADING_EMPTY" not in codes
+
+    def test_multiple_empty_headings_all_listed(self):
+        """Multiple empty headings should all be listed in extra."""
+        page = _page(
+            h1_tags=["Main Heading"],
+            headings_outline=[
+                {"level": 1, "text": "Main Heading"},
+                {"level": 2, "text": ""},
+                {"level": 3, "text": ""},
+            ],
+        )
+        issues = check_page(page)
+        issue = next(i for i in issues if i.code == "HEADING_EMPTY")
+        assert len(issue.extra["empty_levels"]) == 2
+        assert "H2" in issue.extra["empty_levels"]
+        assert "H3" in issue.extra["empty_levels"]

@@ -52,6 +52,13 @@ ISSUE_HELP: dict[str, dict[str, str]] = {
     "OG_DESC_MISSING": {
         "impact": "Social media platforms will attempt to pull description text from the page body when this tag is absent, often producing unpredictable or unhelpful results. Link previews without a proper description look less professional and attract fewer clicks."
     },
+    "OG_IMAGE_MISSING": {
+        "what": "This page has no og:image meta tag. The Open Graph image controls the preview image shown when your page is shared on Facebook, LinkedIn, Twitter, and other social platforms.",
+        "impact": "When someone shares your page on social media, there will be no preview image."
+    },
+    "TWITTER_CARD_MISSING": {
+        "impact": "When someone shares your page on Twitter/X, the preview will be a plain text link."
+    },
     "CANONICAL_MISSING": {
         "what": "This page has no canonical tag, and either it has URL query parameters (like ?page=2) or its content closely matches another page on the site. A canonical tag ",
         "impact": "Without a canonical tag, search engines may treat similar or parameterised URLs as separate competing pages, splitting ranking signals between them. This is called 'duplicate content' and can dilute your search rankings across the affected pages."
@@ -93,6 +100,11 @@ ISSUE_HELP: dict[str, dict[str, str]] = {
         "what": "The heading structure on this page skips one or more levels — for example, jumping from H1 directly to H3 with no H2 in between, or from H2 to H4.",
         "impact": "Skipped heading levels create accessibility problems: screen reader users navigate pages by heading structure, and gaps are disorienting. Search engines also interpret heading hierarchy as a signal of content organisation — a broken hierarchy suggests the content is poorly structured.",
         "fix": "Review the heading tags on this page and ensure no levels are skipped. Use H1 for the main topic, H2 for major sections, H3 for subsections within those, and so on. In WordPress, headings are set using the paragraph style selector in the block editor."
+    },
+    "HEADING_EMPTY": {
+        "what": "One or more heading tags (<h2>, <h3>, etc.) on this page contain no text. The tag exists in the HTML but is either completely empty or contains only whitespace.",
+        "impact": "Screen readers announce an empty heading, confusing visitors who rely on assistive technology.",
+        "fix": "Find the empty heading tags in your page editor and either add descriptive text or remove the heading tag entirely. In WordPress, switch to the Code Editor view to locate empty <h2></h2> or <h3></h3> tags. Common causes include deleted content that left behind empty heading blocks, or page builders inserting placeholder headings."
     },
     "BROKEN_LINK_404": {
         "what": "This link points to a page that doesn't exist. The server responded with a '404 Not Found' status, meaning the destination page has either been deleted or its URL has changed.",
@@ -227,6 +239,11 @@ ISSUE_HELP: dict[str, dict[str, str]] = {
         "what": "This page contains one or more links to external websites that open in a new tab ",
         "impact": "In older browsers, a malicious external page accessed via an unprotected "
     },
+    "WWW_CANONICALIZATION": {
+        "what": "Both the www version (e.g. www.yoursite.com) and the non-www version (yoursite.com) of your site return a page without redirecting to each other. Search engines treat these as two separate websites with duplicate content.",
+        "impact": "Search engines may split your site's ranking power between two versions of every URL.",
+        "fix": "Choose one version (www or non-www) as your canonical domain and configure a 301 redirect from the other. In WordPress hosting panels, look for a 'Primary Domain' or 'Redirect' setting. In Cloudflare, use a Page Rule to redirect. On Apache, add a RewriteRule to .htaccess. Also set your preferred domain in Google Search Console."
+    },
     "URL_UPPERCASE": {
         "what": "This URL contains uppercase letters in its path — for example, /About-Us instead of /about-us. On most web servers, URLs are case-sensitive, meaning /About and /about are treated as different pages.",
         "impact": "Uppercase URL variants can create duplicate content — search engines may index both /About and /about as separate pages, splitting ranking signals between them. Visitors who type or share the URL may reach inconsistent versions depending on which case they use.",
@@ -251,10 +268,6 @@ ISSUE_HELP: dict[str, dict[str, str]] = {
         "what": "This image either has no alt attribute or has an empty/blank alt attribute. Every meaningful image should have descriptive alt text for accessibility and SEO.",
         "fix": "Add a descriptive alt attribute to the image tag that describes what the image shows in one "
     },
-    "IMG_ALT_EMPTY": {
-        "impact": "If this image conveys information, mood, or meaning — such as a photo of your team, a chart, or an illustration — the empty alt text means that information is lost to screen reader users and search engines. If the image is genuinely decorative, an empty alt is correct.",
-        "fix": "Review each flagged image. If it conveys meaningful content, add a descriptive alt text. If it is purely decorative and adds no information, the empty alt is correct and can be left as-is."
-    },
     "IMG_OVERSIZED": {
         "what": "This image has a file size exceeding 200KB as reported by the server's Content-Length header. Large images are one of the most common causes of slow page loading on nonprofit websites.",
         "impact": "Oversized images significantly slow down page loading, particularly on mobile connections. Slow pages frustrate visitors and increase the likelihood they will leave before the page loads. Google uses page speed as a ranking factor, so consistently large images can harm your search rankings.",
@@ -269,6 +282,11 @@ ISSUE_HELP: dict[str, dict[str, str]] = {
         "what": "This page was found during the crawl (e.g. via sitemap) but no other page on your site links to it. It is an 'orphan' — isolated from the rest of your site's link structure.",
         "impact": "Search engines discover pages primarily by following links. An orphan page may be crawled less frequently, accumulate less internal link authority, and rank poorly even if its content is good. Visitors also cannot navigate to it organically.",
         "fix": "Add at least one internal link to this page from a relevant hub page, navigation menu, or related content page. If the page is no longer needed, consider removing it or redirecting it."
+    },
+    "CONTENT_STALE": {
+        "what": "This page has not been modified in over 12 months, based on the Last-Modified HTTP header sent by the server. While not all content needs frequent updates, search engines use freshness as a ranking signal.",
+        "impact": "Search engines and visitors may perceive this page as outdated or abandoned.",
+        "fix": "Review the page and update any outdated information — even small edits signal freshness to search engines. Update dates, statistics, staff names, and program details. If the content is evergreen and still accurate, consider republishing it with a current date."
     },
     "SCHEMA_MISSING": {
         "what": "This page contains no JSON-LD or microdata structured data markup. Schema markup is a standardised vocabulary that helps search engines understand what your content is about and display richer search results.",
@@ -341,6 +359,11 @@ ISSUE_HELP: dict[str, dict[str, str]] = {
         "what": "One or more links on this page have no visible text inside them — the <a> tag is empty or contains only an image without an alt attribute. Screen readers announce these as 'link' with no description, and search engines cannot determine where the link leads.",
         "impact": "Empty links are inaccessible to people using screen readers and assistive technology. Search engines use anchor text as a signal of what the linked page is about — empty anchor text passes no useful signal. This is also a WCAG 2.1 accessibility failure.",
         "fix": "Add descriptive text inside each empty link. If the link is an icon or image, add an "
+    },
+    "ANCHOR_TEXT_GENERIC": {
+        "what": "One or more links on this page use generic text like 'click here', 'read more', 'learn more', or 'here' as their clickable label. These phrases tell neither the reader nor search engines what the linked page is about.",
+        "impact": "Search engines can't tell where your links go, and screen reader users hear unhelpful 'click here' text.",
+        "fix": "Replace generic text with descriptive labels. Instead of 'Click here to donate', write 'Donate to support our programs'. Instead of 'Read more', write 'Read about our community drumming workshops'. The link text should make sense out of context."
     },
     "INTERNAL_NOFOLLOW": {
         "impact": "Applying nofollow to your own internal links prevents search engines from discovering or valuing those pages. It can suppress the ranking of pages you likely want visitors to find — such as service pages, donation pages, or program descriptions."

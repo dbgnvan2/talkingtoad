@@ -244,6 +244,24 @@ async def run_crawl(
             except Exception:
                 pass  # network error — cannot determine redirect behaviour
 
+        # ── 2.55. WWW canonicalization check ──────────────────────────────
+        parsed_start = urlparse(normalised_start)
+        host = parsed_start.netloc
+        if host.startswith("www."):
+            alt_host = host[4:]  # remove www.
+        else:
+            alt_host = "www." + host
+        alt_url = f"{parsed_start.scheme}://{alt_host}{parsed_start.path}"
+        try:
+            alt_result = await fetch_page(alt_url, client)
+            # If alt version returns 200 and doesn't redirect to the primary, flag it
+            if (alt_result.status_code == 200
+                and (not alt_result.final_url or urlparse(alt_result.final_url).netloc == alt_host)):
+                all_issues.append(make_issue("WWW_CANONICALIZATION", normalised_start,
+                    extra={"primary": normalised_start, "alternative": alt_url}))
+        except Exception:
+            pass  # alt version unreachable — that's fine, only one version exists
+
         # ── 2.6. llms.txt check ───────────────────────────────────────────
         # Check for /llms.txt and /llms-full.txt at the root (spec §2.1).
         parsed_root = urlparse(normalised_start)
@@ -444,6 +462,7 @@ async def run_crawl(
                 continue
 
             page.crawl_depth = current_depth
+            page.last_modified = result.headers.get("last-modified")
             all_pages.append(page)
 
             # ── Branch: HTML vs non-HTML assets ───────────────────────────

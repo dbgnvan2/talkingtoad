@@ -76,6 +76,8 @@ def _page(
         meta_description=meta_description,
         og_title=og_title,
         og_description=og_description,
+        og_image="https://example.com/image.jpg",
+        twitter_card="summary",
         canonical_url=canonical_url,
         h1_tags=h1_tags if h1_tags is not None else ["Main Heading"],
         headings_outline=headings_outline if headings_outline is not None else [{"level": 1, "text": "Main Heading"}],

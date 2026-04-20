@@ -51,6 +51,8 @@ def _page(
         meta_description="Valid Description",
         og_title="OG Title",
         og_description="OG Description",
+        og_image="https://example.com/image.jpg",
+        twitter_card="summary",
         canonical_url=None,
         h1_tags=["Main Heading"],
         headings_outline=headings_outline or [{"level": 1, "text": "Main Heading"}, {"level": 2, "text": "How it works"}],

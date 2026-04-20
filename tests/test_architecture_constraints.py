@@ -8,6 +8,8 @@ compatibility, or maintainability.
 CRITICAL: These tests document and enforce the TalkingToad architecture.
 """
 
+import os
+import re
 import pytest
 from unittest.mock import AsyncMock, patch, MagicMock
 from api.crawler.engine import run_crawl
@@ -317,3 +319,54 @@ def test_score_calculation_is_deterministic():
         f"Scores1: {scores1}\n"
         f"Scores2: {scores2}"
     )
+
+
+class TestIssueCodeParity:
+    """
+    Ensure frontend issueHelp.js and backend _CATALOGUE stay in sync.
+
+    Every code in issueHelp.js must exist in _CATALOGUE and vice-versa.
+    This prevents dead help entries (frontend has code that backend never
+    emits) and undocumented issues (backend emits code with no help text).
+    """
+
+    @staticmethod
+    def _parse_issue_help_codes() -> set[str]:
+        """Extract issue code keys from frontend/src/data/issueHelp.js."""
+        project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        js_path = os.path.join(
+            project_root, "frontend", "src", "data", "issueHelp.js"
+        )
+        with open(js_path) as f:
+            content = f.read()
+        # Match patterns like "  CODE_NAME: {" at the start of a line
+        codes = re.findall(r"^\s+([A-Z][A-Z0-9_]+):\s*\{", content, re.MULTILINE)
+        return set(codes)
+
+    def test_every_frontend_code_exists_in_catalogue(self):
+        """Every code in issueHelp.js must have a matching _CATALOGUE entry."""
+        from api.crawler.issue_checker import _CATALOGUE
+
+        frontend_codes = self._parse_issue_help_codes()
+        catalogue_codes = set(_CATALOGUE.keys())
+
+        missing_from_backend = frontend_codes - catalogue_codes
+        assert not missing_from_backend, (
+            f"issueHelp.js contains codes not found in _CATALOGUE:\n"
+            f"  {sorted(missing_from_backend)}\n"
+            f"Remove these from issueHelp.js or add them to _CATALOGUE."
+        )
+
+    def test_every_catalogue_code_exists_in_frontend(self):
+        """Every code in _CATALOGUE must have a matching issueHelp.js entry."""
+        from api.crawler.issue_checker import _CATALOGUE
+
+        frontend_codes = self._parse_issue_help_codes()
+        catalogue_codes = set(_CATALOGUE.keys())
+
+        missing_from_frontend = catalogue_codes - frontend_codes
+        assert not missing_from_frontend, (
+            f"_CATALOGUE contains codes not found in issueHelp.js:\n"
+            f"  {sorted(missing_from_frontend)}\n"
+            f"Add help entries for these codes in issueHelp.js."
+        )

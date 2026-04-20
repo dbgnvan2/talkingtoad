@@ -8,6 +8,7 @@ Per-page checks run during the crawl; cross-page duplicate checks run after.
 import logging
 import re
 from dataclasses import dataclass
+from datetime import datetime
 from urllib.parse import urlparse
 
 from api.crawler.fetcher import FetchResult
@@ -15,6 +16,17 @@ from api.crawler.normaliser import is_same_domain, normalise_url
 from api.crawler.parser import ParsedPage
 
 logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Generic anchor text patterns (Step 3a)
+# ---------------------------------------------------------------------------
+
+_GENERIC_ANCHOR_TEXTS = frozenset({
+    "click here", "read more", "learn more", "here", "more", "this",
+    "link", "more info", "find out more", "go", "see more", "details",
+    "continue reading", "click", "download",
+})
 
 
 # ---------------------------------------------------------------------------
@@ -151,6 +163,14 @@ _ISSUE_SCORING: dict[str, tuple[int, int]] = {
     "DOCUMENT_PROPS_MISSING":     (4,  2),
     "JSON_LD_MISSING":            (7,  2),
     "CONVERSATIONAL_H2_MISSING":  (4,  2),
+    # v1.9.2 new checks
+    "OG_IMAGE_MISSING":           (3,  1),
+    "TWITTER_CARD_MISSING":       (3,  1),
+    "CONTENT_STALE":              (3,  4),
+    # Phase 3 new checks
+    "ANCHOR_TEXT_GENERIC":        (4,  2),
+    "HEADING_EMPTY":              (4,  1),
+    "WWW_CANONICALIZATION":       (5,  2),
 }
 
 
@@ -222,6 +242,18 @@ _CATALOGUE: dict[str, _IssueSpec] = {
         recommendation="Add an og:description meta tag. This controls the description shown when your page is shared on social media.",
         human_description="Missing Social Share Description",
     ),
+    "OG_IMAGE_MISSING": _IssueSpec(
+        category="metadata", severity="info",
+        description="Open Graph image tag (og:image) is missing",
+        recommendation="Add an og:image meta tag with a URL to a high-quality preview image (1200x630px recommended). This controls the image shown when your page is shared on Facebook, LinkedIn, and other social platforms.",
+        human_description="Missing Social Share Image",
+    ),
+    "TWITTER_CARD_MISSING": _IssueSpec(
+        category="metadata", severity="info",
+        description="Missing Twitter/X Card meta tag",
+        recommendation="Add a <meta name=\"twitter:card\" content=\"summary_large_image\"> tag. This controls how your page appears when shared on Twitter/X.",
+        human_description="Missing Twitter/X Card",
+    ),
     "CANONICAL_MISSING": _IssueSpec(
         category="metadata", severity="warning",
         description="No canonical tag — page has query strings or is a near-duplicate",
@@ -258,6 +290,12 @@ _CATALOGUE: dict[str, _IssueSpec] = {
         description="Heading levels skip (e.g., H1 → H3)",
         recommendation="Fix the heading structure so levels are not skipped. Use H1, then H2, then H3 in order.",
         human_description="Skipped Heading Level",
+    ),
+    "HEADING_EMPTY": _IssueSpec(
+        category="heading", severity="warning",
+        description="One or more heading tags have no text content",
+        recommendation="Remove empty heading tags or add descriptive text. Empty headings confuse screen readers and waste heading structure.",
+        human_description="Empty Heading",
     ),
     # ── Broken links ──────────────────────────────────────────────────────
     "BROKEN_LINK_404": _IssueSpec(
@@ -425,6 +463,13 @@ _CATALOGUE: dict[str, _IssueSpec] = {
                        "or relevant content page so search engines and visitors can find it.",
         human_description="Disconnected Page",
     ),
+    "CONTENT_STALE": _IssueSpec(
+        category="crawlability", severity="info",
+        description="Page content has not been modified in over 12 months",
+        recommendation="Review and refresh this page's content. Search engines favour recently updated pages, "
+                       "and visitors may lose trust in outdated information. Even small updates signal freshness.",
+        human_description="Stale Content",
+    ),
     "SCHEMA_MISSING": _IssueSpec(
         category="crawlability", severity="info",
         description="No structured data (schema markup) found on this page",
@@ -471,6 +516,12 @@ _CATALOGUE: dict[str, _IssueSpec] = {
         description="External link opens in a new tab without rel=\"noopener\" or rel=\"noreferrer\"",
         recommendation="Add rel=\"noopener noreferrer\" to all <a target=\"_blank\"> links pointing to external URLs.",
         human_description="Unsafe External Link",
+    ),
+    "WWW_CANONICALIZATION": _IssueSpec(
+        category="security", severity="warning",
+        description="Both www and non-www versions of the site resolve without redirecting to each other",
+        recommendation="Configure a 301 redirect so one version (www or non-www) redirects to the other. This consolidates link equity and avoids duplicate content.",
+        human_description="www/non-www Not Consolidated",
     ),
     # ── URL structure (§E2) ───────────────────────────────────────────────
     "URL_UPPERCASE": _IssueSpec(
@@ -613,6 +664,12 @@ _CATALOGUE: dict[str, _IssueSpec] = {
         description="Link has no visible anchor text — screen readers and search engines cannot describe its destination",
         recommendation='Add descriptive text inside the link. If it is an icon-only link, add an aria-label attribute (e.g. aria-label="Donate now").',
         human_description="Empty Link Text",
+    ),
+    "ANCHOR_TEXT_GENERIC": _IssueSpec(
+        category="metadata", severity="warning",
+        description="Links use non-descriptive anchor text like 'click here' or 'read more'",
+        recommendation="Replace generic link text with descriptive text that tells the reader (and search engines) where the link goes. Instead of 'click here', write 'view our counselling services'.",
+        human_description="Non-Descriptive Link Text",
     ),
     "INTERNAL_NOFOLLOW": _IssueSpec(
         category="crawlability", severity="warning",
@@ -905,6 +962,10 @@ def check_page(
         if not page.og_description:
             issues.append(make_issue("OG_DESC_MISSING", url,
                                      extra={"meta_description": page.meta_description}))
+        if not page.og_image:
+            issues.append(make_issue("OG_IMAGE_MISSING", url))
+        if not page.twitter_card:
+            issues.append(make_issue("TWITTER_CARD_MISSING", url))
 
         # ── Canonical tag ──────────────────────────────────────────────────
         _check_canonical(page, issues)
@@ -982,6 +1043,21 @@ def check_page(
         issues.append(make_issue("HIGH_CRAWL_DEPTH", url,
                                  extra={"crawl_depth": page.crawl_depth}))
 
+    # ── Content staleness ────────────────────────────────────────────────
+    if page.last_modified and page.is_indexable:
+        try:
+            from email.utils import parsedate_to_datetime
+            from datetime import timezone as _tz
+            lm_dt = parsedate_to_datetime(page.last_modified)
+            if lm_dt.tzinfo is None:
+                lm_dt = lm_dt.replace(tzinfo=_tz.utc)
+            age_days = (datetime.now(_tz.utc) - lm_dt).days
+            if age_days > 365:
+                issues.append(make_issue("CONTENT_STALE", url,
+                    extra={"last_modified": page.last_modified, "age_days": age_days}))
+        except Exception:
+            pass
+
     # ── Image alt text ────────────────────────────────────────────────────
     if page.img_missing_alt_count > 0:
         srcs = page.img_missing_alt_srcs or []
@@ -1031,6 +1107,17 @@ def check_page(
                 f"with no anchor text: {listed}{suffix}"
             )
             issues.append(issue)
+
+    # ── Generic anchor text ──────────────────────────────────────────────
+    if page.is_indexable and page.links:
+        generic_links = [
+            link for link in page.links
+            if link.text and link.text.strip().lower() in _GENERIC_ANCHOR_TEXTS
+        ]
+        if generic_links:
+            issues.append(make_issue("ANCHOR_TEXT_GENERIC", url,
+                extra={"count": len(generic_links),
+                        "examples": [{"href": l.url, "text": l.text} for l in generic_links[:5]]}))
 
     # ── Internal nofollow links ───────────────────────────────────────────
     if page.internal_nofollow_count > 0:
@@ -1174,6 +1261,12 @@ def _check_headings(
         issue = make_issue("H1_MULTIPLE", url)
         issue.extra = {"h1_tags": h1s, "count": h1_count}
         issues.append(issue)
+
+    # Empty headings
+    empty_headings = [h for h in outline if not h.get("text", "").strip()]
+    if empty_headings:
+        issues.append(make_issue("HEADING_EMPTY", url,
+            extra={"empty_levels": [f"H{h['level']}" for h in empty_headings]}))
 
     # Detect skipped heading levels
     levels = [h["level"] for h in outline]

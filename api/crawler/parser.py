@@ -41,6 +41,8 @@ class ParsedPage:
     meta_description: str | None
     og_title: str | None
     og_description: str | None
+    og_image: str | None
+    twitter_card: str | None
     canonical_url: str | None         # None if tag absent
 
     # Headings
@@ -95,6 +97,9 @@ class ParsedPage:
     has_json_ld: bool = False
     pdf_metadata: dict | None = None
 
+    # v1.9.2 Staleness detection
+    last_modified: str | None = None  # Last-Modified header value (set by engine)
+
     # v1.9 Image Intelligence fields
     image_data: list = None  # list[dict] - comprehensive image data for ImageInfo
 
@@ -126,6 +131,8 @@ def parse_page(
             meta_description=None,
             og_title=None,
             og_description=None,
+            og_image=None,
+            twitter_card=None,
             canonical_url=None,
             h1_tags=[],
             headings_outline=[],
@@ -186,6 +193,8 @@ def parse_page(
         meta_description=_extract_meta(soup, "description"),
         og_title=_extract_og(soup, "og:title"),
         og_description=_extract_og(soup, "og:description"),
+        og_image=_extract_og(soup, "og:image"),
+        twitter_card=_extract_meta(soup, "twitter:card"),
         canonical_url=_extract_canonical(soup, page_url),
         h1_tags=_extract_h1s(soup),
         headings_outline=_extract_headings_outline(soup),

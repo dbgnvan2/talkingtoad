@@ -167,6 +167,34 @@ No Open Graph description tag. This controls the preview text shown when the pag
 
 ---
 
+### OG_IMAGE_MISSING
+**Severity:** 🔵 info | **Impact:** 3 | **Effort:** 1
+
+**What it is**
+This page has no `og:image` meta tag. The Open Graph image controls the preview image shown when your page is shared on Facebook, LinkedIn, and other social platforms.
+
+**Why it matters**
+Posts shared without a preview image get significantly less engagement. For nonprofits relying on social media for donations and awareness, missing preview images directly reduce reach.
+
+**How to fix**
+Add `<meta property="og:image" content="https://yoursite.com/image.jpg">`. Use a high-quality image at least 1200x630 pixels. In WordPress, set this in the Yoast or Rank Math Social tab on each page.
+
+---
+
+### TWITTER_CARD_MISSING
+**Severity:** 🔵 info | **Impact:** 3 | **Effort:** 1
+
+**What it is**
+This page has no `<meta name="twitter:card">` tag. Twitter Cards control how your page appears when shared on Twitter/X.
+
+**Why it matters**
+Without a Twitter Card tag, links shared on Twitter/X appear as plain URLs without a rich preview. Tweets with rich previews get significantly more engagement than plain text links.
+
+**How to fix**
+Add `<meta name="twitter:card" content="summary_large_image">` to the page `<head>`. Most SEO plugins (Yoast, Rank Math) have a Twitter/Social tab where you can configure this.
+
+---
+
 ### CANONICAL_MISSING
 **Severity:** 🟡 warning | **Impact:** 6 | **Effort:** 2
 
@@ -269,6 +297,20 @@ More than one H1 on the page. Each page should have exactly one H1. Remove or de
 **Severity:** 🟡 warning | **Impact:** 4 | **Effort:** 3
 
 Heading levels are skipped — for example, the page jumps from H1 straight to H3 with no H2 in between. This breaks the document outline that screen readers use to navigate. Fix the heading structure so levels are used in order.
+
+---
+
+### HEADING_EMPTY
+**Severity:** 🟡 warning | **Impact:** 4 | **Effort:** 1
+
+**What it is**
+One or more heading tags (`<h2>`, `<h3>`, etc.) on this page contain no text. The tag exists in the HTML but is either completely empty or contains only whitespace.
+
+**Why it matters**
+Empty headings break the document outline that screen readers use to navigate. A screen reader user who jumps to headings will land on a blank heading with no context. Search engines also see an empty heading as a structural error.
+
+**How to fix**
+Find the empty heading tags in your page editor and either add descriptive text or remove the heading tag entirely. In WordPress, switch to the Code Editor view to locate empty `<h2></h2>` or `<h3></h3>` tags.
 
 ---
 
@@ -498,6 +540,20 @@ Add at least one internal link to this page from a navigation menu, a hub page, 
 
 ---
 
+### CONTENT_STALE
+**Severity:** 🔵 info | **Impact:** 3 | **Effort:** 4
+
+**What it is**
+This page has not been modified in over 12 months, based on the Last-Modified HTTP header sent by the server.
+
+**Why it matters**
+Search engines use content freshness as a ranking signal. Stale content can gradually lose ranking position. Visitors may also lose trust in outdated information, especially for nonprofits where program details, staff, and event information change frequently.
+
+**How to fix**
+Review and refresh the page content. Update dates, statistics, staff names, and program details. Even small edits signal freshness to search engines. If the content is evergreen and still accurate, consider republishing it with a current date.
+
+---
+
 ### MISSING_VIEWPORT_META
 **Severity:** 🟡 warning | **Impact:** 6 | **Effort:** 1
 
@@ -554,6 +610,20 @@ Add descriptive text inside the link. For icon-only links, add `aria-label="Dona
 
 ---
 
+### ANCHOR_TEXT_GENERIC
+**Severity:** 🟡 warning | **Impact:** 4 | **Effort:** 2
+
+**What it is**
+One or more links use generic anchor text like 'click here', 'read more', 'learn more', or 'here'. These phrases tell neither the reader nor search engines what the linked page is about.
+
+**Why it matters**
+Search engines use anchor text to understand the content of linked pages. Generic text wastes this signal entirely. Screen reader users who navigate by links hear a list of 'click here, click here, click here' with no context.
+
+**How to fix**
+Replace generic text with descriptive labels. Instead of 'Click here to donate', write 'Donate to support our programs'. Instead of 'Read more', write 'Read about our community drumming workshops'. The link text should make sense out of context.
+
+---
+
 ### PAGE_SIZE_LARGE
 **Severity:** 🟡 warning | **Impact:** 5 | **Effort:** 3
 
@@ -593,6 +663,160 @@ Add a descriptive alt attribute to every image: `alt="Counsellor speaking with a
 **Severity:** 🟡 warning | **Impact:** 5 | **Effort:** 2
 
 An image file exceeds 200 KB. Large images slow page loading significantly, especially on mobile. Compress using Squoosh (squoosh.app), TinyPNG, or ImageOptim before uploading.
+
+---
+
+### IMG_ALT_TOO_SHORT
+**Severity:** 🟡 warning | **Impact:** 3 | **Effort:** 1
+
+**What it is**
+Alt text is fewer than 5 characters — too brief to meaningfully describe the image content.
+
+**Why it matters**
+Very short alt text fails to provide adequate context for screen reader users. Search engines also benefit from descriptive alt text — a one-word label provides minimal SEO value.
+
+**How to fix**
+Expand the alt text to describe what the image actually shows. Instead of 'team', write 'Staff members gathered at our annual fundraising gala'. Aim for 5-125 characters. In WordPress, edit the image in the Media Library.
+
+---
+
+### IMG_ALT_TOO_LONG
+**Severity:** 🔵 info | **Impact:** 2 | **Effort:** 1
+
+**What it is**
+Alt text exceeds 125 characters. Overly long alt text can be overwhelming for screen reader users and may dilute keyword relevance.
+
+**Why it matters**
+Screen reader users must listen to the entire alt text before they can move on. Overly long descriptions slow down navigation and may cause users to skip images entirely.
+
+**How to fix**
+Shorten the alt text to 125 characters or fewer. Focus on the most important aspect of the image. If a longer description is genuinely needed (e.g. for a complex infographic), consider using a separate visible caption or linking to a full text description.
+
+---
+
+### IMG_ALT_GENERIC
+**Severity:** 🟡 warning | **Impact:** 4 | **Effort:** 1
+
+**What it is**
+Alt text is a generic placeholder word like 'image', 'photo', 'picture', 'icon', or 'graphic'.
+
+**Why it matters**
+Generic alt text provides no useful information. A screen reader user hears 'image' but learns nothing about what the image shows. Search engines cannot determine the image's content or match it to relevant queries.
+
+**How to fix**
+Replace the generic text with a description of what the image actually shows. For example, change 'photo' to 'A counsellor meeting with a young family in our community centre'. In WordPress, click on the image in the Media Library and update the Alt Text field.
+
+---
+
+### IMG_ALT_DUP_FILENAME
+**Severity:** 🟡 warning | **Impact:** 3 | **Effort:** 1
+
+**What it is**
+Alt text matches the filename (e.g. 'DSC_0042' or 'hero-banner-v2'). Filenames rarely describe image content meaningfully.
+
+**Why it matters**
+Machine-generated filenames provide no value for accessibility or SEO. Screen reader users hear text like 'DSC underscore zero zero four two' instead of a useful description.
+
+**How to fix**
+Write alt text that describes the actual content of the image, ignoring the filename. In WordPress, when uploading images, the Media Library may auto-populate alt text from the filename — always review and replace this with a proper description.
+
+---
+
+### IMG_ALT_MISUSED
+**Severity:** 🔵 info | **Impact:** 3 | **Effort:** 2
+
+**What it is**
+A decorative image has alt text. Decorative images should use `alt=""` so screen readers skip them entirely.
+
+**Why it matters**
+When a decorative image has alt text, screen readers announce it unnecessarily, cluttering the listening experience. Decorative images include visual flourishes, spacers, and icons that repeat information already provided in text.
+
+**How to fix**
+If the image is truly decorative, remove its alt text or set `alt=""`. If the image does convey information, remove the `role='presentation'` or `aria-hidden` attribute and keep meaningful alt text. Choose one approach — don't mix both.
+
+---
+
+### IMG_SLOW_LOAD
+**Severity:** 🟡 warning | **Impact:** 4 | **Effort:** 2
+
+**What it is**
+Image took more than 1 second to download. Slow-loading images can significantly delay page rendering.
+
+**Why it matters**
+Visitors may see blank spaces or loading placeholders while waiting for slow images. Core Web Vitals (Google's page experience metrics) are negatively affected by slow resource loading. On mobile connections, a 1-second delay per image can add up quickly.
+
+**How to fix**
+Reduce the image file size through compression or format conversion (JPEG to WebP). Ensure images are appropriately sized for their display dimensions. Consider lazy loading images below the fold so they don't block initial page rendering.
+
+---
+
+### IMG_OVERSCALED
+**Severity:** 🟡 warning | **Impact:** 4 | **Effort:** 3
+
+**What it is**
+Image intrinsic size is more than 2x its display size on the page. For example, a 2000px wide image displayed at 400px wide is being scaled down by 5x.
+
+**Why it matters**
+Overscaled images waste bandwidth — visitors download far more data than is actually needed to display the image. This slows page loading and wastes mobile data.
+
+**How to fix**
+Resize the image to match its display size before uploading. If the image appears at 600px wide on desktop, resize it to approximately 1200px wide (2x for retina displays). Use srcset to serve different sizes to different devices.
+
+---
+
+### IMG_POOR_COMPRESSION
+**Severity:** 🔵 info | **Impact:** 4 | **Effort:** 2
+
+**What it is**
+Image has a high bytes-per-pixel ratio and could be compressed further without visible quality loss.
+
+**Why it matters**
+Poorly compressed images increase page weight and loading time unnecessarily. Modern compression tools can often reduce file size by 50-80% with no perceptible quality difference.
+
+**How to fix**
+Re-compress the image using tools like Squoosh (squoosh.app), TinyPNG, or ImageOptim. For photographs, try quality settings around 75-85%. For graphics with flat colors, use PNG-8 or SVG instead of full-color PNG-24.
+
+---
+
+### IMG_FORMAT_LEGACY
+**Severity:** 🔵 info | **Impact:** 2 | **Effort:** 2
+
+**What it is**
+Large image using JPEG/PNG/GIF instead of modern formats like WebP or AVIF. Legacy formats typically produce larger file sizes for equivalent visual quality.
+
+**Why it matters**
+WebP images are typically 25-35% smaller than equivalent JPEG or PNG files. For sites with many images, this adds up to significant bandwidth savings and faster page loads. All modern browsers support WebP.
+
+**How to fix**
+Convert images to WebP format using tools like Squoosh, cwebp, or an image optimization plugin. In WordPress, plugins like ShortPixel, Imagify, or Smush can automatically convert uploaded images to WebP.
+
+---
+
+### IMG_NO_SRCSET
+**Severity:** 🔵 info | **Impact:** 2 | **Effort:** 3
+
+**What it is**
+Image is scaled down for display but has no srcset attribute for responsive delivery. A srcset allows browsers to choose the most appropriately sized image file.
+
+**Why it matters**
+Without srcset, mobile users download the same large image file as desktop users, even though they only need a fraction of those pixels. This wastes bandwidth and slows page loading on mobile devices.
+
+**How to fix**
+Add a srcset attribute with multiple image sizes, or use WordPress's built-in responsive image support (which automatically generates srcset for uploaded images). When adding images manually, include 2-3 size variants (e.g. 400w, 800w, 1200w).
+
+---
+
+### IMG_DUPLICATE_CONTENT
+**Severity:** 🔵 info | **Impact:** 2 | **Effort:** 2
+
+**What it is**
+Same image content is served from multiple different URLs on your site. The crawler detected identical image data (via content hash) being loaded from different file paths.
+
+**Why it matters**
+Duplicate images waste storage space and may confuse search engine image indexing. Each URL is treated as a separate image, potentially splitting any image search ranking value.
+
+**How to fix**
+Consolidate duplicate images to a single canonical URL. Update any pages loading the duplicate version to use the primary URL. In WordPress, delete duplicate entries from the Media Library and update posts that reference them.
 
 ---
 
@@ -692,6 +916,20 @@ Add the header to all HTTPS responses: `Strict-Transport-Security: max-age=31536
 **Severity:** 🔵 info | **Impact:** 3 | **Effort:** 1
 
 A link to an external site opens in a new tab (`target="_blank"`) without `rel="noopener"`. This exposes the original tab to potential redirect by the external page. Add `rel="noopener noreferrer"` to all external `target="_blank"` links. Modern WordPress adds this automatically.
+
+---
+
+### WWW_CANONICALIZATION
+**Severity:** 🟡 warning | **Impact:** 5 | **Effort:** 2
+
+**What it is**
+Both the www version (e.g. `www.yoursite.com`) and the non-www version (`yoursite.com`) of your site return a page without redirecting to each other.
+
+**Why it matters**
+Search engines treat `www.example.com` and `example.com` as two separate websites. All backlinks, social shares, and internal links are split between two versions, diluting domain authority and search rankings.
+
+**How to fix**
+Choose one version (www or non-www) as your canonical domain and configure a 301 redirect from the other. In hosting control panels look for a 'Primary Domain' or 'Redirect' setting. In Cloudflare, use a Page Rule. Also set your preferred domain in Google Search Console.
 
 ---
 

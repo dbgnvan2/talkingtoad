@@ -201,6 +201,44 @@ const issueHelp = {
       "settings section of your SEO plugin.",
   },
 
+  OG_IMAGE_MISSING: {
+    title: "Social share image missing",
+    category: "metadata",
+    severity: "info",
+    mission_impact: "When someone shares your page on social media, there will be no preview image.",
+    definition:
+      "This page has no og:image meta tag. The Open Graph image controls the preview " +
+      "image shown when your page is shared on Facebook, LinkedIn, Twitter, and other " +
+      "social platforms.",
+    impact:
+      "Posts shared without a preview image get significantly less engagement — people " +
+      "scroll past text-only links. For nonprofits relying on social media to drive " +
+      "donations, event signups, or awareness, this directly reduces reach.",
+    fix:
+      "Add a meta tag: <meta property=\"og:image\" content=\"https://yoursite.com/image.jpg\">. " +
+      "Use a high-quality image at least 1200x630 pixels. In WordPress, most SEO plugins " +
+      "(Yoast, Rank Math) have a Social tab on each post/page where you can set the image.",
+  },
+
+  TWITTER_CARD_MISSING: {
+    title: "Twitter/X Card missing",
+    category: "metadata",
+    severity: "info",
+    mission_impact: "When someone shares your page on Twitter/X, the preview will be a plain text link.",
+    definition:
+      "This page has no <meta name=\"twitter:card\"> tag. Twitter Cards control how your " +
+      "page appears when shared on Twitter/X — including the preview image, title, and " +
+      "description format.",
+    impact:
+      "Without a Twitter Card tag, links shared on Twitter/X appear as plain URLs without " +
+      "a rich preview. Tweets with rich previews (image + title + description) get " +
+      "significantly more clicks and retweets than plain text links.",
+    fix:
+      "Add <meta name=\"twitter:card\" content=\"summary_large_image\"> to the page's " +
+      "<head>. Most SEO plugins (Yoast, Rank Math) have a Twitter/Social tab where you " +
+      "can configure this. The \"summary_large_image\" type shows the largest preview.",
+  },
+
   CANONICAL_MISSING: {
     title: "Canonical tag missing",
     category: "metadata",
@@ -366,6 +404,26 @@ const issueHelp = {
       "Review the heading tags on this page and ensure no levels are skipped. Use H1 for " +
       "the main topic, H2 for major sections, H3 for subsections within those, and so on. " +
       "In WordPress, headings are set using the paragraph style selector in the block editor.",
+  },
+
+  HEADING_EMPTY: {
+    title: "Empty heading tag",
+    category: "heading",
+    severity: "warning",
+    mission_impact: "Screen readers announce an empty heading, confusing visitors who rely on assistive technology.",
+    definition:
+      "One or more heading tags (<h2>, <h3>, etc.) on this page contain no text. The tag " +
+      "exists in the HTML but is either completely empty or contains only whitespace.",
+    impact:
+      "Empty headings break the document outline that screen readers use to navigate. A " +
+      "screen reader user who jumps to headings will land on a blank heading with no context. " +
+      "Search engines also see an empty heading as a structural error, which can reduce " +
+      "confidence in the page's content quality.",
+    fix:
+      "Find the empty heading tags in your page editor and either add descriptive text or " +
+      "remove the heading tag entirely. In WordPress, switch to the Code Editor view to " +
+      "locate empty <h2></h2> or <h3></h3> tags. Common causes include deleted content that " +
+      "left behind empty heading blocks, or page builders inserting placeholder headings.",
   },
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -887,6 +945,27 @@ const issueHelp = {
       "add this automatically when you check 'Open in new tab'.",
   },
 
+  WWW_CANONICALIZATION: {
+    title: "www and non-www both resolve",
+    category: "security",
+    severity: "warning",
+    mission_impact: "Search engines may split your site's ranking power between two versions of every URL.",
+    definition:
+      "Both the www version (e.g. www.yoursite.com) and the non-www version (yoursite.com) " +
+      "of your site return a page without redirecting to each other. Search engines treat " +
+      "these as two separate websites with duplicate content.",
+    impact:
+      "All of your backlinks, social shares, and internal links are split between two versions " +
+      "of your site. This dilutes your domain authority and can significantly reduce search " +
+      "rankings. Google may index both versions and show whichever it considers canonical, " +
+      "which may not be the one you prefer.",
+    fix:
+      "Choose one version (www or non-www) as your canonical domain and configure a 301 " +
+      "redirect from the other. In WordPress hosting panels, look for a 'Primary Domain' or " +
+      "'Redirect' setting. In Cloudflare, use a Page Rule to redirect. On Apache, add a " +
+      "RewriteRule to .htaccess. Also set your preferred domain in Google Search Console.",
+  },
+
   // ═══════════════════════════════════════════════════════════════════════════
   // URL STRUCTURE  (§E2)
   // ═══════════════════════════════════════════════════════════════════════════
@@ -988,25 +1067,6 @@ const issueHelp = {
       "editor's image settings panel. Every image should have meaningful alt text.",
   },
 
-  IMG_ALT_EMPTY: {
-    title: "Image has empty alt text",
-    category: "image",
-    severity: "info",
-    definition:
-      "This image has an alt attribute, but it is empty (alt=\"\"). An empty alt attribute " +
-      "is the correct technique for purely decorative images that add no information — it " +
-      "tells screen readers to skip the image entirely.",
-    impact:
-      "If this image conveys information, mood, or meaning — such as a photo of your team, " +
-      "a chart, or an illustration — the empty alt text means that information is lost to " +
-      "screen reader users and search engines. If the image is genuinely decorative, an " +
-      "empty alt is correct.",
-    fix:
-      "Review each flagged image. If it conveys meaningful content, add a descriptive alt " +
-      "text. If it is purely decorative and adds no information, the empty alt is correct " +
-      "and can be left as-is.",
-  },
-
   IMG_OVERSIZED: {
     title: "Image file too large",
     category: "image",
@@ -1059,6 +1119,26 @@ const issueHelp = {
     fix:
       "Add at least one internal link to this page from a relevant hub page, navigation menu, " +
       "or related content page. If the page is no longer needed, consider removing it or redirecting it.",
+  },
+
+  CONTENT_STALE: {
+    title: "Content not updated recently",
+    category: "crawlability",
+    severity: "info",
+    mission_impact: "Search engines and visitors may perceive this page as outdated or abandoned.",
+    definition:
+      "This page has not been modified in over 12 months, based on the Last-Modified HTTP " +
+      "header sent by the server. While not all content needs frequent updates, search engines " +
+      "use freshness as a ranking signal.",
+    impact:
+      "Stale content can gradually lose ranking position as search engines favour fresher, " +
+      "more recently updated pages. Visitors may also lose trust if they notice outdated " +
+      "information, dates, or references. For nonprofits, outdated program descriptions " +
+      "or event pages can confuse potential donors and clients.",
+    fix:
+      "Review the page and update any outdated information — even small edits signal freshness " +
+      "to search engines. Update dates, statistics, staff names, and program details. If the " +
+      "content is evergreen and still accurate, consider republishing it with a current date.",
   },
 
   SCHEMA_MISSING: {
@@ -1333,6 +1413,25 @@ const issueHelp = {
       "aria-label attribute to the <a> tag (e.g., aria-label=\"Donate now\") or add an " +
       "alt attribute to the image inside the link. In a page editor, ensure every clickable " +
       "button or image link has a clear label.",
+  },
+
+  ANCHOR_TEXT_GENERIC: {
+    title: "Non-descriptive link text",
+    category: "metadata",
+    severity: "warning",
+    mission_impact: "Search engines can't tell where your links go, and screen reader users hear unhelpful 'click here' text.",
+    definition:
+      "One or more links on this page use generic text like 'click here', 'read more', " +
+      "'learn more', or 'here' as their clickable label. These phrases tell neither the " +
+      "reader nor search engines what the linked page is about.",
+    impact:
+      "Search engines use anchor text to understand the content of linked pages. Generic " +
+      "text like 'click here' wastes this signal entirely. Screen reader users who navigate " +
+      "by links hear a list of 'click here, click here, click here' with no context.",
+    fix:
+      "Replace generic text with descriptive labels. Instead of 'Click here to donate', " +
+      "write 'Donate to support our programs'. Instead of 'Read more', write 'Read about " +
+      "our community drumming workshops'. The link text should make sense out of context.",
   },
 
   INTERNAL_NOFOLLOW: {

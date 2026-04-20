@@ -587,3 +587,71 @@ class TestBotBlockingDomains:
 
     def test_subdomain_of_non_blocked_site_is_not_bot_blocking(self):
         assert _is_bot_blocking_domain("https://docs.example.com/api") is False
+
+
+# ── WWW Canonicalization check (Phase 3) ──────────────────────────────────────
+
+class TestWwwCanonicalization:
+    @pytest.mark.asyncio
+    async def test_www_canonicalization_missing_emits_warning(self):
+        """Both www and non-www returning 200 should emit WWW_CANONICALIZATION."""
+        with respx.mock:
+            _mock_standard_setup(respx.mock)
+            # Mock the www version also returning 200 (no redirect)
+            respx.get("https://www.example.com/").mock(
+                return_value=httpx.Response(200, text=_MINIMAL_HTML, headers={"content-type": "text/html"})
+            )
+            # HTTPS redirect check — mock HTTP version
+            respx.get("http://example.com/").mock(
+                return_value=httpx.Response(301, headers={"location": "https://example.com/"})
+            )
+            # llms.txt check
+            respx.get("https://example.com/llms.txt").mock(
+                return_value=httpx.Response(404)
+            )
+
+            settings = CrawlSettings(crawl_delay_ms=0, max_pages=5)
+            result = await run_crawl("job-www-1", BASE_URL, settings)
+
+        www_issues = [i for i in result.issues if i.code == "WWW_CANONICALIZATION"]
+        assert len(www_issues) >= 1
+        assert www_issues[0].extra["primary"] == "https://example.com/"
+        assert www_issues[0].extra["alternative"] == "https://www.example.com/"
+
+    @pytest.mark.asyncio
+    async def test_www_canonicalization_ok_when_redirect(self):
+        """When www version redirects to non-www, no issue should be emitted."""
+        import unittest.mock as mock
+        from api.crawler import fetcher
+
+        original_fetch = fetcher.fetch_page
+
+        async def patched_fetch(url, client, **kwargs):
+            if url == "https://www.example.com/":
+                # www redirects to non-www — canonical is consolidated
+                return FetchResult(
+                    url="https://www.example.com/",
+                    final_url="https://example.com/",
+                    status_code=200,
+                    first_status_code=301,
+                    redirect_chain=["https://www.example.com/"],
+                )
+            return await original_fetch(url, client, **kwargs)
+
+        with respx.mock:
+            _mock_standard_setup(respx.mock)
+            # HTTPS redirect check
+            respx.get("http://example.com/").mock(
+                return_value=httpx.Response(301, headers={"location": "https://example.com/"})
+            )
+            # llms.txt check
+            respx.get("https://example.com/llms.txt").mock(
+                return_value=httpx.Response(404)
+            )
+
+            settings = CrawlSettings(crawl_delay_ms=0, max_pages=5)
+            with mock.patch("api.crawler.engine.fetch_page", side_effect=patched_fetch):
+                result = await run_crawl("job-www-2", BASE_URL, settings)
+
+        www_issues = [i for i in result.issues if i.code == "WWW_CANONICALIZATION"]
+        assert len(www_issues) == 0
