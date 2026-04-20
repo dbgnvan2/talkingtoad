@@ -46,7 +46,6 @@ const TAB_BY_PAGE        = CATEGORIES.length + 1
 const TAB_ORPHAN_IMAGES  = CATEGORIES.length + 2
 const TAB_ORPHAN_PAGES   = CATEGORIES.length + 3
 const TAB_FIX_MGR        = CATEGORIES.length + 4
-const TAB_HISTORY        = CATEGORIES.length + 5
 
 export default function Results() {
   const { jobId } = useParams()
@@ -98,10 +97,10 @@ export default function Results() {
     )
   }
 
-  const tabs = ['Summary', ...CATEGORIES.map(c => c.label), 'By Page', 'Orphaned Images', 'Orphaned Pages', 'Fix Manager', 'Fix History']
-
   // Domain extracted from backend job data — used in all section headers
   const domain = summary.target_url?.replace(/^https?:\/\//, '').replace(/\/+$/, '') || ''
+
+  const imageTabIdx = CATEGORIES.findIndex(c => c.key === 'image') + 1
 
   return (
     <div className="max-w-6xl mx-auto px-4 py-8">
@@ -116,26 +115,45 @@ export default function Results() {
         <div className="flex gap-2">
           {csvError && <span className="text-red-600 text-xs self-center mr-2">{csvError}</span>}
           <button onClick={() => setShowSettings(true)} className="px-3 py-1.5 bg-white border border-gray-300 rounded-lg text-xs font-bold shadow-sm" title="Display Settings">⚙</button>
-          <button onClick={() => setShowGeoSettings(true)} className="px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-bold shadow-sm" title="GEO Settings">🌍 GEO</button>
+          <button onClick={() => setShowGeoSettings(true)} className="px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-bold shadow-sm" title="GEO Settings">GEO</button>
           <button onClick={() => downloadCsv(jobId).catch(() => setCsvError('CSV failed'))} className="px-3 py-1.5 bg-white border border-gray-300 rounded-lg text-xs font-bold shadow-sm">CSV</button>
           <button onClick={() => downloadExcelReport(jobId).catch(() => setCsvError('Excel failed'))} className="px-3 py-1.5 bg-white border border-gray-300 rounded-lg text-xs font-bold shadow-sm">Excel</button>
           <button onClick={() => setShowPdfModal(true)} className="px-3 py-1.5 bg-green-600 text-white rounded-lg text-xs font-bold shadow-sm">PDF Report</button>
         </div>
       </div>
 
-      {/* Tabs */}
-      <div className="border-b border-gray-200 mb-6 overflow-x-auto flex gap-6 whitespace-nowrap">
-        {tabs.map((label, i) => (
-          <button
-            key={label}
-            onClick={() => { setActiveSeverity(null); setActiveTab(i) }}
-            className={`pb-3 text-sm font-bold border-b-2 transition-colors ${
-              !activeSeverity && activeTab === i ? 'border-green-600 text-green-600' : 'border-transparent text-gray-400 hover:text-gray-700'
-            }`}
-          >
-            {label}
-          </button>
-        ))}
+      {/* Tab Navigation - Grouped */}
+      <div className="border-b border-gray-200 mb-6">
+        <div className="flex gap-1 overflow-x-auto whitespace-nowrap">
+          {/* Overview */}
+          <TabButton label="Summary" active={!activeSeverity && activeTab === TAB_SUMMARY} onClick={() => { setActiveSeverity(null); setActiveTab(TAB_SUMMARY) }} />
+
+          {/* Issues group */}
+          <div className="flex items-center">
+            <span className="text-[9px] font-black text-gray-300 uppercase tracking-widest px-2 self-end pb-3">Issues</span>
+            {CATEGORIES.filter(c => c.key !== 'image').map((c) => {
+              const tabIdx = CATEGORIES.indexOf(c) + 1
+              return <TabButton key={c.key} label={c.label} active={!activeSeverity && activeTab === tabIdx} onClick={() => { setActiveSeverity(null); setActiveTab(tabIdx) }} />
+            })}
+          </div>
+
+          {/* Media group */}
+          <div className="flex items-center">
+            <span className="text-[9px] font-black text-gray-300 uppercase tracking-widest px-2 self-end pb-3">Media</span>
+            <TabButton label="Images" active={!activeSeverity && activeTab === imageTabIdx} onClick={() => { setActiveSeverity(null); setActiveTab(imageTabIdx) }} />
+            <TabButton label="Orphaned Images" active={!activeSeverity && activeTab === TAB_ORPHAN_IMAGES} onClick={() => { setActiveSeverity(null); setActiveTab(TAB_ORPHAN_IMAGES) }} />
+          </div>
+
+          {/* Pages group */}
+          <div className="flex items-center">
+            <span className="text-[9px] font-black text-gray-300 uppercase tracking-widest px-2 self-end pb-3">Pages</span>
+            <TabButton label="By Page" active={!activeSeverity && activeTab === TAB_BY_PAGE} onClick={() => { setActiveSeverity(null); setActiveTab(TAB_BY_PAGE) }} />
+            <TabButton label="Orphaned" active={!activeSeverity && activeTab === TAB_ORPHAN_PAGES} onClick={() => { setActiveSeverity(null); setActiveTab(TAB_ORPHAN_PAGES) }} />
+          </div>
+
+          {/* Actions */}
+          <TabButton label="Fix Manager" active={!activeSeverity && activeTab === TAB_FIX_MGR} onClick={() => { setActiveSeverity(null); setActiveTab(TAB_FIX_MGR) }} />
+        </div>
       </div>
 
       {/* Tab Content */}
@@ -144,7 +162,7 @@ export default function Results() {
           <SeverityTab jobId={jobId} severity={activeSeverity} domain={domain} onPageClick={setFocusedPageUrl} onBack={() => setActiveSeverity(null)} />
         )}
         {!activeSeverity && activeTab === TAB_SUMMARY && (
-          <SummaryTab summary={summary} domain={domain} onCategoryClick={i => { setActiveSeverity(null); setActiveTab(i + 1) }} onSeverityClick={sev => { setActiveTab(TAB_SUMMARY); setActiveSeverity(sev) }} onPageClick={setFocusedPageUrl} jobId={jobId} onShowPdfModal={() => setShowPdfModal(true)} onShowCategoryHelp={setShowCategoryHelp} />
+          <SummaryTab summary={summary} domain={domain} onCategoryClick={i => { setActiveSeverity(null); setActiveTab(i + 1) }} onSeverityClick={sev => { setActiveTab(TAB_SUMMARY); setActiveSeverity(sev) }} onPageClick={setFocusedPageUrl} jobId={jobId} onShowPdfModal={() => setShowPdfModal(true)} onShowCategoryHelp={setShowCategoryHelp} onShowGeoSettings={() => setShowGeoSettings(true)} />
         )}
         {!activeSeverity && activeTab >= 1 && activeTab <= CATEGORIES.length && (
           CATEGORIES[activeTab - 1].key === 'image'
@@ -161,7 +179,6 @@ export default function Results() {
           <OrphanedPagesTab jobId={jobId} domain={domain} onPageClick={setFocusedPageUrl} />
         )}
         {!activeSeverity && activeTab === TAB_FIX_MGR && <FixManager jobId={jobId} domain={domain} />}
-        {!activeSeverity && activeTab === TAB_HISTORY && <div className="py-12 text-center text-gray-400">History view coming soon.</div>}
       </div>
 
       {/* Slide-over Page Audit Panel (The "Right Side Panel") */}
@@ -192,7 +209,7 @@ export default function Results() {
   )
 }
 
-function SummaryTab({ summary: s, domain, onCategoryClick, onSeverityClick, onPageClick, jobId, onShowPdfModal, onShowCategoryHelp }) {
+function SummaryTab({ summary: s, domain, onCategoryClick, onSeverityClick, onPageClick, jobId, onShowPdfModal, onShowCategoryHelp, onShowGeoSettings }) {
   const { getFontClass } = useTheme()
   const [aiTesting, setAiTesting] = useState(false)
   const [aiStatus, setAiStatus] = useState(null)
@@ -260,6 +277,17 @@ function SummaryTab({ summary: s, domain, onCategoryClick, onSeverityClick, onPa
       {siteRecommendations && (
         <SiteRecommendationsPanel recommendations={siteRecommendations} onClose={() => setSiteRecommendations(null)} />
       )}
+
+      {/* GEO Settings prompt */}
+      <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 flex items-center justify-between">
+        <div>
+          <p className="text-sm font-bold text-blue-800">Configure GEO Settings for better AI analysis</p>
+          <p className="text-xs text-blue-600">Set your organization name, location, and topic entities for GEO-optimized image metadata.</p>
+        </div>
+        <button onClick={() => onShowGeoSettings?.()} className="px-4 py-2 bg-blue-600 text-white text-sm font-bold rounded-lg hover:bg-blue-700 flex-shrink-0 ml-4">
+          Configure
+        </button>
+      </div>
 
       {/* 3x2 High-Level Stats */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -2726,6 +2754,19 @@ function SiteRecommendationsPanel({ recommendations, onClose }) {
         </div>
       )}
     </div>
+  )
+}
+
+function TabButton({ label, active, onClick }) {
+  return (
+    <button
+      onClick={onClick}
+      className={`px-3 pb-3 text-sm font-bold border-b-2 transition-colors whitespace-nowrap ${
+        active ? 'border-green-600 text-green-600' : 'border-transparent text-gray-400 hover:text-gray-700'
+      }`}
+    >
+      {label}
+    </button>
   )
 }
 
