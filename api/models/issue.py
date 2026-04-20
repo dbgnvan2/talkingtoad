@@ -63,3 +63,4 @@ class Issue(BaseModel):
     impact_desc: str = ""          # detailed impact help
     how_to_fix: str = ""           # detailed remediation help
     extra: dict | None = None      # supplementary data (e.g. source_url for broken links)
+    fixability: str = "developer_needed"  # wp_fixable | content_edit | developer_needed

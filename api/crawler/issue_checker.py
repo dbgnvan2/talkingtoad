@@ -52,6 +52,7 @@ class Issue:
     what_it_is: str = ""
     impact_desc: str = ""
     how_to_fix: str = ""
+    fixability: str = "developer_needed"  # wp_fixable | content_edit | developer_needed
 
 
 # ---------------------------------------------------------------------------
@@ -68,6 +69,7 @@ class _IssueSpec:
     what_it_is: str = ""
     impact_desc: str = ""
     how_to_fix: str = ""
+    fixability: str = "developer_needed"  # wp_fixable | content_edit | developer_needed
 
 
 # ---------------------------------------------------------------------------
@@ -184,24 +186,28 @@ _CATALOGUE: dict[str, _IssueSpec] = {
         what_it_is="The title tag is the most important on-page SEO element. It tells search engines and users what the page is about and appears as the clickable headline in search results.",
         impact_desc="Without a title tag, search engines may not index your page correctly, and users won't see a relevant headline in search results, significantly reducing your click-through rate.",
         how_to_fix="Add a <title> tag to the <head> section of your HTML. In WordPress, you can typically set this using your SEO plugin (Yoast, Rank Math) or the page editor.",
+        fixability="wp_fixable",
     ),
     "TITLE_DUPLICATE": _IssueSpec(
         category="metadata", severity="warning",
         description="Same title used on multiple pages",
         recommendation="Make each page title unique. Describe what makes this page different from others on your site.",
         human_description="Duplicate Page Name",
+        fixability="content_edit",
     ),
     "TITLE_TOO_SHORT": _IssueSpec(
         category="metadata", severity="warning",
         description="Title under 30 characters",
         recommendation="Expand the title to 30–60 characters. Include your organisation name and the page topic.",
         human_description="Too-Short Page Name",
+        fixability="wp_fixable",
     ),
     "TITLE_TOO_LONG": _IssueSpec(
         category="metadata", severity="warning",
         description="Title over 60 characters",
         recommendation="Shorten the title to under 60 characters. Google truncates longer titles in search results.",
         human_description="Too-Long Page Name",
+        fixability="wp_fixable",
     ),
     "META_DESC_MISSING": _IssueSpec(
         category="metadata", severity="critical",
@@ -211,66 +217,77 @@ _CATALOGUE: dict[str, _IssueSpec] = {
         what_it_is="A meta description is a brief summary of a page's content that appears under the title in search results. It helps users decide whether to click on your link.",
         impact_desc="While not a direct ranking factor, a missing description forces search engines to pick random text from your page, which often looks unappealing and reduces click-through rates.",
         how_to_fix="Add a <meta name='description'> tag to your page. Use your SEO plugin to write a compelling summary that includes your primary keywords.",
+        fixability="wp_fixable",
     ),
     "META_DESC_DUPLICATE": _IssueSpec(
         category="metadata", severity="warning",
         description="Same meta description on multiple pages",
         recommendation="Write a unique meta description for this page that reflects its specific content.",
         human_description="Duplicate Summary Snippet",
+        fixability="content_edit",
     ),
     "META_DESC_TOO_SHORT": _IssueSpec(
         category="metadata", severity="warning",
         description="Meta description under 70 characters",
         recommendation="Expand the description to 70–160 characters to give search engines more context.",
         human_description="Too-Short Summary Snippet",
+        fixability="wp_fixable",
     ),
     "META_DESC_TOO_LONG": _IssueSpec(
         category="metadata", severity="warning",
         description="Meta description over 160 characters",
         recommendation="Shorten the description to under 160 characters. Longer descriptions are cut off in search results.",
         human_description="Too-Long Summary Snippet",
+        fixability="wp_fixable",
     ),
     "OG_TITLE_MISSING": _IssueSpec(
         category="metadata", severity="info",
         description="Open Graph title tag missing",
         recommendation="Add an og:title meta tag. This controls how your page title appears when shared on social media.",
         human_description="Missing Social Share Title",
+        fixability="wp_fixable",
     ),
     "OG_DESC_MISSING": _IssueSpec(
         category="metadata", severity="info",
         description="Open Graph description tag missing",
         recommendation="Add an og:description meta tag. This controls the description shown when your page is shared on social media.",
         human_description="Missing Social Share Description",
+        fixability="wp_fixable",
     ),
     "OG_IMAGE_MISSING": _IssueSpec(
         category="metadata", severity="info",
         description="Open Graph image tag (og:image) is missing",
         recommendation="Add an og:image meta tag with a URL to a high-quality preview image (1200x630px recommended). This controls the image shown when your page is shared on Facebook, LinkedIn, and other social platforms.",
         human_description="Missing Social Share Image",
+        fixability="content_edit",
     ),
     "TWITTER_CARD_MISSING": _IssueSpec(
         category="metadata", severity="info",
         description="Missing Twitter/X Card meta tag",
         recommendation="Add a <meta name=\"twitter:card\" content=\"summary_large_image\"> tag. This controls how your page appears when shared on Twitter/X.",
         human_description="Missing Twitter/X Card",
+        fixability="content_edit",
     ),
     "CANONICAL_MISSING": _IssueSpec(
         category="metadata", severity="warning",
         description="No canonical tag — page has query strings or is a near-duplicate",
         recommendation="Add a canonical tag pointing to the preferred URL for this page to prevent duplicate content issues.",
         human_description="Ambiguous Preferred URL",
+        fixability="developer_needed",
     ),
     "CANONICAL_EXTERNAL": _IssueSpec(
         category="metadata", severity="warning",
         description="Canonical points to a different domain",
         recommendation="Review this canonical tag — it is pointing search engines to a page on a different website.",
         human_description="External Preferred URL",
+        fixability="developer_needed",
     ),
     "FAVICON_MISSING": _IssueSpec(
         category="metadata", severity="info",
         description="No favicon found (homepage only)",
         recommendation="Add a favicon to your site. This small icon appears in browser tabs and bookmarks and reinforces your brand.",
         human_description="Missing Website Icon",
+        fixability="content_edit",
     ),
     # ── Headings ──────────────────────────────────────────────────────────
     "H1_MISSING": _IssueSpec(
@@ -278,24 +295,28 @@ _CATALOGUE: dict[str, _IssueSpec] = {
         description="No H1 tag found on page",
         recommendation="Add a single H1 heading that clearly states the main topic of this page.",
         human_description="Missing Main Heading",
+        fixability="content_edit",
     ),
     "H1_MULTIPLE": _IssueSpec(
         category="heading", severity="warning",
         description="More than one H1 on the page",
         recommendation="Remove extra H1 tags. Each page should have exactly one H1 that introduces the main topic.",
         human_description="Multiple Main Headings",
+        fixability="content_edit",
     ),
     "HEADING_SKIP": _IssueSpec(
         category="heading", severity="warning",
         description="Heading levels skip (e.g., H1 → H3)",
         recommendation="Fix the heading structure so levels are not skipped. Use H1, then H2, then H3 in order.",
         human_description="Skipped Heading Level",
+        fixability="content_edit",
     ),
     "HEADING_EMPTY": _IssueSpec(
         category="heading", severity="warning",
         description="One or more heading tags have no text content",
         recommendation="Remove empty heading tags or add descriptive text. Empty headings confuse screen readers and waste heading structure.",
         human_description="Empty Heading",
+        fixability="content_edit",
     ),
     # ── Broken links ──────────────────────────────────────────────────────
     "BROKEN_LINK_404": _IssueSpec(
@@ -303,18 +324,21 @@ _CATALOGUE: dict[str, _IssueSpec] = {
         description="Link destination returns 404 Not Found",
         recommendation="Remove or update this link. The page it points to no longer exists.",
         human_description="Dead Link",
+        fixability="wp_fixable",
     ),
     "BROKEN_LINK_410": _IssueSpec(
         category="broken_link", severity="critical",
         description="Link destination returns 410 Gone",
         recommendation="Remove this link. The destination has been permanently removed.",
         human_description="Removed Link",
+        fixability="wp_fixable",
     ),
     "BROKEN_LINK_5XX": _IssueSpec(
         category="broken_link", severity="critical",
         description="Link destination returns a server error",
         recommendation="Check whether the linked site is down. If the problem persists, remove or replace the link.",
         human_description="Broken Server Link",
+        fixability="wp_fixable",
     ),
     "BROKEN_LINK_503": _IssueSpec(
         category="broken_link", severity="warning",
@@ -322,12 +346,14 @@ _CATALOGUE: dict[str, _IssueSpec] = {
         recommendation="Visit the link manually to see if it loads for real visitors. "
                        "If the problem persists, the destination site may be down or blocking crawlers.",
         human_description="Temporarily Blocked Link",
+        fixability="developer_needed",
     ),
     "EXTERNAL_LINK_SKIPPED": _IssueSpec(
         category="broken_link", severity="info",
         description="Link not verified — social media platforms block automated checks",
         recommendation="Open this link in a browser to confirm it is working correctly.",
         human_description="Unverified Social Link",
+        fixability="developer_needed",
     ),
     "EXTERNAL_LINK_TIMEOUT": _IssueSpec(
         category="broken_link", severity="info",
@@ -335,6 +361,7 @@ _CATALOGUE: dict[str, _IssueSpec] = {
         recommendation="Click the link to confirm it works in a browser. If it consistently fails, "
                        "the destination site may be down or the domain may have expired.",
         human_description="Slow External Link",
+        fixability="developer_needed",
     ),
     # ── Redirects ─────────────────────────────────────────────────────────
     "REDIRECT_LOOP": _IssueSpec(
@@ -342,24 +369,28 @@ _CATALOGUE: dict[str, _IssueSpec] = {
         description="Redirect loop detected",
         recommendation="Fix the redirect configuration immediately. This page cannot load and is invisible to search engines.",
         human_description="Spinning Page",
+        fixability="developer_needed",
     ),
     "REDIRECT_301": _IssueSpec(
         category="redirect", severity="info",
         description="Page returns a permanent redirect",
         recommendation="Update any internal links pointing here to use the final destination URL directly.",
         human_description="Permanent Redirect",
+        fixability="developer_needed",
     ),
     "REDIRECT_302": _IssueSpec(
         category="redirect", severity="warning",
         description="Page returns a temporary redirect",
         recommendation="Confirm whether this redirect is intentional. If permanent, change it to a 301 redirect.",
         human_description="Temporary Redirect",
+        fixability="developer_needed",
     ),
     "REDIRECT_CHAIN": _IssueSpec(
         category="redirect", severity="warning",
         description="Page involves a multi-hop redirect chain",
         recommendation="Consolidate the redirect chain to a single direct redirect to the final destination.",
         human_description="Multi-Hop Detour",
+        fixability="developer_needed",
     ),
     "REDIRECT_TRAILING_SLASH": _IssueSpec(
         category="redirect", severity="info",
@@ -368,6 +399,7 @@ _CATALOGUE: dict[str, _IssueSpec] = {
                        "To eliminate the extra round trip, update internal links to use the canonical URL "
                        "with the trailing slash your server expects.",
         human_description="Auto-Corrected URL (Slash)",
+        fixability="developer_needed",
     ),
     "REDIRECT_CASE_NORMALISE": _IssueSpec(
         category="redirect", severity="info",
@@ -375,12 +407,14 @@ _CATALOGUE: dict[str, _IssueSpec] = {
         recommendation="No urgent action needed. Your server redirects uppercase URLs to lowercase automatically. "
                        "To eliminate the extra redirect, update internal links to use lowercase-only URLs.",
         human_description="Auto-Corrected URL (Case)",
+        fixability="developer_needed",
     ),
     "META_REFRESH_REDIRECT": _IssueSpec(
         category="redirect", severity="warning",
         description="Page uses a <meta http-equiv=\"refresh\"> tag to redirect users",
         recommendation="Replace meta refresh redirects with server-side 301 redirects.",
         human_description="HTML Redirect (Outdated)",
+        fixability="developer_needed",
     ),
     # ── Crawlability ──────────────────────────────────────────────────────
     "PAGE_TIMEOUT": _IssueSpec(
@@ -389,72 +423,84 @@ _CATALOGUE: dict[str, _IssueSpec] = {
         recommendation="Check the page manually. A persistent timeout may indicate a slow server, "
                        "heavy page weight, or a broken URL. Consider increasing server response speed.",
         human_description="Slow-Loading Page",
+        fixability="developer_needed",
     ),
     "LOGIN_REDIRECT": _IssueSpec(
         category="crawlability", severity="info",
         description="Page redirects to a login screen",
         recommendation="This page requires a login to access. The crawler cannot audit it. Review manually if needed.",
         human_description="Login-Protected Page",
+        fixability="developer_needed",
     ),
     "ROBOTS_BLOCKED": _IssueSpec(
         category="crawlability", severity="warning",
         description="Page blocked by robots.txt",
         recommendation="Check whether this page should be blocked. If not, update your robots.txt file.",
         human_description="Blocked by Crawl Rules",
+        fixability="developer_needed",
     ),
     "NOINDEX_META": _IssueSpec(
         category="crawlability", severity="warning",
         description="Page has a noindex meta tag",
         recommendation="Confirm whether this page should be excluded from search results. Remove the noindex tag if not.",
         human_description="Hidden from Search",
+        fixability="wp_fixable",
     ),
     "NOINDEX_HEADER": _IssueSpec(
         category="crawlability", severity="warning",
         description="Page has a noindex HTTP header",
         recommendation="Check your server configuration. This page is being hidden from search engines via an HTTP header.",
         human_description="Hidden from Search (Server)",
+        fixability="developer_needed",
     ),
     "NOT_IN_SITEMAP": _IssueSpec(
         category="crawlability", severity="info",
         description="Crawlable page not listed in sitemap",
         recommendation="Add this URL to your XML sitemap so search engines can find it more reliably.",
         human_description="Missing from Sitemap",
+        fixability="wp_fixable",
     ),
     "PDF_TOO_LARGE": _IssueSpec(
         category="crawlability", severity="warning",
         description="PDF file exceeds 10 MB",
         recommendation="Reduce the PDF file size. Large PDFs are slow to download and may be skipped by crawlers.",
         human_description="Oversized Document",
+        fixability="developer_needed",
     ),
     "IMG_OVERSIZED": _IssueSpec(
         category="image", severity="warning",
         description="Image file exceeds 200 KB",
         recommendation="Compress this image. Use Squoosh, TinyPNG, or ImageOptim to reduce the file size without visible quality loss.",
         human_description="Oversized Image",
+        fixability="content_edit",
     ),
     "PAGINATION_LINKS_PRESENT": _IssueSpec(
         category="crawlability", severity="info",
         description="Page declares rel=\"next\" or rel=\"prev\" pagination link elements",
         recommendation="No action required. Ensure the linked pages are crawlable.",
         human_description="Paginated Content",
+        fixability="developer_needed",
     ),
     "THIN_CONTENT": _IssueSpec(
         category="crawlability", severity="warning",
         description="Page has fewer than 300 words of body content",
         recommendation="Expand the page content to at least 300 words to provide more value to users and search engines.",
         human_description="Low Information",
+        fixability="content_edit",
     ),
     "AMPHTML_BROKEN": _IssueSpec(
         category="crawlability", severity="warning",
         description="Page declares an AMP version via <link rel=\"amphtml\"> but the AMP URL is not reachable",
         recommendation="Fix the AMP URL or remove the amphtml link element if AMP is no longer in use.",
         human_description="Broken Mobile Version",
+        fixability="developer_needed",
     ),
     "HIGH_CRAWL_DEPTH": _IssueSpec(
         category="crawlability", severity="warning",
         description="Page is more than 4 clicks from the homepage",
         recommendation="Improve internal linking so this page can be reached in 3 clicks or fewer from the homepage.",
         human_description="Hard-to-Reach Page",
+        fixability="developer_needed",
     ),
     "ORPHAN_PAGE": _IssueSpec(
         category="crawlability", severity="warning",
@@ -462,6 +508,7 @@ _CATALOGUE: dict[str, _IssueSpec] = {
         recommendation="Add at least one internal link to this page from a navigation menu, hub page, "
                        "or relevant content page so search engines and visitors can find it.",
         human_description="Disconnected Page",
+        fixability="developer_needed",
     ),
     "CONTENT_STALE": _IssueSpec(
         category="crawlability", severity="info",
@@ -469,6 +516,7 @@ _CATALOGUE: dict[str, _IssueSpec] = {
         recommendation="Review and refresh this page's content. Search engines favour recently updated pages, "
                        "and visitors may lose trust in outdated information. Even small updates signal freshness.",
         human_description="Stale Content",
+        fixability="content_edit",
     ),
     "SCHEMA_MISSING": _IssueSpec(
         category="crawlability", severity="info",
@@ -477,6 +525,7 @@ _CATALOGUE: dict[str, _IssueSpec] = {
                        "At minimum, add Organisation schema to your homepage. "
                        "Google's Rich Results Test can validate your markup.",
         human_description="No Structured Data",
+        fixability="wp_fixable",
     ),
     # ── Sitemap ───────────────────────────────────────────────────────────
     "SITEMAP_MISSING": _IssueSpec(
@@ -484,6 +533,7 @@ _CATALOGUE: dict[str, _IssueSpec] = {
         description="No sitemap found for this domain",
         recommendation="Create an XML sitemap and submit it to Google Search Console. Most CMS platforms can generate one automatically.",
         human_description="No Sitemap",
+        fixability="developer_needed",
     ),
     # ── Duplicate content ─────────────────────────────────────────────────
     "TITLE_META_DUPLICATE_PAIR": _IssueSpec(
@@ -491,6 +541,7 @@ _CATALOGUE: dict[str, _IssueSpec] = {
         description="Both title and meta description duplicated on another page",
         recommendation="This page and another share identical title and meta description. Update both to be unique.",
         human_description="Identical Title & Description",
+        fixability="content_edit",
     ),
     # ── Security (§E1) ────────────────────────────────────────────────────
     "HTTP_PAGE": _IssueSpec(
@@ -498,30 +549,35 @@ _CATALOGUE: dict[str, _IssueSpec] = {
         description="Page is served over HTTP, not HTTPS",
         recommendation="Migrate to HTTPS and configure a server-side 301 redirect from HTTP to HTTPS.",
         human_description="Unsecured Page",
+        fixability="developer_needed",
     ),
     "MIXED_CONTENT": _IssueSpec(
         category="security", severity="warning",
         description="HTTPS page loads resources over HTTP",
         recommendation="Update all resource URLs to use HTTPS. Check images, scripts, stylesheets, and iframes.",
         human_description="Partially Unsecured Page",
+        fixability="developer_needed",
     ),
     "MISSING_HSTS": _IssueSpec(
         category="security", severity="info",
         description="HTTPS page is missing the Strict-Transport-Security header",
         recommendation="Add Strict-Transport-Security: max-age=31536000; includeSubDomains to all HTTPS responses.",
         human_description="Security Header Missing",
+        fixability="developer_needed",
     ),
     "UNSAFE_CROSS_ORIGIN_LINK": _IssueSpec(
         category="security", severity="info",
         description="External link opens in a new tab without rel=\"noopener\" or rel=\"noreferrer\"",
         recommendation="Add rel=\"noopener noreferrer\" to all <a target=\"_blank\"> links pointing to external URLs.",
         human_description="Unsafe External Link",
+        fixability="developer_needed",
     ),
     "WWW_CANONICALIZATION": _IssueSpec(
         category="security", severity="warning",
         description="Both www and non-www versions of the site resolve without redirecting to each other",
         recommendation="Configure a 301 redirect so one version (www or non-www) redirects to the other. This consolidates link equity and avoids duplicate content.",
         human_description="www/non-www Not Consolidated",
+        fixability="developer_needed",
     ),
     # ── URL structure (§E2) ───────────────────────────────────────────────
     "URL_UPPERCASE": _IssueSpec(
@@ -531,24 +587,28 @@ _CATALOGUE: dict[str, _IssueSpec] = {
                        "but this creates an unnecessary extra redirect. Update internal links and page slugs "
                        "to use lowercase only to avoid that redirect entirely.",
         human_description="Mixed-Case Web Address",
+        fixability="content_edit",
     ),
     "URL_HAS_SPACES": _IssueSpec(
         category="url_structure", severity="warning",
         description="URL contains encoded spaces (%20)",
         recommendation="Replace spaces in URLs with hyphens.",
         human_description="Spaces in Web Address",
+        fixability="content_edit",
     ),
     "URL_HAS_UNDERSCORES": _IssueSpec(
         category="url_structure", severity="info",
         description="URL path uses underscores instead of hyphens",
         recommendation="Use hyphens as word separators in URL paths. Google treats underscores as word-joiners.",
         human_description="Underscores in Web Address",
+        fixability="content_edit",
     ),
     "URL_TOO_LONG": _IssueSpec(
         category="url_structure", severity="info",
         description="URL exceeds 200 characters",
         recommendation="Shorten the URL slug. Long URLs are harder to share and may be truncated in search results.",
         human_description="Overly Long Web Address",
+        fixability="content_edit",
     ),
     # ── v1.5 bug fixes — codes that existed in scoring but had no catalogue entry ──
     "IMG_ALT_MISSING": _IssueSpec(
@@ -558,6 +618,7 @@ _CATALOGUE: dict[str, _IssueSpec] = {
                        "in plain language, e.g. alt=\"Counsellor speaking with a young person\". "
                        "Every image should have meaningful alt text for accessibility and SEO.",
         human_description="Images Missing Alt Text",
+        fixability="wp_fixable",
     ),
     # ── v1.5 new codes ────────────────────────────────────────────────────
     "INTERNAL_REDIRECT_301": _IssueSpec(
@@ -566,6 +627,7 @@ _CATALOGUE: dict[str, _IssueSpec] = {
         recommendation="Update all internal links pointing to this URL to use the final destination directly. "
                        "This eliminates an unnecessary redirect for every visitor.",
         human_description="Internal Redirect Link",
+        fixability="developer_needed",
     ),
     "MISSING_VIEWPORT_META": _IssueSpec(
         category="crawlability", severity="warning",
@@ -573,6 +635,7 @@ _CATALOGUE: dict[str, _IssueSpec] = {
         recommendation='Add <meta name="viewport" content="width=device-width, initial-scale=1"> to the <head>. '
                        "Without it, mobile browsers render the page at desktop width and zoom out, making it hard to use.",
         human_description="Not Mobile-Friendly",
+        fixability="developer_needed",
     ),
     "IMG_BROKEN": _IssueSpec(
         category="image", severity="critical",
@@ -580,6 +643,7 @@ _CATALOGUE: dict[str, _IssueSpec] = {
         recommendation="Replace or remove the broken image. Use your CMS media library to re-upload the file "
                        "or update the src URL to point to the correct location.",
         human_description="Broken Image",
+        fixability="developer_needed",
     ),
     # ── v1.9image - Enhanced Image Analysis ─────────────────────────────────
     "IMG_ALT_TOO_SHORT": _IssueSpec(
@@ -588,6 +652,7 @@ _CATALOGUE: dict[str, _IssueSpec] = {
         recommendation="Expand the alt text to at least 5 characters. Describe what the image shows, "
                        "not just a single word.",
         human_description="Alt Text Too Short",
+        fixability="wp_fixable",
     ),
     "IMG_ALT_TOO_LONG": _IssueSpec(
         category="image", severity="warning",
@@ -595,6 +660,7 @@ _CATALOGUE: dict[str, _IssueSpec] = {
         recommendation="Shorten the alt text to under 125 characters. Be concise while still describing "
                        "the image content. Screen readers may truncate longer alt text.",
         human_description="Alt Text Too Long",
+        fixability="wp_fixable",
     ),
     "IMG_ALT_GENERIC": _IssueSpec(
         category="image", severity="warning",
@@ -602,6 +668,7 @@ _CATALOGUE: dict[str, _IssueSpec] = {
         recommendation="Replace generic alt text with a specific description of what the image shows. "
                        "Instead of 'photo', describe the scene, people, or objects depicted.",
         human_description="Generic Alt Text",
+        fixability="wp_fixable",
     ),
     "IMG_ALT_DUP_FILENAME": _IssueSpec(
         category="image", severity="warning",
@@ -609,6 +676,7 @@ _CATALOGUE: dict[str, _IssueSpec] = {
         recommendation="Write descriptive alt text instead of using the filename. Describe what the "
                        "image shows to help search engines and screen reader users.",
         human_description="Alt Text is Filename",
+        fixability="wp_fixable",
     ),
     "IMG_ALT_MISUSED": _IssueSpec(
         category="image", severity="warning",
@@ -616,6 +684,7 @@ _CATALOGUE: dict[str, _IssueSpec] = {
         recommendation="Decorative images should have empty alt=\"\" to be skipped by screen readers. "
                        "Only meaningful images should have descriptive alt text.",
         human_description="Alt Text Misused",
+        fixability="content_edit",
     ),
     "IMG_SLOW_LOAD": _IssueSpec(
         category="image", severity="warning",
@@ -623,6 +692,7 @@ _CATALOGUE: dict[str, _IssueSpec] = {
         recommendation="Optimize the image by compressing it, reducing dimensions, or using a CDN. "
                        "Consider lazy loading for below-the-fold images.",
         human_description="Slow Loading Image",
+        fixability="developer_needed",
     ),
     "IMG_OVERSCALED": _IssueSpec(
         category="image", severity="warning",
@@ -630,6 +700,7 @@ _CATALOGUE: dict[str, _IssueSpec] = {
         recommendation="Resize the image to match its display dimensions. Use srcset to serve "
                        "appropriately sized images to different devices.",
         human_description="Overscaled Image",
+        fixability="content_edit",
     ),
     "IMG_POOR_COMPRESSION": _IssueSpec(
         category="image", severity="warning",
@@ -637,6 +708,7 @@ _CATALOGUE: dict[str, _IssueSpec] = {
         recommendation="Re-compress the image using WebP format for better efficiency. "
                        "Use tools like Squoosh or ImageOptim for lossless compression.",
         human_description="Poor Compression",
+        fixability="content_edit",
     ),
     "IMG_FORMAT_LEGACY": _IssueSpec(
         category="image", severity="info",
@@ -644,6 +716,7 @@ _CATALOGUE: dict[str, _IssueSpec] = {
         recommendation="Convert to WebP format for 25-35% smaller file sizes with the same quality. "
                        "Most modern browsers support WebP.",
         human_description="Legacy Image Format",
+        fixability="content_edit",
     ),
     "IMG_NO_SRCSET": _IssueSpec(
         category="image", severity="info",
@@ -651,6 +724,7 @@ _CATALOGUE: dict[str, _IssueSpec] = {
         recommendation="Add a srcset attribute to serve appropriately sized images to mobile devices. "
                        "This improves load times on smaller screens.",
         human_description="Missing Responsive Images",
+        fixability="developer_needed",
     ),
     "IMG_DUPLICATE_CONTENT": _IssueSpec(
         category="image", severity="info",
@@ -658,18 +732,21 @@ _CATALOGUE: dict[str, _IssueSpec] = {
         recommendation="Consolidate duplicate images to a single URL. This saves server space "
                        "and improves caching efficiency.",
         human_description="Duplicate Image",
+        fixability="developer_needed",
     ),
     "LINK_EMPTY_ANCHOR": _IssueSpec(
         category="metadata", severity="warning",
         description="Link has no visible anchor text — screen readers and search engines cannot describe its destination",
         recommendation='Add descriptive text inside the link. If it is an icon-only link, add an aria-label attribute (e.g. aria-label="Donate now").',
         human_description="Empty Link Text",
+        fixability="content_edit",
     ),
     "ANCHOR_TEXT_GENERIC": _IssueSpec(
         category="metadata", severity="warning",
         description="Links use non-descriptive anchor text like 'click here' or 'read more'",
         recommendation="Replace generic link text with descriptive text that tells the reader (and search engines) where the link goes. Instead of 'click here', write 'view our counselling services'.",
         human_description="Non-Descriptive Link Text",
+        fixability="content_edit",
     ),
     "INTERNAL_NOFOLLOW": _IssueSpec(
         category="crawlability", severity="warning",
@@ -677,6 +754,7 @@ _CATALOGUE: dict[str, _IssueSpec] = {
         recommendation='Remove the nofollow attribute from internal links. Reserve rel="nofollow" for links to '
                        "external or user-generated content.",
         human_description="Blocked Internal Link",
+        fixability="developer_needed",
     ),
     "PAGE_SIZE_LARGE": _IssueSpec(
         category="crawlability", severity="warning",
@@ -684,6 +762,7 @@ _CATALOGUE: dict[str, _IssueSpec] = {
         recommendation="Reduce page weight by removing unused HTML, lazy-loading off-screen content, and deferring "
                        "non-critical scripts. Large pages cost more mobile data and take longer to render.",
         human_description="Overweight Page",
+        fixability="developer_needed",
     ),
     # ── v1.6 new codes ────────────────────────────────────────────────────────
     "LANG_MISSING": _IssueSpec(
@@ -693,6 +772,7 @@ _CATALOGUE: dict[str, _IssueSpec] = {
                        "This tells search engines and screen readers what language your content is in, "
                        "improving accessibility and search accuracy for multilingual queries.",
         human_description="No Language Declared",
+        fixability="developer_needed",
     ),
     "TITLE_H1_MISMATCH": _IssueSpec(
         category="metadata", severity="warning",
@@ -701,6 +781,7 @@ _CATALOGUE: dict[str, _IssueSpec] = {
                        "They do not need to be identical, but both should clearly reflect the page's main subject. "
                        "Significant mismatch confuses users who click a search result and then see an unrelated heading.",
         human_description="Title and Heading Disagree",
+        fixability="wp_fixable",
     ),
     "HTTPS_REDIRECT_MISSING": _IssueSpec(
         category="security", severity="critical",
@@ -709,6 +790,7 @@ _CATALOGUE: dict[str, _IssueSpec] = {
                        "Without this, visitors who type your address without 'https' will reach an insecure version "
                        "of your site — and search engines treat HTTP and HTTPS as separate, competing URLs.",
         human_description="Insecure URL Not Redirected",
+        fixability="developer_needed",
     ),
     "CANONICAL_SELF_MISSING": _IssueSpec(
         category="metadata", severity="info",
@@ -717,6 +799,7 @@ _CATALOGUE: dict[str, _IssueSpec] = {
                        "A self-referencing canonical is a best-practice signal to search engines "
                        "confirming which URL is the preferred version of this page.",
         human_description="No Canonical Tag",
+        fixability="developer_needed",
     ),
     # ── AI Readiness ──────────────────────────────────────────────────────
     "LLMS_TXT_MISSING": _IssueSpec(
@@ -725,6 +808,7 @@ _CATALOGUE: dict[str, _IssueSpec] = {
         recommendation="Create an /llms.txt file to help LLMs and AI agents (Gemini, Perplexity) "
                        "accurately crawl and cite your high-value content.",
         human_description="Missing AI Instruction File",
+        fixability="content_edit",
     ),
     "LLMS_TXT_INVALID": _IssueSpec(
         category="ai_readiness", severity="warning",
@@ -732,6 +816,7 @@ _CATALOGUE: dict[str, _IssueSpec] = {
         recommendation="Ensure your /llms.txt uses text/plain MIME type and includes a Markdown-style "
                        "H1 title, a blockquote summary, and a list of high-value URLs (max 20).",
         human_description="Invalid AI Instruction File",
+        fixability="content_edit",
     ),
     "SEMANTIC_DENSITY_LOW": _IssueSpec(
         category="ai_readiness", severity="warning",
@@ -739,6 +824,7 @@ _CATALOGUE: dict[str, _IssueSpec] = {
         recommendation="Clean up excessive code-bloat (styles, scripts, nested divs). "
                        "High code-to-text ratios consume more AI tokens and confuse retrieval engines.",
         human_description="High Code-to-Text Ratio",
+        fixability="developer_needed",
     ),
     "DOCUMENT_PROPS_MISSING": _IssueSpec(
         category="ai_readiness", severity="warning",
@@ -746,6 +832,7 @@ _CATALOGUE: dict[str, _IssueSpec] = {
         recommendation="Update PDF document properties to include a clear Title and Subject. "
                        "AIs use these properties for source labels and citations.",
         human_description="Missing Document Info",
+        fixability="content_edit",
     ),
     "JSON_LD_MISSING": _IssueSpec(
         category="ai_readiness", severity="warning",
@@ -753,6 +840,7 @@ _CATALOGUE: dict[str, _IssueSpec] = {
         recommendation="Add <script type=\"application/ld+json\"> markup. Schema is the "
                        "'knowledge graph' used by AI systems for RAG-based answers.",
         human_description="Missing AI Schema",
+        fixability="developer_needed",
     ),
     "CONVERSATIONAL_H2_MISSING": _IssueSpec(
         category="ai_readiness", severity="info",
@@ -760,6 +848,7 @@ _CATALOGUE: dict[str, _IssueSpec] = {
         recommendation="Rewrite some H2 headings as questions. LLMs prefer direct question-answer "
                        "pairings for more accurate retrieval and citing.",
         human_description="Non-Conversational Headings",
+        fixability="content_edit",
     ),
 }
 
@@ -834,6 +923,7 @@ def make_issue(
         what_it_is=spec.what_it_is,
         impact_desc=spec.impact_desc,
         how_to_fix=spec.how_to_fix,
+        fixability=spec.fixability,
     )
 
 

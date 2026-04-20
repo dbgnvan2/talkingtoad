@@ -142,6 +142,7 @@ class JobStore(Protocol):
     async def get_job(self, job_id: str) -> CrawlJob | None: ...
     async def update_job(self, job_id: str, **fields: Any) -> None: ...
     async def list_recent_jobs(self, limit: int = 10) -> list[CrawlJob]: ...
+    async def list_jobs_by_domain(self, domain: str, limit: int = 10) -> list[CrawlJob]: ...
 
     async def save_pages(self, pages: list[CrawledPage]) -> None: ...
     async def get_pages(self, job_id: str) -> list[CrawledPage]: ...
@@ -298,6 +299,7 @@ CREATE TABLE IF NOT EXISTS issues (
     impact_desc          TEXT,
     how_to_fix           TEXT,
     extra                TEXT,
+    fixability           TEXT NOT NULL DEFAULT 'developer_needed',
     FOREIGN KEY (job_id) REFERENCES crawl_jobs(job_id)
 );
 
@@ -483,6 +485,7 @@ class SQLiteJobStore:
             ("sitemap_found", "INTEGER"),
             ("sitemap_url_found", "TEXT"),
             ("sitemap_url_count", "INTEGER"),
+            ("executive_summary", "TEXT"),
         ]
         for col, col_type in job_columns:
             try:
@@ -501,6 +504,7 @@ class SQLiteJobStore:
             ("impact_desc",        "TEXT"),
             ("how_to_fix",         "TEXT"),
             ("extra",              "TEXT"),
+            ("fixability",         "TEXT NOT NULL DEFAULT 'developer_needed'"),
         ]
         for col, col_type in issue_columns:
             try:
@@ -583,6 +587,15 @@ class SQLiteJobStore:
             rows = await cursor.fetchall()
         return [_row_to_job(dict(r)) for r in rows]
 
+    async def list_jobs_by_domain(self, domain: str, limit: int = 10) -> list[CrawlJob]:
+        """Return completed jobs for URLs containing the given domain, newest first."""
+        async with self._db.execute(
+            "SELECT * FROM crawl_jobs WHERE target_url LIKE ? AND status = 'complete' ORDER BY started_at DESC LIMIT ?",
+            (f"%{domain}%", limit),
+        ) as cursor:
+            rows = await cursor.fetchall()
+        return [_row_to_job(dict(r)) for r in rows]
+
     async def update_job(self, job_id: str, **fields: Any) -> None:
         """Update specific fields on a job record.
 
@@ -598,6 +611,7 @@ class SQLiteJobStore:
             "phase", "external_links_checked", "external_links_total",
             "robots_txt_found", "robots_txt_rules", "sitemap_found",
             "sitemap_url_found", "sitemap_url_count",
+            "executive_summary",
         }
         unknown = set(fields) - _ALLOWED
         if unknown:
@@ -649,8 +663,9 @@ class SQLiteJobStore:
             INSERT OR REPLACE INTO issues (
                 issue_id, job_id, page_id, page_url, link_id, category, severity,
                 issue_code, description, recommendation, impact, priority_rank,
-                effort, human_description, what_it_is, impact_desc, how_to_fix, extra
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                effort, human_description, what_it_is, impact_desc, how_to_fix, extra,
+                fixability
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             rows,
         )
@@ -1600,6 +1615,7 @@ def _row_to_job(row: dict) -> CrawlJob:
         error_message=row["error_message"],
         settings=CrawlSettings(**settings_data),
         llms_txt_custom=row.get("llms_txt_custom"),
+        executive_summary=row.get("executive_summary"),
     )
 
 
@@ -1705,6 +1721,7 @@ def _issue_to_row(i: Issue) -> tuple:
         i.impact_desc,
         i.how_to_fix,
         json.dumps(i.extra) if i.extra else None,
+        i.fixability,
     )
 
 
@@ -1735,6 +1752,7 @@ def _row_to_issue(row: dict) -> Issue:
         impact_desc=row.get("impact_desc") or "",
         how_to_fix=row.get("how_to_fix") or "",
         extra=extra,
+        fixability=row.get("fixability") or "developer_needed",
     )
 
 
@@ -1935,6 +1953,10 @@ class RedisJobStore:
     async def list_recent_jobs(self, limit: int = 10) -> list[CrawlJob]:
         return []  # Redis implementation tracks jobs by ID only — no index to list by date
 
+    async def list_jobs_by_domain(self, domain: str, limit: int = 10) -> list[CrawlJob]:
+        # Redis MVP — return empty
+        return []
+
     async def update_job(self, job_id: str, **fields: Any) -> None:
         if not fields:
             return
@@ -1944,6 +1966,7 @@ class RedisJobStore:
             "phase", "external_links_checked", "external_links_total",
             "robots_txt_found", "robots_txt_rules", "sitemap_found",
             "sitemap_url_found", "sitemap_url_count",
+            "executive_summary",
         }
         unknown = set(fields) - _ALLOWED
         if unknown:

@@ -769,6 +769,20 @@ export async function listBatches(jobId = null) {
 }
 
 // ---------------------------------------------------------------------------
+// Crawl Comparison & Executive Summary
+// ---------------------------------------------------------------------------
+
+export async function getCrawlComparison(jobId) {
+  const res = await fetch(`/api/crawl/${jobId}/comparison`, { headers: authHeaders() })
+  return checkResponse(res)
+}
+
+export async function getExecutiveSummary(jobId) {
+  const res = await fetch(`/api/crawl/${jobId}/executive-summary`, { headers: authHeaders() })
+  return checkResponse(res)
+}
+
+// ---------------------------------------------------------------------------
 // Broken Link Verification
 // ---------------------------------------------------------------------------
 

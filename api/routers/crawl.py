@@ -135,6 +135,7 @@ def _engine_issue_to_model(issue: EngIssue, job_id: str) -> Issue:
         priority_rank=issue.priority_rank,
         human_description=issue.human_description,
         extra=issue.extra,
+        fixability=issue.fixability,
     )
 
 
@@ -994,6 +995,98 @@ async def fix_history(
     return await store.get_fix_history(job_id)
 
 
+@router.get("/{job_id}/comparison", response_model=None)
+async def get_crawl_comparison(
+    job_id: str,
+    store: SQLiteJobStore | RedisJobStore = Depends(get_store),
+) -> dict | JSONResponse:
+    """Compare this crawl to the previous crawl for the same domain."""
+    from urllib.parse import urlparse
+
+    job = await store.get_job(job_id)
+    if not job:
+        return _err("JOB_NOT_FOUND", f"No job with id {job_id}", 404)
+
+    domain = urlparse(job.target_url).netloc
+    previous_jobs = await store.list_jobs_by_domain(domain, limit=2)
+
+    # Filter out the current job
+    previous = [j for j in previous_jobs if j.job_id != job_id]
+    if not previous:
+        return {"comparison_available": False, "message": "No previous crawl found for this domain."}
+
+    prev_job = previous[0]
+
+    # Get summaries for both
+    current_summary = await store.get_summary(job_id)
+    prev_summary = await store.get_summary(prev_job.job_id)
+
+    return {
+        "comparison_available": True,
+        "current": {
+            "job_id": job_id,
+            "crawled_at": job.started_at.isoformat() if job.started_at else None,
+            "health_score": current_summary.get("health_score", 0),
+            "pages_crawled": current_summary.get("pages_crawled", 0),
+            "total_issues": current_summary.get("total_issues", 0),
+            "by_severity": current_summary.get("by_severity", {}),
+        },
+        "previous": {
+            "job_id": prev_job.job_id,
+            "crawled_at": prev_job.started_at.isoformat() if prev_job.started_at else None,
+            "health_score": prev_summary.get("health_score", 0),
+            "pages_crawled": prev_summary.get("pages_crawled", 0),
+            "total_issues": prev_summary.get("total_issues", 0),
+            "by_severity": prev_summary.get("by_severity", {}),
+        },
+        "delta": {
+            "health_score": current_summary.get("health_score", 0) - prev_summary.get("health_score", 0),
+            "total_issues": current_summary.get("total_issues", 0) - prev_summary.get("total_issues", 0),
+            "critical": current_summary.get("by_severity", {}).get("critical", 0) - prev_summary.get("by_severity", {}).get("critical", 0),
+            "warning": current_summary.get("by_severity", {}).get("warning", 0) - prev_summary.get("by_severity", {}).get("warning", 0),
+        },
+    }
+
+
+@router.get("/{job_id}/executive-summary", response_model=None)
+async def get_executive_summary(
+    job_id: str,
+    store: SQLiteJobStore | RedisJobStore = Depends(get_store),
+) -> dict | JSONResponse:
+    """Generate or retrieve an AI executive summary for this crawl."""
+    job = await store.get_job(job_id)
+    if not job:
+        return _err("JOB_NOT_FOUND", f"No job with id {job_id}", 404)
+
+    # Check if we already have a cached summary
+    if job.executive_summary:
+        return {"summary": job.executive_summary, "cached": True}
+
+    # Generate via AI
+    try:
+        from api.services.ai_analyzer import analyze_with_ai
+        summary = await store.get_summary(job_id)
+        issues = await store.get_all_issues(job_id)
+        top_issues_list = sorted(issues, key=lambda i: -(i.priority_rank or 0))
+        top_3 = ", ".join(dict.fromkeys(i.human_description or i.issue_code for i in top_issues_list[:5]))
+
+        context = {
+            "health_score": summary.get("health_score", 0),
+            "pages_crawled": summary.get("pages_crawled", 0),
+            "critical": summary.get("by_severity", {}).get("critical", 0),
+            "warnings": summary.get("by_severity", {}).get("warning", 0),
+            "top_issues": top_3,
+        }
+        result = await analyze_with_ai("executive_summary", context)
+
+        # Cache it on the job
+        await store.update_job(job_id, executive_summary=result)
+
+        return {"summary": result, "cached": False}
+    except Exception as exc:
+        return _err("AI_UNAVAILABLE", f"Could not generate summary: {str(exc)}", 503)
+
+
 @router.get("/{job_id}/export/csv", response_model=None)
 async def export_csv_full(
     job_id: str,
@@ -1178,6 +1271,7 @@ def _issue_dict(issue: Issue) -> dict:
         "priority_rank": issue.priority_rank,
         "human_description": issue.human_description,
         "extra": issue.extra,
+        "fixability": issue.fixability,
     }
 
 

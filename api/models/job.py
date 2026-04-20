@@ -66,3 +66,5 @@ class CrawlJob(BaseModel):
     sitemap_url_count: int | None = None  # number of URLs in sitemap
     # Persisted custom llms.txt content
     llms_txt_custom: str | None = None
+    # AI-generated executive summary (cached after first generation)
+    executive_summary: str | None = None

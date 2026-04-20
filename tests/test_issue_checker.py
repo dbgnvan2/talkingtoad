@@ -10,6 +10,7 @@ from api.crawler.parser import ParsedPage, ParsedLink
 from api.crawler.fetcher import FetchResult
 from api.crawler.issue_checker import (
     Issue,
+    _CATALOGUE,
     check_asset,
     check_page,
     check_cross_page,
@@ -1826,3 +1827,75 @@ class TestHeadingEmpty:
         assert len(issue.extra["empty_levels"]) == 2
         assert "H2" in issue.extra["empty_levels"]
         assert "H3" in issue.extra["empty_levels"]
+
+
+# ---------------------------------------------------------------------------
+# Fixability tagging (Step 5a)
+# ---------------------------------------------------------------------------
+
+_VALID_FIXABILITIES = {"wp_fixable", "content_edit", "developer_needed"}
+
+
+class TestFixabilityTagging:
+    """Tests for fixability field on issues."""
+
+    def test_every_issue_has_fixability(self):
+        """Every code in the catalogue should produce an issue with a valid fixability value."""
+        for code in _CATALOGUE:
+            issue = make_issue(code, page_url="https://example.com/test")
+            assert issue.fixability in _VALID_FIXABILITIES, (
+                f"{code} has invalid fixability: {issue.fixability!r}"
+            )
+
+    def test_wp_fixable_codes(self):
+        """Key WordPress-fixable codes should have fixability='wp_fixable'."""
+        wp_codes = [
+            "TITLE_MISSING", "TITLE_TOO_SHORT", "TITLE_TOO_LONG",
+            "META_DESC_MISSING", "META_DESC_TOO_SHORT", "META_DESC_TOO_LONG",
+            "OG_TITLE_MISSING", "OG_DESC_MISSING",
+            "NOINDEX_META", "NOT_IN_SITEMAP", "SCHEMA_MISSING",
+            "TITLE_H1_MISMATCH",
+            "BROKEN_LINK_404", "BROKEN_LINK_410", "BROKEN_LINK_5XX",
+            "IMG_ALT_MISSING", "IMG_ALT_TOO_SHORT", "IMG_ALT_TOO_LONG",
+            "IMG_ALT_GENERIC", "IMG_ALT_DUP_FILENAME",
+        ]
+        for code in wp_codes:
+            issue = make_issue(code, page_url="https://example.com/test")
+            assert issue.fixability == "wp_fixable", (
+                f"{code} expected wp_fixable, got {issue.fixability!r}"
+            )
+
+    def test_content_edit_codes(self):
+        """Key content-edit codes should have fixability='content_edit'."""
+        content_codes = [
+            "H1_MISSING", "H1_MULTIPLE", "HEADING_SKIP", "HEADING_EMPTY",
+            "THIN_CONTENT", "LINK_EMPTY_ANCHOR", "ANCHOR_TEXT_GENERIC",
+            "TITLE_DUPLICATE", "META_DESC_DUPLICATE", "TITLE_META_DUPLICATE_PAIR",
+            "CONVERSATIONAL_H2_MISSING",
+            "LLMS_TXT_MISSING", "LLMS_TXT_INVALID",
+            "DOCUMENT_PROPS_MISSING",
+            "IMG_OVERSIZED", "IMG_FORMAT_LEGACY", "IMG_POOR_COMPRESSION",
+            "IMG_OVERSCALED", "IMG_ALT_MISUSED",
+        ]
+        for code in content_codes:
+            issue = make_issue(code, page_url="https://example.com/test")
+            assert issue.fixability == "content_edit", (
+                f"{code} expected content_edit, got {issue.fixability!r}"
+            )
+
+    def test_developer_needed_codes(self):
+        """Key developer-needed codes should have fixability='developer_needed'."""
+        dev_codes = [
+            "HTTP_PAGE", "REDIRECT_LOOP", "REDIRECT_CHAIN", "REDIRECT_302",
+            "ROBOTS_BLOCKED", "MIXED_CONTENT", "MISSING_HSTS",
+            "CANONICAL_MISSING", "CANONICAL_EXTERNAL",
+            "PAGE_TIMEOUT", "PAGE_SIZE_LARGE",
+            "ORPHAN_PAGE", "INTERNAL_NOFOLLOW",
+            "SEMANTIC_DENSITY_LOW", "JSON_LD_MISSING",
+            "IMG_BROKEN", "IMG_SLOW_LOAD", "IMG_NO_SRCSET", "IMG_DUPLICATE_CONTENT",
+        ]
+        for code in dev_codes:
+            issue = make_issue(code, page_url="https://example.com/test")
+            assert issue.fixability == "developer_needed", (
+                f"{code} expected developer_needed, got {issue.fixability!r}"
+            )

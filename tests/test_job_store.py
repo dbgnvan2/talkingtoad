@@ -544,3 +544,71 @@ class TestTtlCleanup:
         await store.cleanup_expired_jobs(ttl_days=7)
         fetched, total = await store.get_issues(old_job.job_id)
         assert total == 0
+
+
+# ---------------------------------------------------------------------------
+# list_jobs_by_domain (Step 5b)
+# ---------------------------------------------------------------------------
+
+class TestListJobsByDomain:
+    """Tests for list_jobs_by_domain method."""
+
+    async def test_returns_matching_domain_only(self, store):
+        """Only jobs whose target_url contains the domain should be returned."""
+        j1 = _job(target_url="https://example.com", status="complete")
+        j2 = _job(target_url="https://example.com/about", status="complete")
+        j3 = _job(target_url="https://other-site.org", status="complete")
+        for j in [j1, j2, j3]:
+            await store.create_job(j)
+
+        results = await store.list_jobs_by_domain("example.com")
+        job_ids = {j.job_id for j in results}
+        assert j1.job_id in job_ids
+        assert j2.job_id in job_ids
+        assert j3.job_id not in job_ids
+
+    async def test_excludes_non_complete_jobs(self, store):
+        """Only completed jobs should be returned."""
+        j_complete = _job(target_url="https://example.com", status="complete")
+        j_running = _job(target_url="https://example.com", status="running")
+        j_failed = _job(target_url="https://example.com", status="failed")
+        for j in [j_complete, j_running, j_failed]:
+            await store.create_job(j)
+
+        results = await store.list_jobs_by_domain("example.com")
+        assert len(results) == 1
+        assert results[0].job_id == j_complete.job_id
+
+    async def test_ordered_newest_first(self, store):
+        """Results should be ordered by started_at descending."""
+        j1 = _job(target_url="https://example.com", status="complete")
+        j2 = _job(target_url="https://example.com", status="complete")
+        await store.create_job(j1)
+        # Make j2 start later by updating its started_at
+        await store.create_job(j2)
+        await store._db.execute(
+            "UPDATE crawl_jobs SET started_at = ? WHERE job_id = ?",
+            ((datetime.now(timezone.utc) + timedelta(hours=1)).isoformat(), j2.job_id),
+        )
+        await store._db.commit()
+
+        results = await store.list_jobs_by_domain("example.com")
+        assert len(results) == 2
+        assert results[0].job_id == j2.job_id  # newer first
+
+    async def test_empty_for_no_matches(self, store):
+        """Returns empty list when no jobs match the domain."""
+        j = _job(target_url="https://example.com", status="complete")
+        await store.create_job(j)
+
+        results = await store.list_jobs_by_domain("nonexistent.com")
+        assert results == []
+
+    async def test_respects_limit(self, store):
+        """Limit parameter should restrict the number of results."""
+        for _ in range(5):
+            j = _job(target_url="https://example.com", status="complete")
+            await store.create_job(j)
+
+        results = await store.list_jobs_by_domain("example.com", limit=2)
+        assert len(results) == 2
