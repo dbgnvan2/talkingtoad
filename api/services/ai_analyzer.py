@@ -94,6 +94,18 @@ PROMPT_LIBRARY = {
         "  \"h2\": {{\"current\": [...], \"suggested\": [...], \"why\": \"...\"}}\n"
         "}}"
     ),
+    "executive_summary": (
+        "You are a web consultant writing a 3-5 sentence executive summary of an SEO audit "
+        "for a nonprofit executive director who does not know SEO terminology.\n\n"
+        "Site Health Score: {health_score}/100\n"
+        "Pages Crawled: {pages_crawled}\n"
+        "Critical Issues: {critical}\n"
+        "Warnings: {warnings}\n"
+        "Top 3 Issue Types: {top_issues}\n\n"
+        "Write in plain English. Be specific about what needs attention and why it matters "
+        "for the organization's online presence. Do not use jargon like 'meta tags' or "
+        "'canonical URLs'. Start with the health score interpretation."
+    ),
     "site_advisor": (
         "You are an SEO consultant for nonprofit organizations. Analyze these site-wide patterns and provide "
         "high-level recommendations.\n\n"

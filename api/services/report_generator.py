@@ -89,6 +89,7 @@ async def generate_pdf_report(
     top_pages: list[dict] = None,
     image_summary: dict = None,
     top_images: list = None,
+    executive_summary: str | None = None,
 ) -> bytes:
     pdf = TalkingToadReport()
     pdf.alias_nb_pages()
@@ -122,6 +123,16 @@ async def generate_pdf_report(
     pdf.set_x(25.4)
     pdf.cell(W, 10, f"Generated on: {datetime.now().strftime('%B %d, %Y')}", align='C', new_x="LMARGIN", new_y="NEXT")
     
+    # ── Executive Summary (optional, AI-generated) ─────────────────────────
+    if executive_summary:
+        pdf.add_page()
+        pdf.chapter_title("Executive Summary")
+        pdf.set_font('helvetica', '', 11)
+        pdf.set_text_color(*COLOR_GRAY_800)
+        pdf.set_x(25.4)
+        pdf.multi_cell(W, 6, pdf.clean_text(executive_summary))
+        pdf.ln(5)
+
     # ── Page 2: Dashboard Summary ─────────────────────────────────────────
     pdf.add_page()
     pdf.chapter_title("Dashboard Summary")
@@ -215,7 +226,57 @@ async def generate_pdf_report(
             pdf.line(pdf.get_x(), pdf.get_y(), pdf.get_x() + W, pdf.get_y())
             pdf.ln(3)
 
-    # ── Page 4: AI Readiness (llms.txt) ───────────────────────────────────
+    # ── Action Checklist ─────────────────────────────────────────
+    if issues:
+        pdf.add_page()
+        pdf.chapter_title("What to Do Next")
+        pdf.set_font('helvetica', '', 10)
+        pdf.set_text_color(*COLOR_GRAY_600)
+        pdf.set_x(25.4)
+        pdf.multi_cell(W, 5, "These are the highest-priority actions to improve your site's SEO. Work through them in order.")
+        pdf.ln(5)
+
+        # Deduplicate by issue_code, take highest-priority first
+        from collections import OrderedDict
+        seen_codes: OrderedDict[str, Issue] = OrderedDict()
+        sorted_issues = sorted(issues, key=lambda i: -(i.priority_rank or 0))
+        for iss in sorted_issues:
+            if iss.issue_code not in seen_codes and len(seen_codes) < 15:
+                seen_codes[iss.issue_code] = iss
+
+        for idx, (code, iss) in enumerate(seen_codes.items(), 1):
+            if pdf.get_y() > 240:
+                pdf.add_page()
+
+            sev_color = (
+                COLOR_CRITICAL if iss.severity == "critical"
+                else COLOR_WARNING if iss.severity == "warning"
+                else COLOR_INFO
+            )
+
+            # Checkbox + description
+            pdf.set_x(25.4)
+            pdf.set_font('helvetica', '', 11)
+            pdf.set_text_color(*COLOR_GRAY_800)
+            pdf.cell(8, 7, "[ ]")
+
+            pdf.set_font('helvetica', 'B', 10)
+            pdf.set_text_color(*sev_color)
+            label = iss.human_description or iss.issue_code
+            pdf.cell(0, 7, pdf.clean_text(label), new_x="LMARGIN", new_y="NEXT")
+
+            # Count + recommendation
+            count = sum(1 for i in issues if i.issue_code == code)
+            pdf.set_x(33.4)
+            pdf.set_font('helvetica', '', 9)
+            pdf.set_text_color(*COLOR_GRAY_500)
+            rec = iss.recommendation or iss.description or ""
+            if len(rec) > 120:
+                rec = rec[:117] + "..."
+            pdf.multi_cell(W - 8, 5, pdf.clean_text(f"{count} page{'s' if count != 1 else ''} affected. {rec}"))
+            pdf.ln(2)
+
+    # ── AI Readiness (llms.txt) ───────────────────────────────────
     pdf.add_page()
     pdf.chapter_title("AI Readiness: llms.txt Status")
     pdf.set_font('helvetica', '', 10)

@@ -1005,7 +1005,9 @@ async def export_csv_full(
         return _err("JOB_NOT_FOUND", "No crawl job found with the given ID.", 404)
 
     issues = await store.get_all_issues(job_id)
-    return _csv_response(issues, filename=f"crawl-{job_id}.csv")
+    from urllib.parse import urlparse
+    domain = urlparse(job.target_url).netloc.replace("www.", "")
+    return _csv_response(issues, filename=f"TalkingToad-Audit-{domain}.csv")
 
 
 @router.get("/{job_id}/export/pdf", response_model=None)
@@ -1054,6 +1056,23 @@ async def export_pdf_report(
     if summary_only:
         include_pages = False
 
+    # Try to generate AI executive summary (optional — skipped if no API keys)
+    executive_summary = None
+    try:
+        from api.services.ai_analyzer import analyze_with_ai
+        top_issues_list = sorted(issues, key=lambda i: -(i.priority_rank or 0))
+        top_3 = ", ".join(dict.fromkeys(i.human_description or i.issue_code for i in top_issues_list[:5]))
+        ai_context = {
+            "health_score": summary.get("health_score", 0),
+            "pages_crawled": summary.get("pages_crawled", 0),
+            "critical": summary.get("by_severity", {}).get("critical", 0),
+            "warnings": summary.get("by_severity", {}).get("warning", 0),
+            "top_issues": top_3,
+        }
+        executive_summary = await analyze_with_ai("executive_summary", ai_context)
+    except Exception as exc:
+        logger.info("ai_summary_skipped", extra={"reason": str(exc)})
+
     try:
         logger.info("generating_pdf_report", extra={
             "job_id": job_id,
@@ -1068,12 +1087,14 @@ async def export_pdf_report(
             top_pages=top_pages_data,
             image_summary=image_summary,
             top_images=top_images,
+            executive_summary=executive_summary,
         )
         logger.info("pdf_report_generated", extra={"job_id": job_id, "size_bytes": len(pdf_bytes)})
+        pdf_domain = urlparse(job.target_url).netloc.replace("www.", "")
         return StreamingResponse(
             io.BytesIO(pdf_bytes),
             media_type="application/pdf",
-            headers={"Content-Disposition": f'attachment; filename="TalkingToad-Audit-{job_id[:8]}.pdf"'},
+            headers={"Content-Disposition": f'attachment; filename="TalkingToad-Audit-{pdf_domain}.pdf"'},
         )
     except Exception as exc:
         logger.exception("pdf_generation_failed", extra={"job_id": job_id, "error": str(exc)})
@@ -1100,6 +1121,8 @@ async def export_excel_report(
     images_list = await store.get_images(job_id, page=1, limit=500, sort_by="score")
 
     try:
+        from urllib.parse import urlparse as _urlparse
+        excel_domain = _urlparse(job.target_url).netloc.replace("www.", "")
         excel_bytes = generate_excel_report(
             job, issues, summary,
             image_summary=image_summary,
@@ -1108,7 +1131,7 @@ async def export_excel_report(
         return StreamingResponse(
             io.BytesIO(excel_bytes),
             media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            headers={"Content-Disposition": f'attachment; filename="TalkingToad-Audit-{job_id[:8]}.xlsx"'},
+            headers={"Content-Disposition": f'attachment; filename="TalkingToad-Audit-{excel_domain}.xlsx"'},
         )
     except Exception as exc:
         logger.exception("excel_generation_failed", extra={"job_id": job_id})
@@ -1134,7 +1157,9 @@ async def export_csv_category(
         return _err("JOB_NOT_FOUND", "No crawl job found with the given ID.", 404)
 
     issues, _ = await store.get_issues(job_id, category=category, limit=10_000)
-    return _csv_response(issues, filename=f"crawl-{job_id}-{category}.csv")
+    from urllib.parse import urlparse as _up
+    cat_domain = _up(job.target_url).netloc.replace("www.", "")
+    return _csv_response(issues, filename=f"TalkingToad-Audit-{cat_domain}-{category}.csv")
 
 
 # ── Private helpers ────────────────────────────────────────────────────────

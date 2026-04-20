@@ -432,7 +432,10 @@ export async function downloadCsv(jobId, category) {
   const res = await fetch(url, { headers: h })
   if (!res.ok) throw new Error(`Export failed: HTTP ${res.status}`)
   const blob = await res.blob()
-  await saveBlob(blob, category ? `crawl-${category}.csv` : 'crawl-full.csv')
+  const disposition = res.headers.get('Content-Disposition') || ''
+  const filenameMatch = disposition.match(/filename="(.+)"/)
+  const filename = filenameMatch ? filenameMatch[1] : 'TalkingToad-Report.csv'
+  await saveBlob(blob, filename)
 }
 
 export async function downloadPdfReport(jobId, { includeHelp = true, includePages = true, summaryOnly = false } = {}) {
@@ -446,7 +449,10 @@ export async function downloadPdfReport(jobId, { includeHelp = true, includePage
   const res = await fetch(url, { headers: h })
   if (!res.ok) throw new Error(`PDF Export failed: HTTP ${res.status}`)
   const blob = await res.blob()
-  await saveBlob(blob, `TalkingToad-Audit-${jobId.slice(0, 8)}.pdf`)
+  const disposition = res.headers.get('Content-Disposition') || ''
+  const filenameMatch = disposition.match(/filename="(.+)"/)
+  const filename = filenameMatch ? filenameMatch[1] : 'TalkingToad-Report.pdf'
+  await saveBlob(blob, filename)
 }
 
 export async function downloadExcelReport(jobId) {
@@ -455,7 +461,10 @@ export async function downloadExcelReport(jobId) {
   const res = await fetch(url, { headers: h })
   if (!res.ok) throw new Error(`Excel Export failed: HTTP ${res.status}`)
   const blob = await res.blob()
-  await saveBlob(blob, `TalkingToad-Audit-${jobId.slice(0, 8)}.xlsx`)
+  const disposition = res.headers.get('Content-Disposition') || ''
+  const filenameMatch = disposition.match(/filename="(.+)"/)
+  const filename = filenameMatch ? filenameMatch[1] : 'TalkingToad-Report.xlsx'
+  await saveBlob(blob, filename)
 }
 
 export async function analyzeWithAi(jobId, pageUrl, type) {
