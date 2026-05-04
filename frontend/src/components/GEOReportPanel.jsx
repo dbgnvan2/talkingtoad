@@ -214,7 +214,17 @@ function VariantProgressRow({ v, isWinner, originalScore }) {
           : <span className={`text-sm font-black ${scoreColor}`}>{PCT(v.projected_score)}</span>}
       </td>
       <td className="px-3 py-2 text-center text-xs text-gray-500">
-        {pending ? '—' : v.error ? '—' : `${v.issues ?? '?'} issues`}
+        {pending ? '—' : v.error ? '—' : (
+          <span>
+            {`${v.issues ?? '?'} issues`}
+            {v.placeholder_issues?.length > 0 && (
+              <span
+                className="ml-1 text-amber-600"
+                title={`Placeholders claimed in GEO NOTES but not embedded in body: ${v.placeholder_issues.join(', ')}`}
+              >⚠️</span>
+            )}
+          </span>
+        )}
       </td>
       <td className="px-3 py-2 text-center text-xs">
         {isWinner && !pending

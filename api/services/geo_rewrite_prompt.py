@@ -581,6 +581,43 @@ _PLACEHOLDER_CITATION_RE = re.compile(
 _PLACEHOLDER_QUOTE_RE = re.compile(r"\[QUOTE\s+NEEDED[^\]]*\]", re.I)
 _PLACEHOLDER_STAT_RE = re.compile(r"\[STATISTIC[^\]]*\]", re.I)
 
+# GEO NOTES section delimiter — matches the trailing "---\nGEO NOTES\n..." block
+_GEO_NOTES_SPLIT_RE = re.compile(r"\n---\s*\nGEO NOTES\b.*$", re.S | re.I)
+
+
+def _split_body_and_notes(text: str) -> tuple[str, str]:
+    """Split rewrite text into (body, geo_notes). geo_notes may be empty string."""
+    m = _GEO_NOTES_SPLIT_RE.search(text)
+    if m:
+        return text[: m.start()], m.group(0)
+    return text, ""
+
+
+def _verify_geo_notes_placeholders(body: str, notes: str) -> list[str]:
+    """
+    Return a list of placeholder types that the LLM claimed to have added in GEO NOTES
+    but which do not actually appear in the body text.
+
+    Example: if GEO NOTES says "[CITATION NEEDED] added at: Introduction…" but the
+    body has no [CITATION NEEDED] text, "CITATION NEEDED / LINK" is returned.
+
+    This catches the failure mode where the LLM describes what it intended to add
+    rather than inserting the placeholder inline.
+    """
+    if not notes:
+        return []
+    missing: list[str] = []
+    checks = [
+        (_PLACEHOLDER_CITATION_RE, "CITATION NEEDED / LINK"),
+        (_PLACEHOLDER_STAT_RE, "STATISTIC"),
+        (_PLACEHOLDER_QUOTE_RE, "QUOTE NEEDED"),
+    ]
+    for pattern, label in checks:
+        if pattern.search(notes) and not pattern.search(body):
+            missing.append(label)
+    return missing
+
+
 # Stat regex (same pattern as issue_checker._STAT_RE)
 _STAT_RE_FULL = re.compile(
     r"\b\d[\d,]*(?:\.\d+)?\s*"
@@ -607,18 +644,23 @@ def _content_score(url: str, content: str, page_type: str = "general") -> tuple[
     are directly comparable.  Placeholder citations/quotes/stats from the
     rewriting LLM are counted as passes so the scoring rewards good rewrites
     that identify WHERE evidence should go, even if the editor must fill it in.
+
+    GEO NOTES are stripped before scoring so that placeholder descriptions in
+    the notes section (e.g. "[CITATION NEEDED] added at: Introduction…") cannot
+    inflate the score — only placeholders embedded in the body count.
     """
-    tokens = content.split()
+    body, _notes = _split_body_and_notes(content)
+    tokens = body.split()
     word_count = len(tokens)
     first_150 = " ".join(tokens[:150])
 
     fails: set[str] = set()
 
-    # Check 1 — Statistics: search FULL text + placeholders
+    # Check 1 — Statistics: search body + placeholders (body only — not GEO NOTES)
     if word_count >= 500:
         has_stat = (
-            bool(_STAT_RE_FULL.search(content))
-            or bool(_PLACEHOLDER_STAT_RE.search(content))
+            bool(_STAT_RE_FULL.search(body))
+            or bool(_PLACEHOLDER_STAT_RE.search(body))
         )
         if not has_stat:
             fails.add("STATISTICS_COUNT_LOW")
@@ -626,18 +668,18 @@ def _content_score(url: str, content: str, page_type: str = "general") -> tuple[
     # Check 2 — External citations: markdown links OR [CITATION NEEDED] placeholders
     if word_count >= 500:
         has_citation = (
-            bool(_MD_LINK_RE.search(content))         # [text](https://...)
-            or bool(_PLACEHOLDER_CITATION_RE.search(content))  # [CITATION NEEDED...]
+            bool(_MD_LINK_RE.search(body))
+            or bool(_PLACEHOLDER_CITATION_RE.search(body))
         )
         if not has_citation:
             fails.add("EXTERNAL_CITATIONS_LOW")
 
-    # Check 3 — Quotations/attribution: full text + placeholders
+    # Check 3 — Quotations/attribution: full body + placeholders
     if word_count >= 500:
         has_quote = (
-            bool(_MD_BLOCKQUOTE_RE.search(content))   # > blockquote
-            or bool(_ATTRIBUTION_RE_FULL.search(content))  # "according to" etc.
-            or bool(_PLACEHOLDER_QUOTE_RE.search(content))  # [QUOTE NEEDED...]
+            bool(_MD_BLOCKQUOTE_RE.search(body))
+            or bool(_ATTRIBUTION_RE_FULL.search(body))
+            or bool(_PLACEHOLDER_QUOTE_RE.search(body))
         )
         if not has_quote:
             fails.add("QUOTATIONS_MISSING")
@@ -651,13 +693,13 @@ def _content_score(url: str, content: str, page_type: str = "general") -> tuple[
         except Exception:
             pass  # skip check if import fails
 
-    # Check 5 — Structured elements: list items, tables, or code blocks anywhere
+    # Check 5 — Structured elements: list items, tables, or code blocks anywhere in body
     if word_count >= 500:
         has_structure = (
-            bool(_MD_UL_RE.search(content))
-            or bool(_MD_OL_RE.search(content))
-            or bool(_MD_TABLE_RE.search(content))
-            or bool(_MD_CODE_RE.search(content))
+            bool(_MD_UL_RE.search(body))
+            or bool(_MD_OL_RE.search(body))
+            or bool(_MD_TABLE_RE.search(body))
+            or bool(_MD_CODE_RE.search(body))
         )
         if not has_structure:
             fails.add("STRUCTURED_ELEMENTS_LOW")
@@ -932,8 +974,20 @@ async def stream_rewrite_variants(
         else:
             issues, projected_score = 999, 0.0
 
+        # Verify that placeholders mentioned in GEO NOTES were actually embedded in body
+        placeholder_issues: list[str] = []
+        if result.get("text"):
+            body_text, notes_text = _split_body_and_notes(result["text"])
+            placeholder_issues = _verify_geo_notes_placeholders(body_text, notes_text)
+            if placeholder_issues:
+                logger.warning(
+                    "geo_rewrite_placeholder_not_embedded",
+                    extra={"variant": i, "missing": placeholder_issues},
+                )
+
         result["issues"] = issues
         result["projected_score"] = projected_score
+        result["placeholder_issues"] = placeholder_issues
         variants.append(result)
 
         # Record baseline from first try; update evolutionary best
@@ -948,6 +1002,7 @@ async def stream_rewrite_variants(
             "index": i,
             "issues": issues,
             "projected_score": projected_score,
+            "placeholder_issues": placeholder_issues,
             "error": result.get("error"),
             "text": result.get("text", ""),
             "preview": (result["text"][:120] + "…") if result.get("text") else None,
@@ -980,6 +1035,7 @@ async def stream_rewrite_variants(
                 "index": v["index"],
                 "issues": v.get("issues", 999),
                 "projected_score": v.get("projected_score", 0.0),
+                "placeholder_issues": v.get("placeholder_issues", []),
                 "rank": v.get("rank"),
                 "error": v.get("error"),
                 "text": v.get("text", ""),
