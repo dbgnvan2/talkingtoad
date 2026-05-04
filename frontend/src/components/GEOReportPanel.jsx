@@ -185,6 +185,16 @@ function JSRenderingSection({ data }) {
 
 const PCT = score => `${Math.round((score ?? 0) * 100)}%`
 
+function downloadText(text, filename) {
+  const blob = new Blob([text], { type: 'text/markdown' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
 function VariantProgressRow({ v, isWinner, originalScore }) {
   const pending = v.projected_score === undefined
   const scoreColor = !pending && v.projected_score >= 0.90
@@ -215,6 +225,17 @@ function VariantProgressRow({ v, isWinner, originalScore }) {
         {v.error
           ? <span className="text-red-500">{v.error}</span>
           : v.preview || '…'}
+      </td>
+      <td className="px-3 py-2 text-center">
+        {!pending && !v.error && v.text && (
+          <button
+            onClick={() => downloadText(v.text, `rewrite-attempt-${v.index + 1}.md`)}
+            className="px-2 py-0.5 text-xs bg-indigo-100 text-indigo-700 rounded hover:bg-indigo-200 whitespace-nowrap"
+            title="Download this rewrite as a Markdown file"
+          >
+            ↓ Download
+          </button>
+        )}
       </td>
     </tr>
   )
@@ -437,6 +458,7 @@ function RewriteAssist({ jobId, report }) {
                         <th className="px-3 py-2 text-center font-bold text-indigo-700 w-20">Issues</th>
                         <th className="px-3 py-2 text-center font-bold text-indigo-700 w-20">Rank</th>
                         <th className="px-3 py-2 text-left font-bold text-indigo-700">Preview</th>
+                        <th className="px-3 py-2 text-center font-bold text-indigo-700 w-24"></th>
                       </tr>
                     </thead>
                     <tbody>

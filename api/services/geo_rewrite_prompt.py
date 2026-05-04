@@ -808,6 +808,7 @@ async def stream_rewrite_variants(
             "issues": issues,
             "projected_score": projected_score,
             "error": result.get("error"),
+            "text": result.get("text", ""),
             "preview": (result["text"][:120] + "…") if result.get("text") else None,
             "completed": i + 1,
             "total": n,
@@ -840,6 +841,7 @@ async def stream_rewrite_variants(
                 "projected_score": v.get("projected_score", 0.0),
                 "rank": v.get("rank"),
                 "error": v.get("error"),
+                "text": v.get("text", ""),
                 "preview": (v["text"][:120] + "…") if v.get("text") else None,
             }
             for v in variants
