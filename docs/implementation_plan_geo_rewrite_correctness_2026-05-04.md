@@ -289,11 +289,24 @@ Step 12 — Integration fixture (§9.9)
         └─ test CR9_9_a (file-exists)
         Other CR9_9_* tests skipped by default; user runs manually.
 
-Step 13 — Full test suite run; status report against this plan.
+Step 13 — Adjacent fixes (per user directive 2026-05-04: "all code is your
+         responsibility"). See §5 for full descriptions and tests.
+        Sub-steps:
+          13a. Delete dead code: _score_markdown + 3 obsolete test_c6_* tests
+          13b. Delete dead wrapper: _project_score (no callers in production)
+          13c. Tighten _split_body_and_notes whitespace tolerance + test
+          13d. Tighten _count_faq_pairs heading detection (require question word)
+          13e. Include code-block contents in _extract_specific_numbers
+        └─ tests CR_ADJ_*  (5 tests)
+
+        Skipped (out of scope, project is English-only):
+          - i18n FAQ question words (would expand scope into multilingual support)
+
+Step 14 — Full test suite run; status report against this plan.
 ```
 
-**Total new tests:** 61 unit tests + 5 integration tests = **66 tests**.
-**Estimated effort:** 8–10 hours (entity extraction and partial-pass refactor are the largest items).
+**Total new tests:** 66 unit tests + 5 integration tests = **71 tests**.
+**Estimated effort:** 9–11 hours (entity extraction and partial-pass refactor are the largest items; adjacent fixes add ~1 hour).
 
 ---
 
@@ -329,44 +342,94 @@ for LLM variance.
 
 ---
 
-## 5. Adjacent issues found, not fixed
+## 5. Adjacent fixes (in scope per user directive 2026-05-04)
 
-These were noticed during the audit. They are NOT in scope per the spec's
-§1.2 non-goals and the user-level "old code is not someone else's problem"
-rule. Listed here so the user can decide whether to address them later.
+The user override: "fix the 6 adjacent issues. all code is your responsibility."
+Five of the six become Step 13 in the implementation order. The sixth (i18n
+question words) is genuinely out of scope and is documented below with the
+reason for not addressing it.
 
-1. **`_score_markdown` is dead code.** Defined at `geo_rewrite_prompt.py:1100`,
-   no production callers. Only used in `test_c6_*` tests that exist for
-   historical reasons. Could be deleted in a follow-up.
+### CR_ADJ_1 — Delete dead `_score_markdown` and its tests
 
-2. **`_project_score` is a one-line wrapper around `_content_score`** that
-   ignores its `original_findings` parameter. The wrapper appears to predate
-   the move to evolutionary scoring and is no longer needed. Production
-   doesn't call it. Could be removed in a follow-up.
+**Site:** `geo_rewrite_prompt.py:1100–1106`. Zero production callers (verified
+via `grep -rn "_score_markdown(" --include="*.py"`). Used only by 3 test
+methods `test_c6_*` in `TestScoreMarkdown` that exist for historical reasons.
 
-3. **`_split_body_and_notes` regex ignores trailing whitespace differences**
-   between the prompt instruction and the LLM's actual output. After §8.3
-   tightens the regex, edge cases like `---  \nGEO NOTES` (trailing spaces
-   on the dashes) may need explicit allowlist. Will be addressed if §8.3
-   tests reveal the issue; otherwise follow-up.
+**Action:** Delete the function. Delete the 3 `test_c6_*` tests. Remove
+`_score_markdown` from the import block.
 
-4. **`_count_faq_pairs` heading-question detection still uses bare `?`
-   suffix.** Spec §8.1 narrows the count rule but doesn't change the
-   detection. A heading like `## Migration v2 → v3?` would still count if
-   followed by a paragraph. Acceptable for this pass; flag as future work.
+**Test:** `CR_ADJ_1_score_markdown_deleted` — `from
+api.services.geo_rewrite_prompt import _score_markdown` raises `ImportError`.
 
-5. **`_extract_specific_numbers` strips code blocks before scanning.** This
-   is correct for the preservation-floor use case but means a code block
-   containing the literal `45 minutes` (e.g. a benchmark assertion) won't
-   be in the original number set. Spec §1.3 requires "no fabricated
-   number" — a number that appears only in code may be flagged as
-   fabricated when it's actually preserved verbatim. Edge case; flag as
-   future work.
+### CR_ADJ_2 — Delete dead `_project_score` wrapper
 
-6. **`_FAQ_QUESTION_WORDS_RE` doesn't include some common interrogatives**
-   like "Wo" / "Por qué" (multilingual) or technical question forms like
-   "Given X, what is...". Out of scope for an English-language tool;
-   noting for future i18n work.
+**Site:** `geo_rewrite_prompt.py:1062–1073`. Single-line wrapper around
+`_content_score` that drops its `original_findings` parameter. Zero production
+callers. The actual projection logic lives in `_project_score_from_findings`
+(line 1176) which is correctly named.
+
+**Action:** Delete `_project_score`. No tests reference it.
+
+**Test:** `CR_ADJ_2_project_score_deleted` — `from
+api.services.geo_rewrite_prompt import _project_score` raises `ImportError`.
+
+### CR_ADJ_3 — Whitespace tolerance in `_split_body_and_notes`
+
+After §8.3 tightens the regex, the LLM's actual output may include trailing
+whitespace on the `---` separator line (e.g. `---  \nGEO NOTES`). The spec's
+new regex pattern from §8.3 already allows `\s*` after `---`, but does not
+allow leading whitespace before the `-` bullet markers in the notes section
+(LLMs sometimes indent bullets).
+
+**Action:** In §8.3's new regex, change the bullet-pattern to allow optional
+leading whitespace: `(?:\s*-\s+\[[A-Z\s]+\][^\n]*\n?)+`.
+
+**Test:** `CR_ADJ_3_indented_bullets_split_correctly` — input with
+`---\nGEO NOTES\n  - [CITATION NEEDED] indented` is split correctly.
+
+### CR_ADJ_4 — Heading-FAQ requires question word, not bare `?` suffix
+
+**Site:** `geo_rewrite_prompt.py:518–553`. Today, any heading ending in `?`
+qualifies as a question (e.g. `## Migration v2 → v3?`). After §8.1 narrows
+the count to ≥2 heading-questions, false positives like `## Migration v2 → v3?`
+plus `## What about v4?` would still count as 2 → 2 FAQ pairs.
+
+**Action:** When `is_heading=True`, also require `is_question_word=True` (the
+heading must start with What/How/Why/etc. after stripping the `#` prefix).
+The `_FAQ_QUESTION_WORDS_RE` already handles `#+\s+` prefix, so this is just
+a tightening of the existing condition.
+
+**Test:** `CR_ADJ_4_heading_without_question_word_not_counted` — `## Migration?`
+followed by an answer paragraph returns `faq_pair_count == 0`.
+
+### CR_ADJ_5 — `_extract_specific_numbers` includes code-block contents
+
+**Site:** `geo_rewrite_prompt.py:642`. Today, code blocks are stripped before
+the number scan. If the original page has a benchmark like
+` ```45 minutes for 1M rows``` ` and the rewrite preserves it verbatim, the
+hallucination guard (Hard Prohibition 9) would still fire because "45 minutes"
+isn't in `original_number_set`.
+
+**Action:** Compute `_extract_specific_numbers` on the FULL text (don't
+strip code first). Other extractors (FAQ, lists, tables, links) still
+operate on `text_no_code` because code blocks aren't prose. Numbers are the
+exception.
+
+**Test:** `CR_ADJ_5_numbers_in_code_blocks_captured` — input
+`...\n` + "```\n" + `45 minutes\n` + "```\n" returns `"45 minutes"` in
+`original_number_set`.
+
+### Skipped — i18n question-word coverage
+
+Genuinely out of scope. The TalkingToad codebase has no i18n infrastructure:
+no locale negotiation, no language detection, no multilingual fixture pages.
+Adding multilingual question-word patterns to `_FAQ_QUESTION_WORDS_RE` would
+introduce false positives for English content (e.g. "May" the month vs. "May"
+the modal verb in Spanish "Puede / May / Wo") without delivering working
+multilingual support. If the project later adds i18n, this becomes part of
+that work; doing it now is partial work that doesn't compose into anything.
+
+**Status:** documented; not implemented.
 
 ---
 
