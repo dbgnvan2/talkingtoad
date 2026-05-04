@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react'
-import { generateGeoReport, getGeoAiModel, setGeoAiModel } from '../api.js'
+import React, { useState, useEffect, useRef } from 'react'
+import { generateGeoReport, getGeoAiModel, setGeoAiModel, generateGeoRewritePrompt, runGeoRewrite } from '../api.js'
 import Spinner from './Spinner.jsx'
 
 const TIER_COLORS = {
@@ -178,6 +178,244 @@ function JSRenderingSection({ data }) {
   )
 }
 
+// ---------------------------------------------------------------------------
+// RewriteAssist — only shown when overall_score < 0.90
+// ---------------------------------------------------------------------------
+
+function VariantRow({ v, isWinner }) {
+  return (
+    <tr className={`border-t border-gray-100 ${isWinner ? 'bg-green-50' : ''}`}>
+      <td className="px-3 py-2 text-center text-xs font-bold text-gray-500">#{v.index + 1}</td>
+      <td className="px-3 py-2 text-center">
+        <span className={`text-sm font-bold ${v.issues === 0 ? 'text-green-600' : v.issues <= 2 ? 'text-amber-600' : 'text-red-600'}`}>
+          {v.issues ?? '—'}
+        </span>
+      </td>
+      <td className="px-3 py-2 text-center text-xs">
+        {isWinner ? <span className="px-2 py-0.5 bg-green-100 text-green-700 rounded-full font-bold">Winner</span> : `#${v.rank ?? '?'}`}
+      </td>
+      <td className="px-3 py-2 text-xs text-gray-500 italic">
+        {v.error ? <span className="text-red-500">{v.error}</span> : (v.text?.slice(0, 60) + (v.text?.length > 60 ? '…' : '') || '—')}
+      </td>
+    </tr>
+  )
+}
+
+function RewriteAssist({ jobId, report }) {
+  const [mode, setMode] = useState('prompt')  // 'prompt' | 'rewrite'
+  const [pageContent, setPageContent] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState(null)
+  const [promptResult, setPromptResult] = useState(null)
+  const [rewriteResult, setRewriteResult] = useState(null)
+  const [copied, setCopied] = useState(false)
+  const [expanded, setExpanded] = useState(false)
+  const promptRef = useRef(null)
+  const winnerRef = useRef(null)
+
+  const score = Math.round((report.overall_score ?? 0) * 100)
+
+  const handleCopy = (ref, text) => {
+    const content = text || ref?.current?.value || ref?.current?.textContent || ''
+    navigator.clipboard.writeText(content).then(() => {
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    })
+  }
+
+  const handleGenerate = async () => {
+    setLoading(true)
+    setError(null)
+    setPromptResult(null)
+    setRewriteResult(null)
+    try {
+      if (mode === 'prompt') {
+        const res = await generateGeoRewritePrompt(jobId, { useCachedReport: true })
+        setPromptResult(res)
+      } else {
+        if (!pageContent.trim()) {
+          setError('Paste the original page content above before running Auto-Rewrite.')
+          setLoading(false)
+          return
+        }
+        const res = await runGeoRewrite(jobId, { pageContent, tries: 5 })
+        setRewriteResult(res)
+      }
+    } catch (e) {
+      setError(e.message || 'Failed')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <div className="border border-indigo-200 bg-indigo-50 rounded-2xl p-5 space-y-4">
+      {/* Header */}
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className="flex items-center gap-2">
+            <span className="text-lg">✍️</span>
+            <h3 className="font-bold text-indigo-900 text-sm">Rewrite Assist</h3>
+            <span className="px-2 py-0.5 bg-amber-100 text-amber-700 text-xs font-bold rounded-full">
+              Score {score}% → target 90%
+            </span>
+          </div>
+          <p className="text-xs text-indigo-700 mt-1">
+            Generate a targeted LLM prompt or auto-rewrite the page to fix failing GEO checks.
+          </p>
+        </div>
+        <button
+          onClick={() => setExpanded(e => !e)}
+          className="text-indigo-400 hover:text-indigo-700 text-sm font-bold"
+        >
+          {expanded ? '▲ Hide' : '▼ Show'}
+        </button>
+      </div>
+
+      {expanded && (
+        <>
+          {/* Mode toggle */}
+          <div className="flex gap-1 bg-white border border-indigo-200 rounded-xl p-1 w-fit">
+            {[
+              { id: 'prompt', label: '📋 Get Prompt' },
+              { id: 'rewrite', label: '🤖 Auto-Rewrite (5 tries)' },
+            ].map(m => (
+              <button
+                key={m.id}
+                onClick={() => { setMode(m.id); setPromptResult(null); setRewriteResult(null); setError(null) }}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${
+                  mode === m.id ? 'bg-indigo-600 text-white shadow-sm' : 'text-indigo-600 hover:bg-indigo-50'
+                }`}
+              >
+                {m.label}
+              </button>
+            ))}
+          </div>
+
+          {/* Page content textarea (auto-rewrite only) */}
+          {mode === 'rewrite' && (
+            <div>
+              <label className="text-xs font-bold text-indigo-800 block mb-1">
+                Paste original page content (Markdown or plain text)
+              </label>
+              <textarea
+                value={pageContent}
+                onChange={e => setPageContent(e.target.value)}
+                rows={6}
+                placeholder="Paste the page text here…"
+                className="w-full text-xs font-mono border border-indigo-200 rounded-xl p-3 bg-white resize-y focus:outline-none focus:ring-2 focus:ring-indigo-400"
+              />
+            </div>
+          )}
+
+          {/* Generate button */}
+          <button
+            onClick={handleGenerate}
+            disabled={loading}
+            className="px-4 py-2 text-sm font-bold bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 disabled:opacity-50 transition-colors"
+          >
+            {loading
+              ? (mode === 'rewrite' ? 'Rewriting (5 tries)…' : 'Generating…')
+              : (mode === 'rewrite' ? '▶ Auto-Rewrite' : '▶ Generate Prompt')}
+          </button>
+
+          {loading && <Spinner />}
+
+          {error && (
+            <div className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-xl p-3">{error}</div>
+          )}
+
+          {/* Prompt mode results */}
+          {promptResult && mode === 'prompt' && (
+            <div className="space-y-3">
+              <div className="flex items-center gap-3 text-xs text-indigo-700 bg-white border border-indigo-200 rounded-xl p-3">
+                <span>🔴 <strong>{promptResult.mandatory_count}</strong> mandatory fixes</span>
+                <span>·</span>
+                <span>✅ <strong>{promptResult.fixable_count}</strong> fixable without fabrication</span>
+                <span>·</span>
+                <span>📄 Page type: <strong>{promptResult.page_type}</strong></span>
+              </div>
+              <div className="relative">
+                <label className="text-xs font-bold text-indigo-800 block mb-1">System Prompt — paste into your LLM</label>
+                <textarea
+                  ref={promptRef}
+                  readOnly
+                  value={promptResult.system_prompt || ''}
+                  rows={12}
+                  className="w-full text-xs font-mono border border-indigo-200 rounded-xl p-3 bg-white resize-y"
+                />
+                <button
+                  onClick={() => handleCopy(promptRef)}
+                  className="absolute top-6 right-2 px-2 py-1 text-xs bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"
+                >
+                  {copied ? '✓ Copied' : 'Copy'}
+                </button>
+              </div>
+              <p className="text-xs text-indigo-600">
+                Paste this prompt into ChatGPT, Claude, or Gemini, then add your page content after it.
+              </p>
+            </div>
+          )}
+
+          {/* Auto-rewrite results */}
+          {rewriteResult && mode === 'rewrite' && (
+            <div className="space-y-4">
+              {/* Variant comparison table */}
+              <div>
+                <h4 className="text-xs font-bold text-indigo-800 mb-2">Variant Scores (fewer issues = better)</h4>
+                <div className="overflow-x-auto rounded-xl border border-indigo-200 bg-white">
+                  <table className="w-full text-xs">
+                    <thead className="bg-indigo-50">
+                      <tr>
+                        <th className="px-3 py-2 text-center font-bold text-indigo-700">Variant</th>
+                        <th className="px-3 py-2 text-center font-bold text-indigo-700">Issues</th>
+                        <th className="px-3 py-2 text-center font-bold text-indigo-700">Rank</th>
+                        <th className="px-3 py-2 text-left font-bold text-indigo-700">Preview</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {rewriteResult.variants?.map(v => (
+                        <VariantRow
+                          key={v.index}
+                          v={v}
+                          isWinner={v.index === rewriteResult.winner_index}
+                        />
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <p className="text-xs text-indigo-600 mt-1">
+                  Winner: variant #{(rewriteResult.winner_index ?? 0) + 1} with {rewriteResult.winner_issues ?? '?'} GEO issues remaining
+                </p>
+              </div>
+
+              {/* Winner text */}
+              {rewriteResult.winner_text && (
+                <div className="relative">
+                  <label className="text-xs font-bold text-indigo-800 block mb-1">Best Rewrite (copy into your CMS)</label>
+                  <textarea
+                    ref={winnerRef}
+                    readOnly
+                    value={rewriteResult.winner_text}
+                    rows={14}
+                    className="w-full text-xs font-mono border border-indigo-200 rounded-xl p-3 bg-white resize-y"
+                  />
+                  <button
+                    onClick={() => handleCopy(winnerRef)}
+                    className="absolute top-6 right-2 px-2 py-1 text-xs bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"
+                  >
+                    {copied ? '✓ Copied' : 'Copy'}
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  )
+}
+
 export default function GEOReportPanel({ jobId, domain }) {
   const [report, setReport] = useState(null)
   const [loading, setLoading] = useState(false)
@@ -278,6 +516,11 @@ export default function GEOReportPanel({ jobId, domain }) {
               <p className="text-xs text-amber-600 mt-2">Tactics with controlled measurement</p>
             </div>
           </div>
+
+          {/* Rewrite Assist — shown when score < 90% */}
+          {(report.overall_score ?? 0) < 0.90 && (
+            <RewriteAssist jobId={jobId} report={report} />
+          )}
 
           {/* Section tabs */}
           <div className="flex gap-1 bg-gray-100 rounded-xl p-1">

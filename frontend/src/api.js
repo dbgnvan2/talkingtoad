@@ -861,3 +861,33 @@ export async function setGeoAiModel(modelId) {
   })
   return checkResponse(res)
 }
+
+export async function generateGeoRewritePrompt(jobId, { url, pageType, useCachedReport = true } = {}) {
+  const res = await fetch('/api/ai/geo-rewrite-prompt', {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify({
+      job_id: jobId,
+      url,
+      page_type: pageType,
+      use_cached_report: useCachedReport,
+    }),
+  })
+  return checkResponse(res)
+}
+
+export async function runGeoRewrite(jobId, { url, pageType, pageContent, tries = 5, model } = {}) {
+  const res = await fetch('/api/ai/geo-rewrite', {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify({
+      job_id: jobId,
+      url,
+      page_type: pageType,
+      page_content: pageContent,
+      tries,
+      model,
+    }),
+  })
+  return checkResponse(res)
+}

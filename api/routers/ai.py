@@ -468,3 +468,169 @@ async def generate_geo_report(
         logging.getLogger(__name__).warning(f"Failed to cache geo_report: {e}")
 
     return {"success": True, "cached": False, "report": report_dict}
+
+
+# ── GEO Rewrite Prompt Generator (Phase D) ────────────────────────────────
+
+@router.post("/geo-rewrite-prompt")
+async def geo_rewrite_prompt(
+    body: dict,
+    store=Depends(get_store),
+):
+    """
+    Generate a structured GEO rewrite prompt from a job's cached GEO report.
+
+    Request body:
+        job_id:            str — required
+        url:               str — page URL (defaults to job target_url)
+        page_type:         str — article|technical|faq|comparison|general (auto-detected if omitted)
+        use_cached_report: bool — use cached GEO report (default true)
+
+    Returns:
+        system_prompt:   str — complete prompt for the rewriting LLM
+        current_score:   float
+        target_score:    float
+        mandatory_count: int
+        fixable_count:   int
+        page_type:       str
+        findings_count:  int
+    """
+    job_id = body.get("job_id")
+    if not job_id:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=400, detail="job_id is required")
+
+    job = await store.get_job(job_id)
+    if not job:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    # Resolve GEO report — cached or force-generate
+    use_cached = body.get("use_cached_report", True)
+    report_dict = None
+
+    if use_cached and job.geo_report:
+        import json as _json
+        try:
+            report_dict = _json.loads(job.geo_report) if isinstance(job.geo_report, str) else job.geo_report
+        except Exception:
+            pass
+
+    if not report_dict:
+        from fastapi import HTTPException
+        raise HTTPException(
+            status_code=404,
+            detail="No GEO report found for this job. Run POST /api/ai/geo-report first.",
+        )
+
+    url = body.get("url") or job.target_url
+
+    # Auto-detect page type if not provided
+    provided_page_type = body.get("page_type")
+    if provided_page_type:
+        page_type = provided_page_type
+    else:
+        from api.services.geo_rewrite_prompt import _detect_page_type
+        headings = report_dict.get("headings_outline", [])
+        schema_types = report_dict.get("schema_types", [])
+        page_type = _detect_page_type(url, schema_types, headings)
+
+    from api.services.geo_rewrite_prompt import generate_rewrite_prompt
+    result = generate_rewrite_prompt(report_dict, page_type, url=url)
+
+    return {"success": True, **result}
+
+
+# ── GEO Rewrite Executor — best-of-5 (Phase G) ────────────────────────────
+
+@router.post("/geo-rewrite")
+@limiter.limit(AI_ANALYSIS_LIMIT)
+async def geo_rewrite(
+    request: Request,
+    body: dict,
+    store=Depends(get_store),
+):
+    """
+    Rewrite page content using the GEO rubric, running n variants and returning the best.
+
+    Request body:
+        job_id:       str — required
+        page_content: str — original page text (Markdown or plain)
+        url:          str — page URL (for issue-checker domain checks, default: job target_url)
+        page_type:    str — article|technical|faq|comparison|general
+        tries:        int — number of variants to generate (default 5)
+        model:        str — preferred model (auto-resolved if omitted)
+
+    Returns:
+        winner_text:   str
+        winner_index:  int
+        winner_issues: int
+        variants:      list[dict]
+        improvement:   dict
+        prompt_meta:   dict (mandatory_count, fixable_count, page_type)
+    """
+    job_id = body.get("job_id")
+    if not job_id:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=400, detail="job_id is required")
+
+    page_content = body.get("page_content", "")
+    if not page_content.strip():
+        from fastapi import HTTPException
+        raise HTTPException(status_code=400, detail="page_content is required")
+
+    job = await store.get_job(job_id)
+    if not job:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    # Resolve GEO report
+    import json as _json
+    report_dict = None
+    if job.geo_report:
+        try:
+            report_dict = _json.loads(job.geo_report) if isinstance(job.geo_report, str) else job.geo_report
+        except Exception:
+            pass
+    if not report_dict:
+        report_dict = {"findings": [], "overall_score": 1.0}
+
+    url = body.get("url") or job.target_url
+    page_type = body.get("page_type", "general")
+    tries = min(int(body.get("tries", 5)), 10)  # cap at 10
+
+    # Resolve model
+    from api.services.geo_analyzer import _resolve_model
+    preferred = body.get("model")
+    try:
+        model, provider = _resolve_model(preferred)
+    except RuntimeError as e:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=503, detail=str(e))
+
+    # Generate the prompt
+    from api.services.geo_rewrite_prompt import generate_rewrite_prompt, execute_rewrite_best_of_n
+    prompt_result = generate_rewrite_prompt(report_dict, page_type, url=url)
+
+    # Run best-of-N rewrites
+    rewrite_result = await execute_rewrite_best_of_n(
+        page_content=page_content,
+        rewrite_prompt_result=prompt_result,
+        model=model,
+        provider=provider,
+        url=url,
+        page_type=page_type,
+        n=tries,
+    )
+
+    return {
+        "success": True,
+        "prompt_meta": {
+            "mandatory_count": prompt_result["mandatory_count"],
+            "fixable_count": prompt_result["fixable_count"],
+            "page_type": prompt_result["page_type"],
+            "model_used": model,
+            "provider": provider,
+        },
+        **rewrite_result,
+    }
