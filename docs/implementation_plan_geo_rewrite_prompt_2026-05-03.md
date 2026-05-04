@@ -199,6 +199,33 @@ The `rewrite_prompt` string follows the structure from the spec:
 - **(f) PRESERVATION CONSTRAINTS** — factual claims, topic, authorial voice, user-specified constraints
 - **(g) UNCERTAINTY HANDLING** — `[SOURCE NEEDED]` pattern, never fabricate rule
 - **(h) ITERATION INSTRUCTION** — how to use analyzer delta reports in subsequent runs
+- **(i) STYLE CONSTRAINTS — anti-AI-writing rules** (see below)
+
+#### Section (i) — Style Constraints detail
+
+The prompt must include a dedicated section instructing the rewriter to produce text that does not read as AI-generated. This is grounded in empirical lists of LLM writing tells, not stylistic preference:
+
+**Banned phrases (absolute prohibition — these must not appear in the output):**
+- Sentence starters: "In today's world", "In the modern world", "In an era of", "It is worth noting", "It is important to note", "Notably", "Furthermore" / "Moreover" / "Additionally" as sentence-openers
+- Meta-commentary: "This article will explore", "We will examine", "Let's dive in", "Let's explore", "As we delve into", "As we can see", "As mentioned above", "It goes without saying"
+- Hollow intensifiers: "Cutting-edge", "State-of-the-art", "Robust" (as vague adjectives), "Seamless", "Comprehensive" (in body text, not titles), "Unlock the potential of", "Harness the power of", "Empower your [X]", "Leverage [X] to [Y]", "Streamline your [X]"
+- Filler conclusions: "In conclusion", "To summarize", "In summary" as H2 headings; "This is just one example of…"; "The possibilities are endless"
+- Hedging clusters: "It can be said that", "One might argue", "It is essential to understand that", "At its core"
+
+**Structural tells to avoid:**
+- Do not convert prose arguments into bullet lists unless the original used lists, or the content is genuinely enumerable. Maximum 2 bullet lists per 500 words of original content.
+- Do not add a "Key Takeaways" or "Summary" section that was not in the original.
+- Do not open every H2 with a gerund phrase ("Understanding X", "Exploring Y", "Implementing Z").
+- Do not end every paragraph with a transition sentence pointing to the next section.
+- Do not produce uniform medium-length sentences (9–15 words) throughout. Mix short sentences (≤ 8 words) and longer ones (20+ words) within each paragraph.
+
+**Required style rules:**
+- Preserve the original author's vocabulary register (technical if technical, conversational if conversational).
+- Keep contractions wherever the original used them; do not add them if the original avoided them.
+- Keep first-person ("I", "we") if the original used it.
+- Preserve domain jargon and product-specific terminology exactly.
+- If the original had a specific sentence rhythm (e.g., terse declarative sentences, or long flowing academic prose), maintain that rhythm in rewritten passages.
+- Concrete specifics over generic descriptions: "processed 2,400 requests in the first week" over "quickly gained traction".
 
 Page type must affect the rubric:
 - `"article"` — enables author byline, date published, date modified requirements
@@ -208,7 +235,7 @@ Page type must affect the rubric:
 - `"reference"` — enables structured elements, JSON-LD validity, external citations requirements
 - `"generic"` — applies all non-conditional checks
 
-**Acceptance criterion C.1:** The generated prompt contains all 8 sections (ROLE through ITERATION).  
+**Acceptance criterion C.1:** The generated prompt contains all 9 sections (ROLE through STYLE CONSTRAINTS).  
 **Test:** `tests/test_geo_rewrite_prompt.py::test_prompt_has_all_sections`.
 
 **Acceptance criterion C.2:** For a page type `"how-to"`, the prompt includes a code block instruction; for `"marketing"`, it does not.  
@@ -222,6 +249,9 @@ Page type must affect the rubric:
 
 **Acceptance criterion C.5:** `weak_checks` lists at minimum the three checks identified in the audit below as weakly defined.  
 **Test:** `tests/test_geo_rewrite_prompt.py::test_weak_checks_surfaced`.
+
+**Acceptance criterion C.6:** The generated prompt's STYLE CONSTRAINTS section contains at least 10 banned phrases and at least 3 structural prohibitions.  
+**Test:** `tests/test_geo_rewrite_prompt.py::test_style_constraints_populated`.
 
 ---
 
@@ -265,35 +295,129 @@ Response:
 
 ### Phase E — Frontend (`frontend/src/components/GEOReportPanel.jsx`)
 
-Add a "Get Rewrite Prompt" section to `GEOReportPanel`, visible after a GEO report has been run and only if `overall_score < 0.90`.
+Add a "Rewrite" section to `GEOReportPanel`, visible after a GEO report has been run and only if `overall_score < 0.90`.
+
+Two modes, toggled by the user:
+1. **Prompt-only mode** — calls `POST /api/ai/geo-rewrite-prompt`, returns the prompt text for the user to paste into their own LLM. Shows copy button.
+2. **Auto-rewrite mode** — calls `POST /api/ai/geo-rewrite` (Phase G), runs best-of-5, returns the winning rewrite with score comparison table.
 
 UI elements:
 - Page type selector: auto-detected from URL/content, user can override
-- "Generate Rewrite Prompt" button (calls `POST /api/ai/geo-rewrite-prompt`)
-- Copy-to-clipboard button for the prompt
-- Scoring path summary: mandatory / high-value / low-value checks with current pass/fail state
-- Annotations table (collapsible): prompt section → analyzer check
-- Weak checks warning panel: "These checks may require human-supplied content or cannot be satisfied without fabrication"
+- Mode toggle: "Get Prompt" vs "Auto-Rewrite (5 tries)"
+- Run button (label changes by mode)
+- **Prompt-only result:** copy-to-clipboard text area, scoring path summary, annotations (collapsible), weak checks warning
+- **Auto-rewrite result:** winning rewrite in a `<textarea>` (copyable), score comparison table showing all 5 variants with their static GEO scores, diff count of issues resolved, copy button
 
-**Acceptance criterion E.1:** "Get Rewrite Prompt" button is only shown when `overall_score < 0.90`.  
+**Acceptance criterion E.1:** "Rewrite" section is only shown when `overall_score < 0.90`.  
 **Test:** `tests/GEOReportPanel.test.jsx::test_rewrite_button_hidden_at_90` (mock report with score 0.92).
 
-**Acceptance criterion E.2:** Page type selector defaults to auto-detected type; user can change it before generating.  
+**Acceptance criterion E.2:** Page type selector defaults to auto-detected type; user can change it before running.  
 **Test:** `tests/GEOReportPanel.test.jsx::test_page_type_selector_exists`.
 
-**Acceptance criterion E.3:** Copy button uses `navigator.clipboard.writeText` and shows "Copied!" confirmation.  
+**Acceptance criterion E.3:** In prompt-only mode, copy button uses `navigator.clipboard.writeText` and shows "Copied!" confirmation.  
 **Test:** `tests/GEOReportPanel.test.jsx::test_copy_button_feedback`.
+
+**Acceptance criterion E.4:** In auto-rewrite mode, the score comparison table shows exactly 5 rows with variant index, score, and pass/fail counts.  
+**Test:** `tests/GEOReportPanel.test.jsx::test_score_table_shows_five_rows`.
 
 ---
 
-### Phase F — `api/api.js` (frontend API function)
+### Phase F — `api/api.js` (frontend API functions)
 
 ```javascript
 export async function generateGeoRewritePrompt(jobId, { url, pageType, useCachedReport = true } = {}) { ... }
+export async function runGeoRewrite(jobId, { url, pageType, pageContent, tries = 5 } = {}) { ... }
 ```
 
-**Acceptance criterion F.1:** Function exists and is called by GEOReportPanel with correct parameters.  
-**Test:** checked by E.1 test via mock.
+**Acceptance criterion F.1:** Both functions exist and are called by GEOReportPanel with correct parameters.  
+**Test:** checked by E.1 and E.4 tests via mock.
+
+---
+
+### Phase G — Best-of-5 rewrite executor (`api/services/geo_rewrite_prompt.py` + new endpoint)
+
+This is the "try 5 times and pick the best" feature. It takes the original page content, generates 5 LLM rewrite variants using the generated prompt, scores each variant with the static GEO checks, and returns the highest-scoring one.
+
+#### Service function: `execute_rewrite_best_of_n`
+
+```python
+async def execute_rewrite_best_of_n(
+    page_content: str,        # original page text/markdown
+    rewrite_prompt: str,      # prompt from generate_rewrite_prompt()
+    model: str,
+    provider: str,
+    n: int = 5,
+) -> dict:
+```
+
+Steps:
+1. Run `n` parallel LLM calls (via `asyncio.gather`) each applying `rewrite_prompt` to `page_content`
+2. For each variant, parse the markdown output using BeautifulSoup (wrap in `<html><body>…</body></html>`) and run `_run_geo_checks()` against a synthetic `ParsedPage`
+3. Score each variant: count of GEO issues fired (lower = better); tiebreak on issue impact sum
+4. Return:
+   ```python
+   {
+     "winner": {"content": str, "issues_fired": int, "score": float, "index": int},
+     "all_variants": [{"index": int, "issues_fired": int, "score": float}],  # content omitted to save tokens
+     "tries": int,
+   }
+   ```
+
+**Scoring note:** The static checker requires a full `ParsedPage` with fields like `is_spa_shell`, `author_detected`, `blockquote_count`, etc. The rewrite executor builds a synthetic `ParsedPage` from the variant's parsed HTML, populating the same fields `parse_page()` would set. This reuses `parser.py`'s helper functions directly — they accept `BeautifulSoup` objects, so no HTTP fetch is needed.
+
+**Parallelism:** All 5 LLM calls run concurrently via `asyncio.gather(return_exceptions=True)`. Failed calls (network error, malformed response) are skipped; if all 5 fail, raise `RuntimeError`. If 1–4 succeed, score from the successes.
+
+**Acceptance criterion G.1:** With 5 mock LLM responses, `execute_rewrite_best_of_n` returns the variant with fewest GEO issues as the winner.  
+**Test:** `tests/test_geo_rewrite_prompt.py::test_best_of_n_picks_winner`.
+
+**Acceptance criterion G.2:** If 2 of 5 LLM calls fail (exception), the function still returns a winner from the 3 successful variants.  
+**Test:** `tests/test_geo_rewrite_prompt.py::test_best_of_n_tolerates_failures`.
+
+**Acceptance criterion G.3:** All 5 LLM calls are launched concurrently (start within 100ms of each other), not sequentially.  
+**Test:** `tests/test_geo_rewrite_prompt.py::test_best_of_n_is_concurrent` — asserts total wall time < 2× single call time when calls are mocked with 0.1s delay.
+
+#### New API endpoint: `POST /api/ai/geo-rewrite`
+
+```json
+{
+  "job_id": "abc123",
+  "url": "https://example.com/article",
+  "page_type": "article",
+  "page_content": "# My Article\n\nBody text here...",
+  "tries": 5
+}
+```
+
+`page_content` is the original page text (markdown or plain text). If omitted and `url` is provided, the endpoint fetches the page. `tries` defaults to 5, max 5 (hardcoded limit to control cost).
+
+Response:
+```json
+{
+  "success": true,
+  "winner": {
+    "content": "# My Article\n\nRewritten body...",
+    "issues_fired": 2,
+    "score": 0.91,
+    "index": 3
+  },
+  "all_variants": [
+    {"index": 1, "issues_fired": 5, "score": 0.72},
+    {"index": 2, "issues_fired": 3, "score": 0.85},
+    {"index": 3, "issues_fired": 2, "score": 0.91},
+    {"index": 4, "issues_fired": 4, "score": 0.78},
+    {"index": 5, "issues_fired": 3, "score": 0.84}
+  ],
+  "tries": 5,
+  "model_used": "gpt-4o",
+  "rewrite_prompt_used": "..."
+}
+```
+
+**Acceptance criterion G.4:** Endpoint returns 200 with a `winner.content` field (non-empty) and exactly `tries` entries in `all_variants`.  
+**Test:** `tests/test_geo_rewrite_prompt.py::test_rewrite_endpoint_returns_winner`.
+
+**Acceptance criterion G.5:** `tries` is capped at 5 server-side even if the client sends a higher value.  
+**Test:** `tests/test_geo_rewrite_prompt.py::test_tries_capped_at_five`.
 
 ---
 
@@ -316,14 +440,17 @@ These are checks the generator must surface in `weak_checks`:
 ```
 Phase A  (scoring map)          → 2h — no dependencies
 Phase B  (path calculator)      → 1h — depends on A
-Phase C  (prompt generator)     → 4h — depends on A, B
-Phase D  (API endpoint)         → 1h — depends on C
-Phase F  (api.js)               → 0.5h — depends on D
-Phase E  (frontend UI)          → 3h — depends on C, D, F
+Phase C  (prompt generator +    → 5h — depends on A, B
+          style constraints)
+Phase D  (prompt-only endpoint) → 1h — depends on C
+Phase G  (best-of-5 executor +  → 3h — depends on C, D
+          rewrite endpoint)
+Phase F  (api.js)               → 0.5h — depends on D, G
+Phase E  (frontend UI)          → 4h — depends on C, D, G, F
 Tests                           → included in each phase above
 ```
 
-Total estimated effort: **11–12 hours**
+Total estimated effort: **16–17 hours** (up from 11–12 due to best-of-5 execution phase)
 
 ---
 
@@ -345,6 +472,18 @@ After implementation, user should verify:
 
 - [ ] `api/services/geo_scoring_map.py` — exists, exports `GEO_CHECKS`, `TIER_WEIGHTS`, `compute_score_from_findings`, `compute_90_path`
 - [ ] `tests/test_geo_scoring_map.py` — all 5 tests pass
+- [ ] `api/services/geo_rewrite_prompt.py` — exports `generate_rewrite_prompt` and `execute_rewrite_best_of_n`
+- [ ] `tests/test_geo_rewrite_prompt.py` — all 12 tests pass (C.1–C.6, D.1–D.2, G.1–G.5)
+- [ ] Generated prompt contains section (i) STYLE CONSTRAINTS with ≥ 10 banned phrases
+- [ ] `POST /api/ai/geo-rewrite-prompt` — returns prompt, scoring path, annotations, weak checks
+- [ ] `POST /api/ai/geo-rewrite` — returns winner content, 5-row all_variants table, model_used
+- [ ] `tries` param capped at 5 server-side
+- [ ] All 5 LLM calls run concurrently (verified by timing test G.3)
+- [ ] Frontend: Rewrite section hidden when score ≥ 0.90
+- [ ] Frontend: mode toggle between "Get Prompt" and "Auto-Rewrite (5 tries)"
+- [ ] Frontend: score comparison table shows 5 rows with index, score, issues_fired
+- [ ] Frontend: copy button works for both prompt text and rewrite content
+- [ ] Zero ESLint errors on frontend build
 - [ ] `api/services/geo_rewrite_prompt.py` — exists, exports `generate_rewrite_prompt`
 - [ ] `tests/test_geo_rewrite_prompt.py` — all 7 tests pass
 - [ ] `POST /api/ai/geo-rewrite-prompt` — returns 200 with `rewrite_prompt`, `scoring_path`, `annotations`, `weak_checks`
