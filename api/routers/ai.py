@@ -428,9 +428,22 @@ async def generate_geo_report(
     target_url = job.target_url
     preferred_model = body.get("model")
 
-    # Return cached report if available
+    import json as _json
+    from api.services.geo_analyzer import compute_tier1_scores_from_html
+
+    # Return cached report if available — add tier1_scores if not already present
     if job.geo_report and not body.get("force_refresh"):
-        return {"success": True, "cached": True, "report": job.geo_report}
+        cached = job.geo_report if isinstance(job.geo_report, dict) else _json.loads(job.geo_report)
+        if "tier1_scores" not in cached:
+            # Backfill: fetch HTML to compute scores for legacy cached reports
+            try:
+                import httpx as _httpx
+                async with _httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
+                    resp = await client.get(target_url, headers={"User-Agent": "TalkingToadGEOBot/2.1"})
+                cached["tier1_scores"] = compute_tier1_scores_from_html(resp.text)
+            except Exception:
+                cached["tier1_scores"] = None
+        return {"success": True, "cached": True, "report": cached}
 
     # Fetch the page HTML
     import httpx as _httpx
@@ -445,23 +458,22 @@ async def generate_geo_report(
         from fastapi import HTTPException
         raise HTTPException(status_code=502, detail=f"Failed to fetch page: {e}")
 
-    # Build page_data from job if available
-    page_data = {}
-
     # Run GEO analysis
     from api.services.geo_analyzer import generate_geo_report as _generate
     report = await _generate(
         target_url,
         raw_html,
         preferred_model=preferred_model,
-        page_data=page_data,
+        page_data={},
     )
 
     report_dict = report.to_dict()
 
+    # Compute Tier 1 heuristic scores and include in report (spec §4.7)
+    report_dict["tier1_scores"] = compute_tier1_scores_from_html(raw_html)
+
     # Cache on job
     try:
-        import json as _json
         await store.update_job(job_id, geo_report=_json.dumps(report_dict))
     except Exception as e:
         import logging

@@ -518,3 +518,55 @@ def _compute_scores(report: GEOReport) -> None:
         report.aggarwal_score = round(aggarwal_score / aggarwal_weight, 2)
     else:
         report.aggarwal_score = 1.0
+
+
+# ---------------------------------------------------------------------------
+# Tier 1 heuristic scores (spec §4.7) — computed from HTML, no LLM calls
+# ---------------------------------------------------------------------------
+
+def compute_tier1_scores_from_html(html: str) -> dict:
+    """
+    Compute the four Tier 1 audit scores from raw HTML (spec §4.7).
+
+    Returns a dict with four 0–100 scores:
+      intro           — answer present in first 200 words
+      query_coverage  — H1 topic terms present in intro + section headings
+      independence    — absence of backward cross-references
+      section_clarity — absence of vague section openers and long paragraphs
+
+    All checks are heuristic (zero LLM cost). Reuses parser.py helpers.
+    """
+    from bs4 import BeautifulSoup
+    from api.crawler.parser import (
+        _count_vague_openers,
+        _count_cross_references,
+        _count_long_paragraphs,
+        _check_query_coverage_weak,
+        _extract_first_n_words,
+    )
+    from api.crawler.issue_checker import _has_answer_signal
+
+    soup = BeautifulSoup(html, "lxml")
+
+    # Intro score: direct answer in first 200 words
+    first_200 = _extract_first_n_words(soup, 200) or ""
+    intro_score = 100 if _has_answer_signal(first_200) else 0
+
+    # Query coverage score: H1 tokens present in intro + section headings
+    query_score = 0 if _check_query_coverage_weak(soup) else 100
+
+    # Independence score: penalise per backward cross-reference found
+    xref_count = _count_cross_references(soup)
+    independence_score = max(0, 100 - xref_count * 20)
+
+    # Section clarity score: penalise vague openers + long paragraphs
+    vague_count = _count_vague_openers(soup)
+    long_para_count = _count_long_paragraphs(soup)
+    clarity_score = max(0, 100 - vague_count * 20 - long_para_count * 10)
+
+    return {
+        "intro": intro_score,
+        "query_coverage": query_score,
+        "independence": independence_score,
+        "section_clarity": clarity_score,
+    }

@@ -616,6 +616,42 @@ export default function GEOReportPanel({ jobId, domain }) {
             </div>
           </div>
 
+          {/* Tier 1 structural scores (spec §4.7) */}
+          {report.tier1_scores && (
+            <div>
+              <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">
+                Structural Audit — Tier 1 Heuristics
+              </p>
+              <div className="grid grid-cols-2 gap-3">
+                {[
+                  { key: 'intro',           label: 'Intro Answer',        desc: 'Direct answer in first 200 words' },
+                  { key: 'query_coverage',  label: 'Query Coverage',       desc: 'H1 terms in intro + section headings' },
+                  { key: 'independence',    label: 'Section Independence', desc: 'Absence of backward cross-references' },
+                  { key: 'section_clarity', label: 'Section Clarity',      desc: 'No vague openers or overlong paragraphs' },
+                ].map(({ key, label, desc }) => {
+                  const val = report.tier1_scores[key] ?? 0
+                  const color = val >= 80 ? 'text-green-700' : val >= 50 ? 'text-amber-700' : 'text-red-600'
+                  const bg    = val >= 80 ? 'bg-green-50 border-green-200' : val >= 50 ? 'bg-amber-50 border-amber-200' : 'bg-red-50 border-red-200'
+                  return (
+                    <div key={key} className={`border rounded-xl p-3 ${bg}`}>
+                      <div className="flex items-center justify-between mb-1">
+                        <p className="text-xs font-bold text-gray-700">{label}</p>
+                        <p className={`text-lg font-black ${color}`}>{val}%</p>
+                      </div>
+                      <div className="w-full h-1.5 bg-gray-200 rounded-full overflow-hidden mb-1">
+                        <div
+                          className={`h-full rounded-full ${val >= 80 ? 'bg-green-500' : val >= 50 ? 'bg-amber-500' : 'bg-red-500'}`}
+                          style={{ width: `${val}%` }}
+                        />
+                      </div>
+                      <p className="text-[10px] text-gray-500">{desc}</p>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+
           {/* Rewrite Assist — shown when score < 90% */}
           {(report.overall_score ?? 0) < 0.90 && (
             <RewriteAssist jobId={jobId} report={report} />
