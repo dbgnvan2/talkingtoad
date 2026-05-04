@@ -141,22 +141,22 @@ def generate_rewrite_prompt(
     report: dict,
     page_type: str,
     url: str = "",
+    original_content: str | None = None,
 ) -> dict:
     """
     Generate a structured rewrite prompt from a GEOReport dict.
 
     Args:
-        report:    GEOReport.to_dict() output with 'findings', 'overall_score', etc.
-        page_type: Output of _detect_page_type() — article | technical | faq | comparison | general
-        url:       The page URL (used for context only).
+        report:           GEOReport.to_dict() with 'findings', 'overall_score', etc.
+        page_type:        Output of _detect_page_type().
+        url:              Page URL (context only).
+        original_content: Raw page text — used to build §(k) PRESERVATION FLOOR.
+                          When provided, the prompt gains page-specific preservation
+                          rules derived from the actual elements found in the content.
 
     Returns dict with keys:
-        system_prompt: str — the complete system prompt for the rewriting LLM
-        current_score: float
-        target_score: float
-        mandatory_count: int
-        fixable_count: int
-        page_type: str
+        system_prompt, current_score, target_score, mandatory_count, fixable_count,
+        page_type, preservation_floor (dict | None)
     """
     from api.services.geo_scoring_map import compute_90_path
 
@@ -173,6 +173,13 @@ def generate_rewrite_prompt(
     )
 
     rubric = _build_rubric_section(path, page_type)
+
+    # Build page-specific preservation floor from original content (RP2)
+    preservation_floor: dict | None = None
+    preservation_section = ""
+    if original_content:
+        preservation_floor = _extract_preservation_floor(original_content)
+        preservation_section = _build_preservation_floor_section(preservation_floor)
 
     prompt = f"""\
 # GEO CONTENT REWRITE INSTRUCTIONS
@@ -299,7 +306,10 @@ Omit the GEO NOTES section if you added no placeholders.
 4. **Do not add new factual claims** not implied by the original text.
 
 5. **Do not delete factual content.** You may restructure and rephrase, but
-   do not remove substantive information.
+   do not remove any of the following from the original: FAQ Q&A pairs, code
+   blocks, tables, named example lists (lists with specific tool or product
+   names), or outbound citation links. Generic descriptions ("memory tools")
+   must never replace specific names ("Supabase", "Claude Desktop", "GitHub").
 
 6. **Do not fabricate author names or publication dates.** Use placeholder
    patterns: `[AUTHOR NAME]`, `[PUBLICATION DATE]`, `[LAST UPDATED DATE]`.
@@ -307,6 +317,10 @@ Omit the GEO NOTES section if you added no placeholders.
 7. **Do not add advertising, product recommendations, or promotional content.**
 
 8. **Do not summarise the article at the end** unless the original had a summary section.
+
+9. **Do not introduce specific numbers** (durations such as "45 minutes", percentages,
+   survey results, user counts, year ranges) that did not appear in the original text.
+   Use `[STATISTIC NEEDED: describe figure type]` as a placeholder instead.
 
 ---
 
@@ -374,7 +388,8 @@ The rewrite MUST avoid the following patterns that mark content as AI-generated:
 - "As an AI language model"
 
 **Structural prohibitions:**
-- No more than 2 bullet lists per 500 words (convert excess to prose)
+- Do not pad content with meaningless bullet lists. Every list item must state a
+  specific fact, name, or step — not a vague description.
 - Do not start every list item with the same grammatical structure (e.g., all gerunds)
 - Do not add a "Summary" or "Key Takeaways" section unless the original had one
 - Do not use passive constructions for more than 20% of sentences
@@ -418,11 +433,17 @@ answer all of them in the intro.
 - **Intro:** Answer the 1–2 most fundamental "what is / why" queries only.
 - **Each H2 section:** Address at least one query naturally within the section body,
   where the content supports it.
-- Do NOT write a standalone FAQ section just to cover queries — integrate the
-  answers into the flow of each section.
+- **FAQ sections:** If the original page has a FAQ section, **preserve it and expand
+  it if needed**. Do NOT fold FAQ content into prose sections — the Q&A format is
+  the strongest AI-retrievable structure on the page. Each Q&A pair should stand
+  alone as a complete exchange (question + concise answer of 1–4 sentences).
 - If a query is specific to a technical step or comparison, answer it in the
   section covering that step — not in the intro.
 """
+
+    # Append §(k) PRESERVATION FLOOR when original content was provided (RP2)
+    if preservation_section:
+        prompt = prompt + preservation_section
 
     return {
         "system_prompt": prompt,
@@ -432,6 +453,7 @@ answer all of them in the intro.
         "fixable_count": fixable_count,
         "page_type": page_type,
         "findings_count": len(findings),
+        "preservation_floor": preservation_floor,
     }
 
 
@@ -455,6 +477,249 @@ _MD_DATE_RE = re.compile(
 
 # Kept at module level so _generate_one_rewrite can use it via import
 _BEST_OF_N = 5
+
+# ---------------------------------------------------------------------------
+# Preservation floor extraction (RP1)
+# ---------------------------------------------------------------------------
+
+# Question line: ≤130 chars, ends with ?, starts with a heading OR starts with
+# a recognised question word. The "preceded by blank line" constraint is enforced
+# in code (not regex) so we can inspect the surrounding lines.
+_FAQ_QUESTION_WORDS_RE = re.compile(
+    r"^(?:#+\s+|[*_]{1,2})?(?:Q\d*[:.]\s*)?"
+    r"(?:What|How|Why|When|Where|Who|Can|Does|Is|Are|Will|Should|Do|"
+    r"Which|Have|Has|Was|Were|Would|Could|May|Might|Must)\b",
+    re.I,
+)
+_BULLET_LINE_RE = re.compile(r"^[-*+]\s+")
+_NUMBERED_LINE_RE = re.compile(r"^\d+[.)]\s+")
+
+# Proper-noun words that should not count as list-naming even though they are
+# capitalized mid-item (common English title-case function words).
+_COMMON_MID_CAPS: frozenset[str] = frozenset({
+    "The", "It", "This", "In", "Is", "To", "A", "An", "And", "Or", "But",
+    "For", "With", "From", "By", "At", "Of", "On", "That", "Which", "Be",
+    "Has", "Have", "Had", "Was", "Were", "Not", "If", "When", "Where", "How",
+})
+
+# Numbers that warrant capture: integers ≥2, decimals, percentages, durations
+_NUMBER_RE = re.compile(
+    r"(?<!\w)"
+    r"(?:\d{1,3}(?:,\d{3})*(?:\.\d+)?%"   # percentage: 99.9%, 73%
+    r"|\d+(?:\.\d+)?\s*(?:second|minute|hour|day|week|month|year)s?"  # duration
+    r"|\d{4,}"                               # 4+ digit integers (years, IDs)
+    r"|\d+\.\d+"                             # decimals
+    r"|[1-9]\d{1,2})"                        # integers 2–999
+    r"(?!\w)",
+    re.I,
+)
+
+
+def _count_faq_pairs(text: str) -> int:
+    """Count Q&A pairs: a question line followed within 5 lines by a non-question answer."""
+    lines = text.splitlines()
+    count = 0
+    i = 0
+    while i < len(lines):
+        line = lines[i].rstrip()
+        # Strip heading and bold markers to get the raw text
+        stripped = re.sub(r"^#+\s*|[*_]{1,2}", "", line).strip()
+        is_short = len(line) <= 130
+        is_question_word = bool(_FAQ_QUESTION_WORDS_RE.match(line.lstrip()))
+        is_heading = line.lstrip().startswith("#")
+        ends_with_q = stripped.rstrip("*_ \t").endswith("?")
+        preceded_by_blank = (i == 0) or (not lines[i - 1].strip())
+
+        if ends_with_q and is_short and (is_heading or (is_question_word and preceded_by_blank)):
+            # Look for an answer within the next 5 non-blank lines
+            j = i + 1
+            non_blank_seen = 0
+            found_answer = False
+            while j < len(lines) and non_blank_seen < 5:
+                nl = lines[j].strip()
+                if nl:
+                    non_blank_seen += 1
+                    nl_stripped = re.sub(r"^#+\s*|[*_]{1,2}", "", nl).strip()
+                    # Answer: non-blank line that isn't itself a question
+                    if not nl_stripped.endswith("?"):
+                        found_answer = True
+                        break
+                j += 1
+            if found_answer:
+                count += 1
+                i = j + 1  # advance past the answer
+                continue
+        i += 1
+    return count
+
+
+def _item_has_named_reference(item_line: str) -> bool:
+    """Return True if a list item line contains a proper noun or quoted string."""
+    # Remove bullet/number marker and leading markup
+    content = re.sub(r"^[-*+]|\d+[.)]\s*", "", item_line, count=1).strip()
+    content = re.sub(r"^[*_]{1,2}", "", content).strip()
+
+    # Quoted strings in backticks or straight quotes count immediately
+    if re.search(r"[`\"][^\"`]{2,40}[`\"]", content):
+        return True
+
+    # Proper noun: capitalised word ≥2 chars beyond the first word of the item
+    words = content.split()
+    for idx, word in enumerate(words):
+        w = re.sub(r"[^\w\-]", "", word)
+        if not w or len(w) < 2:
+            continue
+        if idx > 0 and w[0].isupper() and w not in _COMMON_MID_CAPS:
+            return True
+    return False
+
+
+def _count_named_lists(text: str) -> int:
+    """Count bullet list blocks where ≥2 items contain proper nouns or quoted strings."""
+    lines = text.splitlines()
+    named_list_count = 0
+    i = 0
+    while i < len(lines):
+        if _BULLET_LINE_RE.match(lines[i]) or _NUMBERED_LINE_RE.match(lines[i]):
+            # Collect consecutive list lines (allow continuation indent)
+            block_lines = []
+            while i < len(lines) and (
+                _BULLET_LINE_RE.match(lines[i])
+                or _NUMBERED_LINE_RE.match(lines[i])
+                or (block_lines and lines[i].startswith("  ") and lines[i].strip())
+            ):
+                if _BULLET_LINE_RE.match(lines[i]) or _NUMBERED_LINE_RE.match(lines[i]):
+                    block_lines.append(lines[i])
+                i += 1
+            named_items = sum(1 for ln in block_lines if _item_has_named_reference(ln))
+            if named_items >= 2:
+                named_list_count += 1
+        else:
+            i += 1
+    return named_list_count
+
+
+def _count_tables(text: str) -> int:
+    """Count distinct Markdown table blocks (requires at least one separator row |---|)."""
+    # Find all runs of pipe-table lines; only count blocks that have a separator row
+    table_count = 0
+    in_table = False
+    has_separator = False
+    for line in text.splitlines():
+        if re.match(r"^\|.+\|$", line.rstrip()):
+            in_table = True
+            if re.match(r"^\|[\s|:\-]+\|$", line.rstrip()):
+                has_separator = True
+        else:
+            if in_table and has_separator:
+                table_count += 1
+            in_table = False
+            has_separator = False
+    if in_table and has_separator:
+        table_count += 1
+    return table_count
+
+
+def _extract_specific_numbers(text: str) -> frozenset[str]:
+    """Extract all specific numeric values from text (integers, decimals, percentages, durations)."""
+    return frozenset(m.group(0).strip() for m in _NUMBER_RE.finditer(text))
+
+
+def _extract_preservation_floor(text: str) -> dict:
+    """
+    Scan original page content for high-value extractable elements.
+
+    Purpose: identify what must be preserved in every rewrite variant.
+    Spec:    docs/implementation_plan_geo_rewrite_preservation_2026-05-04.md#RP1
+    Tests:   tests/test_geo_rewrite_prompt.py::TestPreservationFloor
+
+    Returns dict with:
+      faq_pair_count, named_list_count, code_block_count, table_count,
+      outbound_link_count, original_number_set
+    """
+    # Strip code blocks before most checks (code contains numbers, links, etc. that
+    # aren't part of the prose content and could inflate counts).
+    text_no_code = _MD_CODE_RE.sub("", text)
+
+    return {
+        "faq_pair_count":      _count_faq_pairs(text_no_code),
+        "named_list_count":    _count_named_lists(text_no_code),
+        "code_block_count":    len(_MD_CODE_RE.findall(text)),
+        "table_count":         _count_tables(text_no_code),
+        "outbound_link_count": len(_MD_LINK_RE.findall(text_no_code)),
+        "original_number_set": _extract_specific_numbers(text_no_code),
+    }
+
+
+def _build_preservation_floor_section(floor: dict) -> str:
+    """
+    Build the §(k) PRESERVATION FLOOR prompt section from extracted floor data.
+
+    Returns an empty string when no notable elements were found (avoids
+    injecting an empty section into the prompt).
+    """
+    items: list[str] = []
+
+    if floor["faq_pair_count"] >= 2:
+        n = floor["faq_pair_count"]
+        min_required = max(2, int(n * 0.7))
+        items.append(
+            f"- **FAQ / Q&A section:** The original contains **{n} Q&A pairs**. "
+            f"The rewrite must preserve at least {min_required} of them in Q&A format. "
+            f"⛔ FAILURE CONDITION: Fewer than {min_required} Q&A pairs is a failing rewrite. "
+            f"Do NOT fold FAQ content into prose — the Q&A structure is the highest-value "
+            f"AI-retrievable format on the page."
+        )
+
+    if floor["code_block_count"] >= 1:
+        n = floor["code_block_count"]
+        items.append(
+            f"- **Code blocks:** The original contains **{n} code block(s)**. "
+            f"Every code block must appear in the rewrite unchanged (syntax and content). "
+            f"⛔ FAILURE CONDITION: Removing any code block is a failing rewrite."
+        )
+
+    if floor["table_count"] >= 1:
+        n = floor["table_count"]
+        items.append(
+            f"- **Tables:** The original contains **{n} Markdown table(s)**. "
+            f"Each table must appear in the rewrite with the same rows and columns. "
+            f"A comparison table naming competing products or platforms must survive intact. "
+            f"⛔ FAILURE CONDITION: Removing any table is a failing rewrite."
+        )
+
+    if floor["outbound_link_count"] >= 1:
+        n = floor["outbound_link_count"]
+        items.append(
+            f"- **Outbound citation links:** The original contains **{n} external link(s)**. "
+            f"Every `[text](https://...)` link must appear in the rewrite. "
+            f"If a link cannot be preserved verbatim, replace it with "
+            f"`[SOURCE NEEDED: describe source type]` inline. "
+            f"⛔ FAILURE CONDITION: Reducing outbound links to 0 when the original had {n} is a failing rewrite."
+        )
+
+    if floor["named_list_count"] >= 1:
+        n = floor["named_list_count"]
+        items.append(
+            f"- **Named bullet list(s):** The original contains **{n} list(s)** with specific "
+            f"tool, product, or platform names. The specific names (e.g. ChatGPT, Supabase, "
+            f"GitHub, MCP) must be preserved — do NOT replace them with generic terms like "
+            f"'memory tools' or 'storage options'. "
+            f"⛔ FAILURE CONDITION: Converting named lists to generic prose is a failing rewrite."
+        )
+
+    if not items:
+        return ""
+
+    header = (
+        "\n## (k) PRESERVATION FLOOR — PAGE-SPECIFIC REQUIREMENTS\n\n"
+        "⚠️ This section is derived from the **actual content of the original page** and "
+        "takes **highest priority** over any conflicting style guidance above.\n\n"
+        "The following elements were detected in the original and **MUST be preserved or "
+        "improved** in every rewrite. Removing or genericising any of them is a "
+        "FAILURE CONDITION — the variant will be scored 0 on the preservation check.\n\n"
+    )
+    return header + "\n".join(items) + "\n"
 
 
 def _build_synthetic_parsed_page(
@@ -638,22 +903,79 @@ _ATTRIBUTION_RE_FULL = re.compile(
 )
 
 
+_REGRESSION_CHECK_WEIGHT = 2  # same weight as Mechanistic checks
+
+
+def _check_preservation_regression(
+    original_features: dict,
+    rewrite_text: str,
+) -> list[str]:
+    """
+    Detect which high-value elements from the original were removed in the rewrite.
+
+    Purpose: regression-aware scoring so a rewrite that strips the FAQ, tables, or
+             code blocks cannot score higher than one that preserves them.
+    Spec:    docs/implementation_plan_geo_rewrite_preservation_2026-05-04.md#RP4
+    Tests:   tests/test_geo_rewrite_prompt.py::TestPreservationFloor
+
+    Returns a list of violation codes (empty = no regression).
+    """
+    body, _ = _split_body_and_notes(rewrite_text)
+    rewrite_floor = _extract_preservation_floor(body)
+    violations: list[str] = []
+
+    # FAQ regression: original had ≥2 pairs; rewrite drops below 70% of original
+    orig_faq = original_features.get("faq_pair_count", 0)
+    if orig_faq >= 2:
+        min_required = max(2, int(orig_faq * 0.7))
+        if rewrite_floor["faq_pair_count"] < min_required:
+            violations.append("FAQ_REMOVED")
+
+    # Code block regression: original had ≥1; rewrite has 0
+    if original_features.get("code_block_count", 0) >= 1:
+        if rewrite_floor["code_block_count"] == 0:
+            violations.append("CODE_BLOCK_REMOVED")
+
+    # Table regression: original had ≥1; rewrite has 0
+    if original_features.get("table_count", 0) >= 1:
+        if rewrite_floor["table_count"] == 0:
+            violations.append("TABLE_REMOVED")
+
+    # Outbound link regression: original had ≥2; rewrite has 0
+    if original_features.get("outbound_link_count", 0) >= 2:
+        if rewrite_floor["outbound_link_count"] == 0:
+            violations.append("OUTBOUND_LINK_REMOVED")
+
+    # Named list genericised: original had ≥1 named list; rewrite has 0
+    if original_features.get("named_list_count", 0) >= 1:
+        if rewrite_floor["named_list_count"] == 0:
+            violations.append("NAMED_LIST_GENERICISED")
+
+    return violations
+
+
 def _content_score(
-    url: str, content: str, page_type: str = "general"
+    url: str,
+    content: str,
+    page_type: str = "general",
+    original_features: dict | None = None,
 ) -> tuple[int, float, list[str]]:
     """
-    Score rewrite content on 5 GEO content signals.
+    Score rewrite content on 5 GEO content signals + optional preservation regression.
 
     Returns (fail_count, score 0-1, list_of_failing_check_codes).
 
     Uses a fixed denominator (weight=13) so baseline and all variant scores
-    are directly comparable.  Placeholder citations/quotes/stats from the
-    rewriting LLM are counted as passes so the scoring rewards good rewrites
-    that identify WHERE evidence should go, even if the editor must fill it in.
+    are directly comparable.  When original_features is provided, up to 5
+    preservation regression checks are added (weight=2 each), growing the
+    denominator accordingly.
+
+    Placeholder citations/quotes/stats from the rewriting LLM are counted as
+    passes so the scoring rewards good rewrites that identify WHERE evidence
+    should go, even if the editor must fill it in.
 
     GEO NOTES are stripped before scoring so that placeholder descriptions in
-    the notes section (e.g. "[CITATION NEEDED] added at: Introduction…") cannot
-    inflate the score — only placeholders embedded in the body count.
+    the notes section cannot inflate the score.
     """
     body, _notes = _split_body_and_notes(content)
     tokens = body.split()
@@ -710,8 +1032,30 @@ def _content_score(
         if not has_structure:
             fails.add("STRUCTURED_ELEMENTS_LOW")
 
+    # Base score (fixed denominator)
     fail_weight = sum(_CONTENT_SCORE_WEIGHT.get(c, 0) for c in fails)
-    score = round(1.0 - fail_weight / _CONTENT_SCORE_TOTAL_WEIGHT, 4)
+    total_weight = _CONTENT_SCORE_TOTAL_WEIGHT
+
+    # Preservation regression checks (RP4.3) — each adds to denominator whether or not it fails
+    if original_features:
+        regression_violations = _check_preservation_regression(original_features, content)
+        # Count how many regression checks were applicable (to set denominator correctly)
+        applicable_checks = 0
+        if original_features.get("faq_pair_count", 0) >= 2:
+            applicable_checks += 1
+        if original_features.get("code_block_count", 0) >= 1:
+            applicable_checks += 1
+        if original_features.get("table_count", 0) >= 1:
+            applicable_checks += 1
+        if original_features.get("outbound_link_count", 0) >= 2:
+            applicable_checks += 1
+        if original_features.get("named_list_count", 0) >= 1:
+            applicable_checks += 1
+        total_weight += applicable_checks * _REGRESSION_CHECK_WEIGHT
+        fail_weight += len(regression_violations) * _REGRESSION_CHECK_WEIGHT
+        fails.update(regression_violations)
+
+    score = round(1.0 - fail_weight / total_weight, 4) if total_weight > 0 else 1.0
     return len(fails), score, sorted(fails)
 
 
@@ -912,6 +1256,44 @@ _CONTENT_FIX_INSTRUCTIONS: dict[str, str] = {
 # Improvement-mode prompt builder
 # ---------------------------------------------------------------------------
 
+_REGRESSION_FIX_INSTRUCTIONS: dict[str, str] = {
+    "FAQ_REMOVED": (
+        "### RESTORE FAQ / Q&A SECTION\n"
+        "The previous draft removed the FAQ section. This is a FAILURE CONDITION.\n"
+        "- Find the FAQ questions from the original and restore them as a dedicated "
+        "section with the Q&A format: **Question?** followed by a 1–4 sentence answer.\n"
+        "- Do NOT convert Q&A content into prose paragraphs.\n"
+    ),
+    "CODE_BLOCK_REMOVED": (
+        "### RESTORE CODE BLOCK(S)\n"
+        "The previous draft removed one or more code blocks. This is a FAILURE CONDITION.\n"
+        "- Restore every code block from the original verbatim (language and content).\n"
+        "- If you cannot locate the exact code, add a `[CODE EXAMPLE: describe what it shows]` "
+        "placeholder at the relevant location.\n"
+    ),
+    "TABLE_REMOVED": (
+        "### RESTORE TABLE(S)\n"
+        "The previous draft removed one or more Markdown tables. This is a FAILURE CONDITION.\n"
+        "- Restore every table from the original with the same rows and columns.\n"
+        "- Comparison tables (naming competing products or platforms) are especially important "
+        "for AI retrieval — they must appear intact.\n"
+    ),
+    "OUTBOUND_LINK_REMOVED": (
+        "### RESTORE OUTBOUND CITATION LINKS\n"
+        "The previous draft removed all external links. This is a FAILURE CONDITION.\n"
+        "- Restore every `[text](https://...)` link from the original.\n"
+        "- If a link cannot be verified, use `[SOURCE NEEDED: describe source type]` inline.\n"
+    ),
+    "NAMED_LIST_GENERICISED": (
+        "### RESTORE NAMED LISTS\n"
+        "The previous draft replaced specific tool/platform names with generic descriptions. "
+        "This is a FAILURE CONDITION.\n"
+        "- Restore the actual product/tool/platform names (e.g. 'Supabase', 'Claude Desktop', "
+        "'ChatGPT Memory') — do NOT replace them with 'memory tools' or similar.\n"
+    ),
+}
+
+
 def _build_improvement_prompt(
     original_system_prompt: str,
     attempt_num: int,
@@ -919,17 +1301,19 @@ def _build_improvement_prompt(
     failing_checks: list[str] | None = None,
     current_score: float = 0.0,
     placeholder_issues: list[str] | None = None,
+    regression_violations: list[str] | None = None,
 ) -> str:
     """
     Wrap the original system prompt with targeted improvement-mode framing.
 
     Tries 2+ receive the current best draft as input.  When failing_checks are
     provided (from _content_score), the prompt gives specific per-check instructions
-    rather than a generic checklist — and explicitly warns that GEO NOTES placeholders
-    do not count toward the score.
+    rather than a generic checklist — and explicitly warns about GEO NOTES placeholders
+    and regression violations from the previous try.
     """
     failing = failing_checks or []
     ph_issues = placeholder_issues or []
+    regressions = regression_violations or []
 
     # Build targeted fix section
     if failing:
@@ -948,6 +1332,20 @@ def _build_improvement_prompt(
             "## ALL CONTENT CHECKS PASSING\n\n"
             "Focus on query coverage and backward cross-references only."
         )
+
+    # Build regression warning when previous try stripped high-value elements
+    if regressions:
+        reg_fix_lines = [
+            "\n## ⛔ REGRESSIONS TO FIX — PREVIOUS ATTEMPT REMOVED REQUIRED ELEMENTS\n",
+            "The previous attempt stripped content that MUST be preserved. "
+            "Fix ALL of the following before addressing any other checks:\n",
+        ]
+        for code in regressions:
+            if code in _REGRESSION_FIX_INSTRUCTIONS:
+                reg_fix_lines.append(_REGRESSION_FIX_INSTRUCTIONS[code])
+        regression_warning = "\n".join(reg_fix_lines)
+    else:
+        regression_warning = ""
 
     # Build inline-embedding warning when the LLM made the describe-not-embed mistake
     if ph_issues:
@@ -969,7 +1367,7 @@ def _build_improvement_prompt(
 
 You are improving an existing GEO rewrite draft. The current draft scores **{score_pct}**.
 Do NOT rewrite from scratch. Work additively — add what is missing, preserve what is working.
-{ph_warning}
+{regression_warning}{ph_warning}
 ## PRESERVATION CONSTRAINT — READ FIRST
 
 The current draft scores {score_pct}. Some content is already answering the key user queries
@@ -1054,12 +1452,19 @@ async def stream_rewrite_variants(
 
     variants: list[dict] = []
 
+    # Extract preservation floor from original content so regression checks can
+    # penalise variants that strip FAQ sections, code blocks, tables, etc.
+    original_features = rewrite_prompt_result.get("preservation_floor")
+    if original_features is None and page_content:
+        original_features = _extract_preservation_floor(page_content)
+
     # Evolutionary rewrite state: after each try, use the best result so far
     # as the base content for the next try (Phase 4).
     current_best_text: str = ""
     current_best_score: float = -1.0
     current_best_failing: list[str] = []        # failing content checks of best variant
     current_best_ph_issues: list[str] = []      # placeholder issues of best variant
+    current_best_regressions: list[str] = []    # regression violations of best variant
     baseline_score: float = 0.0  # score of try 1, used in improvement report
 
     # Knowledge ceiling tracking: per-variant per-query results
@@ -1079,15 +1484,22 @@ async def stream_rewrite_variants(
                 failing_checks=current_best_failing,
                 current_score=current_best_score,
                 placeholder_issues=current_best_ph_issues,
+                regression_violations=current_best_regressions,
             )
         )
 
         result = await _generate_one_rewrite(content_to_use, prompt_to_use, model, provider, i)
 
-        failing_checks = []
+        failing_checks: list[str] = []
+        regressions: list[str] = []
         per_query_results: list[dict] = []
         if result.get("text"):
-            issues, c_score, failing_checks = _content_score(url, result["text"], page_type)
+            issues, c_score, failing_checks = _content_score(
+                url, result["text"], page_type, original_features=original_features
+            )
+            # Extract regression violations separately for SSE reporting
+            if original_features:
+                regressions = _check_preservation_regression(original_features, result["text"])
             if query_table:
                 new_qm_score, per_query_results = await _score_rewrite_query_match(
                     result["text"], query_table, model, provider
@@ -1112,10 +1524,16 @@ async def stream_rewrite_variants(
                     "geo_rewrite_placeholder_not_embedded",
                     extra={"variant": i, "missing": placeholder_issues},
                 )
+            if regressions:
+                logger.warning(
+                    "geo_rewrite_preservation_regression",
+                    extra={"variant": i, "violations": regressions},
+                )
 
         result["issues"] = issues
         result["projected_score"] = projected_score
         result["placeholder_issues"] = placeholder_issues
+        result["regressions"] = regressions
         variants.append(result)
 
         # Record baseline from first try; update evolutionary best
@@ -1126,6 +1544,7 @@ async def stream_rewrite_variants(
             current_best_text = result["text"]
             current_best_failing = failing_checks
             current_best_ph_issues = placeholder_issues
+            current_best_regressions = regressions
 
         event = {
             "type": "variant",
@@ -1133,6 +1552,7 @@ async def stream_rewrite_variants(
             "issues": issues,
             "projected_score": projected_score,
             "placeholder_issues": placeholder_issues,
+            "regressions": regressions,
             "error": result.get("error"),
             "text": result.get("text", ""),
             "preview": (result["text"][:120] + "…") if result.get("text") else None,
@@ -1183,6 +1603,7 @@ async def stream_rewrite_variants(
                 "issues": v.get("issues", 999),
                 "projected_score": v.get("projected_score", 0.0),
                 "placeholder_issues": v.get("placeholder_issues", []),
+                "regressions": v.get("regressions", []),
                 "rank": v.get("rank"),
                 "error": v.get("error"),
                 "text": v.get("text", ""),

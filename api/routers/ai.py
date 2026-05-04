@@ -537,6 +537,21 @@ async def geo_rewrite_prompt(
 
     url = body.get("url") or job.target_url
 
+    # Fetch page content if provided or fetchable (for preservation floor)
+    page_content = body.get("page_content", "")
+    if not page_content.strip():
+        import httpx as _httpx
+        from bs4 import BeautifulSoup as _BS
+        try:
+            async with _httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
+                resp = await client.get(url, headers={"User-Agent": "TalkingToadGEOBot/2.1"})
+                soup = _BS(resp.text, "lxml")
+                for tag in soup.find_all(["script", "style", "nav", "header", "footer"]):
+                    tag.decompose()
+                page_content = soup.get_text(separator="\n", strip=True)
+        except Exception:
+            page_content = ""
+
     # Auto-detect page type if not provided
     provided_page_type = body.get("page_type")
     if provided_page_type:
@@ -548,7 +563,7 @@ async def geo_rewrite_prompt(
         page_type = _detect_page_type(url, schema_types, headings)
 
     from api.services.geo_rewrite_prompt import generate_rewrite_prompt
-    result = generate_rewrite_prompt(report_dict, page_type, url=url)
+    result = generate_rewrite_prompt(report_dict, page_type, url=url, original_content=page_content or None)
 
     return {"success": True, **result}
 
@@ -634,7 +649,7 @@ async def geo_rewrite(
 
     # Generate the prompt
     from api.services.geo_rewrite_prompt import generate_rewrite_prompt, execute_rewrite_best_of_n
-    prompt_result = generate_rewrite_prompt(report_dict, page_type, url=url)
+    prompt_result = generate_rewrite_prompt(report_dict, page_type, url=url, original_content=page_content or None)
 
     # Run best-of-N rewrites
     rewrite_result = await execute_rewrite_best_of_n(
@@ -728,7 +743,7 @@ async def geo_rewrite_stream(
         raise HTTPException(status_code=503, detail=str(e))
 
     from api.services.geo_rewrite_prompt import generate_rewrite_prompt, stream_rewrite_variants
-    prompt_result = generate_rewrite_prompt(report_dict, page_type, url=url)
+    prompt_result = generate_rewrite_prompt(report_dict, page_type, url=url, original_content=page_content or None)
     original_findings = report_dict.get("findings", [])
     original_query_table = report_dict.get("query_match_table", [])
 
