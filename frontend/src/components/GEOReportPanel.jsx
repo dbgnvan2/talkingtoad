@@ -496,6 +496,27 @@ function RewriteAssist({ jobId, report }) {
                 )}
               </div>
 
+              {/* Knowledge ceiling — queries no rewrite variant could answer */}
+              {winnerResult?.knowledge_gaps?.length > 0 && (
+                <div className="rounded-xl border border-amber-300 bg-amber-50 p-4">
+                  <div className="flex items-start gap-2 mb-2">
+                    <span className="text-amber-600 text-base">⚠️</span>
+                    <div>
+                      <p className="text-xs font-bold text-amber-800">Knowledge Ceiling Detected</p>
+                      <p className="text-xs text-amber-700 mt-0.5">
+                        The following queries scored "No" across <em>every</em> rewrite attempt.
+                        No amount of rewording will address them — the page needs <strong>new content</strong> to answer these:
+                      </p>
+                    </div>
+                  </div>
+                  <ul className="mt-2 space-y-1 pl-4">
+                    {winnerResult.knowledge_gaps.map((q, idx) => (
+                      <li key={idx} className="text-xs text-amber-900 list-disc">{q}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
               {/* Winner text */}
               {winnerResult?.winner_text && (
                 <div className="relative">

@@ -475,11 +475,12 @@ def _build_synthetic_parsed_page(
     words = re.findall(r"\w+", no_code)
     word_count = len(words)
 
-    # first_150_words: preserve original punctuation (including "%" and ".") so that
+    # first_200_words: preserve original punctuation (including "%" and ".") so that
     # stat-detection and answer-signal regexes work correctly.  Split on whitespace
     # (not word boundaries) so "27.6%" and "according to" patterns survive.
     _tokens = no_code.split()
-    first_150 = " ".join(_tokens[:150])
+    first_150 = " ".join(_tokens[:200])
+    first_600 = " ".join(_tokens[:600])
 
     # Headings
     headings_outline = [
@@ -542,7 +543,8 @@ def _build_synthetic_parsed_page(
         "schema_blocks": [],
         "headings_outline": headings_outline,
         "links": links,
-        "first_150_words": first_150,
+        "first_200_words": first_150,
+        "first_600_words": first_600,
         "blockquote_count": blockquote_count,
         "author_detected": author_detected,
         "date_published": date_published,
@@ -769,25 +771,33 @@ async def _score_rewrite_query_match(
     original_query_table: list[dict],
     model: str,
     provider: str,
-) -> float:
+) -> tuple[float, list[dict]]:
     """
     Re-evaluate how well the rewrite text answers the original page's AI queries.
 
     Uses the same queries from the cached GEO report (not re-generating them),
     then asks the LLM to score each query Yes/Partial/No.
 
-    Returns a 0.0–1.0 score matching the QUERY_MATCH_SCORE calculation:
-        (answered + 0.5 × partial) / total_queries
+    Returns (score, per_query_results) where:
+      - score: 0.0–1.0 matching QUERY_MATCH_SCORE formula
+      - per_query_results: list of {query, answered} dicts for knowledge-gap tracking
     """
     from api.services.geo_analyzer import _call_ai  # type: ignore
 
     queries = [q.get("query", "").strip() for q in original_query_table if q.get("query")]
     if not queries:
-        return 0.0
+        return 0.0, []
 
     q_block = "\n".join(f"{i + 1}. {q}" for i, q in enumerate(queries))
-    # Truncate rewrite to ~3000 chars to stay within token budget
-    text_sample = rewrite_text[:3000]
+
+    # For long rewrites use head + tail so the intro and conclusion are both visible.
+    # Budget: 6000 chars total = 4000 head + 2000 tail (avoids duplicating short texts).
+    _HEAD = 4000
+    _TAIL = 2000
+    if len(rewrite_text) <= _HEAD + _TAIL:
+        text_sample = rewrite_text
+    else:
+        text_sample = rewrite_text[:_HEAD] + "\n…\n" + rewrite_text[-_TAIL:]
 
     prompt = (
         f"You are scoring how well a web page answers user questions.\n\n"
@@ -799,14 +809,24 @@ async def _score_rewrite_query_match(
     try:
         response = await _call_ai(prompt, model, provider)
         lines = [ln.strip().lower() for ln in response.strip().splitlines() if ln.strip()]
-        answered = sum(1 for ln in lines if ln.startswith("yes"))
-        partial = sum(1 for ln in lines if ln.startswith("partial"))
+        per_query = []
+        for idx, q in enumerate(queries):
+            raw = lines[idx] if idx < len(lines) else "no"
+            if raw.startswith("yes"):
+                verdict = "Yes"
+            elif raw.startswith("partial"):
+                verdict = "Partial"
+            else:
+                verdict = "No"
+            per_query.append({"query": q, "answered": verdict})
+        answered = sum(1 for r in per_query if r["answered"] == "Yes")
+        partial = sum(1 for r in per_query if r["answered"] == "Partial")
         total = len(queries)
         score = (answered + 0.5 * partial) / total if total else 0.0
-        return round(score, 4)
+        return round(score, 4), per_query
     except Exception as e:
         logger.warning("query_match_rescore_failed", extra={"error": str(e)})
-        return 0.0
+        return 0.0, []
 
 
 def _project_score_from_findings(
@@ -1042,6 +1062,10 @@ async def stream_rewrite_variants(
     current_best_ph_issues: list[str] = []      # placeholder issues of best variant
     baseline_score: float = 0.0  # score of try 1, used in improvement report
 
+    # Knowledge ceiling tracking: per-variant per-query results
+    # Structure: list indexed by variant, each entry is list[{query, answered}]
+    all_per_query_results: list[list[dict]] = []
+
     for i in range(n):
         # Try 1 rewrites from original; subsequent tries improve the best result
         content_to_use = page_content if i == 0 or not current_best_text else current_best_text
@@ -1061,10 +1085,11 @@ async def stream_rewrite_variants(
         result = await _generate_one_rewrite(content_to_use, prompt_to_use, model, provider, i)
 
         failing_checks = []
+        per_query_results: list[dict] = []
         if result.get("text"):
             issues, c_score, failing_checks = _content_score(url, result["text"], page_type)
             if query_table:
-                new_qm_score = await _score_rewrite_query_match(
+                new_qm_score, per_query_results = await _score_rewrite_query_match(
                     result["text"], query_table, model, provider
                 )
                 query_projected = _project_score_from_findings(findings_for_projection, new_qm_score)
@@ -1075,6 +1100,7 @@ async def stream_rewrite_variants(
                 projected_score = c_score
         else:
             issues, c_score, projected_score = 999, 0.0, 0.0
+        all_per_query_results.append(per_query_results)
 
         # Verify that placeholders mentioned in GEO NOTES were actually embedded in body
         placeholder_issues: list[str] = []
@@ -1128,12 +1154,29 @@ async def stream_rewrite_variants(
     for v in variants:
         v["rank"] = next((r + 1 for r, rv in enumerate(ranked) if rv["index"] == v["index"]), None)
 
+    # Knowledge ceiling: find queries that scored "No" in every variant that had results.
+    # A query at the knowledge ceiling cannot be answered by rewriting — it needs new content.
+    knowledge_gaps: list[str] = []
+    if all_per_query_results and query_table:
+        all_queries = [q.get("query", "") for q in query_table if q.get("query")]
+        for q_text in all_queries:
+            # Collect this query's verdict across all tries that produced results
+            verdicts = [
+                r["answered"]
+                for per_query in all_per_query_results
+                for r in per_query
+                if r["query"] == q_text
+            ]
+            if verdicts and all(v == "No" for v in verdicts):
+                knowledge_gaps.append(q_text)
+
     done_event = {
         "type": "done",
         "winner_index": winner_index,
         "winner_issues": winner.get("issues", 999),
         "winner_projected_score": winner.get("projected_score", 0.0),
         "winner_text": winner.get("text", ""),
+        "knowledge_gaps": knowledge_gaps,
         "variants": [
             {
                 "index": v["index"],

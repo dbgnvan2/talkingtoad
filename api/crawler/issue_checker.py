@@ -1783,7 +1783,7 @@ def _run_geo_checks(page: "ParsedPage", url: str, issues: list) -> None:
     # ── Aggarwal et al. checks — only on 500+ word pages ────────────────────
     if word_count >= 500:
         # GEO.A.1: Statistics count
-        stat_count = _count_statistics(page.first_150_words or "", links, page)
+        stat_count = _count_statistics(page.first_200_words or "", links, page)
         if stat_count == 0:
             issues.append(make_issue("STATISTICS_COUNT_LOW", url, extra={
                 "word_count": word_count,
@@ -1819,10 +1819,10 @@ def _run_geo_checks(page: "ParsedPage", url: str, issues: list) -> None:
             }))
 
     # ── GEO.2.3: First-viewport answer signal (spec §4.2) ───────────────────
-    if word_count >= 200 and page.first_150_words:
-        if not _has_answer_signal(page.first_150_words):
+    if word_count >= 200 and page.first_200_words:
+        if not _has_answer_signal(page.first_200_words):
             issues.append(make_issue("FIRST_VIEWPORT_NO_ANSWER", url, extra={
-                "first_150_words": page.first_150_words[:200],
+                "first_200_words": page.first_200_words[:200],
             }))
 
     # ── Tier 1 §4.3: Query coverage ─────────────────────────────────────────
@@ -1947,10 +1947,10 @@ _STAT_RE = re.compile(
 
 def _count_statistics(first_words: str, links: list, page: "ParsedPage") -> int:
     """Count statistic-bearing sentences on the page using the full visible text."""
-    # Use first_150_words as a proxy; for a proper count we'd need all text.
-    # We collect from the page's word_count context using blockquote + headings text.
+    # Cap heading contribution to first 10 headings to prevent inflation on
+    # pages with many headings that contain no statistics in their body text.
     all_text_sources = [first_words]
-    for h in (page.headings_outline or []):
+    for h in (page.headings_outline or [])[:10]:
         all_text_sources.append(h.get("text", ""))
     combined = " ".join(all_text_sources)
     return len(_STAT_RE.findall(combined))
@@ -1978,8 +1978,8 @@ _ATTRIBUTION_RE = re.compile(
 
 
 def _count_inline_quotations(page: "ParsedPage") -> int:
-    """Count attribution patterns in first_150_words as proxy for inline quotes."""
-    text = page.first_150_words or ""
+    """Count attribution patterns in first_600_words as proxy for inline quotes."""
+    text = getattr(page, "first_600_words", None) or page.first_200_words or ""
     return len(_ATTRIBUTION_RE.findall(text))
 
 
@@ -1991,8 +1991,8 @@ _CLAIM_RE = re.compile(
 
 
 def _count_orphan_claims(page: "ParsedPage", links: list, url: str) -> int:
-    """Count technical claims in first_150_words not paired with a source link."""
-    text = page.first_150_words or ""
+    """Count technical claims in first_200_words not paired with a source link."""
+    text = page.first_200_words or ""
     claims = _CLAIM_RE.findall(text)
     ext_links = _count_external_body_links(links, url)
     if ext_links > 0:
@@ -2029,7 +2029,7 @@ _NUMBERED_STEP_RE = re.compile(r"^\s*\d+[\.\)]\s+\w", re.M)
 
 
 def _has_numbered_steps(headings: list, page: "ParsedPage") -> bool:
-    text = page.first_150_words or ""
+    text = page.first_200_words or ""
     return bool(_NUMBERED_STEP_RE.search(text))
 
 

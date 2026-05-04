@@ -157,7 +157,7 @@ _MOCK_QUERY_TABLE = json.dumps([
 ])
 
 _MOCK_CHUNK = json.dumps({"self_contained": True, "reason": "Section opens with context"})
-_MOCK_CLAIM = json.dumps({"central_claim": "OpenBrain is a personal AI memory database", "appears_in_first_150_words": True})
+_MOCK_CLAIM = json.dumps({"central_claim": "OpenBrain is a personal AI memory database", "appears_in_first_200_words": True})
 _MOCK_PROMO = json.dumps([
     {"heading": "How Does It Work?", "type": "main_content"},
     {"heading": "Why Use OpenBrain?", "type": "main_content"},

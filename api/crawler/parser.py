@@ -114,7 +114,8 @@ class ParsedPage:
     code_block_count: int = 0            # <pre> + <code> elements
     table_count: int = 0                 # <table> elements
     structured_element_count: int = 0    # <ul>+<ol>+<table>+<dl>+<pre>+<code>
-    first_150_words: str | None = None   # first 200 words of visible body text (name kept for back-compat)
+    first_200_words: str | None = None   # first 200 words of visible body text (excludes nav/header/footer/aside)
+    first_600_words: str | None = None   # first 600 words — wider window for quotation/attribution checks
     blockquote_count: int = 0            # <blockquote> elements
 
     # Tier 1 GEO heuristic counts (spec §4.3–4.6) — pre-computed in parser
@@ -258,7 +259,8 @@ def parse_page(
         code_block_count=_count_code_blocks(soup),
         table_count=len(soup.find_all("table")),
         structured_element_count=_count_structured_elements(soup),
-        first_150_words=_extract_first_n_words(soup, 200),
+        first_200_words=_extract_first_n_words(soup, 200),
+        first_600_words=_extract_first_n_words(soup, 600),
         blockquote_count=len(soup.find_all("blockquote")),
         # Tier 1 GEO heuristics (spec §4.3–4.6)
         vague_opener_count=_count_vague_openers(soup),

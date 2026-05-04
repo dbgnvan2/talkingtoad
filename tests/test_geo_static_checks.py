@@ -35,7 +35,7 @@ def _page(
     code_block_count: int = 0,
     table_count: int = 0,
     structured_element_count: int = 1,
-    first_150_words: str | None = None,
+    first_200_words: str | None = None,
     blockquote_count: int = 0,
     # Tier 1 GEO heuristic fields
     vague_opener_count: int = 0,
@@ -43,8 +43,8 @@ def _page(
     long_paragraph_count: int = 0,
     query_coverage_weak: bool = False,
 ) -> ParsedPage:
-    if first_150_words is None:
-        first_150_words = (
+    if first_200_words is None:
+        first_200_words = (
             "This page is a comprehensive guide. It covers many topics. "
             "According to experts, the results are significant. "
             "We explain everything you need to know in detail here."
@@ -85,7 +85,7 @@ def _page(
         code_block_count=code_block_count,
         table_count=table_count,
         structured_element_count=structured_element_count,
-        first_150_words=first_150_words,
+        first_200_words=first_200_words,
         blockquote_count=blockquote_count,
         # Tier 1 GEO heuristic fields
         vague_opener_count=vague_opener_count,
@@ -125,7 +125,7 @@ def test_raw_html_js_dependent_not_fired_no_spa_shell():
 def test_statistics_count_low_fires_on_zero():
     page = _page(
         word_count=600,
-        first_150_words="This is a page about our product. It helps customers succeed. We believe in quality.",
+        first_200_words="This is a page about our product. It helps customers succeed. We believe in quality.",
     )
     assert "STATISTICS_COUNT_LOW" in _codes(page)
 
@@ -133,7 +133,7 @@ def test_statistics_count_low_fires_on_zero():
 def test_statistics_count_low_not_fired_with_statistic():
     page = _page(
         word_count=600,
-        first_150_words="Our platform processes 10,000 requests per second with 99.9% uptime.",
+        first_200_words="Our platform processes 10,000 requests per second with 99.9% uptime.",
     )
     assert "STATISTICS_COUNT_LOW" not in _codes(page)
 
@@ -141,7 +141,7 @@ def test_statistics_count_low_not_fired_with_statistic():
 def test_statistics_count_low_not_fired_below_500_words():
     page = _page(
         word_count=400,
-        first_150_words="This page has no numbers at all.",
+        first_200_words="This page has no numbers at all.",
     )
     assert "STATISTICS_COUNT_LOW" not in _codes(page)
 
@@ -174,7 +174,7 @@ def test_quotations_missing_fires():
     page = _page(
         word_count=600,
         blockquote_count=0,
-        first_150_words="This is a page about many things. No quotes here at all.",
+        first_200_words="This is a page about many things. No quotes here at all.",
     )
     assert "QUOTATIONS_MISSING" in _codes(page)
 
@@ -188,7 +188,7 @@ def test_quotations_missing_not_fired_with_attribution():
     page = _page(
         word_count=600,
         blockquote_count=0,
-        first_150_words="According to Dr. Smith, the results are clear. This changes everything.",
+        first_200_words="According to Dr. Smith, the results are clear. This changes everything.",
     )
     assert "QUOTATIONS_MISSING" not in _codes(page)
 
@@ -202,7 +202,7 @@ def test_orphan_claim_technical_fires():
         url="https://example.com/guide/setup",
         word_count=400,
         links=[],
-        first_150_words=(
+        first_200_words=(
             "The system supports high availability. "
             "The platform enables real-time processing. "
             "The tool provides automatic failover. "
@@ -217,7 +217,7 @@ def test_orphan_claim_technical_not_fired_non_technical():
         url="https://example.com/about",
         word_count=400,
         links=[],
-        first_150_words="The system supports high availability. The platform enables processing.",
+        first_200_words="The system supports high availability. The platform enables processing.",
     )
     assert "ORPHAN_CLAIM_TECHNICAL" not in _codes(page)
 
@@ -229,7 +229,7 @@ def test_orphan_claim_technical_not_fired_non_technical():
 def test_first_viewport_no_answer_fires():
     page = _page(
         word_count=300,
-        first_150_words=(
+        first_200_words=(
             "This page covers many topics. We discuss various aspects of the subject. "
             "There is a lot to learn here. Join us as we explore the details."
         ),
@@ -240,7 +240,7 @@ def test_first_viewport_no_answer_fires():
 def test_first_viewport_no_answer_not_fired_with_definition():
     page = _page(
         word_count=300,
-        first_150_words="OpenBrain is a personal AI memory database. It stores and retrieves context.",
+        first_200_words="OpenBrain is a personal AI memory database. It stores and retrieves context.",
     )
     assert "FIRST_VIEWPORT_NO_ANSWER" not in _codes(page)
 
@@ -248,13 +248,13 @@ def test_first_viewport_no_answer_not_fired_with_definition():
 def test_first_viewport_no_answer_not_fired_with_tldr():
     page = _page(
         word_count=300,
-        first_150_words="TL;DR: This guide shows you how to set up the system in 5 steps.",
+        first_200_words="TL;DR: This guide shows you how to set up the system in 5 steps.",
     )
     assert "FIRST_VIEWPORT_NO_ANSWER" not in _codes(page)
 
 
 def test_first_viewport_no_answer_not_fired_below_200_words():
-    page = _page(word_count=100, first_150_words="A short page with no answer signal.")
+    page = _page(word_count=100, first_200_words="A short page with no answer signal.")
     assert "FIRST_VIEWPORT_NO_ANSWER" not in _codes(page)
 
 
@@ -333,7 +333,7 @@ def test_code_block_missing_technical_fires():
         url="https://example.com/guide/install",
         word_count=300,
         code_block_count=0,
-        first_150_words=(
+        first_200_words=(
             "Follow these steps:\n1. Download the package\n2. Run the installer\n3. Configure settings"
         ),
     )
@@ -345,7 +345,7 @@ def test_code_block_missing_technical_not_fired_with_code():
         url="https://example.com/guide/install",
         word_count=300,
         code_block_count=2,
-        first_150_words="1. Run the command\n2. Open the config file\n3. Set the variable",
+        first_200_words="1. Run the command\n2. Open the config file\n3. Set the variable",
     )
     assert "CODE_BLOCK_MISSING_TECHNICAL" not in _codes(page)
 
@@ -486,7 +486,7 @@ def test_geo_checks_not_fired_for_noindex():
         date_published=None,
         blockquote_count=0,
         links=[],
-        first_150_words="No numbers here at all.",
+        first_200_words="No numbers here at all.",
     )
     codes = _codes(page)
     geo_codes = {

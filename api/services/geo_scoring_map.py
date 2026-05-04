@@ -45,7 +45,7 @@ GEO_CHECKS: list[dict] = [
         "tier_weight": 3,
         "source": "static",
         "pass_condition": "At least 1 numeric statistic detected on the page",
-        "threshold_description": "0 statistics found (numbers + unit/% pattern) in headings + first_150_words",
+        "threshold_description": "0 statistics found (numbers + unit/% pattern) in headings + first_200_words",
         "page_type_conditions": ["word_count >= 500"],
         "fix_effort": "medium",
         "can_fix_without_fabrication": False,
@@ -56,7 +56,7 @@ GEO_CHECKS: list[dict] = [
             "your rewrite."
         ),
         "weak_check_note": (
-            "Regex scope is narrow (first_150_words + heading text only); statistics "
+            "Regex scope is narrow (first_200_words + heading text only); statistics "
             "buried deep in body text are missed, causing false fires."
         ),
     },
@@ -103,7 +103,7 @@ GEO_CHECKS: list[dict] = [
         "tier_weight": 3,
         "source": "static",
         "pass_condition": "Fewer than 3 unsourced factual claims, or ≥1 external link present",
-        "threshold_description": "≥3 capability-verb sentences in first_150_words with 0 external links",
+        "threshold_description": "≥3 capability-verb sentences in first_200_words with 0 external links",
         "page_type_conditions": [
             "is_technical (TechArticle/HowTo schema or /how-to/|/guide/|/tutorial/ in URL)",
             "word_count >= 300",
@@ -116,7 +116,7 @@ GEO_CHECKS: list[dict] = [
             "claim so the editor can add links. Do not invent sources."
         ),
         "weak_check_note": (
-            "Stub implementation: only scans first_150_words with a narrow verb regex. "
+            "Stub implementation: only scans first_200_words with a narrow verb regex. "
             "Rarely fires in practice. Excluded from mandatory rubric section."
         ),
     },
@@ -228,12 +228,12 @@ GEO_CHECKS: list[dict] = [
         "tier": "Mechanistic",
         "tier_weight": 2,
         "source": "static",
-        "pass_condition": "first_150_words contains a definition, TL;DR, or 'is a' sentence",
+        "pass_condition": "first_200_words contains a definition, TL;DR, or 'is a' sentence",
         "threshold_description": (
             "No match for: tl;dr, in short, the short answer is, key takeaway, "
             "bottom line, '[Noun] is a/an [noun]', refers to, defined as"
         ),
-        "page_type_conditions": ["word_count >= 200", "first_150_words available"],
+        "page_type_conditions": ["word_count >= 200", "first_200_words available"],
         "fix_effort": "easy",
         "can_fix_without_fabrication": True,
         "rubric_instruction": (
@@ -372,7 +372,7 @@ GEO_CHECKS: list[dict] = [
         "tier_weight": 2,
         "source": "llm",
         "pass_condition": "LLM identifies central claim as appearing in first 150 words",
-        "threshold_description": "appears_in_first_150_words=False from LLM analysis",
+        "threshold_description": "appears_in_first_200_words=False from LLM analysis",
         "page_type_conditions": [],
         "fix_effort": "easy",
         "can_fix_without_fabrication": True,

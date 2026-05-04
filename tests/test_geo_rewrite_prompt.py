@@ -326,11 +326,11 @@ class TestBuildSyntheticParsedPage:
         result = _build_synthetic_parsed_page("https://example.org/blog/seo", SAMPLE_MD)
         assert result["date_published"] is not None
 
-    def test_c5_first_150_words_non_empty(self):
-        """C.5: first_150_words is populated."""
+    def test_c5_first_200_words_non_empty(self):
+        """C.5: first_200_words is populated."""
         result = _build_synthetic_parsed_page("https://example.org/blog/seo", SAMPLE_MD)
-        assert result["first_150_words"]
-        assert len(result["first_150_words"].split()) <= 155  # ~150 words
+        assert result["first_200_words"]
+        assert len(result["first_200_words"].split()) <= 205  # ~200 words
 
     def test_c5_is_indexable_true(self):
         """C.5: synthetic pages are always indexable."""

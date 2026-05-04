@@ -21,6 +21,17 @@ load_dotenv(".env-ttoad", override=True)
 
 logger = logging.getLogger(__name__)
 
+# ---------------------------------------------------------------------------
+# Analysis limits — centralised so they can be tuned without hunting the file
+# ---------------------------------------------------------------------------
+_GEO_ANALYSIS_LIMITS = {
+    "query_match_content_chars": 3000,     # chars of page text fed to query-match prompt
+    "chunk_text_chars": 800,               # chars per H2/H3 section in self-containedness check
+    "central_claim_content_chars": 2000,   # chars of full content for central-claim prompt
+    "central_claim_intro_chars": 800,      # fallback intro chars when first_200_words unavailable
+    "max_sections_tested": 8,              # max H2/H3 sections tested by chunk-containedness
+}
+
 _GEMINI_ENDPOINT = (
     "https://generativelanguage.googleapis.com/v1/models/"
     "{model}:generateContent?key={key}"
@@ -173,7 +184,7 @@ Return ONLY a JSON array, no other text:
 """
 
 async def run_query_match_test(content: str, model: str, provider: str) -> list[dict]:
-    prompt = _QUERY_MATCH_PROMPT.format(content=content[:3000])
+    prompt = _QUERY_MATCH_PROMPT.format(content=content[:_GEO_ANALYSIS_LIMITS["query_match_content_chars"]])
     try:
         raw = await _call_ai(prompt, model, provider)
         parsed = _safe_json(raw)
@@ -207,12 +218,12 @@ async def run_chunk_containedness(
 ) -> list[dict]:
     """Check each H2/H3 section for self-containedness."""
     results = []
-    for section in headings_and_text[:8]:  # cap at 8 sections to limit API calls
+    for section in headings_and_text[:_GEO_ANALYSIS_LIMITS["max_sections_tested"]]:  # cap to limit API calls
         heading = section.get("heading", "")
         text = section.get("text", "")
         if not text or len(text) < 50:
             continue
-        prompt = _CHUNK_PROMPT.format(chunk=f"## {heading}\n\n{text[:800]}")
+        prompt = _CHUNK_PROMPT.format(chunk=f"## {heading}\n\n{text[:_GEO_ANALYSIS_LIMITS['chunk_text_chars']]}")
         try:
             raw = await _call_ai(prompt, model, provider)
             parsed = _safe_json(raw)
@@ -234,21 +245,30 @@ async def run_chunk_containedness(
 _CENTRAL_CLAIM_PROMPT = """\
 Read this web page content. In one sentence, what is the page's central claim or main answer?
 
-Content:
+Full content (for context):
 ---
 {content}
 ---
 
-Return ONLY JSON: {{"central_claim": "...", "appears_in_first_150_words": true/false}}
+First 200 words of the page (the critical intro window):
+---
+{first_200_words}
+---
+
+Return ONLY JSON: {{"central_claim": "...", "appears_in_first_200_words": true/false}}
+Set "appears_in_first_200_words" to true only if the central claim is clearly stated in the FIRST 200 WORDS shown above.
 """
 
 async def check_central_claim(
     content: str,
-    first_150_words: str,
+    first_200_words: str,
     model: str,
     provider: str,
 ) -> dict:
-    prompt = _CENTRAL_CLAIM_PROMPT.format(content=content[:2000])
+    prompt = _CENTRAL_CLAIM_PROMPT.format(
+        content=content[:_GEO_ANALYSIS_LIMITS["central_claim_content_chars"]],
+        first_200_words=first_200_words or content[:_GEO_ANALYSIS_LIMITS["central_claim_intro_chars"]],
+    )
     try:
         raw = await _call_ai(prompt, model, provider)
         parsed = _safe_json(raw)
@@ -314,7 +334,7 @@ async def generate_geo_report(
         url: The page URL.
         raw_html: Raw HTML of the page (used for content extraction).
         preferred_model: Optional model ID override.
-        page_data: Optional dict with parsed page fields (first_150_words, headings_outline, etc.)
+        page_data: Optional dict with parsed page fields (first_200_words, headings_outline, etc.)
     """
     try:
         model, provider = _resolve_model(preferred_model)
@@ -326,10 +346,10 @@ async def generate_geo_report(
     # Extract content from HTML
     from bs4 import BeautifulSoup
     soup = BeautifulSoup(raw_html, "lxml")
-    for noise in soup.find_all(["script", "style", "nav", "header", "footer"]):
+    for noise in soup.find_all(["script", "style", "nav", "header", "footer", "aside"]):
         noise.decompose()
     full_text = soup.get_text(separator=" ", strip=True)
-    first_150_words = " ".join(full_text.split()[:150])
+    first_200_words = " ".join(full_text.split()[:200])
 
     # Build sections from headings
     headings_outline = (page_data or {}).get("headings_outline", [])
@@ -398,44 +418,72 @@ async def generate_geo_report(
         answered = sum(1 for q in query_table if q.get("answered") == "Yes")
         partial = sum(1 for q in query_table if q.get("answered") == "Partial")
         total = len(query_table)
+        if total < 5:
+            logger.warning(
+                "query_match_low_count",
+                extra={"query_count": total, "minimum_expected": 5},
+            )
         score = (answered + 0.5 * partial) / total if total else 0
+        findings_text = [
+            f"{answered}/{total} queries fully answered",
+            f"{partial}/{total} queries partially answered",
+        ]
+        if total < 5:
+            findings_text.append(
+                f"Warning: only {total} queries generated (expected ≥5); score may be unreliable"
+            )
         report.findings.append(GEOFinding(
             code="QUERY_MATCH_SCORE",
             label="Query-Match Test",
             evidence_tier="Empirical",
             pass_fail="pass" if score >= 0.7 else "fail",
             score=round(score, 2),
-            findings=[
-                f"{answered}/{total} queries fully answered",
-                f"{partial}/{total} queries partially answered",
-            ],
-            details={"answered": answered, "partial": partial, "total": total},
+            findings=findings_text,
+            details={"answered": answered, "partial": partial, "total": total, "query_count": total},
         ))
 
     # ── GEO.2.4 — Chunk self-containedness ───────────────────────────────
     if sections:
+        total_sections = len(sections)
+        _cap = _GEO_ANALYSIS_LIMITS["max_sections_tested"]
+        if total_sections > _cap:
+            logger.warning(
+                "chunk_containedness_capped",
+                extra={"sections_total": total_sections, "sections_tested": _cap},
+            )
         chunk_results = await run_chunk_containedness(sections, model, provider)
         report.chunk_containedness = chunk_results
         if chunk_results:
             self_contained = sum(1 for c in chunk_results if c.get("self_contained"))
             total_chunks = len(chunk_results)
             ratio = self_contained / total_chunks if total_chunks else 1
+            capped = total_sections > _cap
             if ratio < 0.5:
+                findings_text = [
+                    f"{self_contained}/{total_chunks} sections are self-contained",
+                    "More than half of sections require prior context to understand",
+                ]
+                if capped:
+                    findings_text.append(
+                        f"Note: only first {_cap} of {total_sections} sections were tested"
+                    )
                 report.findings.append(GEOFinding(
                     code="CHUNKS_NOT_SELF_CONTAINED",
                     label="Sections Lack Context",
                     evidence_tier="Mechanistic",
                     pass_fail="fail",
                     score=round(ratio, 2),
-                    findings=[
-                        f"{self_contained}/{total_chunks} sections are self-contained",
-                        "More than half of sections require prior context to understand",
-                    ],
+                    findings=findings_text,
+                    details={
+                        "sections_tested": total_chunks,
+                        "sections_total": total_sections,
+                        "capped": capped,
+                    },
                 ))
 
     # ── GEO.3.1 — Central claim check ────────────────────────────────────
-    claim_result = await check_central_claim(full_text, first_150_words, model, provider)
-    if claim_result and not claim_result.get("appears_in_first_150_words", True):
+    claim_result = await check_central_claim(full_text, first_200_words, model, provider)
+    if claim_result and not claim_result.get("appears_in_first_200_words", True):
         report.findings.append(GEOFinding(
             code="CENTRAL_CLAIM_BURIED",
             label="Main Point Buried",
@@ -444,7 +492,7 @@ async def generate_geo_report(
             score=0.5,
             findings=[
                 f"Central claim: \"{claim_result.get('central_claim', 'unknown')}\"",
-                "This claim does not appear in the first 150 words",
+                "This claim does not appear in the first 200 words",
             ],
         ))
 
