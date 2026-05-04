@@ -16,9 +16,14 @@ import pytest
 
 from api.services.geo_rewrite_prompt import (
     _BEST_OF_N,
+    _build_improvement_prompt,
     _build_synthetic_parsed_page,
+    _content_score,
     _detect_page_type,
+    _project_score_from_findings,
     _score_markdown,
+    _split_body_and_notes,
+    _verify_geo_notes_placeholders,
     generate_rewrite_prompt,
 )
 
@@ -392,6 +397,358 @@ class TestScoreMarkdown:
         score = _score_markdown("https://example.org/test", "Short.")
         # Short page has word_count < 200, so most checks are skipped
         assert score <= 3  # at most a couple fire for very short content
+
+
+# ---------------------------------------------------------------------------
+# Adversarial tests — self-review checklist applied to every scoring function
+#
+# Question asked for each function:
+#   Text-processing: "What text is in the buffer? What produces a correct-looking
+#                     but wrong result?"
+#   Scoring: "Is the denominator stable? Does more failure always mean lower score?"
+# ---------------------------------------------------------------------------
+
+# Shared fixtures
+_LONG_BODY = (
+    "OpenBrain is a personal AI memory database that you own and control. "
+    "It solves the problem of AI assistants not remembering past interactions. "
+) * 25  # ~500+ words, no stats/cites/quotes/structure
+
+
+class TestSplitBodyAndNotes:
+    """_split_body_and_notes: scope boundary must be precisely at the GEO NOTES delimiter."""
+
+    def test_no_geo_notes_returns_full_text_empty_notes(self):
+        text = "Just plain content with no GEO NOTES section."
+        body, notes = _split_body_and_notes(text)
+        assert body == text
+        assert notes == ""
+
+    def test_split_is_at_geo_notes_boundary(self):
+        text = "Body content.\n\n---\nGEO NOTES\n- [CITATION NEEDED] added at: intro."
+        body, notes = _split_body_and_notes(text)
+        assert "Body content" in body
+        assert "CITATION NEEDED" not in body   # must not leak into body
+        assert "CITATION NEEDED" in notes
+
+    def test_dashes_before_geo_notes_not_in_body(self):
+        """The --- separator itself must not appear in the returned body."""
+        text = "Body.\n---\nGEO NOTES\n- note"
+        body, notes = _split_body_and_notes(text)
+        assert "GEO NOTES" not in body
+        assert "---" not in body
+
+    def test_multiple_dashes_only_splits_at_geo_notes(self):
+        """An --- that is NOT followed by GEO NOTES must stay in body."""
+        text = "Section 1.\n\n---\n\nSection 2.\n\n---\nGEO NOTES\n- note"
+        body, notes = _split_body_and_notes(text)
+        # Section 1 and the first --- are in body
+        assert "Section 1" in body
+        assert "Section 2" in body
+        assert "GEO NOTES" not in body
+
+    def test_empty_text_returns_empty_body_and_notes(self):
+        body, notes = _split_body_and_notes("")
+        assert body == ""
+        assert notes == ""
+
+
+class TestVerifyGeoNotesPlaceholders:
+    """_verify_geo_notes_placeholders: detects the lie-by-description failure mode."""
+
+    def test_placeholder_only_in_notes_is_missing(self):
+        """Core case: LLM describes placeholder in notes but never embeds it."""
+        body = "Some content without any placeholder."
+        notes = "\n---\nGEO NOTES\n- [CITATION NEEDED] added at: introduction.\n"
+        missing = _verify_geo_notes_placeholders(body, notes)
+        assert "CITATION NEEDED / LINK" in missing
+
+    def test_placeholder_in_both_body_and_notes_is_not_missing(self):
+        """When LLM embeds correctly AND notes it — must not flag as missing."""
+        body = "Research confirms this [CITATION NEEDED: benchmark study]."
+        notes = "\n---\nGEO NOTES\n- [CITATION NEEDED] added at: paragraph 1."
+        missing = _verify_geo_notes_placeholders(body, notes)
+        assert "CITATION NEEDED / LINK" not in missing
+
+    def test_no_notes_section_returns_empty(self):
+        body = "Content without GEO NOTES."
+        missing = _verify_geo_notes_placeholders(body, "")
+        assert missing == []
+
+    def test_statistic_placeholder_lie_detected(self):
+        body = "No numeric placeholder here."
+        notes = "\n---\nGEO NOTES\n- [STATISTIC: usage rate] added at: section 2."
+        missing = _verify_geo_notes_placeholders(body, notes)
+        assert "STATISTIC" in missing
+
+    def test_quote_placeholder_lie_detected(self):
+        body = "No quote placeholder in body."
+        notes = "\n---\nGEO NOTES\n- [QUOTE NEEDED: CEO] added at: conclusion."
+        missing = _verify_geo_notes_placeholders(body, notes)
+        assert "QUOTE NEEDED" in missing
+
+    def test_all_three_correct_returns_empty(self):
+        body = (
+            "Revenue grew 40% [STATISTIC: annual report]. "
+            "According to [CITATION NEEDED: source]. "
+            "[QUOTE NEEDED: expert]."
+        )
+        notes = (
+            "\n---\nGEO NOTES\n"
+            "- [STATISTIC] added\n"
+            "- [CITATION NEEDED] added\n"
+            "- [QUOTE NEEDED] added\n"
+        )
+        missing = _verify_geo_notes_placeholders(body, notes)
+        assert missing == []
+
+
+class TestContentScoreAdversarial:
+    """
+    _content_score adversarial tests.
+
+    Self-review questions applied:
+    - What is in `content`? Answer: body text + optionally GEO NOTES section.
+    - What produces a correct-looking but wrong result? GEO NOTES placeholders
+      matching the check regex without being embedded in body.
+    - Monotonicity: more failing checks must never produce a higher score.
+    """
+
+    def test_returns_three_tuple(self):
+        """_content_score must return (fail_count, score, failing_codes)."""
+        result = _content_score("http://x.com", "short")
+        assert len(result) == 3
+        issues, score, codes = result
+        assert isinstance(issues, int)
+        assert isinstance(score, float)
+        assert isinstance(codes, list)
+
+    def test_geo_notes_placeholder_does_not_inflate_citation_score(self):
+        """Core regression: [CITATION NEEDED] in GEO NOTES must NOT count as a citation."""
+        text_with_notes_only = (
+            _LONG_BODY
+            + "\n---\nGEO NOTES\n- [CITATION NEEDED] added at: introduction.\n"
+        )
+        text_no_notes = _LONG_BODY  # same body, no notes
+        _, score_with_notes, _ = _content_score("http://x.com", text_with_notes_only)
+        _, score_no_notes, _ = _content_score("http://x.com", text_no_notes)
+        assert score_with_notes == score_no_notes, (
+            "Score with GEO NOTES placeholder must equal score without it; "
+            "the notes section must not contribute to citation check"
+        )
+
+    def test_geo_notes_statistic_does_not_inflate_stat_score(self):
+        """[STATISTIC: ...] in GEO NOTES must NOT count as a real statistic."""
+        text_notes_only = (
+            _LONG_BODY
+            + "\n---\nGEO NOTES\n- [STATISTIC: user growth rate] added at: body.\n"
+        )
+        _, score_notes, codes_notes = _content_score("http://x.com", text_notes_only)
+        # STATISTICS_COUNT_LOW must still fire — notes don't count
+        assert "STATISTICS_COUNT_LOW" in codes_notes
+
+    def test_inline_placeholder_counts_for_citation(self):
+        """[CITATION NEEDED] embedded IN the body must count and clear the check."""
+        body_with_inline = (
+            _LONG_BODY
+            + " Research confirms this [CITATION NEEDED: peer-reviewed study]."
+        )
+        _, _, codes = _content_score("http://x.com", body_with_inline)
+        assert "EXTERNAL_CITATIONS_LOW" not in codes
+
+    def test_inline_statistic_counts(self):
+        """A number with unit embedded in body must clear STATISTICS_COUNT_LOW."""
+        body_with_stat = _LONG_BODY + " Users report 40% faster retrieval."
+        _, _, codes = _content_score("http://x.com", body_with_stat)
+        assert "STATISTICS_COUNT_LOW" not in codes
+
+    def test_monotonicity_more_failures_lower_score(self):
+        """Monotonicity: every additional failing check must lower or hold the score."""
+        # Start with rich content (all checks pass)
+        rich = (
+            "OpenBrain stores your AI memory in a database you control. "
+            "Users report 40% faster context recall [CITATION NEEDED: benchmark]. "
+            "According to early adopters, sessions feel continuous. "
+            "- Feature A\n- Feature B\n- Feature C\n\n"
+        ) * 10
+
+        _, score_rich, fails_rich = _content_score("http://x.com", rich)
+
+        # Thin: no stats, no cites, no quotes, no structure
+        _, score_thin, fails_thin = _content_score("http://x.com", _LONG_BODY)
+
+        assert len(fails_rich) <= len(fails_thin), (
+            "Rich content must have fewer or equal failing checks than thin content"
+        )
+        assert score_rich >= score_thin, (
+            f"Rich score ({score_rich}) must be >= thin score ({score_thin})"
+        )
+
+    def test_score_range_is_zero_to_one(self):
+        """Score must always be in [0.0, 1.0]."""
+        for content in ["", "x", _LONG_BODY, "word " * 1000]:
+            _, score, _ = _content_score("http://x.com", content)
+            assert 0.0 <= score <= 1.0, f"Score {score} out of range for content length {len(content)}"
+
+    def test_failing_codes_match_issues_count(self):
+        """fail_count must equal len(failing_codes)."""
+        issues, _, codes = _content_score("http://x.com", _LONG_BODY)
+        assert issues == len(codes)
+
+    def test_answer_signal_in_notes_does_not_satisfy_viewport_check(self):
+        """FIRST_VIEWPORT_NO_ANSWER must check body only, not GEO NOTES.
+
+        The check requires word_count >= 200, so the body must be at least 200 words.
+        Using 40 repetitions of a 6-word sentence = 240 words.
+        """
+        # 40 × 6 words = 240 words — vague opener, no answer signal
+        no_answer_body = "This document discusses various memory approaches. " * 40
+        text_with_misleading_notes = (
+            no_answer_body
+            + "\n---\nGEO NOTES\n"
+            + "- Direct answer added at: introduction: "
+            + "'OpenBrain is a personal AI memory database.'\n"
+        )
+        _, _, codes = _content_score("http://x.com", text_with_misleading_notes)
+        assert "FIRST_VIEWPORT_NO_ANSWER" in codes, (
+            "FIRST_VIEWPORT_NO_ANSWER must fire even when the answer phrase appears "
+            "only in GEO NOTES — the check must operate on body text only"
+        )
+
+
+class TestProjectScoreFromFindings:
+    """
+    _project_score_from_findings adversarial tests.
+
+    Self-review questions:
+    - Is the denominator stable? Yes — it's the weighted sum of all findings.
+    - Can more failures inflate the score? No — adding fails should lower it.
+    - Does a higher query match always mean a higher projected score? Yes.
+    """
+
+    def _findings(self, qm_score: float) -> list[dict]:
+        return [
+            {
+                "code": "QUERY_MATCH_SCORE",
+                "evidence_tier": "Empirical",
+                "pass_fail": "pass" if qm_score >= 0.70 else "fail",
+                "score": qm_score,
+            },
+            {
+                "code": "JSON_LD_MISSING",
+                "evidence_tier": "Conventional",
+                "pass_fail": "fail",
+                "score": 0.0,
+            },
+        ]
+
+    def test_higher_query_match_always_higher_projected(self):
+        """Monotonicity: score with 0.9 qm must exceed score with 0.5 qm."""
+        score_low = _project_score_from_findings(self._findings(0.5), 0.5)
+        score_high = _project_score_from_findings(self._findings(0.9), 0.9)
+        assert score_high > score_low
+
+    def test_qm_score_of_zero_does_not_crash(self):
+        """Edge: qm_score=0.0 must return a valid score, not raise."""
+        score = _project_score_from_findings(self._findings(0.0), 0.0)
+        assert 0.0 <= score <= 1.0
+
+    def test_qm_score_of_one_does_not_exceed_one(self):
+        """qm_score=1.0 with all other findings passing must not exceed 1.0."""
+        all_pass = [
+            {"code": "QUERY_MATCH_SCORE", "evidence_tier": "Empirical",
+             "pass_fail": "pass", "score": 1.0},
+        ]
+        score = _project_score_from_findings(all_pass, 1.0)
+        assert score <= 1.0
+
+    def test_replaces_existing_query_match_score(self):
+        """If findings already contain QUERY_MATCH_SCORE, it must be replaced, not added."""
+        findings = self._findings(0.5)
+        score_before = _project_score_from_findings(findings, 0.5)
+        score_after = _project_score_from_findings(findings, 0.9)
+        # Replacing with a higher score must raise the projected score
+        assert score_after > score_before
+
+    def test_empty_findings_returns_valid_score(self):
+        """No findings → must return a valid score, not divide by zero."""
+        score = _project_score_from_findings([], 0.8)
+        assert 0.0 <= score <= 1.0
+
+
+class TestBuildImprovementPromptAdversarial:
+    """
+    _build_improvement_prompt adversarial tests.
+
+    Self-review questions:
+    - Does the prompt actually tell the LLM what's failing and how to fix it?
+    - Does it warn the LLM when placeholder lies were detected?
+    - Does it include the current score so the LLM knows what to protect?
+    """
+
+    def test_failing_checks_produce_targeted_instructions(self):
+        """When EXTERNAL_CITATIONS_LOW fails, prompt must contain the citation fix."""
+        prompt = _build_improvement_prompt(
+            "ORIG", 2, 5,
+            failing_checks=["EXTERNAL_CITATIONS_LOW"],
+            current_score=0.73,
+        )
+        assert "EXTERNAL_CITATIONS_LOW" in prompt
+        assert "GEO NOTES" in prompt  # must warn that notes don't count
+        assert "inline" in prompt.lower() or "INLINE" in prompt
+
+    def test_placeholder_issue_triggers_critical_warning(self):
+        """When placeholder_issues is non-empty, prompt must contain the critical warning."""
+        prompt = _build_improvement_prompt(
+            "ORIG", 2, 5,
+            failing_checks=["STATISTICS_COUNT_LOW"],
+            current_score=0.73,
+            placeholder_issues=["STATISTIC"],
+        )
+        assert "CRITICAL MISTAKE" in prompt or "CRITICAL" in prompt
+        assert "STATISTIC" in prompt
+
+    def test_no_placeholder_issue_no_critical_warning(self):
+        """When placeholder_issues is empty, the critical warning must NOT appear."""
+        prompt = _build_improvement_prompt(
+            "ORIG", 2, 5,
+            failing_checks=["STRUCTURED_ELEMENTS_LOW"],
+            current_score=0.85,
+            placeholder_issues=[],
+        )
+        assert "CRITICAL MISTAKE" not in prompt
+
+    def test_current_score_shown_in_prompt(self):
+        """The current score percentage must appear so LLM knows what to protect."""
+        prompt = _build_improvement_prompt(
+            "ORIG", 3, 5,
+            current_score=0.85,
+        )
+        assert "85%" in prompt
+
+    def test_preservation_constraint_always_present(self):
+        """PRESERVATION CONSTRAINT must appear regardless of failing checks."""
+        for fails in [[], ["STATISTICS_COUNT_LOW"], ["FIRST_VIEWPORT_NO_ANSWER"]]:
+            prompt = _build_improvement_prompt("ORIG", 2, 5, failing_checks=fails)
+            assert "PRESERVATION" in prompt, f"Missing PRESERVATION for fails={fails}"
+
+    def test_all_passing_produces_no_fix_instructions(self):
+        """When no checks are failing, prompt must say all checks are passing."""
+        prompt = _build_improvement_prompt("ORIG", 2, 5, failing_checks=[])
+        assert "ALL CONTENT CHECKS PASSING" in prompt
+
+    def test_original_prompt_always_appended(self):
+        """The original system prompt must always be included at the end."""
+        prompt = _build_improvement_prompt("SENTINEL_ORIGINAL_PROMPT", 2, 5)
+        assert "SENTINEL_ORIGINAL_PROMPT" in prompt
+
+    def test_structured_elements_fix_suggests_list(self):
+        """STRUCTURED_ELEMENTS_LOW fix must mention adding a list."""
+        prompt = _build_improvement_prompt(
+            "ORIG", 2, 5,
+            failing_checks=["STRUCTURED_ELEMENTS_LOW"],
+        )
+        assert "list" in prompt.lower() or "table" in prompt.lower()
 
 
 # ---------------------------------------------------------------------------

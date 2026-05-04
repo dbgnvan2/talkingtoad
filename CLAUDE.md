@@ -465,6 +465,29 @@ When implementing new features:
 - `test_[component]_integration.py` for integration tests
 - `test_architecture_constraints.py` for design rule enforcement
 
+### CRITICAL: Self-Review Before Every Commit
+
+After writing any function — before staging it — run the following review questions
+and fix any issue found. This is not optional. Silent wrong answers are worse than crashes.
+
+**For every text-processing function (regex search, word count, score input):**
+1. What is the *actual* text in the buffer? Name every section that could appear in it.
+2. Is there any text in the buffer that should NOT count toward the result?
+   (footers, appendices, GEO NOTES, nav elements, metadata sections)
+3. What input produces a passing/matching result for the *wrong* reason?
+   Write one test that tries to fool the function with that input.
+
+**For every scoring function (any function returning a 0–1 score or numeric rating):**
+1. Is the denominator fixed or dynamic? If dynamic, what can inflate or shrink it?
+2. What input produces the *highest* score? Is that actually the best content?
+3. Does more failure always produce a lower score? Write one monotonicity test.
+
+**The one-question shortcut:** "What would a correct-looking but wrong result look like?"
+If you can describe it, write a test that produces it and assert it fails.
+
+These questions must be answered in code (as tests), not in your head.
+A function without at least one adversarial test case is not done.
+
 ### Code Quality Standards
 
 - **GUI Architecture:** DO NOT change the GUI structure or navigation flow on your own. You MUST have explicit instructions from the user before altering how data is displayed or navigated.
