@@ -205,10 +205,62 @@ The page content is provided immediately after these instructions, delimited by:
 
 ---
 
+## (b.5) PRIORITY ORDER
+
+Apply changes in this strict order — earlier steps unlock the most GEO score gain:
+
+1. **INTRO ANSWER** — Does the page answer its core question in the first 100–200 words?
+   Every other improvement is worth less if AI models see narrative warm-up before the answer.
+
+2. **QUERY COVERAGE** — Do the intro + H2 headings together cover the key user queries?
+   Each H2 section should address at least one distinct user question within its body.
+
+3. **SECTION INDEPENDENCE** — Can each H2 section stand alone?
+   A reader arriving directly at an H2 must not need prior sections to understand it.
+
+4. **STRUCTURAL CLARITY** — Are headings specific? Are paragraphs under 150 words?
+   Vague headings and wall-of-text paragraphs fragment AI retrieval.
+
+---
+
+## (b.6) REQUIRED PAGE STRUCTURE
+
+Follow this template when structuring the output:
+
+```
+H1: [Clear topic — preserve existing H1 text]
+
+INTRO (100–200 words): Direct answer to the page's core question. No preamble.
+  → First sentence states what the page teaches, concretely.
+  → Covers the 1–2 most fundamental queries.
+
+H2: [First major aspect — specific, not vague]
+  Body: Introduce the concept here; do NOT reference the intro.
+        Place statistics, quotes, examples inside this section.
+        Answers 1+ key queries naturally within the body.
+
+H2: [Second major aspect]
+  Body: Self-contained. Brief one-sentence recap of the central concept is fine.
+        Do NOT cluster all evidence here; spread across sections.
+
+H2: [Further aspects as needed …]
+```
+
+Do NOT move all statistics or citations into one section.
+
+---
+
 ## (c) OUTPUT CONTRACT
 
 Return **only** the rewritten content in Markdown, with no preamble, no explanation,
 and no summary of changes. Do not add a "Here is the rewritten version:" header.
+
+**Intro requirements:**
+- The intro must directly answer the page's core question within the first 100–200 words.
+- Do NOT begin with a narrative warm-up: "In this guide we will…", "Many organisations face…",
+  "Understanding X is critical…", "Before we dive in…" — these defer the answer.
+- The first sentence should state *what the page teaches*, concretely.
+- Phrases like "we will cover", "this article explains", or "let's explore" are banned in the intro.
 
 Do NOT shorten the content unless a section is purely promotional. Preserve all
 headings at the same nesting level. Preserve all factual claims.
@@ -329,12 +381,47 @@ The rewrite MUST avoid the following patterns that mark content as AI-generated:
 - Do not make every sentence roughly the same length — vary between short punchy
   sentences and longer explanatory ones
 
+**Backward cross-reference phrases — STRICTLY PROHIBITED:**
+These phrases prevent AI models from extracting standalone answers from sections.
+Replace each with the actual concept name.
+
+| Prohibited | Replace with |
+|---|---|
+| "this approach" / "this method" | the actual approach name |
+| "as mentioned above" / "as noted above" | re-state the concept directly |
+| "as discussed above" / "as discussed earlier" | re-state the concept directly |
+| "the above method" / "the method described above" | the actual method name |
+| "see above" / "see the previous section" | re-state the concept directly |
+| "the aforementioned" | the actual concept name |
+| "as previously stated" / "as we saw" / "as we covered" | re-state directly |
+| "the process described" / "the technique described" | the actual process name |
+
+**Section independence rule:**
+Each H2 section must be readable without any prior sections.
+A one-sentence recap of the central concept at the start of a section is encouraged.
+Never use a backward reference where a direct re-statement works.
+
 **Required style rules:**
 - Preserve contractions if the original used them (don't, it's, we're)
 - Vary sentence length deliberately — mix short sentences with longer ones
 - Lead with the concrete before the abstract (example before principle)
 - Prefer active verbs over nominalised verbs ("we measure" not "we perform measurement of")
 - Use specific numbers and named entities wherever the original justifies them
+
+---
+
+## (j) QUERY DISTRIBUTION
+
+The key queries listed in the rubric must be distributed across the page — do NOT
+answer all of them in the intro.
+
+- **Intro:** Answer the 1–2 most fundamental "what is / why" queries only.
+- **Each H2 section:** Address at least one query naturally within the section body,
+  where the content supports it.
+- Do NOT write a standalone FAQ section just to cover queries — integrate the
+  answers into the flow of each section.
+- If a query is specific to a technical step or comparison, answer it in the
+  section covering that step — not in the intro.
 """
 
     return {
@@ -721,6 +808,42 @@ def _project_score_from_findings(
 
 
 # ---------------------------------------------------------------------------
+# Improvement-mode prompt builder (Phase 4 — evolutionary rewrite)
+# ---------------------------------------------------------------------------
+
+def _build_improvement_prompt(original_system_prompt: str, attempt_num: int, total: int) -> str:
+    """
+    Wrap the original system prompt with improvement-mode framing.
+
+    Tries 2+ receive the current best draft as input rather than the original
+    source content, so the LLM knows it is refining an existing rewrite.
+    """
+    prefix = f"""\
+## IMPROVEMENT MODE — ATTEMPT {attempt_num} OF {total}
+
+You are improving an existing GEO rewrite draft, NOT rewriting from the original source.
+The draft below already follows the GEO structure. Your task is to push the score higher.
+
+Work through this checklist in order:
+1. **Intro answer** — Do the first 100–200 words directly state the answer?
+   If not, fix this before anything else.
+2. **Backward cross-references** — Replace every "as mentioned above", "this approach",
+   "the aforementioned", "as we saw" with the actual concept name.
+3. **Query coverage** — Does each H2 section address at least one key query?
+   Strengthen any section that does not.
+4. **Statistics / citations** — Are statistics and citations distributed across sections?
+   If clustered in one place, move them into the sections they support.
+5. **Paragraph length** — Break any paragraph over 150 words into two focused paragraphs.
+
+Preserve all factual claims, placeholders, and structural decisions that are already
+working. Only change what improves the score.
+
+---
+{original_system_prompt}"""
+    return prefix
+
+
+# ---------------------------------------------------------------------------
 # Best-of-N rewrite executor
 # ---------------------------------------------------------------------------
 
@@ -777,8 +900,22 @@ async def stream_rewrite_variants(
 
     variants: list[dict] = []
 
+    # Evolutionary rewrite state: after each try, use the best result so far
+    # as the base content for the next try (Phase 4).
+    current_best_text: str = ""
+    current_best_score: float = -1.0
+    baseline_score: float = 0.0  # score of try 1, used in improvement report
+
     for i in range(n):
-        result = await _generate_one_rewrite(page_content, system_prompt, model, provider, i)
+        # Try 1 rewrites from original; subsequent tries improve the best result
+        content_to_use = page_content if i == 0 or not current_best_text else current_best_text
+        prompt_to_use = (
+            system_prompt
+            if i == 0
+            else _build_improvement_prompt(system_prompt, i + 1, n)
+        )
+
+        result = await _generate_one_rewrite(content_to_use, prompt_to_use, model, provider, i)
 
         if result.get("text"):
             issues, c_score = _content_score(url, result["text"], page_type)
@@ -798,6 +935,13 @@ async def stream_rewrite_variants(
         result["issues"] = issues
         result["projected_score"] = projected_score
         variants.append(result)
+
+        # Record baseline from first try; update evolutionary best
+        if i == 0:
+            baseline_score = projected_score
+        if result.get("text") and projected_score > current_best_score:
+            current_best_score = projected_score
+            current_best_text = result["text"]
 
         event = {
             "type": "variant",
