@@ -220,6 +220,11 @@ _ISSUE_SCORING: dict[str, tuple[int, int]] = {
     "FAQ_SCHEMA_MISSING":         (3,  2),
     "PROMOTIONAL_CONTENT_INTERRUPTS": (3, 3),
     "AI_TXT_MISSING":             (1,  1),
+    # Tier 1 GEO heuristics (spec §4.3–4.6)
+    "QUERY_COVERAGE_WEAK":        (7,  2),
+    "SECTION_VAGUE_OPENER":       (5,  2),
+    "SECTION_CROSS_REFERENCES":   (6,  2),
+    "PARA_TOO_LONG":              (4,  2),
 }
 
 
@@ -1108,9 +1113,10 @@ _CATALOGUE: dict[str, _IssueSpec] = {
     ),
     "FIRST_VIEWPORT_NO_ANSWER": _IssueSpec(
         category="ai_readiness", severity="warning",
-        description="First 150 words contain no direct answer signal (definition, TL;DR, summary phrase)",
+        description="First 200 words contain no direct answer signal (definition, TL;DR, summary phrase)",
         recommendation="Lead with a concise definition or summary ('X is...', 'In short...', 'Key takeaway:'). "
-                       "AI chunkers read top-to-bottom; content before the first heading is what they see first.",
+                       "AI systems read top-to-bottom; putting the answer in the first 200 words "
+                       "maximises the chance it is retrieved and cited.",
         human_description="No Lead Answer",
         fixability="content_edit",
     ),
@@ -1215,6 +1221,47 @@ _CATALOGUE: dict[str, _IssueSpec] = {
                        "Emerging convention; no confirmed AI engine support yet.",
         human_description="No ai.txt File",
         fixability="developer_needed",
+    ),
+    # Tier 1 GEO heuristics (spec §4.3–4.6)
+    "QUERY_COVERAGE_WEAK": _IssueSpec(
+        category="ai_readiness", severity="warning",
+        description="Page H1 topic terms are under-represented in the intro or section headings — "
+                    "AI retrieval systems may not associate this page with its target query",
+        recommendation="Ensure the language from your H1 (the page's primary topic) appears naturally "
+                       "in the first 200 words and in at least one H2 section heading. "
+                       "AI systems score pages by query–content similarity; if your topic terms "
+                       "don't appear where they look first, the page may be skipped.",
+        human_description="Weak Query Coverage",
+        fixability="content_edit",
+    ),
+    "SECTION_VAGUE_OPENER": _IssueSpec(
+        category="ai_readiness", severity="warning",
+        description="One or more H2/H3 sections begin with a vague demonstrative reference "
+                    "('This method…', 'It allows…', 'These features…') instead of an explicit subject",
+        recommendation="Replace vague openers with explicit nouns: instead of 'This approach improves…' "
+                       "write 'RAG retrieval improves…'. Each section must make sense in isolation — "
+                       "AI systems extract sections as independent passages and cannot infer context.",
+        human_description="Vague Section Openers",
+        fixability="content_edit",
+    ),
+    "SECTION_CROSS_REFERENCES": _IssueSpec(
+        category="ai_readiness", severity="warning",
+        description="Page contains backward-reference phrases ('as mentioned above', 'as discussed earlier') "
+                    "that break section independence",
+        recommendation="Remove or replace phrases like 'as mentioned above' with the actual information being "
+                       "referenced. AI systems cite individual passages in isolation — a passage that refers "
+                       "to earlier content cannot be understood or quoted on its own.",
+        human_description="Section Back-References",
+        fixability="content_edit",
+    ),
+    "PARA_TOO_LONG": _IssueSpec(
+        category="crawlability", severity="info",
+        description="One or more paragraphs exceed 150 words, making content harder to scan and extract",
+        recommendation="Break long paragraphs into shorter units of 50–100 words each. "
+                       "Short paragraphs improve both human readability and AI passage extraction — "
+                       "AI systems prefer self-contained, focused chunks.",
+        human_description="Overly Long Paragraphs",
+        fixability="content_edit",
     ),
 }
 
@@ -1771,12 +1818,32 @@ def _run_geo_checks(page: "ParsedPage", url: str, issues: list) -> None:
                 "orphan_claim_count": orphan_count,
             }))
 
-    # ── GEO.2.3: First-viewport answer signal ────────────────────────────────
+    # ── GEO.2.3: First-viewport answer signal (spec §4.2) ───────────────────
     if word_count >= 200 and page.first_150_words:
         if not _has_answer_signal(page.first_150_words):
             issues.append(make_issue("FIRST_VIEWPORT_NO_ANSWER", url, extra={
                 "first_150_words": page.first_150_words[:200],
             }))
+
+    # ── Tier 1 §4.3: Query coverage ─────────────────────────────────────────
+    if word_count >= 200 and getattr(page, "query_coverage_weak", False):
+        issues.append(make_issue("QUERY_COVERAGE_WEAK", url, extra={
+            "h1": (page.h1_tags or [""])[0][:120],
+        }))
+
+    # ── Tier 1 §4.4: Vague section openers ──────────────────────────────────
+    vague = getattr(page, "vague_opener_count", 0)
+    if vague > 0:
+        issues.append(make_issue("SECTION_VAGUE_OPENER", url, extra={
+            "vague_opener_count": vague,
+        }))
+
+    # ── Tier 1 §4.5: Backward cross-references ──────────────────────────────
+    xrefs = getattr(page, "cross_reference_count", 0)
+    if xrefs > 0:
+        issues.append(make_issue("SECTION_CROSS_REFERENCES", url, extra={
+            "cross_reference_count": xrefs,
+        }))
 
     # ── GEO.4.2: Author byline on blog/article pages ────────────────────────
     is_article = (
@@ -2073,6 +2140,13 @@ def _check_crawlability(page: ParsedPage, issues: list[Issue]) -> None:
             issues.append(make_issue("NOINDEX_META", url,
                                      extra={"source": "meta robots tag",
                                             "directive": page.robots_directive}))
+
+    # ── Tier 1 §4.6: Long paragraphs ────────────────────────────────────────
+    long_para = getattr(page, "long_paragraph_count", 0)
+    if long_para > 0:
+        issues.append(make_issue("PARA_TOO_LONG", url, extra={
+            "long_paragraph_count": long_para,
+        }))
 
 
 # ---------------------------------------------------------------------------

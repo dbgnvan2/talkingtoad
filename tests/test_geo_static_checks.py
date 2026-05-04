@@ -25,6 +25,7 @@ def _page(
     headings_outline: list[dict] | None = None,
     links: list[ParsedLink] | None = None,
     schema_blocks: list[dict] | None = None,
+    h1_tags: list[str] | None = None,
     # GEO fields
     is_spa_shell: bool = False,
     text_to_html_ratio: float = 0.3,
@@ -36,6 +37,11 @@ def _page(
     structured_element_count: int = 1,
     first_150_words: str | None = None,
     blockquote_count: int = 0,
+    # Tier 1 GEO heuristic fields
+    vague_opener_count: int = 0,
+    cross_reference_count: int = 0,
+    long_paragraph_count: int = 0,
+    query_coverage_weak: bool = False,
 ) -> ParsedPage:
     if first_150_words is None:
         first_150_words = (
@@ -55,7 +61,7 @@ def _page(
         og_image="https://example.com/img.jpg",
         twitter_card="summary",
         canonical_url=None,
-        h1_tags=["A Good Title"],
+        h1_tags=h1_tags or ["A Good Title"],
         headings_outline=headings_outline or [{"level": 1, "text": "A Good Title"}],
         is_indexable=is_indexable,
         robots_directive=None,
@@ -81,6 +87,11 @@ def _page(
         structured_element_count=structured_element_count,
         first_150_words=first_150_words,
         blockquote_count=blockquote_count,
+        # Tier 1 GEO heuristic fields
+        vague_opener_count=vague_opener_count,
+        cross_reference_count=cross_reference_count,
+        long_paragraph_count=long_paragraph_count,
+        query_coverage_weak=query_coverage_weak,
     )
 
 
@@ -484,3 +495,179 @@ def test_geo_checks_not_fired_for_noindex():
         "FIRST_VIEWPORT_NO_ANSWER",
     }
     assert geo_codes.isdisjoint(codes), f"GEO codes fired on noindex page: {codes & geo_codes}"
+
+
+# ---------------------------------------------------------------------------
+# Tier 1 §4.3: QUERY_COVERAGE_WEAK
+# ---------------------------------------------------------------------------
+
+def test_t1ac2_query_coverage_weak_fires():
+    page = _page(word_count=300, query_coverage_weak=True)
+    assert "QUERY_COVERAGE_WEAK" in _codes(page)
+
+
+def test_t1ac2_query_coverage_weak_not_fired_when_coverage_good():
+    page = _page(word_count=300, query_coverage_weak=False)
+    assert "QUERY_COVERAGE_WEAK" not in _codes(page)
+
+
+def test_t1ac2_query_coverage_weak_not_fired_below_200_words():
+    page = _page(word_count=150, query_coverage_weak=True)
+    assert "QUERY_COVERAGE_WEAK" not in _codes(page)
+
+
+# ---------------------------------------------------------------------------
+# Tier 1 §4.4: SECTION_VAGUE_OPENER
+# ---------------------------------------------------------------------------
+
+def test_t1ac3_section_vague_opener_fires():
+    page = _page(vague_opener_count=2)
+    assert "SECTION_VAGUE_OPENER" in _codes(page)
+
+
+def test_t1ac3_section_vague_opener_fires_on_one():
+    page = _page(vague_opener_count=1)
+    assert "SECTION_VAGUE_OPENER" in _codes(page)
+
+
+def test_t1ac3_section_vague_opener_not_fired_when_zero():
+    page = _page(vague_opener_count=0)
+    assert "SECTION_VAGUE_OPENER" not in _codes(page)
+
+
+def test_t1ac3_section_vague_opener_extra_contains_count():
+    page = _page(vague_opener_count=3)
+    issues = check_page(page)
+    issue = next((i for i in issues if i.code == "SECTION_VAGUE_OPENER"), None)
+    assert issue is not None
+    assert issue.extra.get("vague_opener_count") == 3
+
+
+# ---------------------------------------------------------------------------
+# Tier 1 §4.5: SECTION_CROSS_REFERENCES
+# ---------------------------------------------------------------------------
+
+def test_t1ac4_section_cross_references_fires():
+    page = _page(cross_reference_count=1)
+    assert "SECTION_CROSS_REFERENCES" in _codes(page)
+
+
+def test_t1ac4_section_cross_references_fires_multiple():
+    page = _page(cross_reference_count=4)
+    assert "SECTION_CROSS_REFERENCES" in _codes(page)
+
+
+def test_t1ac4_section_cross_references_not_fired_when_zero():
+    page = _page(cross_reference_count=0)
+    assert "SECTION_CROSS_REFERENCES" not in _codes(page)
+
+
+def test_t1ac4_section_cross_references_extra_contains_count():
+    page = _page(cross_reference_count=2)
+    issues = check_page(page)
+    issue = next((i for i in issues if i.code == "SECTION_CROSS_REFERENCES"), None)
+    assert issue is not None
+    assert issue.extra.get("cross_reference_count") == 2
+
+
+# ---------------------------------------------------------------------------
+# Tier 1 §4.6: PARA_TOO_LONG
+# ---------------------------------------------------------------------------
+
+def test_t1ac5_para_too_long_fires():
+    page = _page(long_paragraph_count=1)
+    assert "PARA_TOO_LONG" in _codes(page)
+
+
+def test_t1ac5_para_too_long_fires_multiple():
+    page = _page(long_paragraph_count=3)
+    assert "PARA_TOO_LONG" in _codes(page)
+
+
+def test_t1ac5_para_too_long_not_fired_when_zero():
+    page = _page(long_paragraph_count=0)
+    assert "PARA_TOO_LONG" not in _codes(page)
+
+
+def test_t1ac5_para_too_long_extra_contains_count():
+    page = _page(long_paragraph_count=2)
+    issues = check_page(page)
+    issue = next((i for i in issues if i.code == "PARA_TOO_LONG"), None)
+    assert issue is not None
+    assert issue.extra.get("long_paragraph_count") == 2
+
+
+# ---------------------------------------------------------------------------
+# Parser helpers: end-to-end via HTML (smoke tests)
+# ---------------------------------------------------------------------------
+
+def test_parser_vague_opener_detected_in_html():
+    """_count_vague_openers() fires on a section starting with 'This approach'."""
+    from bs4 import BeautifulSoup
+    from api.crawler.parser import _count_vague_openers
+    html = """
+    <html><body>
+      <h2>Section One</h2>
+      <p>This approach improves retrieval by pre-computing embeddings.</p>
+      <h2>Section Two</h2>
+      <p>RAG systems improve retrieval by pre-computing embeddings.</p>
+    </body></html>"""
+    soup = BeautifulSoup(html, "html.parser")
+    assert _count_vague_openers(soup) == 1
+
+
+def test_parser_cross_references_detected_in_html():
+    """_count_cross_references() detects 'as mentioned above'."""
+    from bs4 import BeautifulSoup
+    from api.crawler.parser import _count_cross_references
+    html = """
+    <html><body>
+      <p>As mentioned above, vector databases improve latency.</p>
+      <p>As discussed earlier, this also reduces storage costs.</p>
+    </body></html>"""
+    soup = BeautifulSoup(html, "html.parser")
+    assert _count_cross_references(soup) == 2
+
+
+def test_parser_long_paragraphs_detected_in_html():
+    """_count_long_paragraphs() fires on a paragraph exceeding 150 words."""
+    from bs4 import BeautifulSoup
+    from api.crawler.parser import _count_long_paragraphs
+    long_text = " ".join(["word"] * 160)
+    short_text = " ".join(["word"] * 50)
+    html = f"<html><body><p>{long_text}</p><p>{short_text}</p></body></html>"
+    soup = BeautifulSoup(html, "html.parser")
+    assert _count_long_paragraphs(soup) == 1
+
+
+def test_parser_query_coverage_weak_fires_on_misaligned_page():
+    """_check_query_coverage_weak() returns True when H1 tokens absent from intro."""
+    from bs4 import BeautifulSoup
+    from api.crawler.parser import _check_query_coverage_weak
+    html = """
+    <html><body>
+      <h1>Vector Database Performance Benchmarks</h1>
+      <p>Welcome to our site. We offer many great services for your business needs.
+         Contact us today for a free consultation about our offerings and solutions.</p>
+      <h2>Our Services</h2>
+      <p>We provide cloud infrastructure management.</p>
+    </body></html>"""
+    soup = BeautifulSoup(html, "html.parser")
+    assert _check_query_coverage_weak(soup) is True
+
+
+def test_parser_query_coverage_weak_not_fired_when_aligned():
+    """_check_query_coverage_weak() returns False when H1 tokens present in intro."""
+    from bs4 import BeautifulSoup
+    from api.crawler.parser import _check_query_coverage_weak
+    html = """
+    <html><body>
+      <h1>Vector Database Performance</h1>
+      <p>Vector database performance is measured in queries per second.
+         This benchmark compares database systems across latency and throughput.
+         Performance optimization requires careful index tuning.</p>
+      <h2>Vector Database Benchmarks</h2>
+      <p>Benchmark results show significant performance gains.</p>
+    </body></html>"""
+    soup = BeautifulSoup(html, "html.parser")
+    assert _check_query_coverage_weak(soup) is False

@@ -2342,6 +2342,60 @@ const issueHelp = {
     fix:
       "Optional: create /ai.txt with a plain-text declaration of your AI content policies.",
   },
+
+  // ── Tier 1 GEO heuristics (spec §4.3–4.6) ──────────────────────────────
+
+  QUERY_COVERAGE_WEAK: {
+    title: "Weak Query Coverage",
+    category: "ai_readiness",
+    severity: "warning",
+    confidence: "Mechanistic",
+    definition:
+      "The page's H1 topic terms are under-represented in the first 200 words or absent from section headings. AI retrieval systems score pages by how closely the content matches the user's query — if your primary topic language doesn't appear where AI systems look first, the page may be skipped.",
+    impact:
+      "Reduces retrieval probability. AI systems cannot associate this page with its target topic if the query-aligned language is missing from the intro and section headings.",
+    fix:
+      "Ensure the language from your H1 appears naturally in the first 200 words and in at least one H2 section heading. Use the same vocabulary a user would type when searching for this page.",
+  },
+
+  SECTION_VAGUE_OPENER: {
+    title: "Vague Section Openers",
+    category: "ai_readiness",
+    severity: "warning",
+    confidence: "Mechanistic",
+    definition:
+      "One or more H2/H3 sections begin with a vague demonstrative reference ('This method…', 'It allows…', 'These features…') instead of naming the subject explicitly. AI systems extract sections as independent passages — a section that opens with 'This approach' cannot be understood without the surrounding context.",
+    impact:
+      "Reduces extractability. AI systems cite individual passages in isolation. A passage that relies on prior context to name its own subject cannot be quoted usefully.",
+    fix:
+      "Replace vague openers with explicit nouns. Instead of 'This approach improves retrieval…' write 'RAG retrieval improves response accuracy…'. Each section should make complete sense on its own.",
+  },
+
+  SECTION_CROSS_REFERENCES: {
+    title: "Section Back-References",
+    category: "ai_readiness",
+    severity: "warning",
+    confidence: "Mechanistic",
+    definition:
+      "The page contains backward-reference phrases such as 'as mentioned above', 'as discussed earlier', or 'the above approach'. These break section independence — a reader (or AI system) seeing only that passage cannot understand it without the earlier content.",
+    impact:
+      "Reduces passage-level extractability. AI systems retrieve and cite individual sections, not full pages. Sections that reference earlier content cannot stand alone and may be skipped.",
+    fix:
+      "Remove or replace backward-reference phrases with the actual content being referenced. Instead of 'As mentioned above, this reduces latency', write 'Vector indexing reduces query latency by pre-computing embeddings'.",
+  },
+
+  PARA_TOO_LONG: {
+    title: "Overly Long Paragraphs",
+    category: "crawlability",
+    severity: "info",
+    confidence: "Mechanistic",
+    definition:
+      "One or more paragraphs exceed 150 words, making the content harder to scan and extract. AI systems prefer self-contained, focused chunks of 50–150 words — dense paragraphs reduce the chance that the most relevant sentence is retrieved.",
+    impact:
+      "Reduces both human readability and AI passage extraction quality. Long paragraphs bury key claims and make it harder for AI systems to isolate quotable content.",
+    fix:
+      "Break long paragraphs into shorter units of 50–100 words each. Each paragraph should express one idea. Use bullet lists or sub-headings where multiple points are being made.",
+  },
   };
 
 

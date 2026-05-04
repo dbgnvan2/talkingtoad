@@ -114,8 +114,14 @@ class ParsedPage:
     code_block_count: int = 0            # <pre> + <code> elements
     table_count: int = 0                 # <table> elements
     structured_element_count: int = 0    # <ul>+<ol>+<table>+<dl>+<pre>+<code>
-    first_150_words: str | None = None   # first 150 words of visible body text
+    first_150_words: str | None = None   # first 200 words of visible body text (name kept for back-compat)
     blockquote_count: int = 0            # <blockquote> elements
+
+    # Tier 1 GEO heuristic counts (spec §4.3–4.6) — pre-computed in parser
+    vague_opener_count: int = 0          # H2/H3 sections starting with vague demonstrative
+    cross_reference_count: int = 0       # backward-reference phrases ("as mentioned above" etc.)
+    long_paragraph_count: int = 0        # <p> tags exceeding 150 words
+    query_coverage_weak: bool = False    # H1 tokens under-represented in intro or H2 headings
 
 
 def parse_page(
@@ -252,8 +258,13 @@ def parse_page(
         code_block_count=_count_code_blocks(soup),
         table_count=len(soup.find_all("table")),
         structured_element_count=_count_structured_elements(soup),
-        first_150_words=_extract_first_n_words(soup, 150),
+        first_150_words=_extract_first_n_words(soup, 200),
         blockquote_count=len(soup.find_all("blockquote")),
+        # Tier 1 GEO heuristics (spec §4.3–4.6)
+        vague_opener_count=_count_vague_openers(soup),
+        cross_reference_count=_count_cross_references(soup),
+        long_paragraph_count=_count_long_paragraphs(soup),
+        query_coverage_weak=_check_query_coverage_weak(soup),
     )
 
 
@@ -1032,3 +1043,108 @@ def _extract_first_n_words(soup: BeautifulSoup, n: int) -> str | None:
     if not words:
         return None
     return " ".join(words[:n])
+
+
+# ---------------------------------------------------------------------------
+# Tier 1 GEO heuristic helpers (spec §4.3–4.6)
+# ---------------------------------------------------------------------------
+
+import re as _re
+
+_VAGUE_OPENER_RE = _re.compile(
+    r"^(This|The|It|That|These|Those)\s+"
+    r"(method|approach|system|technique|process|way|solution|tool|"
+    r"feature|strategy|framework|concept|model|type|option|above)\b",
+    _re.I,
+)
+_VAGUE_PRONOUN_RE = _re.compile(r"^(It|These|Those)\s+\w", _re.I)
+
+_CROSS_REF_RE = _re.compile(
+    r"\b(as mentioned above|as discussed earlier|as noted above|"
+    r"as described above|as stated above|as covered above|as shown above|"
+    r"the above|see above|refer to the previous)\b",
+    _re.I,
+)
+
+_STOP_WORDS = frozenset({
+    "a", "an", "the", "and", "or", "but", "in", "on", "at", "to", "for",
+    "of", "with", "by", "from", "into", "is", "are", "was", "were", "be",
+    "been", "being", "have", "has", "had", "do", "does", "did", "will",
+    "would", "could", "should", "may", "might", "not", "no", "if", "as",
+    "so", "this", "that", "these", "those", "it", "its", "your", "our",
+    "my", "their", "you", "we", "i", "he", "she", "they", "what", "how",
+    "when", "where", "who", "which", "why",
+})
+
+
+def _count_vague_openers(soup: BeautifulSoup) -> int:
+    """Count H2/H3 sections whose first paragraph opens with a vague reference."""
+    count = 0
+    for h in soup.find_all(["h2", "h3"]):
+        for sib in h.next_siblings:
+            name = getattr(sib, "name", None)
+            if name in ("h2", "h3"):
+                break
+            if name in ("p", "div", "section"):
+                text = sib.get_text(separator=" ", strip=True)
+                if text and (_VAGUE_OPENER_RE.match(text) or _VAGUE_PRONOUN_RE.match(text)):
+                    count += 1
+                break
+            raw = getattr(sib, "string", None)
+            if raw and raw.strip():
+                t = raw.strip()
+                if _VAGUE_OPENER_RE.match(t) or _VAGUE_PRONOUN_RE.match(t):
+                    count += 1
+                break
+    return count
+
+
+def _count_cross_references(soup: BeautifulSoup) -> int:
+    """Count backward-reference phrases in visible body text."""
+    body = soup.find("body") or soup
+    for noise in body.find_all(["script", "style", "nav", "header", "footer"]):
+        noise.decompose()
+    text = body.get_text(separator=" ")
+    return len(_CROSS_REF_RE.findall(text))
+
+
+def _count_long_paragraphs(soup: BeautifulSoup, threshold: int = 150) -> int:
+    """Count <p> elements whose word count exceeds threshold."""
+    count = 0
+    for p in soup.find_all("p"):
+        if len(p.get_text(separator=" ", strip=True).split()) > threshold:
+            count += 1
+    return count
+
+
+def _check_query_coverage_weak(soup: BeautifulSoup) -> bool:
+    """True if H1 significant tokens are under-represented in intro or H2/H3 headings."""
+    h1 = soup.find("h1")
+    if not h1:
+        return False
+    h1_text = h1.get_text(strip=True).lower()
+    tokens = [
+        w for w in _re.findall(r"[a-z]+", h1_text)
+        if w not in _STOP_WORDS and len(w) >= 3
+    ]
+    if len(tokens) < 2:
+        return False
+
+    # Need first 200 words of body text
+    body = soup.find("body") or soup
+    for noise in body.find_all(["script", "style", "nav", "header", "footer", "aside"]):
+        noise.decompose()
+    intro = " ".join(body.get_text(separator=" ", strip=True).split()[:200]).lower()
+
+    intro_hits = sum(1 for t in tokens if t in intro)
+    if intro_hits / len(tokens) < 0.5:
+        return True  # query terms absent from intro
+
+    # Check if any H2/H3 heading covers ≥50% of tokens
+    h2h3 = [h.get_text(strip=True).lower() for h in soup.find_all(["h2", "h3"])]
+    if not h2h3:
+        return False
+    return not any(
+        sum(1 for t in tokens if t in h) / len(tokens) >= 0.5
+        for h in h2h3
+    )
