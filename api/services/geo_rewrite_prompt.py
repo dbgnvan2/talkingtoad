@@ -384,11 +384,15 @@ def _build_synthetic_parsed_page(
     # Strip code blocks before counting words (code isn't "visible text")
     no_code = _MD_CODE_RE.sub(" ", markdown_content)
 
-    # Visible words — include all tokens so first_150_words preserves articles/prepositions
-    # (answer-signal regex needs "is a/an", which breaks if single-char words are stripped)
+    # word_count: simple token count (consistent with issue_checker expectations)
     words = re.findall(r"\w+", no_code)
     word_count = len(words)
-    first_150 = " ".join(words[:150])
+
+    # first_150_words: preserve original punctuation (including "%" and ".") so that
+    # stat-detection and answer-signal regexes work correctly.  Split on whitespace
+    # (not word boundaries) so "27.6%" and "according to" patterns survive.
+    _tokens = no_code.split()
+    first_150 = " ".join(_tokens[:150])
 
     # Headings
     headings_outline = [
@@ -462,6 +466,120 @@ def _build_synthetic_parsed_page(
     }
 
 
+# ---------------------------------------------------------------------------
+# Content-compliance scoring (5 always-applicable GEO checks)
+# ---------------------------------------------------------------------------
+# Fixed denominator = 13 so baseline and all variants are on the same scale.
+# Checks are implemented directly here (not via _run_static_geo_checks) so we
+# can apply rewrite-friendly rules:
+#   - [CITATION NEEDED] / [LINK: ...] placeholders count as external citations
+#   - [QUOTE NEEDED] / [STATISTIC: N] placeholders count as their category
+#   - Statistics are searched in the FULL text, not just the first 150 words
+#   - Answer signal is still only checked in the first 150 words
+
+_CONTENT_SCORE_WEIGHT = {
+    "STATISTICS_COUNT_LOW": 3,      # Empirical
+    "EXTERNAL_CITATIONS_LOW": 3,    # Empirical
+    "QUOTATIONS_MISSING": 3,        # Empirical
+    "FIRST_VIEWPORT_NO_ANSWER": 2,  # Mechanistic
+    "STRUCTURED_ELEMENTS_LOW": 2,   # Mechanistic
+}
+_CONTENT_SCORE_TOTAL_WEIGHT = 13  # sum of above
+
+# Regex for GEO placeholders inserted by the rewriting LLM
+_PLACEHOLDER_CITATION_RE = re.compile(
+    r"\[CITATION\s+NEEDED[^\]]*\]|\[LINK[^\]]*\]|\[SOURCE[^\]]*\]",
+    re.I,
+)
+_PLACEHOLDER_QUOTE_RE = re.compile(r"\[QUOTE\s+NEEDED[^\]]*\]", re.I)
+_PLACEHOLDER_STAT_RE = re.compile(r"\[STATISTIC[^\]]*\]", re.I)
+
+# Stat regex (same pattern as issue_checker._STAT_RE)
+_STAT_RE_FULL = re.compile(
+    r"\b\d[\d,]*(?:\.\d+)?\s*"
+    r"(?:%|percent|kb|mb|gb|ms|seconds?|minutes?|hours?|days?|months?|years?"
+    r"|users?|customers?|companies|organisations?|organizations?"
+    r"|times?\s+faster|times?\s+more|\dx?\s+faster|\dx?\s+more"
+    r"|Gbps|Mbps|fps|rpm|mph|km|mi|kg|lbs?"
+    r"|million|billion|trillion|thousand|hundred)(?:\b|(?=\s|$))"
+    r"|\b(?:19|20)\d{2}\b"
+    r"|\b\d+\s+(?:of|out\s+of)\s+\d+\b",
+    re.I,
+)
+_ATTRIBUTION_RE_FULL = re.compile(
+    r'(?:according\s+to|says?|said|stated|noted|wrote|reports?|"[^"]{10,200}"\s*—)',
+    re.I,
+)
+
+
+def _content_score(url: str, content: str, page_type: str = "general") -> tuple[int, float]:
+    """
+    Score rewrite content on 5 GEO content signals, returning (fail_count, score 0-1).
+
+    Uses a fixed denominator (weight=13) so baseline and all variant scores
+    are directly comparable.  Placeholder citations/quotes/stats from the
+    rewriting LLM are counted as passes so the scoring rewards good rewrites
+    that identify WHERE evidence should go, even if the editor must fill it in.
+    """
+    tokens = content.split()
+    word_count = len(tokens)
+    first_150 = " ".join(tokens[:150])
+
+    fails: set[str] = set()
+
+    # Check 1 — Statistics: search FULL text + placeholders
+    if word_count >= 500:
+        has_stat = (
+            bool(_STAT_RE_FULL.search(content))
+            or bool(_PLACEHOLDER_STAT_RE.search(content))
+        )
+        if not has_stat:
+            fails.add("STATISTICS_COUNT_LOW")
+
+    # Check 2 — External citations: markdown links OR [CITATION NEEDED] placeholders
+    if word_count >= 500:
+        has_citation = (
+            bool(_MD_LINK_RE.search(content))         # [text](https://...)
+            or bool(_PLACEHOLDER_CITATION_RE.search(content))  # [CITATION NEEDED...]
+        )
+        if not has_citation:
+            fails.add("EXTERNAL_CITATIONS_LOW")
+
+    # Check 3 — Quotations/attribution: full text + placeholders
+    if word_count >= 500:
+        has_quote = (
+            bool(_MD_BLOCKQUOTE_RE.search(content))   # > blockquote
+            or bool(_ATTRIBUTION_RE_FULL.search(content))  # "according to" etc.
+            or bool(_PLACEHOLDER_QUOTE_RE.search(content))  # [QUOTE NEEDED...]
+        )
+        if not has_quote:
+            fails.add("QUOTATIONS_MISSING")
+
+    # Check 4 — Answer signal in first 150 words (intentionally strict: first viewport only)
+    if word_count >= 200:
+        try:
+            from api.crawler.issue_checker import _has_answer_signal  # type: ignore
+            if not _has_answer_signal(first_150):
+                fails.add("FIRST_VIEWPORT_NO_ANSWER")
+        except Exception:
+            pass  # skip check if import fails
+
+    # Check 5 — Structured elements: list items, tables, or code blocks anywhere
+    if word_count >= 500:
+        has_structure = (
+            bool(_MD_UL_RE.search(content))
+            or bool(_MD_OL_RE.search(content))
+            or bool(_MD_TABLE_RE.search(content))
+            or bool(_MD_CODE_RE.search(content))
+        )
+        if not has_structure:
+            fails.add("STRUCTURED_ELEMENTS_LOW")
+
+    fail_weight = sum(_CONTENT_SCORE_WEIGHT.get(c, 0) for c in fails)
+    score = round(1.0 - fail_weight / _CONTENT_SCORE_TOTAL_WEIGHT, 4)
+    return len(fails), score
+
+
 def _project_score(
     original_findings: list[dict],
     url: str,
@@ -469,41 +587,19 @@ def _project_score(
     page_type: str = "general",
 ) -> tuple[int, float]:
     """
-    Project the GEO score for a rewrite by:
-    1. Keeping LLM-based findings unchanged (query match, chunks, etc.)
-    2. Re-running static checks on the rewrite text
-    3. Computing a new weighted score from the combined finding set.
+    Project the content-compliance score for a rewrite variant.
 
-    Returns (static_issue_count, projected_score).
+    Scores are computed from the 5 content-measurable static GEO checks with a
+    fixed denominator (weight=13).  This keeps both the baseline (original page)
+    and each variant on the same scale, so improvement is meaningful.
+
+    The original geo_report score (LLM-only) is intentionally excluded here:
+    it cannot be cheaply re-run per variant, so mixing it with static checks
+    produced a collapsed denominator (the bug: 79% → 10%).
+
+    Returns (content_fail_count, projected_score).
     """
-    from api.services.geo_scoring_map import GEO_CHECKS, compute_score_from_findings
-
-    # Determine which codes are static vs LLM
-    static_codes = {c["code"] for c in GEO_CHECKS if c["source"] == "static"}
-
-    # Keep only LLM-based findings from the original report
-    llm_findings = [f for f in original_findings if f.get("code") not in static_codes]
-
-    # Run static checks on the rewrite
-    static_issues = _run_static_geo_checks(url, markdown_content, page_type)
-    static_issue_count = len(static_issues)
-
-    # Build synthetic "fail" findings for each static issue that fired
-    code_to_check = {c["code"]: c for c in GEO_CHECKS}
-    new_static_findings = []
-    for code in static_issues:
-        check = code_to_check.get(code)
-        if check:
-            new_static_findings.append({
-                "code": code,
-                "evidence_tier": check["tier"],
-                "pass_fail": "fail",
-                "score": 0.0,
-            })
-
-    combined = llm_findings + new_static_findings
-    projected_score = compute_score_from_findings(combined)
-    return static_issue_count, projected_score
+    return _content_score(url, markdown_content, page_type)
 
 
 def _run_static_geo_checks(
@@ -537,6 +633,91 @@ def _score_markdown(url: str, markdown_content: str, page_type: str = "general")
     Lower is better — fewer issues = better candidate.
     """
     return len(_run_static_geo_checks(url, markdown_content, page_type))
+
+
+# ---------------------------------------------------------------------------
+# Query-match re-scoring for rewrite variants
+# ---------------------------------------------------------------------------
+
+async def _score_rewrite_query_match(
+    rewrite_text: str,
+    original_query_table: list[dict],
+    model: str,
+    provider: str,
+) -> float:
+    """
+    Re-evaluate how well the rewrite text answers the original page's AI queries.
+
+    Uses the same queries from the cached GEO report (not re-generating them),
+    then asks the LLM to score each query Yes/Partial/No.
+
+    Returns a 0.0–1.0 score matching the QUERY_MATCH_SCORE calculation:
+        (answered + 0.5 × partial) / total_queries
+    """
+    from api.services.geo_analyzer import _call_ai  # type: ignore
+
+    queries = [q.get("query", "").strip() for q in original_query_table if q.get("query")]
+    if not queries:
+        return 0.0
+
+    q_block = "\n".join(f"{i + 1}. {q}" for i, q in enumerate(queries))
+    # Truncate rewrite to ~3000 chars to stay within token budget
+    text_sample = rewrite_text[:3000]
+
+    prompt = (
+        f"You are scoring how well a web page answers user questions.\n\n"
+        f"PAGE TEXT:\n{text_sample}\n\n"
+        f"QUESTIONS:\n{q_block}\n\n"
+        f"For each question respond with exactly one of: Yes / Partial / No\n"
+        f"Output one answer per line, in question order. No other text."
+    )
+    try:
+        response = await _call_ai(prompt, model, provider)
+        lines = [ln.strip().lower() for ln in response.strip().splitlines() if ln.strip()]
+        answered = sum(1 for ln in lines if ln.startswith("yes"))
+        partial = sum(1 for ln in lines if ln.startswith("partial"))
+        total = len(queries)
+        score = (answered + 0.5 * partial) / total if total else 0.0
+        return round(score, 4)
+    except Exception as e:
+        logger.warning("query_match_rescore_failed", extra={"error": str(e)})
+        return 0.0
+
+
+def _project_score_from_findings(
+    original_findings: list[dict],
+    new_query_match_score: float,
+) -> float:
+    """
+    Re-compute the overall GEO score by replacing QUERY_MATCH_SCORE with
+    the re-evaluated score for a rewrite variant.  All other findings
+    (CHUNKS_NOT_SELF_CONTAINED, CENTRAL_CLAIM_BURIED, etc.) are kept unchanged.
+
+    Returns projected_score (0.0–1.0).
+    """
+    from api.services.geo_scoring_map import compute_score_from_findings
+
+    updated: list[dict] = []
+    for f in original_findings:
+        if f.get("code") == "QUERY_MATCH_SCORE":
+            updated.append({
+                **f,
+                "score": new_query_match_score,
+                "pass_fail": "pass" if new_query_match_score >= 0.70 else "fail",
+            })
+        else:
+            updated.append(f)
+
+    # If there was no QUERY_MATCH_SCORE in the original findings, add it
+    if not any(f.get("code") == "QUERY_MATCH_SCORE" for f in original_findings):
+        updated.append({
+            "code": "QUERY_MATCH_SCORE",
+            "evidence_tier": "Empirical",
+            "pass_fail": "pass" if new_query_match_score >= 0.70 else "fail",
+            "score": new_query_match_score,
+        })
+
+    return compute_score_from_findings(updated)
 
 
 # ---------------------------------------------------------------------------
@@ -574,21 +755,27 @@ async def stream_rewrite_variants(
     page_type: str = "general",
     n: int = _BEST_OF_N,
     original_findings: list[dict] | None = None,
+    original_query_table: list[dict] | None = None,
 ):
     """
     AsyncGenerator that runs n rewrites sequentially, yielding one SSE event
     per completed variant and a final 'done' event with the winner.
 
-    Each variant event includes the projected GEO score (LLM findings preserved,
-    static findings recomputed from the rewrite text).
+    Projected score: re-evaluates the QUERY_MATCH_SCORE on each rewrite (same
+    queries from the cached GEO report, re-scored by the LLM).  All other
+    original findings are kept unchanged.  This produces scores in the same
+    space as the original geo_report.overall_score so improvement is visible.
+
+    Content fails (static checks) are also computed and shown separately.
 
     Yields JSON-encoded strings in SSE format: "data: {...}\\n\\n"
     """
     import json as _json
 
     system_prompt = rewrite_prompt_result["system_prompt"]
-    current_score = rewrite_prompt_result.get("current_score", 0.0)
+    geo_report_score = rewrite_prompt_result.get("current_score", 0.0)
     findings_for_projection = original_findings or []
+    query_table = original_query_table or []
 
     variants: list[dict] = []
 
@@ -596,9 +783,18 @@ async def stream_rewrite_variants(
         result = await _generate_one_rewrite(page_content, system_prompt, model, provider, i)
 
         if result.get("text"):
-            issues, projected_score = _project_score(
-                findings_for_projection, url, result["text"], page_type
-            )
+            # Re-score query match on the rewrite text (1 LLM call per variant)
+            if query_table:
+                new_qm_score = await _score_rewrite_query_match(
+                    result["text"], query_table, model, provider
+                )
+                projected_score = _project_score_from_findings(findings_for_projection, new_qm_score)
+            else:
+                # No query table available — fall back to content score
+                _, projected_score = _content_score(url, result["text"], page_type)
+
+            # Also count static issues (shown in Issues column but not in projected_score)
+            issues, _ = _content_score(url, result["text"], page_type)
         else:
             issues, projected_score = 999, 0.0
 
@@ -618,7 +814,7 @@ async def stream_rewrite_variants(
         }
         yield f"data: {_json.dumps(event)}\n\n"
 
-    # Pick winner — highest projected score, tie-break by fewest issues
+    # Pick winner — highest projected score, tie-break by fewest static issues
     successful = [v for v in variants if not v.get("error") and v.get("text")]
     winner = (
         max(successful, key=lambda v: (v["projected_score"], -v["issues"]))
@@ -649,9 +845,10 @@ async def stream_rewrite_variants(
             for v in variants
         ],
         "improvement": {
-            "original_score": current_score,
+            "baseline_score": baseline_score,
             "winner_score": winner.get("projected_score", 0.0),
-            "gain": round(winner.get("projected_score", 0.0) - current_score, 3),
+            "gain": round(winner.get("projected_score", 0.0) - baseline_score, 3),
+            "geo_report_score": geo_report_score,
         },
     }
     yield f"data: {_json.dumps(done_event)}\n\n"

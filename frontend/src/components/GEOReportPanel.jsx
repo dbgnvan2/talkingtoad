@@ -227,6 +227,7 @@ function RewriteAssist({ jobId, report }) {
   const [promptResult, setPromptResult] = useState(null)
   const [variants, setVariants] = useState([])   // live progress rows
   const [winnerResult, setWinnerResult] = useState(null)  // done event
+  const [metaInfo, setMetaInfo] = useState(null)  // meta event data
   const [copied, setCopied] = useState(false)
   const [expanded, setExpanded] = useState(false)
   const promptRef = useRef(null)
@@ -248,6 +249,7 @@ function RewriteAssist({ jobId, report }) {
     setPromptResult(null)
     setVariants([])
     setWinnerResult(null)
+    setMetaInfo(null)
 
     try {
       if (mode === 'prompt') {
@@ -289,7 +291,7 @@ function RewriteAssist({ jobId, report }) {
             const event = JSON.parse(line.slice(6))
 
             if (event.type === 'meta') {
-              // Pre-populate pending rows so user sees the grid immediately
+              setMetaInfo(event)
               setVariants(Array.from({ length: event.total }, (_, i) => ({ index: i })))
             } else if (event.type === 'variant') {
               setVariants(prev => prev.map(v =>
@@ -315,6 +317,7 @@ function RewriteAssist({ jobId, report }) {
     setPromptResult(null)
     setVariants([])
     setWinnerResult(null)
+    setMetaInfo(null)
     setError(null)
   }
 
@@ -413,16 +416,24 @@ function RewriteAssist({ jobId, report }) {
           {mode === 'rewrite' && variants.length > 0 && (
             <div className="space-y-4">
               <div>
-                <h4 className="text-xs font-bold text-indigo-800 mb-2">
+                <h4 className="text-xs font-bold text-indigo-800 mb-1">
                   Projected GEO Score per Attempt
-                  <span className="font-normal text-indigo-500 ml-2">(original: {score}%)</span>
                 </h4>
+                {metaInfo && (
+                  <p className="text-xs text-indigo-500 mb-2">
+                    Re-scores how well each rewrite answers the same queries used in the original analysis.
+                    {' '}Original score: <span className="font-bold text-indigo-700">{PCT(metaInfo.current_score)}</span>
+                    {metaInfo.has_query_table
+                      ? ' · Scoring via query re-match (same questions, new text)'
+                      : ' · Scoring via content signals (no query table cached)'}
+                  </p>
+                )}
                 <div className="overflow-x-auto rounded-xl border border-indigo-200 bg-white">
                   <table className="w-full text-xs">
                     <thead className="bg-indigo-50">
                       <tr>
                         <th className="px-3 py-2 text-center font-bold text-indigo-700 w-16">Try</th>
-                        <th className="px-3 py-2 text-center font-bold text-indigo-700 w-20">GEO Score</th>
+                        <th className="px-3 py-2 text-center font-bold text-indigo-700 w-24">Content Score</th>
                         <th className="px-3 py-2 text-center font-bold text-indigo-700 w-20">Issues</th>
                         <th className="px-3 py-2 text-center font-bold text-indigo-700 w-20">Rank</th>
                         <th className="px-3 py-2 text-left font-bold text-indigo-700">Preview</th>
@@ -446,9 +457,11 @@ function RewriteAssist({ jobId, report }) {
                     <span>Winner: try #{(winnerResult.winner_index ?? 0) + 1}</span>
                     <span>·</span>
                     <span className="font-bold text-green-700">{PCT(winnerResult.winner_projected_score)}</span>
-                    <span className="text-green-600">
-                      (+{Math.round((winnerResult.improvement?.gain ?? 0) * 100)}pp vs original)
-                    </span>
+                    {winnerResult.improvement?.gain > 0 && (
+                      <span className="text-green-600">
+                        (+{Math.round((winnerResult.improvement.gain) * 100)}pp vs original {PCT(winnerResult.improvement?.geo_report_score)})
+                      </span>
+                    )}
                   </div>
                 )}
               </div>

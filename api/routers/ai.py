@@ -718,6 +718,7 @@ async def geo_rewrite_stream(
     from api.services.geo_rewrite_prompt import generate_rewrite_prompt, stream_rewrite_variants
     prompt_result = generate_rewrite_prompt(report_dict, page_type, url=url)
     original_findings = report_dict.get("findings", [])
+    original_query_table = report_dict.get("query_match_table", [])
 
     async def _event_stream():
         # Send metadata as first event
@@ -729,6 +730,7 @@ async def geo_rewrite_stream(
             "current_score": prompt_result["current_score"],
             "model_used": model,
             "total": tries,
+            "has_query_table": bool(original_query_table),
         }
         yield f"data: {_json.dumps(meta)}\n\n"
 
@@ -741,6 +743,7 @@ async def geo_rewrite_stream(
             page_type=page_type,
             n=tries,
             original_findings=original_findings,
+            original_query_table=original_query_table,
         ):
             yield event
 
