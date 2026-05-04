@@ -97,6 +97,9 @@ class ParsedPage:
     has_json_ld: bool = False
     pdf_metadata: dict | None = None
 
+    # v2.0 Schema Typing fields
+    schema_blocks: list[dict] | None = None  # list of full JSON-LD objects (not just type names)
+
     # v1.9.2 Staleness detection
     last_modified: str | None = None  # Last-Modified header value (set by engine)
 
@@ -205,6 +208,7 @@ def parse_page(
         has_favicon=_check_favicon(soup) if is_homepage else None,
         has_viewport_meta=_has_viewport_meta(soup),
         schema_types=_extract_schema_types(soup),
+        schema_blocks=_extract_schema_blocks(soup),
         external_script_count=_count_external_scripts(soup, page_url),
         external_stylesheet_count=_count_external_stylesheets(soup, page_url),
         word_count=_count_words(soup),
@@ -409,6 +413,28 @@ def _collect_schema_types(data: dict, types: list[str]) -> None:
         for node in graph:
             if isinstance(node, dict):
                 _collect_schema_types(node, types)
+
+
+def _extract_schema_blocks(soup: BeautifulSoup) -> list[dict] | None:
+    """Extract full JSON-LD schema objects (for Phase 2.0 schema typing validation)."""
+    blocks = []
+
+    for script in soup.find_all("script", type="application/ld+json"):
+        try:
+            data = json.loads(script.string or "")
+            # Flatten @graph arrays into top-level blocks
+            if isinstance(data, dict):
+                graph = data.get("@graph")
+                if isinstance(graph, list):
+                    blocks.extend(g for g in graph if isinstance(g, dict))
+                else:
+                    blocks.append(data)
+            elif isinstance(data, list):
+                blocks.extend(item for item in data if isinstance(item, dict))
+        except (json.JSONDecodeError, TypeError):
+            pass
+
+    return blocks if blocks else None
 
 
 def _count_external_scripts(soup: BeautifulSoup, page_url: str) -> int:

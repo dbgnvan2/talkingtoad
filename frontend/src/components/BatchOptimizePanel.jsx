@@ -266,8 +266,8 @@ export default function BatchOptimizePanel({ jobId, selectedImages, onClose, onC
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
-                      {status.results.map((r, i) => (
-                        <tr key={i} className={r.success ? '' : 'bg-red-50'}>
+                      {status.results.map((r) => (
+                        <tr key={r.image_url} className={r.success ? '' : 'bg-red-50'}>
                           <td className="px-3 py-2 truncate max-w-[200px]" title={r.image_url}>
                             {r.image_url.split('/').pop()}
                           </td>

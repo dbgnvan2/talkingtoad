@@ -1,6 +1,6 @@
-import { useState } from 'react'
+import { useState, memo } from 'react'
 
-export default function Tooltip({ text, children }) {
+function Tooltip({ text, children }) {
   const [visible, setVisible] = useState(false)
 
   return (
@@ -19,3 +19,5 @@ export default function Tooltip({ text, children }) {
     </span>
   )
 }
+
+export default memo(Tooltip)

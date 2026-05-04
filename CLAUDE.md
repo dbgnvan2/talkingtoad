@@ -5,7 +5,7 @@
 TalkingToad is a lightweight, web-based SEO crawler for nonprofit organisations. It replicates the essential functionality of Screaming Frog SEO Spider — free, zero-installation, simple results — deployed on Vercel with a React frontend and Python/FastAPI backend.
 
 **GitHub:** https://github.com/dbgnvan2/talkingtoad
-**Spec:** `nonprofit-crawler-spec-v1.4.md` + v1.5 extensions + v1.9 Image Intelligence + v1.9.1 Optimization
+**Specs:** See `docs/specs/README.md` for complete specification index
 **Current Version:** 1.9.1
 
 ---
@@ -59,11 +59,19 @@ TalkingToad/
 │   ├── src/components/          # FixManager, LLMSTxtGenerator, etc.
 │   └── src/data/issueHelp.js    # Help content for all issue codes
 ├── tests/                       # Pytest suite (asyncio)
-└── docs/                        # Specifications and API reference
-    ├── api.md                   # Full API endpoint reference
-    ├── architecture.md          # System design and data flow
-    ├── issue-codes.md           # All 50+ issue codes with explanations
-    └── overview.md              # Feature descriptions and use cases
+└── docs/                        # Specifications, architecture, API reference
+    ├── README.md                # Documentation index
+    ├── specs/                   # Feature specifications (organized by domain)
+    │   ├── core-crawler/        # v1.4 & v1.5 specs
+    │   ├── image-analysis/      # v1.9 & v1.9.1 specs
+    │   ├── ai-readiness/        # v2.0 draft spec
+    │   └── wordpress-integration/
+    ├── architecture/            # System design and data flow
+    │   └── architecture.md
+    ├── api/                     # API endpoint reference
+    │   └── api.md
+    └── reference/               # Issue codes, scoring
+        └── issue-codes.md
 ```
 
 ---
@@ -86,7 +94,7 @@ TalkingToad/
    - Performance scoring (file size, compression, load time)
    - Accessibility scoring (alt text quality, length, semantic accuracy)
    - AI-powered alt text generation with vision models
-   - GEO-optimized metadata (see `geo_image_ai_spec.md`)
+   - GEO-optimized metadata (see `docs/specs/image-analysis/v1.9.1-geo-optimization-spec.md`)
 4. **Image Optimization Module (v1.9.1):**
    - Download existing WP images → optimize → upload as NEW file
    - Upload local images → optimize → upload to WordPress
@@ -451,15 +459,25 @@ pytest tests/ -v
 
 ## Key Documentation
 
+**Start here:** `docs/README.md` — Complete documentation index
+
+**Specifications (organized by feature domain):**
+| Feature | Latest Version | File |
+|---|---|---|
+| Core Crawler | v1.5 | `docs/specs/core-crawler/README.md` |
+| Image Analysis | v1.9.1 | `docs/specs/image-analysis/README.md` |
+| AI-Readiness | v2.0 draft | `docs/specs/ai-readiness/README.md` |
+| WordPress Integration | v1.0 | `docs/specs/wordpress-integration/README.md` |
+
+**Architecture & Reference:**
+| Document | Purpose |
+|---|---|
+| `docs/architecture/architecture.md` | System design, data flow, design decisions |
+| `docs/api/api.md` | Full API endpoint reference |
+| `docs/reference/issue-codes.md` | All issue codes with explanations and fixes |
+
+**Project Management:**
 | File | Purpose |
 |---|---|
-| `docs/api.md` | Full API endpoint reference |
-| `docs/architecture.md` | System design, data flow, design decisions |
-| `docs/issue-codes.md` | All issue codes with explanations and fixes |
-| `docs/overview.md` | Feature descriptions and crawl pipeline |
-| `docs/image-scan-spec.md` | Image Intelligence Engine specification (v1.9) |
-| `docs/image-scan-implementation-plan.md` | Image feature implementation roadmap |
-| `geo_image_ai_spec.md` | GEO-Advanced Image Metadata Generator spec |
-| `geo_image_ai_prompt.md` | Master prompt for 90+ score GEO optimization |
 | `PLAN.md` | Implementation milestones and checklist |
 | `TODO.md` | Technical debt and future improvements |

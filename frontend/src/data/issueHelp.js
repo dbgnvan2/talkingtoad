@@ -1664,6 +1664,355 @@ const issueHelp = {
       "it also helps human visitors who are often scanning your page for an " +
       "answer to a specific question.",
   },
+
+  BLOG_SECTIONS_MISSING: {
+    title: "No section headings for AI citation",
+    category: "ai_readiness",
+    severity: "warning",
+    definition:
+      "This blog or article page has 500+ words but fewer than 3 H2/H3 section headings. " +
+      "AI engines like Google AI Overviews, Perplexity, and ChatGPT use headings as citation " +
+      "anchors — a long post with no sections cannot be accurately quoted or attributed.",
+    impact:
+      "Confidence: Established. AI systems extract content by chunking it around headings. " +
+      "Without section headings, the entire post is treated as one undifferentiated block. " +
+      "An AI engine cannot cite 'the third paragraph of an unstructured article' — it needs " +
+      "named sections like 'How OpenBrain Stores Memory' to anchor a quote or summary to.",
+    fix:
+      "Add H2 headings to break the content into 3–8 named sections. Each section should " +
+      "cover one distinct idea and have a descriptive heading (e.g. 'How It Works', " +
+      "'Why This Matters', 'Getting Started'). Question-form headings (H2s with How/What/Why) " +
+      "are even stronger — they directly match the natural-language queries AI engines receive.",
+  },
+
+  // v2.0 AI-Readiness Module: AI Bot Access Checks
+  AI_BOT_SEARCH_BLOCKED: {
+    title: "AI search bot blocked",
+    category: "ai_readiness",
+    severity: "warning",
+    definition:
+      "Your robots.txt disallows a major AI search bot (OAI-SearchBot from OpenAI, " +
+      "Claude-SearchBot from Anthropic, or PerplexityBot). This bot enables ChatGPT, " +
+      "Claude AI, Gemini, and Perplexity to cite your pages in AI-generated answers.",
+    impact:
+      "Confidence: Established. When a search bot is blocked, your site won't appear " +
+      "in AI search results or AI engine answer citations. This is the single largest " +
+      "factor controlling whether AI systems will cite your content.",
+    fix:
+      'Update your robots.txt to allow search bots. Add or update these lines:\n\n' +
+      'User-agent: OAI-SearchBot\n' +
+      'Disallow:\n\n' +
+      'User-agent: Claude-SearchBot\n' +
+      'Disallow:\n\n' +
+      'User-agent: PerplexityBot\n' +
+      'Disallow:\n\n' +
+      "Leave the 'Disallow' line blank (or omit it) to allow the bot.",
+  },
+
+  AI_BOT_TRAINING_DISALLOWED: {
+    title: "AI training bot disallowed",
+    category: "ai_readiness",
+    severity: "info",
+    definition:
+      "Your robots.txt disallows training bots (GPTBot, ClaudeBot, CCBot, etc.). " +
+      "These bots are used by AI companies to train their large language models.",
+    impact:
+      "Confidence: Established. Training bots are completely separate from search bots. " +
+      "Blocking training bots means your site won't be included in future AI model training " +
+      "data — which may be intentional if you prefer to opt out of AI training.",
+    fix:
+      "This block may be intentional. If you prefer to opt out of AI training data collection, " +
+      "you can leave this as-is. If it's accidental, remove the block. You can also contact " +
+      "specific AI companies (OpenAI, Anthropic, etc.) directly to request opt-out.",
+  },
+
+  AI_BOT_USER_FETCH_BLOCKED: {
+    title: "AI user-fetch bot blocked (ineffective)",
+    category: "ai_readiness",
+    severity: "warning",
+    definition:
+      "Your robots.txt disallows a user-fetch bot (ChatGPT-User, Claude-User, Perplexity-User). " +
+      "These bots do NOT honor robots.txt by design — they make requests on behalf of end users.",
+    impact:
+      "Confidence: Established. Blocking user-fetch bots in robots.txt has no effect because " +
+      "the user (not a bot) is making the request. It signals that the site owner may misunderstand " +
+      "how robots.txt works.",
+    fix:
+      'Remove the block for these bots. Examples of ineffective directives to delete:\n\n' +
+      'User-agent: ChatGPT-User\n' +
+      'Disallow: /\n\n' +
+      'These bots will still access your pages regardless. There is no way to block user-initiated requests.',
+  },
+
+  AI_BOT_DEPRECATED_DIRECTIVE: {
+    title: "Deprecated AI bot name",
+    category: "ai_readiness",
+    severity: "warning",
+    definition:
+      "Your robots.txt references a deprecated AI bot user agent (anthropic-ai or claude-web). " +
+      "Anthropic retired these in July 2024 in favour of the current ClaudeBot / Claude-SearchBot / Claude-User architecture.",
+    impact:
+      "Confidence: Established. Deprecated directives are stale configuration. They don't affect " +
+      "current bots but signal that your robots.txt hasn't been updated in over a year.",
+    fix:
+      'Replace deprecated names:\n\n' +
+      'OLD:\n' +
+      'User-agent: anthropic-ai\n' +
+      'User-agent: claude-web\n\n' +
+      'NEW:\n' +
+      'User-agent: ClaudeBot\n' +
+      'Disallow:\n\n' +
+      'User-agent: Claude-SearchBot\n' +
+      'Disallow:',
+  },
+
+  AI_BOT_NO_AI_DIRECTIVES: {
+    title: "No explicit AI bot configuration",
+    category: "ai_readiness",
+    severity: "info",
+    definition:
+      "Your robots.txt has no explicit directives for known AI bots. The default " +
+      "User-agent: * rules apply to all bots, including AI bots.",
+    impact:
+      "Confidence: Reasonable proxy. Without explicit rules, your site's AI visibility " +
+      "depends on the default (usually allow-all). Consider making your intent explicit.",
+    fix:
+      'Add explicit rules for AI bots. Example (allow all):\n\n' +
+      'User-agent: OAI-SearchBot\n' +
+      'Disallow:\n\n' +
+      'User-agent: Claude-SearchBot\n' +
+      'Disallow:\n\n' +
+      'Or, if you prefer to block training bots while allowing search:\n\n' +
+      'User-agent: GPTBot\n' +
+      'Disallow: /\n\n' +
+      'User-agent: ClaudeBot\n' +
+      'Disallow: /',
+  },
+
+  AI_BOT_BLANKET_DISALLOW: {
+    title: "All bots blocked",
+    category: "ai_readiness",
+    severity: "critical",
+    definition:
+      "Your robots.txt contains User-agent: * with Disallow: / — this blocks all bots, " +
+      "including search engines and AI systems, from crawling any pages on your site.",
+    impact:
+      "Confidence: Established. A blanket disallow blocks Google, Bing, ChatGPT, Claude, " +
+      "and every other bot. Your site will not appear in search results or AI answers.",
+    fix:
+      'Remove the blanket disallow. Change:\n\n' +
+      'User-agent: *\n' +
+      'Disallow: /\n\n' +
+      'To:\n\n' +
+      'User-agent: *\n' +
+      'Disallow:\n\n' +
+      'Or set specific rules for bots you want to block.',
+  },
+
+  AI_BOT_TABLE_STALE: {
+    title: "AI bot reference table needs review",
+    category: "ai_readiness",
+    severity: "info",
+    definition:
+      "The internal TalkingToad AI bot reference table (which this audit uses) has not " +
+      "been reviewed in over 12 months. Vendor user agents, bot behavior, and compliance change frequently.",
+    impact:
+      "Confidence: Heuristic (internal audit note). This is not a defect with your site, " +
+      "but a reminder that the AI bot landscape changes continuously.",
+    fix:
+      "This is an internal audit note, not a site issue. Contact TalkingToad support " +
+      "to report that the bot reference table should be updated.",
+  },
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // SCHEMA TYPING (v2.0)
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  SCHEMA_TYPE_MISMATCH: {
+    title: "Schema type doesn't match page content",
+    category: "ai_readiness",
+    severity: "warning",
+    definition:
+      "This page has JSON-LD schema markup, but the schema type (@type) doesn't match the " +
+      "page's actual content type. For example, a blog post marked as a 'Product', or a team " +
+      "member page marked as an 'Article'.",
+    impact:
+      "Confidence: Reasonable proxy. When AI crawlers (Gemini, Claude, ChatGPT) and search " +
+      "engines read your page, they rely on schema type to understand context. A mismatched " +
+      "schema causes AI systems to misinterpret the page and may produce incorrect summaries " +
+      "or citations. This also affects how your page appears in AI Overviews.",
+    fix:
+      "Identify the page content type (article, service, team member, FAQ, etc.) and update " +
+      "the @type in your JSON-LD schema to match. Use schema.org to verify the correct schema " +
+      "type for your content. In WordPress, check your SEO plugin settings.",
+  },
+
+  SCHEMA_DEPRECATED_TYPE: {
+    title: "Deprecated schema type used",
+    category: "ai_readiness",
+    severity: "info",
+    definition:
+      "This page uses a schema type that schema.org has deprecated or marked as obsolete. " +
+      "Deprecated types are no longer recommended and may be phased out by search engines " +
+      "and AI systems.",
+    impact:
+      "Confidence: Heuristic. Deprecated schemas may not be recognized correctly by newer " +
+      "versions of search engines and AI crawlers. While not critical now, using obsolete " +
+      "types reduces clarity and future-proofs less well.",
+    fix:
+      "Check schema.org for the deprecated type name and look for its modern replacement. " +
+      "Update your JSON-LD @type to use the recommended alternative. Your SEO plugin or " +
+      "developer can make this update.",
+  },
+
+  SCHEMA_TYPE_CONFLICT: {
+    title: "Multiple conflicting schema types",
+    category: "ai_readiness",
+    severity: "warning",
+    definition:
+      "This page declares multiple schema types (@type values) that are semantically " +
+      "incompatible or contradictory — for example, marking the same content as both " +
+      "'Article' and 'Product' without a clear nested structure.",
+    impact:
+      "Confidence: Reasonable proxy. Conflicting schemas create ambiguity. AI crawlers and " +
+      "search engines may struggle to understand which schema applies to which content, " +
+      "leading to misclassification or ignored metadata.",
+    fix:
+      "Consolidate your schema into a single coherent structure. If the page truly contains " +
+      "multiple distinct entities (e.g., an article written by an author, or a product review " +
+      "by a person), use @graph or proper nesting rather than flat conflicting types. Validate " +
+      "your final schema using the schema.org validator.",
+  },
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // CONTENT EXTRACTABILITY (v2.0)
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  CONTENT_NOT_EXTRACTABLE_NO_TEXT: {
+    title: "No text content",
+    category: "ai_readiness",
+    severity: "warning",
+    definition:
+      "This page has little or no visible text content. It may be image-only, video-only, " +
+      "or based on interactive media (JavaScript canvas, Flash, etc.). AI systems cannot " +
+      "extract semantic information from images or videos alone.",
+    impact:
+      "Confidence: Established. AI systems (Gemini, Claude, ChatGPT) cannot index, summarize, " +
+      "or cite from pure media. Pages with no text are invisible to AI Overviews and cannot " +
+      "be included in AI-generated summaries.",
+    fix:
+      "Add descriptive text to accompany images and videos. For image galleries, add captions. " +
+      "For videos, provide transcripts and a text summary. For interactive visualizations, " +
+      "add a data table or text description of the key insights. Aim for at least 100 words of " +
+      "context per page.",
+  },
+
+  CONTENT_THIN: {
+    title: "Very low word count",
+    category: "ai_readiness",
+    severity: "info",
+    definition:
+      "This page has fewer than 100 words of text content. While brief pages can serve valid " +
+      "purposes (navigation, landing pages, contact forms), they don't contain enough information " +
+      "for AI systems to understand context or generate meaningful summaries.",
+    impact:
+      "Confidence: Reasonable proxy. Very thin pages are less likely to appear in AI Overviews. " +
+      "Any AI-generated summaries will lack depth and detail.",
+    fix:
+      "Expand your content to at least 200–300 words for most pages. For detailed guides, " +
+      "articles, or product pages, aim for 500+ words. Use clear headings and subheadings to " +
+      "organize information.",
+  },
+
+  CONTENT_UNSTRUCTURED: {
+    title: "Unstructured content",
+    category: "ai_readiness",
+    severity: "info",
+    definition:
+      "This page has adequate text content (200+ words) but lacks heading structure (no H2, H3, " +
+      "or H4 tags). Without headings, the content appears as one long block of text, making it " +
+      "difficult for AI systems to identify topics and extract key points.",
+    impact:
+      "Confidence: Reasonable proxy. Unstructured content makes it harder for AI systems to " +
+      "identify main topics, extract specific facts, and generate clear summaries. Lack of " +
+      "headings may reduce the page's prominence in AI Overviews.",
+    fix:
+      "Add heading tags (H2, H3, H4) to organize content into clear sections. Each heading should " +
+      "summarize the section below it. In WordPress, use the Heading 2, Heading 3, or Heading 4 " +
+      "styles from the block editor.",
+  },
+
+  CONTENT_IMAGE_HEAVY: {
+    title: "Image-heavy layout",
+    category: "ai_readiness",
+    severity: "info",
+    definition:
+      "This page contains significantly more images than text sections (more images than headings). " +
+      "While visuals are valuable, AI systems cannot extract information from images alone without " +
+      "accompanying descriptive text.",
+    impact:
+      "Confidence: Heuristic. Image-heavy pages with sparse text are difficult for AI to analyze. " +
+      "While advanced AI can interpret images, it's expensive and context-dependent. Accompanying " +
+      "text is essential for reliable extraction.",
+    fix:
+      "Add descriptive captions below each image that explain its significance. Include surrounding " +
+      "paragraph text that provides context. Ensure alt text is detailed (80–125 characters, not " +
+      "just filenames). For charts or diagrams, add a text summary of the data or concepts shown.",
+  },
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // CITATIONS & ATTRIBUTION (v2.0)
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  CITATIONS_MISSING_SUBSTANTIAL_CONTENT: {
+    title: "Missing citations",
+    category: "ai_readiness",
+    severity: "info",
+    definition:
+      "This page contains 200+ words of text but provides no citations, footnotes, or source attribution. " +
+      "While not all pages require citations, longer articles and research-based content should cite sources " +
+      "to support factual claims.",
+    impact:
+      "Confidence: Reasonable proxy. Uncited claims reduce credibility and trustworthiness. AI systems " +
+      "and readers prefer content with explicit source attribution, as it enables fact-checking and " +
+      "verification.",
+    fix:
+      "Add citations to factual or data-based claims using a consistent format (APA, Chicago, MLA). " +
+      "Include inline citations like (Smith, 2020) or link directly to sources. For longer content, " +
+      "include a References or Sources section.",
+  },
+
+  CITATIONS_ORPHANED: {
+    title: "Citations without context",
+    category: "ai_readiness",
+    severity: "info",
+    definition:
+      "This page includes citations (footnotes, source links, references) but they appear without surrounding " +
+      "text that explains their relevance or significance. Isolated citations confuse readers and AI systems.",
+    impact:
+      "Confidence: Reasonable proxy. Orphaned citations reduce clarity and credibility. AI systems benefit from " +
+      "citations embedded in explanatory text that shows why the source matters.",
+    fix:
+      "Review each citation and ensure it appears within a sentence or paragraph that explains what claim it " +
+      "supports. If citations are in a separate References section, ensure the main text clearly references them " +
+      "(e.g., 'See note 3' or '[1]').",
+  },
+
+  CITATIONS_SOURCES_INACCESSIBLE: {
+    title: "Inaccessible sources",
+    category: "ai_readiness",
+    severity: "warning",
+    definition:
+      "This page cites sources that are no longer accessible: broken links (404 errors), paywalls, robots.txt " +
+      "blocks, or deleted content. Readers and AI systems cannot verify these citations.",
+    impact:
+      "Confidence: Established. Broken citations severely damage credibility. AI systems cannot fact-check claims " +
+      "with inaccessible sources, reducing the page's suitability for AI Overviews.",
+    fix:
+      "Check all citation links and replace broken ones with working alternatives. For paywalled content, link to " +
+      "a summary, abstract, or free alternative (preprint, institutional repository). For deleted or archived pages, " +
+      "use archive.org or similar services.",
+  },
   };
 
 

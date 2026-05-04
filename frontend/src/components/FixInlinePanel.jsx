@@ -103,7 +103,7 @@ export default function FixInlinePanel({ jobId, pageUrl, issueCode, issueExtra, 
         setFetchError(err.message)
         setLoading(false)
       })
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [issueCode, isPredefined, field, jobId, pageUrl])
 
   useEffect(() => {
     if (!loading && !fetchError && textareaRef.current) {
@@ -319,7 +319,7 @@ function MismatchFixPanel({ jobId, pageUrl, issueExtra, onClose }) {
         setNewTitle(currentTitle)
         setLoading(false)
       })
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [jobId, pageUrl, currentTitle])
 
   async function applyTitle() {
     if (!newTitle.trim()) return

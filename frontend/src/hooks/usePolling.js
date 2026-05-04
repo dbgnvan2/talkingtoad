@@ -7,16 +7,19 @@ const SLOW_MS = 5000   // after 60 seconds
 /**
  * Polls `fetchFn` every 2s for 60s, then every 5s.
  * Stops automatically when `shouldStop(data)` returns true.
+ * Optional onError callback notifies caller of fetch failures.
  */
-export function usePolling(fetchFn, onData, shouldStop) {
+export function usePolling(fetchFn, onData, shouldStop, onError) {
   const timerRef = useRef(null)
   const startedRef = useRef(null)
   const stoppedRef = useRef(false)
   const onDataRef = useRef(onData)
   const shouldStopRef = useRef(shouldStop)
+  const onErrorRef = useRef(onError)
 
   onDataRef.current = onData
   shouldStopRef.current = shouldStop
+  onErrorRef.current = onError
 
   const poll = useCallback(async () => {
     if (stoppedRef.current) return
@@ -28,6 +31,9 @@ export function usePolling(fetchFn, onData, shouldStop) {
         return
       }
     } catch (err) {
+      if (onErrorRef.current) {
+        onErrorRef.current(err)
+      }
       // keep polling on transient errors
     }
     const elapsed = Date.now() - startedRef.current

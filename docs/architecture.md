@@ -20,7 +20,24 @@ Crawl jobs run asynchronously. The user submits a URL and receives a `job_id`. T
 
 ### Data store abstraction
 
-All job/result persistence goes through `api/services/job_store.py`. SQLite is used locally; Upstash Redis in production. The `DATABASE_URL` env var switches between them transparently. The `fixes` table is stored in the same abstraction.
+All job/result persistence uses a pluggable architecture with a Protocol-based interface:
+
+**Architecture (v1.9.4+):**
+- **`api/services/job_store_base.py`** (~430 lines): Defines `JobStore` Protocol with 50+ method signatures, database `SCHEMA` constant, and helper functions for health scoring
+- **`api/services/sqlite_store.py`** (~1,466 lines): `SQLiteJobStore` implementation for local development (async lifecycle, full CRUD, health scoring, fix management, verified links, image analysis, GEO configuration)
+- **`api/services/redis_store.py`** (~566 lines): `RedisJobStore` implementation for Upstash Redis in production (serverless-compatible via REST API)
+- **`api/services/job_store.py`** (~50 lines): Factory function `get_job_store()` that selects backend based on environment:
+  1. Upstash Redis if `UPSTASH_REDIS_REST_URL` + `UPSTASH_REDIS_REST_TOKEN` are set
+  2. SQLite at `DATABASE_URL` path if set (format: `sqlite:///path/to/db`)
+  3. Default SQLite at `talkingtoad.db`
+
+**Why this architecture:**
+- **Backend-agnostic:** New implementations (e.g., PostgreSQL) can be added by implementing `JobStore` Protocol
+- **Independent testing:** Each implementation can be tested in isolation
+- **Production scaling:** Redis for serverless; SQLite for local development
+- **Backward compatibility:** Existing code imports `SQLiteJobStore`, `RedisJobStore`, `SCHEMA`, etc. from `job_store.py` via re-exports
+
+The `fixes` table is stored in the same abstraction.
 
 ### URL normalisation
 
@@ -143,11 +160,32 @@ Health Score = `max(0, 100 − Σ issue impacts)` across all issues on the site.
 
 A bearer token (`Authorization: Bearer <token>`) gates all crawl endpoints. Set `AUTH_TOKEN` in environment variables. This is a deployment gate, not user authentication — it prevents the public from using the API without a token.
 
+### Fix Manager router modularization
+
+The Fix Manager endpoints are organized as a modular, pluggable router system:
+
+**Architecture (v1.9.4+):**
+- **`api/routers/fixes_shared.py`** (~160 lines): Shared request/response models, validation helpers, dependency injection
+- **`api/routers/fix_manager_router.py`** (~280 lines): Core fix CRUD endpoints — POST /generate/{job_id} (propose fixes), GET /{job_id} (list), PATCH /{fix_id} (update), POST /apply/{job_id} (apply approved fixes), DELETE /{job_id} (clear)
+- **`api/routers/fixes.py`** (~40 lines): Main router registry that includes `fix_manager_router` and documents 6 pending routers (link_router, title_router, heading_router, image_router, orphaned_media_router, batch_optimizer_router)
+
+**Why this architecture:**
+- **Domain-driven:** Each router handles one fix domain (fix manager, links, titles, headings, images, orphaned media, batch)
+- **Independently testable:** Core fix logic doesn't depend on link or image logic
+- **Extensible:** New fix domains can be added by implementing the router pattern
+- **Scaling:** Large fix codebases (2,000+ lines) decomposed into ~300-line modules
+
+The WordPress service layer (`api/services/wp_fixer.py`) is also modularized into domain-specific modules:
+- **`wp_shared.py`** — Shared fix spec definitions and field mappings
+- **`wp_title_fixer.py`** — Title trimming and SEO plugin variable handling
+- **`wp_heading_fixer.py`** — Heading level/text changes and cascading updates
+- **`wp_image_fixer.py`** — Image metadata, optimization, and WordPress integration
+
 ### WordPress domain validation
 
 All WordPress-touching endpoints validate that the `wp-credentials.json` `site_url` domain matches either the crawl job's `target_url` or the request URL's domain. This prevents cross-site operations when scanning multiple client domains — without it, changing the scan target while `wp-credentials.json` still points to the previous client's WordPress would silently read/write the wrong site.
 
-**Implementation:** Two helper functions in `api/routers/fixes.py`:
+**Implementation:** Two helper functions in `api/routers/fixes_shared.py`:
 - `_validate_wp_domain_for_job(store, job_id)` — compares job target domain vs credentials domain
 - `_validate_wp_domain_for_url(url)` — compares URL domain vs credentials domain
 

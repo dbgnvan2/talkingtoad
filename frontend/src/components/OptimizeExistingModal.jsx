@@ -158,8 +158,8 @@ export default function OptimizeExistingModal({ image, jobId, onClose, onSuccess
                     After optimization, update this image on:
                   </p>
                   <ul className="space-y-1">
-                    {preview.page_urls.map((url, i) => (
-                      <li key={i} className="text-sm">
+                    {preview.page_urls.map((url) => (
+                      <li key={url} className="text-sm">
                         <a
                           href={url}
                           target="_blank"
@@ -286,8 +286,8 @@ export default function OptimizeExistingModal({ image, jobId, onClose, onSuccess
                   <div className="mt-3 pt-3 border-t border-amber-200">
                     <p className="text-sm font-medium text-amber-900">Pages to update:</p>
                     <ul className="mt-1 space-y-1">
-                      {result.page_urls.map((url, i) => (
-                        <li key={i}>
+                      {result.page_urls.map((url) => (
+                        <li key={url}>
                           <a
                             href={url}
                             target="_blank"
@@ -328,8 +328,8 @@ export default function OptimizeExistingModal({ image, jobId, onClose, onSuccess
                       <div className="pt-2 border-t border-purple-200">
                         <span className="font-medium text-purple-800">Entities:</span>
                         <div className="flex flex-wrap gap-1 mt-1">
-                          {result.geo_metadata.entities_used.map((entity, i) => (
-                            <span key={i} className="text-xs px-2 py-0.5 bg-purple-200 text-purple-800 rounded-full">
+                          {result.geo_metadata.entities_used.map((entity) => (
+                            <span key={entity} className="text-xs px-2 py-0.5 bg-purple-200 text-purple-800 rounded-full">
                               {entity}
                             </span>
                           ))}

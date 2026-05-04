@@ -192,8 +192,8 @@ export default function GeoSettings({ domain, isOpen, onClose }) {
             <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
               <div className="font-semibold text-yellow-800 mb-2">Validation Errors:</div>
               <ul className="list-disc list-inside text-yellow-700 text-sm space-y-1">
-                {validationErrors.map((err, i) => (
-                  <li key={i}>{err}</li>
+                {validationErrors.map((err) => (
+                  <li key={err}>{err}</li>
                 ))}
               </ul>
             </div>
@@ -241,8 +241,8 @@ export default function GeoSettings({ domain, isOpen, onClose }) {
                     </button>
                   </div>
                   <div className="flex flex-wrap gap-2">
-                    {config.topic_entities.map((entity, idx) => (
-                      <div key={idx} className="bg-blue-100 text-blue-800 px-3 py-1 rounded-full flex items-center gap-2 text-sm">
+                    {config.topic_entities.map((entity) => (
+                      <div key={entity} className="bg-blue-100 text-blue-800 px-3 py-1 rounded-full flex items-center gap-2 text-sm">
                         <span>{entity}</span>
                         <button
                           onClick={() => removeTopicEntity(entity)}
@@ -298,8 +298,8 @@ export default function GeoSettings({ domain, isOpen, onClose }) {
                     </button>
                   </div>
                   <div className="flex flex-wrap gap-2">
-                    {config.location_pool.map((location, idx) => (
-                      <div key={idx} className="bg-green-100 text-green-800 px-3 py-1 rounded-full flex items-center gap-2 text-sm">
+                    {config.location_pool.map((location) => (
+                      <div key={location} className="bg-green-100 text-green-800 px-3 py-1 rounded-full flex items-center gap-2 text-sm">
                         <span>{location}</span>
                         <button
                           onClick={() => removeLocation(location)}

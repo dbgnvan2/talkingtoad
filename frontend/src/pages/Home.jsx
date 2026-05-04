@@ -28,6 +28,7 @@ export default function Home() {
   const [imgSizeLimit, setImgSizeLimit] = useState('')
   const [suppressH1Input, setSuppressH1Input] = useState('')
   const [suppressBannerH1, setSuppressBannerH1] = useState(true)
+  const [singlePageMode, setSinglePageMode] = useState(false)
   // All analyses enabled by default (null = all on)
   const [analyses, setAnalyses] = useState(() =>
     Object.fromEntries(ANALYSIS_TOGGLES.map(t => [t.key, true]))
@@ -62,6 +63,7 @@ export default function Home() {
     const suppressH1s = suppressH1Input.split('\n').map(s => s.trim()).filter(Boolean)
     if (suppressH1s.length) settings.suppress_h1_strings = suppressH1s
     if (suppressBannerH1) settings.suppress_banner_h1 = true
+    if (singlePageMode) settings.single_page = true
     const enabled = ANALYSIS_TOGGLES.filter(t => analyses[t.key]).map(t => t.key)
     // Only send if not all selected (null means all)
     if (enabled.length < ANALYSIS_TOGGLES.length) {
@@ -283,6 +285,25 @@ export default function Home() {
                         Skips any H1 that doesn't share words with the page title — catches theme-injected
                         parent-page banners (e.g. "Clinical Internship Programs" appearing as H1 on every
                         sub-page) without needing to list them manually above.
+                      </span>
+                    </span>
+                  </label>
+                </div>
+                <div className="col-span-2">
+                  <label className={`flex items-start gap-2.5 rounded-lg border px-3 py-2.5 cursor-pointer transition-colors ${
+                    singlePageMode ? 'border-blue-400 bg-blue-50' : 'border-gray-200 bg-white'
+                  }`}>
+                    <input
+                      type="checkbox"
+                      className="mt-0.5 accent-blue-600 flex-shrink-0"
+                      checked={singlePageMode}
+                      onChange={e => setSinglePageMode(e.target.checked)}
+                    />
+                    <span>
+                      <span className="block text-xs font-medium text-gray-700">Single-page mode</span>
+                      <span className="block text-xs text-gray-400 mt-0.5">
+                        Crawls only the exact URL — no sitemap seeding, no link following.
+                        Useful for auditing a specific blog post or landing page with full AI Readiness checks.
                       </span>
                     </span>
                   </label>

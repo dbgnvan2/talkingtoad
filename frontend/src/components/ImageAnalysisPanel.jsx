@@ -928,8 +928,8 @@ function ImageCard({ image, jobId, isExpanded, onToggle, onPageClick, isSelected
                   <div>
                     <span className="font-bold text-gray-700">Issues:</span>
                     <ul className="list-disc list-inside text-gray-700 mt-1">
-                      {aiResult.issues.map((issue, idx) => (
-                        <li key={idx}>{issue}</li>
+                      {aiResult.issues.map((issue) => (
+                        <li key={issue}>{issue}</li>
                       ))}
                     </ul>
                   </div>
@@ -1205,7 +1205,7 @@ function AIResultsModal({ results, jobId, onClose }) {
             const hasError = !!result.error
 
             return (
-              <div key={idx} className="p-4 bg-gray-50 rounded-2xl border border-gray-200">
+              <div key={result.imageUrl} className="p-4 bg-gray-50 rounded-2xl border border-gray-200">
                 <div className="flex items-start gap-4">
                   <img
                     src={result.imageUrl}
@@ -1239,8 +1239,8 @@ function AIResultsModal({ results, jobId, onClose }) {
                           <div>
                             <span className="font-bold text-gray-700">Issues:</span>
                             <div className="flex flex-wrap gap-1 mt-1">
-                              {analysis.issues.map((issue, i) => (
-                                <span key={i} className="text-[10px] px-2 py-0.5 bg-amber-100 text-amber-700 rounded-full font-bold">
+                              {analysis.issues.map((issue) => (
+                                <span key={issue} className="text-[10px] px-2 py-0.5 bg-amber-100 text-amber-700 rounded-full font-bold">
                                   {issue}
                                 </span>
                               ))}

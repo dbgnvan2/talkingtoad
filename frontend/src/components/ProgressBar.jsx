@@ -1,7 +1,9 @@
+import { memo } from 'react'
+
 /**
  * Determinate when pct is a number 0–100, indeterminate otherwise.
  */
-export default function ProgressBar({ pct }) {
+function ProgressBar({ pct }) {
   if (pct == null) {
     return (
       <div className="w-full h-3 bg-gray-200 rounded-full overflow-hidden">
@@ -19,3 +21,5 @@ export default function ProgressBar({ pct }) {
     </div>
   )
 }
+
+export default memo(ProgressBar)

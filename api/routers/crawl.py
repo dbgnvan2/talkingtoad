@@ -41,6 +41,7 @@ from api.models.job import CrawlJob, CrawlSettings
 from api.models.link import Link
 from api.models.page import CrawledPage
 from api.services.auth import require_auth
+from api.services.error_responses import _err
 from api.services.job_store import SQLiteJobStore, RedisJobStore
 from api.services.rate_limiter import CRAWL_START_LIMIT, EXPORT_LIMIT, AI_ANALYSIS_LIMIT, limiter
 from api.services.report_generator import generate_pdf_report
@@ -71,13 +72,6 @@ def get_store() -> SQLiteJobStore | RedisJobStore:
     return _store  # type: ignore[return-value]
 
 
-# ── Helper: standard error response ───────────────────────────────────────
-
-def _err(code: str, message: str, http_status: int) -> JSONResponse:
-    return JSONResponse(
-        status_code=http_status,
-        content={"error": {"code": code, "message": message, "http_status": http_status}},
-    )
 
 
 # ── Type conversion: engine → model ───────────────────────────────────────
@@ -225,8 +219,8 @@ async def _fetch_and_check_page(
     try:
         vl = await store.get_verified_links()
         verified_link_urls = {v["url"] for v in vl} if vl else set()
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning(f"Could not load verified links: {e}")
 
     external_links = [lnk for lnk in (page.links or []) if not lnk.is_internal]
     ext_checked = 0
@@ -244,7 +238,8 @@ async def _fetch_and_check_page(
                 continue
             try:
                 ext_result = await _check_external_link(target, ext_client)
-            except Exception:
+            except (RuntimeError, ValueError, TimeoutError) as e:
+                logger.debug(f"Error checking external link {target}: {e}")
                 ext_checked += 1
                 continue
             ext_checked += 1
@@ -481,6 +476,7 @@ async def start_crawl(
         img_size_limit_kb=settings.img_size_limit_kb,
         suppress_h1_strings=settings.suppress_h1_strings,
         suppress_banner_h1=settings.suppress_banner_h1,
+        single_page=settings.single_page,
     )
 
     background_tasks.add_task(
@@ -727,8 +723,9 @@ async def rescan_url(
     # Normalize the URL to match how it was stored during the original crawl.
     try:
         url = normalise_url(url)
-    except Exception:
-        pass  # fall through with original url if normalisation fails
+    except ValueError as e:
+        logger.debug(f"Could not normalize URL {url}: {e}")
+        # fall through with original url if normalisation fails
 
     job = await store.get_job(job_id)
     if job is None:
@@ -848,14 +845,14 @@ async def scan_single_page(
 
     try:
         url = normalise_url(url)
-    except Exception:
-        pass
+    except ValueError as e:
+        logger.debug(f"Could not normalize URL {url}: {e}")
 
     parsed = urlparse(url)
     origin = f"{parsed.scheme}://{parsed.netloc}"
 
     job = CrawlJob(
-        target_url=origin,
+        target_url=url,
         status="running",
         pages_crawled=0,
         pages_total=1,
@@ -875,8 +872,8 @@ async def scan_single_page(
                 suppress_h1s = rj.settings.suppress_h1_strings or []
                 suppress_banner = rj.settings.suppress_banner_h1
                 break
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning(f"Could not load recent jobs for inheriting settings: {e}")
 
     # ── Fetch, parse, check issues (shared logic) ─────────────────────
     check = await _fetch_and_check_page(
@@ -895,6 +892,30 @@ async def scan_single_page(
     page = check.page
     result = check.fetch_result
     new_issues = check.issues
+
+    # ── Robots.txt + AI bot access checks ────────────────────────────────
+    # scan-page doesn't run the full engine, so we fetch robots.txt here
+    # and run AI bot access checks against the domain.
+    try:
+        from api.crawler.robots import fetch_robots
+        from api.services.ai_readiness import check_ai_bot_access
+        async with make_client() as robots_client:
+            robots_data = await fetch_robots(origin, robots_client)
+        ai_bot_issues = check_ai_bot_access(robots_data, origin)
+        for issue in ai_bot_issues:
+            new_issues.append(_engine_issue_to_model(issue, job_id))
+        robots_found = robots_data.raw_text is not None
+        robots_rules = []
+        if robots_data.raw_text:
+            for line in robots_data.raw_text.splitlines():
+                line = line.strip()
+                if line and not line.startswith("#"):
+                    robots_rules.append(line)
+            robots_rules = robots_rules[:10]
+    except Exception as e:
+        logger.warning(f"scan_page_robots_check_failed: {e}")
+        robots_found = None
+        robots_rules = []
 
     # ── Image collection (v1.9image) ────────────────────────────────────
     from api.models.image import ImageInfo
@@ -953,6 +974,8 @@ async def scan_single_page(
         status="complete",
         pages_crawled=1,
         pages_total=1,
+        robots_txt_found=robots_found,
+        robots_txt_rules=robots_rules,
     )
 
     logger.info("scan_page_complete", extra={"job_id": job_id, "url": url, "issues": len(new_issues), "images": len(all_images)})
@@ -1472,8 +1495,8 @@ async def fetch_image_details(
                 img = PILImage.open(pio.BytesIO(content))
                 width, height = img.size
                 fmt = img.format.lower() if img.format else "unknown"
-            except Exception:
-                pass
+            except (OSError, IOError, AttributeError) as e:
+                logger.debug(f"Could not analyze image format: {e}")
 
         # Update the stored image with fetched data
         image.width = width

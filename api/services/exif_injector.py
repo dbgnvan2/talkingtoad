@@ -188,8 +188,9 @@ def inject_gps_coordinates(
         # JPEG: Use piexif directly
         try:
             exif_dict = piexif.load(str(image_path))
-        except Exception:
-            # No existing EXIF, create new
+        except (OSError, ValueError):
+            # No existing EXIF or corrupted file, create new
+            logger.debug(f"No existing EXIF data in {image_path}, creating new")
             exif_dict = {"0th": {}, "Exif": {}, "GPS": {}, "1st": {}, "thumbnail": None}
 
         exif_dict["GPS"] = gps_ifd
@@ -214,7 +215,8 @@ def inject_gps_coordinates(
                     exif_dict = piexif.load(exif_bytes)
                 else:
                     exif_dict = {"0th": {}, "Exif": {}, "GPS": {}, "1st": {}, "thumbnail": None}
-            except Exception:
+            except (OSError, ValueError, AttributeError):
+                logger.debug(f"Could not load existing EXIF from WebP {image_path}, creating new")
                 exif_dict = {"0th": {}, "Exif": {}, "GPS": {}, "1st": {}, "thumbnail": None}
 
             exif_dict["GPS"] = gps_ifd
@@ -226,7 +228,7 @@ def inject_gps_coordinates(
 
             logger.info(f"Injected GPS coordinates into WebP: {image_path}")
 
-        except Exception as e:
+        except (OSError, ValueError, AttributeError) as e:
             logger.warning(f"Could not inject GPS into WebP {image_path}: {e}")
             # WebP EXIF support can be limited - continue without GPS
             raise ValueError(f"WebP GPS injection failed: {e}")

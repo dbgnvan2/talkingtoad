@@ -65,7 +65,7 @@ export default function CategoryHelpModal({ categoryKey, onClose }) {
               </h3>
               <ul className="space-y-2">
                 {help.common.map((item, idx) => (
-                  <li key={idx} className="flex items-start gap-3">
+                  <li key={item} className="flex items-start gap-3">
                     <span className="flex-shrink-0 w-6 h-6 bg-indigo-100 text-indigo-600 rounded-full flex items-center justify-center text-xs font-bold mt-0.5">
                       {idx + 1}
                     </span>
@@ -85,8 +85,8 @@ export default function CategoryHelpModal({ categoryKey, onClose }) {
               <p className="text-base text-purple-900 mb-4">{help.aiScores.description}</p>
 
               <div className="space-y-3 mb-4">
-                {help.aiScores.scores.map((score, idx) => (
-                  <div key={idx} className="bg-white rounded-lg p-3">
+                {help.aiScores.scores.map((score) => (
+                  <div key={score.name} className="bg-white rounded-lg p-3">
                     <p className="text-sm font-bold text-purple-800 mb-1">{score.name}</p>
                     <p className="text-sm text-gray-700">{score.description}</p>
                   </div>

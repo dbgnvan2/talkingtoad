@@ -165,6 +165,7 @@ _ISSUE_SCORING: dict[str, tuple[int, int]] = {
     "DOCUMENT_PROPS_MISSING":     (4,  2),
     "JSON_LD_MISSING":            (7,  2),
     "CONVERSATIONAL_H2_MISSING":  (4,  2),
+    "BLOG_SECTIONS_MISSING":      (5,  2),
     # v1.9.2 new checks
     "OG_IMAGE_MISSING":           (3,  1),
     "TWITTER_CARD_MISSING":       (3,  1),
@@ -173,6 +174,27 @@ _ISSUE_SCORING: dict[str, tuple[int, int]] = {
     "ANCHOR_TEXT_GENERIC":        (4,  2),
     "HEADING_EMPTY":              (4,  1),
     "WWW_CANONICALIZATION":       (5,  2),
+    # v2.0 AI-Readiness: AI Bot Access
+    "AI_BOT_SEARCH_BLOCKED":      (8,  1),
+    "AI_BOT_TRAINING_DISALLOWED": (0,  1),
+    "AI_BOT_USER_FETCH_BLOCKED":  (4,  1),
+    "AI_BOT_DEPRECATED_DIRECTIVE":(2,  1),
+    "AI_BOT_NO_AI_DIRECTIVES":    (1,  1),
+    "AI_BOT_BLANKET_DISALLOW":    (9,  1),
+    "AI_BOT_TABLE_STALE":         (0,  1),
+    # v2.0 AI-Readiness: Schema Typing
+    "SCHEMA_TYPE_MISMATCH":       (4,  2),
+    "SCHEMA_DEPRECATED_TYPE":     (2,  1),
+    "SCHEMA_TYPE_CONFLICT":       (3,  2),
+    # v2.0 AI-Readiness: Content Extractability
+    "CONTENT_NOT_EXTRACTABLE_NO_TEXT": (6, 4),
+    "CONTENT_THIN":               (4,  3),
+    "CONTENT_UNSTRUCTURED":       (3,  2),
+    "CONTENT_IMAGE_HEAVY":        (2,  3),
+    # v2.0 AI-Readiness: Citation & Attribution
+    "CITATIONS_MISSING_SUBSTANTIAL_CONTENT": (3, 2),
+    "CITATIONS_ORPHANED":         (2,  1),
+    "CITATIONS_SOURCES_INACCESSIBLE": (4, 3),
 }
 
 
@@ -850,6 +872,149 @@ _CATALOGUE: dict[str, _IssueSpec] = {
         human_description="Non-Conversational Headings",
         fixability="content_edit",
     ),
+    "BLOG_SECTIONS_MISSING": _IssueSpec(
+        category="ai_readiness", severity="warning",
+        description="Blog or article page lacks sufficient heading structure for AI citation anchors",
+        recommendation="Add H2/H3 headings to break content into named sections. AI engines use "
+                       "headings as citation anchors — a long post with fewer than 3 headings "
+                       "cannot be accurately quoted or cited by AI.",
+        human_description="No Section Headings for AI Citation",
+        fixability="content_edit",
+    ),
+    # v2.0 AI Bot Access
+    "AI_BOT_SEARCH_BLOCKED": _IssueSpec(
+        category="ai_readiness", severity="warning",
+        description="A major AI search bot is disallowed in robots.txt",
+        recommendation="Allow AI search bots in robots.txt. This bot enables ChatGPT, Gemini, "
+                       "and other AI engines to include your site in their answers.",
+        human_description="AI Search Bot Blocked",
+        fixability="developer_needed",
+    ),
+    "AI_BOT_TRAINING_DISALLOWED": _IssueSpec(
+        category="ai_readiness", severity="info",
+        description="An AI training bot is disallowed in robots.txt",
+        recommendation="This may be intentional. If accidental, allow the bot. "
+                       "Blocking training bots does not affect AI search visibility.",
+        human_description="AI Training Bot Disallowed",
+        fixability="developer_needed",
+    ),
+    "AI_BOT_USER_FETCH_BLOCKED": _IssueSpec(
+        category="ai_readiness", severity="warning",
+        description="An AI user-fetch bot is disallowed in robots.txt — this block has no effect",
+        recommendation="Remove the block. User-fetch bots (ChatGPT-User, Claude-User) do not honor "
+                       "robots.txt by design. Blocking them signals misconfiguration.",
+        human_description="AI User Bot Blocked (Ineffective)",
+        fixability="developer_needed",
+    ),
+    "AI_BOT_DEPRECATED_DIRECTIVE": _IssueSpec(
+        category="ai_readiness", severity="warning",
+        description="robots.txt references a deprecated AI bot user agent",
+        recommendation="Remove deprecated directives (anthropic-ai, claude-web) and replace with "
+                       "current bot names (ClaudeBot, Claude-SearchBot, Claude-User).",
+        human_description="Deprecated AI Bot Name in robots.txt",
+        fixability="developer_needed",
+    ),
+    "AI_BOT_NO_AI_DIRECTIVES": _IssueSpec(
+        category="ai_readiness", severity="info",
+        description="robots.txt has no explicit directives for known AI bots",
+        recommendation="Add explicit AI bot rules to make your intent clear. Example: allow all "
+                       "search bots while optionally blocking training bots.",
+        human_description="No AI Bot Configuration",
+        fixability="developer_needed",
+    ),
+    "AI_BOT_BLANKET_DISALLOW": _IssueSpec(
+        category="ai_readiness", severity="critical",
+        description="robots.txt blocks all bots with User-agent: * / Disallow: /",
+        recommendation="Update robots.txt to allow at least AI search bots. Remove 'Disallow: /' "
+                       "or add specific allow rules for AI crawlers.",
+        human_description="All Bots Blocked",
+        fixability="developer_needed",
+    ),
+    "AI_BOT_TABLE_STALE": _IssueSpec(
+        category="ai_readiness", severity="info",
+        description="Internal AI bot reference table has not been reviewed in >12 months",
+        recommendation="Review and update the TalkingToad AI bot reference table.",
+        human_description="AI Bot Table Needs Review",
+        fixability="developer_needed",
+    ),
+    # v2.0 Schema Typing
+    "SCHEMA_TYPE_MISMATCH": _IssueSpec(
+        category="ai_readiness", severity="warning",
+        description="Page schema type does not match inferred page type",
+        recommendation="Ensure JSON-LD @type matches the page content (Article for blog posts, "
+                       "Person for team bios, Service for service pages).",
+        human_description="Mismatched Schema Type",
+        fixability="content_edit",
+    ),
+    "SCHEMA_DEPRECATED_TYPE": _IssueSpec(
+        category="ai_readiness", severity="info",
+        description="Page uses deprecated schema.org types",
+        recommendation="Replace deprecated schema types with modern equivalents from schema.org.",
+        human_description="Deprecated Schema Type",
+        fixability="content_edit",
+    ),
+    "SCHEMA_TYPE_CONFLICT": _IssueSpec(
+        category="ai_readiness", severity="warning",
+        description="Page declares multiple conflicting schema types",
+        recommendation="Use a single coherent @type. For multiple entities use @graph or nesting.",
+        human_description="Conflicting Schema Types",
+        fixability="content_edit",
+    ),
+    # v2.0 Content Extractability
+    "CONTENT_NOT_EXTRACTABLE_NO_TEXT": _IssueSpec(
+        category="ai_readiness", severity="warning",
+        description="Page has no visible text — only images, video, or interactive media",
+        recommendation="Add descriptive text, captions, or transcripts. AI systems cannot extract "
+                       "information from images or videos without accompanying text.",
+        human_description="No Text Content",
+        fixability="content_edit",
+    ),
+    "CONTENT_THIN": _IssueSpec(
+        category="ai_readiness", severity="warning",
+        description="Page has very little text (under 100 words)",
+        recommendation="Expand the page with substantive content. Thin pages provide insufficient "
+                       "context for AI systems to generate accurate summaries.",
+        human_description="Thin Content",
+        fixability="content_edit",
+    ),
+    "CONTENT_UNSTRUCTURED": _IssueSpec(
+        category="ai_readiness", severity="warning",
+        description="Page has substantial text but no heading structure",
+        recommendation="Add H2 and H3 headings to break content into sections. Headings help AI "
+                       "systems identify topics and extract structured information.",
+        human_description="No Heading Structure",
+        fixability="content_edit",
+    ),
+    "CONTENT_IMAGE_HEAVY": _IssueSpec(
+        category="ai_readiness", severity="info",
+        description="Page has significantly more images than text sections",
+        recommendation="Add descriptive captions and surrounding text for each image. AI systems "
+                       "rely on text context to interpret visual content.",
+        human_description="Image-Heavy Layout",
+        fixability="content_edit",
+    ),
+    # v2.0 Citation & Attribution
+    "CITATIONS_MISSING_SUBSTANTIAL_CONTENT": _IssueSpec(
+        category="ai_readiness", severity="info",
+        description="Page has 200+ words but no citations or source attribution",
+        recommendation="Add citations to factual claims. Use inline references or a Sources section.",
+        human_description="Missing Citations",
+        fixability="content_edit",
+    ),
+    "CITATIONS_ORPHANED": _IssueSpec(
+        category="ai_readiness", severity="info",
+        description="Page has citations without surrounding context",
+        recommendation="Ensure each citation appears within a sentence that explains its relevance.",
+        human_description="Citations Without Context",
+        fixability="content_edit",
+    ),
+    "CITATIONS_SOURCES_INACCESSIBLE": _IssueSpec(
+        category="ai_readiness", severity="warning",
+        description="Page cites sources that are broken or inaccessible",
+        recommendation="Replace broken citation links with working alternatives.",
+        human_description="Inaccessible Citation Sources",
+        fixability="content_edit",
+    ),
 }
 
 
@@ -1258,14 +1423,86 @@ def check_page(
     if not page.has_json_ld and page.is_indexable and not url.endswith(".pdf"):
         issues.append(make_issue("JSON_LD_MISSING", url))
 
-    # Conversational H2s
+    # Conversational H2s — also fires when no H2s exist on a substantial page
     if page.is_indexable and not url.endswith(".pdf"):
         h2s = [h["text"] for h in (page.headings_outline or []) if h.get("level") == 2]
-        if h2s:
+        if not h2s and page.word_count and page.word_count >= 300:
+            # Substantial content with zero H2s — AI has nothing to anchor citations to
+            issues.append(make_issue("CONVERSATIONAL_H2_MISSING", url,
+                                     extra={"h2_headings": [], "word_count": page.word_count}))
+        elif h2s:
             interrogatives = re.compile(r"\b(how|what|why|who|where|when|which)\b", re.I)
             if not any(interrogatives.search(h) for h in h2s):
                 issues.append(make_issue("CONVERSATIONAL_H2_MISSING", url,
                                          extra={"h2_headings": h2s[:8]}))
+
+    # Blog/article pages without enough heading sections for AI citation
+    if page.is_indexable and page.word_count and page.word_count >= 500:
+        is_blog_like = (
+            "BlogPosting" in (page.schema_types or [])
+            or "Article" in (page.schema_types or [])
+            or any(seg in url for seg in ["/blog/", "/post/", "/article/", "/news/", "/stories/", "/insight"])
+        )
+        if is_blog_like:
+            meaningful_headings = [
+                h for h in (page.headings_outline or [])
+                if h.get("level") in (2, 3) and len(h.get("text", "").strip()) > 5
+            ]
+            if len(meaningful_headings) < 3:
+                issues.append(make_issue("BLOG_SECTIONS_MISSING", url, extra={
+                    "word_count": page.word_count,
+                    "heading_count": len(meaningful_headings),
+                }))
+
+    # ── Schema Typing (v2.0) ─────────────────────────────────────────────────
+    if page.is_indexable and page.schema_types:
+        try:
+            from api.services.schema_typing import validate_schema_typing
+            is_appropriate, issue_reason = validate_schema_typing(page)
+            if not is_appropriate and issue_reason:
+                if issue_reason.startswith("deprecated_schema:"):
+                    issues.append(make_issue("SCHEMA_DEPRECATED_TYPE", url,
+                                            extra={"schema_types": page.schema_types}))
+                elif issue_reason.startswith("schema_conflict:"):
+                    issues.append(make_issue("SCHEMA_TYPE_CONFLICT", url,
+                                            extra={"schema_types": page.schema_types}))
+                elif issue_reason.startswith("schema_mismatch:"):
+                    page_type = issue_reason.split(":")[-1]
+                    issues.append(make_issue("SCHEMA_TYPE_MISMATCH", url,
+                                            extra={"inferred_page_type": page_type,
+                                                   "schema_types": page.schema_types}))
+        except Exception as e:
+            logger.warning("schema_typing_error", extra={"url": url, "error": str(e)})
+
+    # ── Content Extractability (v2.0) ─────────────────────────────────────────
+    if page.is_indexable:
+        try:
+            from api.services.extractability import diagnose_extractability, assess_extractability
+            extractability_issue = diagnose_extractability(page)
+            if extractability_issue:
+                assessment = assess_extractability(page)
+                issues.append(make_issue(extractability_issue, url,
+                                        extra={"score": assessment["score"],
+                                               "issues": assessment["issues"]}))
+        except Exception as e:
+            logger.warning("extractability_error", extra={"url": url, "error": str(e)})
+
+    # ── Citation Assessment (v2.0) ────────────────────────────────────────────
+    if page.is_indexable and page.word_count and page.word_count > 200:
+        try:
+            from api.services.citation_model import PageCitations, assess_citation_readiness, diagnose_citation_issue
+            page_citations = PageCitations(
+                url=url,
+                citations=[],
+                attribution_style="none",
+            )
+            citation_issue = assess_citation_readiness(page_citations, page.word_count)
+            diagnosis = diagnose_citation_issue(citation_issue)
+            if diagnosis:
+                issues.append(make_issue(diagnosis, url,
+                                        extra={"word_count": page.word_count}))
+        except Exception as e:
+            logger.warning("citation_check_error", extra={"url": url, "error": str(e)})
 
     # PDF Metadata
     if url.lower().endswith(".pdf") and page.pdf_metadata is not None:

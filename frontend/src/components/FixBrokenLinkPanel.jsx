@@ -59,7 +59,7 @@ export default function FixBrokenLinkPanel({ jobId, brokenUrl, onClose }) {
         setFetchError(err.message)
         setLoading(false)
       })
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [jobId, brokenUrl])
 
   useEffect(() => {
     if (!loading && !fetchError && inputRef.current) {

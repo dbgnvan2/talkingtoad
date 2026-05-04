@@ -126,6 +126,8 @@ class CrawlSettings:
     # URL patterns for images to ignore in issue checks (e.g. theme SVG icons).
     # Substring match — "/location.svg" matches any URL containing that string.
     ignored_image_patterns: list[str] = field(default_factory=list)
+    # Single-page mode: crawl only the exact URL given, no sitemap seeding or link following
+    single_page: bool = False
 
 
 @dataclass
@@ -300,6 +302,15 @@ async def run_crawl(
         except Exception:
             pass
 
+        # ── 2.7. AI bot access checks ─────────────────────────────────────
+        # Check robots.txt for AI crawler blocks, misconfiguration, and deprecated directives.
+        try:
+            from api.services.ai_readiness import check_ai_bot_access
+            ai_bot_issues = check_ai_bot_access(robots_data, normalised_start)
+            all_issues.extend(ai_bot_issues)
+        except Exception as e:
+            log.warning("ai_bot_check_error", extra={"error": str(e)})
+
         # If no sitemap found, record that as an issue
         if sitemap_result.missing_issue:
             all_issues.append(
@@ -323,13 +334,14 @@ async def run_crawl(
         # Track which page discovered each URL (for broken link source reporting)
         discovered_from: dict[str, str] = {}
 
-        # Seed from sitemap so pages not reachable via HTML links are crawled
-        for norm in sitemap_url_set:
-            if norm != normalised_start and is_same_domain(norm, normalised_start):
-                queue.append((norm, None))
-                if norm not in depth_map:
-                    depth_map[norm] = None
-                discovered_from.setdefault(norm, "(sitemap)")
+        # Seed from sitemap — skipped in single_page mode
+        if not settings.single_page:
+            for norm in sitemap_url_set:
+                if norm != normalised_start and is_same_domain(norm, normalised_start):
+                    queue.append((norm, None))
+                    if norm not in depth_map:
+                        depth_map[norm] = None
+                    discovered_from.setdefault(norm, "(sitemap)")
 
         # External links: collected during internal crawl, checked after
         # Format: {"source_url": str, "target_url": str, "link_text": str|None}
@@ -470,8 +482,6 @@ async def run_crawl(
             is_html = "html" in ct
             is_asset = "pdf" in ct or ct.startswith("image/")
 
-            print(f"[DEBUG] url={url}, ct={ct}, is_html={is_html}, has_image_data={page.image_data is not None}, image_count={len(page.image_data) if page.image_data else 0}")
-
             if is_html:
                 # Skip SEO checks on 4xx/5xx pages — they are error pages, not real content.
                 # Emit a BROKEN_LINK_404 (or 5xx variant) issue so the user knows this internal
@@ -518,9 +528,10 @@ async def run_crawl(
 
             all_issues.extend(page_issues)
 
-            # Queue new URLs from links (only HTML pages have links)
+            # Queue new URLs from links — skipped in single_page mode
             child_depth = (current_depth + 1) if current_depth is not None else None
-            for link in page.links:
+            if not settings.single_page:
+              for link in page.links:
                 if link.is_internal:
                     try:
                         norm = normalise_url(link.url)
@@ -548,8 +559,6 @@ async def run_crawl(
 
             # Collect image data for full analysis (v1.9image)
             if is_html:
-                img_count = len(page.image_data) if page.image_data else 0
-                print(f"[IMG] Page {url} has {img_count} images, is_html={is_html}")
                 if page.image_data:
                     for img_data in page.image_data:
                         img_url = img_data.get("url")

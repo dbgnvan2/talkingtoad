@@ -193,7 +193,7 @@ export default function GeoSettingsModal({ domain, onClose, onSaved }) {
             </label>
             <div className="space-y-2">
               {topicEntities.map((entity, index) => (
-                <div key={index} className="flex gap-2">
+                <div key={`topic-${index}-${entity}`} className="flex gap-2">
                   <input
                     type="text"
                     value={entity}
@@ -230,7 +230,7 @@ export default function GeoSettingsModal({ domain, onClose, onSaved }) {
             </label>
             <div className="space-y-2">
               {locationPool.map((location, index) => (
-                <div key={index} className="flex gap-2">
+                <div key={`location-${index}-${location}`} className="flex gap-2">
                   <input
                     type="text"
                     value={location}
