@@ -636,9 +636,13 @@ _ATTRIBUTION_RE_FULL = re.compile(
 )
 
 
-def _content_score(url: str, content: str, page_type: str = "general") -> tuple[int, float]:
+def _content_score(
+    url: str, content: str, page_type: str = "general"
+) -> tuple[int, float, list[str]]:
     """
-    Score rewrite content on 5 GEO content signals, returning (fail_count, score 0-1).
+    Score rewrite content on 5 GEO content signals.
+
+    Returns (fail_count, score 0-1, list_of_failing_check_codes).
 
     Uses a fixed denominator (weight=13) so baseline and all variant scores
     are directly comparable.  Placeholder citations/quotes/stats from the
@@ -706,7 +710,7 @@ def _content_score(url: str, content: str, page_type: str = "general") -> tuple[
 
     fail_weight = sum(_CONTENT_SCORE_WEIGHT.get(c, 0) for c in fails)
     score = round(1.0 - fail_weight / _CONTENT_SCORE_TOTAL_WEIGHT, 4)
-    return len(fails), score
+    return len(fails), score, sorted(fails)
 
 
 def _project_score(
@@ -714,19 +718,11 @@ def _project_score(
     url: str,
     markdown_content: str,
     page_type: str = "general",
-) -> tuple[int, float]:
+) -> tuple[int, float, list[str]]:
     """
     Project the content-compliance score for a rewrite variant.
 
-    Scores are computed from the 5 content-measurable static GEO checks with a
-    fixed denominator (weight=13).  This keeps both the baseline (original page)
-    and each variant on the same scale, so improvement is meaningful.
-
-    The original geo_report score (LLM-only) is intentionally excluded here:
-    it cannot be cheaply re-run per variant, so mixing it with static checks
-    produced a collapsed denominator (the bug: 79% → 10%).
-
-    Returns (content_fail_count, projected_score).
+    Returns (content_fail_count, projected_score, failing_check_codes).
     """
     return _content_score(url, markdown_content, page_type)
 
@@ -850,35 +846,131 @@ def _project_score_from_findings(
 
 
 # ---------------------------------------------------------------------------
-# Improvement-mode prompt builder (Phase 4 — evolutionary rewrite)
+# Per-check fix instructions for the improvement prompt
 # ---------------------------------------------------------------------------
 
-def _build_improvement_prompt(original_system_prompt: str, attempt_num: int, total: int) -> str:
-    """
-    Wrap the original system prompt with improvement-mode framing.
+_CONTENT_FIX_INSTRUCTIONS: dict[str, str] = {
+    "EXTERNAL_CITATIONS_LOW": (
+        "**EXTERNAL_CITATIONS_LOW** — No citation or markdown link found in the body text.\n"
+        "Fix: Add at least one `[text](https://url)` markdown link to an external source, "
+        "OR embed `[CITATION NEEDED: describe the source type]` INLINE in the body — at the "
+        "point in the paragraph where the citation belongs.\n"
+        "Example: _This approach reduces latency [CITATION NEEDED: peer-reviewed benchmark study]._\n"
+        "⚠️  Listing it in GEO NOTES does NOT count. It must appear in the body paragraph."
+    ),
+    "STATISTICS_COUNT_LOW": (
+        "**STATISTICS_COUNT_LOW** — No specific number with a unit found in the body text.\n"
+        "Fix: Add at least one concrete figure (percentage, time, count, size) OR embed "
+        "`[STATISTIC: describe what data is needed]` INLINE in the body at the relevant point.\n"
+        "Example: _Setup typically takes under 45 minutes [STATISTIC: median time from user survey]._\n"
+        "⚠️  Listing it in GEO NOTES does NOT count. It must appear in the body paragraph."
+    ),
+    "QUOTATIONS_MISSING": (
+        "**QUOTATIONS_MISSING** — No attribution phrase or blockquote found in the body.\n"
+        "Fix (choose one): Add 'According to [source], …' OR add a Markdown blockquote "
+        "(> text) OR embed `[QUOTE NEEDED: speaker and context]` INLINE at the relevant point.\n"
+        "Example: _According to the Supabase documentation, pgvector supports cosine similarity._\n"
+        "⚠️  Listing it in GEO NOTES does NOT count. It must appear in the body paragraph."
+    ),
+    "STRUCTURED_ELEMENTS_LOW": (
+        "**STRUCTURED_ELEMENTS_LOW** — No Markdown list, table, or code block found.\n"
+        "Fix: Convert a suitable prose list to a bulleted list (`- item`) or numbered list "
+        "(`1. step`), add a comparison table (`| Col | Col |`), or add a code block (``` ```).\n"
+        "The setup steps section is the natural candidate for a numbered list."
+    ),
+    "FIRST_VIEWPORT_NO_ANSWER": (
+        "**FIRST_VIEWPORT_NO_ANSWER** — The first 100–200 words do not contain a direct answer.\n"
+        "Fix: Rewrite the intro so the first sentence states what the subject IS, concretely.\n"
+        "Example: _OpenBrain is a personal AI memory database that stores your context in a "
+        "PostgreSQL database you control._\n"
+        "Do NOT start with 'In this guide…', 'Many users face…', or 'Let's explore…'."
+    ),
+}
 
-    Tries 2+ receive the current best draft as input rather than the original
-    source content, so the LLM knows it is refining an existing rewrite.
+
+# ---------------------------------------------------------------------------
+# Improvement-mode prompt builder
+# ---------------------------------------------------------------------------
+
+def _build_improvement_prompt(
+    original_system_prompt: str,
+    attempt_num: int,
+    total: int,
+    failing_checks: list[str] | None = None,
+    current_score: float = 0.0,
+    placeholder_issues: list[str] | None = None,
+) -> str:
     """
+    Wrap the original system prompt with targeted improvement-mode framing.
+
+    Tries 2+ receive the current best draft as input.  When failing_checks are
+    provided (from _content_score), the prompt gives specific per-check instructions
+    rather than a generic checklist — and explicitly warns that GEO NOTES placeholders
+    do not count toward the score.
+    """
+    failing = failing_checks or []
+    ph_issues = placeholder_issues or []
+
+    # Build targeted fix section
+    if failing:
+        fix_lines = ["## FAILING CONTENT CHECKS — FIX THESE FIRST\n"]
+        fix_lines.append(
+            "These specific checks are failing and suppressing the score. "
+            "Each one has an exact fix described below.\n"
+        )
+        for code in failing:
+            if code in _CONTENT_FIX_INSTRUCTIONS:
+                fix_lines.append(_CONTENT_FIX_INSTRUCTIONS[code])
+                fix_lines.append("")
+        targeted_fixes = "\n".join(fix_lines)
+    else:
+        targeted_fixes = (
+            "## ALL CONTENT CHECKS PASSING\n\n"
+            "Focus on query coverage and backward cross-references only."
+        )
+
+    # Build inline-embedding warning when the LLM made the describe-not-embed mistake
+    if ph_issues:
+        ph_warning = (
+            f"\n## ⚠️  CRITICAL MISTAKE IN PREVIOUS ATTEMPT\n\n"
+            f"The previous attempt described these placeholders in GEO NOTES "
+            f"instead of embedding them in the body text: **{', '.join(ph_issues)}**\n\n"
+            f"GEO NOTES are a reporting section only — they do NOT count toward the score.\n"
+            f"The placeholder MUST appear inline at the point in the paragraph where the "
+            f"evidence belongs. See the fix instructions above for the correct format.\n"
+        )
+    else:
+        ph_warning = ""
+
+    score_pct = f"{current_score:.0%}" if current_score > 0 else "unknown"
+
     prefix = f"""\
 ## IMPROVEMENT MODE — ATTEMPT {attempt_num} OF {total}
 
-You are improving an existing GEO rewrite draft, NOT rewriting from the original source.
-The draft below already follows the GEO structure. Your task is to push the score higher.
+You are improving an existing GEO rewrite draft. The current draft scores **{score_pct}**.
+Do NOT rewrite from scratch. Work additively — add what is missing, preserve what is working.
+{ph_warning}
+## PRESERVATION CONSTRAINT — READ FIRST
 
-Work through this checklist in order:
-1. **Intro answer** — Do the first 100–200 words directly state the answer?
-   If not, fix this before anything else.
-2. **Backward cross-references** — Replace every "as mentioned above", "this approach",
+The current draft scores {score_pct}. Some content is already answering the key user queries
+and contributing to that score. **Do not remove, shorten, or rephrase any sentence that
+directly answers a user question.** If you are unsure whether removing something will hurt
+the score, keep it.
+
+Work additively:
+- Add inline elements (citations, statistics, lists) where they are missing
+- Fix backward cross-references by replacing the pronoun with the actual concept name
+- Strengthen sections that do not address a key query — ADD content, do not restructure
+
+{targeted_fixes}
+
+## SECONDARY CHECKLIST (after content checks are fixed)
+
+1. **Backward cross-references** — Replace "as mentioned above", "this approach",
    "the aforementioned", "as we saw" with the actual concept name.
-3. **Query coverage** — Does each H2 section address at least one key query?
-   Strengthen any section that does not.
-4. **Statistics / citations** — Are statistics and citations distributed across sections?
-   If clustered in one place, move them into the sections they support.
-5. **Paragraph length** — Break any paragraph over 150 words into two focused paragraphs.
-
-Preserve all factual claims, placeholders, and structural decisions that are already
-working. Only change what improves the score.
+2. **Query coverage** — Each H2 section should address at least one key query.
+   Strengthen any section that does not — by ADDING a sentence, not restructuring.
+3. **Paragraph length** — Break paragraphs over 150 words into two focused paragraphs.
 
 ---
 {original_system_prompt}"""
@@ -946,6 +1038,8 @@ async def stream_rewrite_variants(
     # as the base content for the next try (Phase 4).
     current_best_text: str = ""
     current_best_score: float = -1.0
+    current_best_failing: list[str] = []        # failing content checks of best variant
+    current_best_ph_issues: list[str] = []      # placeholder issues of best variant
     baseline_score: float = 0.0  # score of try 1, used in improvement report
 
     for i in range(n):
@@ -954,13 +1048,21 @@ async def stream_rewrite_variants(
         prompt_to_use = (
             system_prompt
             if i == 0
-            else _build_improvement_prompt(system_prompt, i + 1, n)
+            else _build_improvement_prompt(
+                system_prompt,
+                attempt_num=i + 1,
+                total=n,
+                failing_checks=current_best_failing,
+                current_score=current_best_score,
+                placeholder_issues=current_best_ph_issues,
+            )
         )
 
         result = await _generate_one_rewrite(content_to_use, prompt_to_use, model, provider, i)
 
+        failing_checks = []
         if result.get("text"):
-            issues, c_score = _content_score(url, result["text"], page_type)
+            issues, c_score, failing_checks = _content_score(url, result["text"], page_type)
             if query_table:
                 new_qm_score = await _score_rewrite_query_match(
                     result["text"], query_table, model, provider
@@ -972,7 +1074,7 @@ async def stream_rewrite_variants(
             else:
                 projected_score = c_score
         else:
-            issues, projected_score = 999, 0.0
+            issues, c_score, projected_score = 999, 0.0, 0.0
 
         # Verify that placeholders mentioned in GEO NOTES were actually embedded in body
         placeholder_issues: list[str] = []
@@ -996,6 +1098,8 @@ async def stream_rewrite_variants(
         if result.get("text") and projected_score > current_best_score:
             current_best_score = projected_score
             current_best_text = result["text"]
+            current_best_failing = failing_checks
+            current_best_ph_issues = placeholder_issues
 
         event = {
             "type": "variant",
