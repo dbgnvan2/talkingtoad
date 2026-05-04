@@ -574,15 +574,28 @@ async def geo_rewrite(
         from fastapi import HTTPException
         raise HTTPException(status_code=400, detail="job_id is required")
 
-    page_content = body.get("page_content", "")
-    if not page_content.strip():
-        from fastapi import HTTPException
-        raise HTTPException(status_code=400, detail="page_content is required")
-
     job = await store.get_job(job_id)
     if not job:
         from fastapi import HTTPException
         raise HTTPException(status_code=404, detail="Job not found")
+
+    url = body.get("url") or job.target_url
+
+    # Fetch page content from URL if caller did not supply it
+    page_content = body.get("page_content", "")
+    if not page_content.strip():
+        import httpx as _httpx
+        from bs4 import BeautifulSoup as _BS
+        try:
+            async with _httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
+                resp = await client.get(url, headers={"User-Agent": "TalkingToadGEOBot/2.1"})
+                soup = _BS(resp.text, "lxml")
+                for tag in soup.find_all(["script", "style", "nav", "header", "footer"]):
+                    tag.decompose()
+                page_content = soup.get_text(separator="\n", strip=True)
+        except Exception as e:
+            from fastapi import HTTPException
+            raise HTTPException(status_code=502, detail=f"Failed to fetch page content from {url}: {e}")
 
     # Resolve GEO report
     import json as _json
@@ -595,7 +608,6 @@ async def geo_rewrite(
     if not report_dict:
         report_dict = {"findings": [], "overall_score": 1.0}
 
-    url = body.get("url") or job.target_url
     page_type = body.get("page_type", "general")
     tries = min(int(body.get("tries", 5)), 10)  # cap at 10
 
@@ -634,3 +646,109 @@ async def geo_rewrite(
         },
         **rewrite_result,
     }
+
+
+# ── GEO Rewrite — streaming progress (SSE) ───────────────────────────────
+
+@router.post("/geo-rewrite-stream")
+@limiter.limit(AI_ANALYSIS_LIMIT)
+async def geo_rewrite_stream(
+    request: Request,
+    body: dict,
+    store=Depends(get_store),
+):
+    """
+    Streaming version of /geo-rewrite. Returns Server-Sent Events.
+
+    Each completed variant emits one event with index, issues, projected_score, preview.
+    Final 'done' event contains winner_text and all variant summaries.
+
+    Same request body as /geo-rewrite.
+    """
+    from fastapi.responses import StreamingResponse
+
+    job_id = body.get("job_id")
+    if not job_id:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=400, detail="job_id is required")
+
+    job = await store.get_job(job_id)
+    if not job:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    url = body.get("url") or job.target_url
+
+    # Fetch page content from URL if not provided
+    page_content = body.get("page_content", "")
+    if not page_content.strip():
+        import httpx as _httpx
+        from bs4 import BeautifulSoup as _BS
+        try:
+            async with _httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
+                resp = await client.get(url, headers={"User-Agent": "TalkingToadGEOBot/2.1"})
+                soup = _BS(resp.text, "lxml")
+                for tag in soup.find_all(["script", "style", "nav", "header", "footer"]):
+                    tag.decompose()
+                page_content = soup.get_text(separator="\n", strip=True)
+        except Exception as e:
+            from fastapi import HTTPException
+            raise HTTPException(status_code=502, detail=f"Failed to fetch page: {e}")
+
+    import json as _json
+    report_dict = None
+    if job.geo_report:
+        try:
+            report_dict = _json.loads(job.geo_report) if isinstance(job.geo_report, str) else job.geo_report
+        except Exception:
+            pass
+    if not report_dict:
+        report_dict = {"findings": [], "overall_score": 1.0}
+
+    page_type = body.get("page_type", "general")
+    tries = min(int(body.get("tries", 5)), 10)
+
+    from api.services.geo_analyzer import _resolve_model
+    try:
+        model, provider = _resolve_model(body.get("model"))
+    except RuntimeError as e:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=503, detail=str(e))
+
+    from api.services.geo_rewrite_prompt import generate_rewrite_prompt, stream_rewrite_variants
+    prompt_result = generate_rewrite_prompt(report_dict, page_type, url=url)
+    original_findings = report_dict.get("findings", [])
+
+    async def _event_stream():
+        # Send metadata as first event
+        meta = {
+            "type": "meta",
+            "mandatory_count": prompt_result["mandatory_count"],
+            "fixable_count": prompt_result["fixable_count"],
+            "page_type": prompt_result["page_type"],
+            "current_score": prompt_result["current_score"],
+            "model_used": model,
+            "total": tries,
+        }
+        yield f"data: {_json.dumps(meta)}\n\n"
+
+        async for event in stream_rewrite_variants(
+            page_content=page_content,
+            rewrite_prompt_result=prompt_result,
+            model=model,
+            provider=provider,
+            url=url,
+            page_type=page_type,
+            n=tries,
+            original_findings=original_findings,
+        ):
+            yield event
+
+    return StreamingResponse(
+        _event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )

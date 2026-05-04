@@ -462,19 +462,61 @@ def _build_synthetic_parsed_page(
     }
 
 
-def _score_markdown(url: str, markdown_content: str, page_type: str = "general") -> int:
+def _project_score(
+    original_findings: list[dict],
+    url: str,
+    markdown_content: str,
+    page_type: str = "general",
+) -> tuple[int, float]:
     """
-    Score a markdown rewrite by counting how many static GEO issues fire.
+    Project the GEO score for a rewrite by:
+    1. Keeping LLM-based findings unchanged (query match, chunks, etc.)
+    2. Re-running static checks on the rewrite text
+    3. Computing a new weighted score from the combined finding set.
 
-    Lower is better — fewer issues = better candidate.
+    Returns (static_issue_count, projected_score).
     """
+    from api.services.geo_scoring_map import GEO_CHECKS, compute_score_from_findings
+
+    # Determine which codes are static vs LLM
+    static_codes = {c["code"] for c in GEO_CHECKS if c["source"] == "static"}
+
+    # Keep only LLM-based findings from the original report
+    llm_findings = [f for f in original_findings if f.get("code") not in static_codes]
+
+    # Run static checks on the rewrite
+    static_issues = _run_static_geo_checks(url, markdown_content, page_type)
+    static_issue_count = len(static_issues)
+
+    # Build synthetic "fail" findings for each static issue that fired
+    code_to_check = {c["code"]: c for c in GEO_CHECKS}
+    new_static_findings = []
+    for code in static_issues:
+        check = code_to_check.get(code)
+        if check:
+            new_static_findings.append({
+                "code": code,
+                "evidence_tier": check["tier"],
+                "pass_fail": "fail",
+                "score": 0.0,
+            })
+
+    combined = llm_findings + new_static_findings
+    projected_score = compute_score_from_findings(combined)
+    return static_issue_count, projected_score
+
+
+def _run_static_geo_checks(
+    url: str,
+    markdown_content: str,
+    page_type: str = "general",
+) -> list[str]:
+    """Run _run_geo_checks on synthetic page, return list of fired issue codes."""
     from api.crawler.issue_checker import _run_geo_checks  # type: ignore[attr-defined]
 
-    # Build a lightweight duck-typed page object
     page_dict = _build_synthetic_parsed_page(url, markdown_content, page_type)
 
     class _SyntheticPage:
-        """Duck-typed ParsedPage for _run_geo_checks."""
         def __init__(self, d: dict):
             for k, v in d.items():
                 setattr(self, k, v)
@@ -485,7 +527,16 @@ def _score_markdown(url: str, markdown_content: str, page_type: str = "general")
         _run_geo_checks(page, url, issues)
     except Exception as e:
         logger.warning("geo_check_on_synthetic_page_failed", extra={"error": str(e)})
-    return len(issues)
+    return [getattr(i, "issue_code", getattr(i, "code", "")) for i in issues]
+
+
+def _score_markdown(url: str, markdown_content: str, page_type: str = "general") -> int:
+    """
+    Score a markdown rewrite by counting how many static GEO issues fire.
+
+    Lower is better — fewer issues = better candidate.
+    """
+    return len(_run_static_geo_checks(url, markdown_content, page_type))
 
 
 # ---------------------------------------------------------------------------
@@ -512,6 +563,98 @@ async def _generate_one_rewrite(
     except Exception as e:
         logger.warning("rewrite_variant_failed", extra={"index": variant_index, "error": str(e)})
         return {"index": variant_index, "text": "", "error": str(e)}
+
+
+async def stream_rewrite_variants(
+    page_content: str,
+    rewrite_prompt_result: dict,
+    model: str,
+    provider: str,
+    url: str = "",
+    page_type: str = "general",
+    n: int = _BEST_OF_N,
+    original_findings: list[dict] | None = None,
+):
+    """
+    AsyncGenerator that runs n rewrites sequentially, yielding one SSE event
+    per completed variant and a final 'done' event with the winner.
+
+    Each variant event includes the projected GEO score (LLM findings preserved,
+    static findings recomputed from the rewrite text).
+
+    Yields JSON-encoded strings in SSE format: "data: {...}\\n\\n"
+    """
+    import json as _json
+
+    system_prompt = rewrite_prompt_result["system_prompt"]
+    current_score = rewrite_prompt_result.get("current_score", 0.0)
+    findings_for_projection = original_findings or []
+
+    variants: list[dict] = []
+
+    for i in range(n):
+        result = await _generate_one_rewrite(page_content, system_prompt, model, provider, i)
+
+        if result.get("text"):
+            issues, projected_score = _project_score(
+                findings_for_projection, url, result["text"], page_type
+            )
+        else:
+            issues, projected_score = 999, 0.0
+
+        result["issues"] = issues
+        result["projected_score"] = projected_score
+        variants.append(result)
+
+        event = {
+            "type": "variant",
+            "index": i,
+            "issues": issues,
+            "projected_score": projected_score,
+            "error": result.get("error"),
+            "preview": (result["text"][:120] + "…") if result.get("text") else None,
+            "completed": i + 1,
+            "total": n,
+        }
+        yield f"data: {_json.dumps(event)}\n\n"
+
+    # Pick winner — highest projected score, tie-break by fewest issues
+    successful = [v for v in variants if not v.get("error") and v.get("text")]
+    winner = (
+        max(successful, key=lambda v: (v["projected_score"], -v["issues"]))
+        if successful else (variants[0] if variants else {})
+    )
+    winner_index = winner.get("index", 0)
+
+    # Rank all variants by projected_score descending
+    ranked = sorted(successful, key=lambda v: (v["projected_score"], -v["issues"]), reverse=True)
+    for v in variants:
+        v["rank"] = next((r + 1 for r, rv in enumerate(ranked) if rv["index"] == v["index"]), None)
+
+    done_event = {
+        "type": "done",
+        "winner_index": winner_index,
+        "winner_issues": winner.get("issues", 999),
+        "winner_projected_score": winner.get("projected_score", 0.0),
+        "winner_text": winner.get("text", ""),
+        "variants": [
+            {
+                "index": v["index"],
+                "issues": v.get("issues", 999),
+                "projected_score": v.get("projected_score", 0.0),
+                "rank": v.get("rank"),
+                "error": v.get("error"),
+                "preview": (v["text"][:120] + "…") if v.get("text") else None,
+            }
+            for v in variants
+        ],
+        "improvement": {
+            "original_score": current_score,
+            "winner_score": winner.get("projected_score", 0.0),
+            "gain": round(winner.get("projected_score", 0.0) - current_score, 3),
+        },
+    }
+    yield f"data: {_json.dumps(done_event)}\n\n"
 
 
 async def execute_rewrite_best_of_n(

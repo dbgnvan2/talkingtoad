@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react'
-import { generateGeoReport, getGeoAiModel, setGeoAiModel, generateGeoRewritePrompt, runGeoRewrite } from '../api.js'
+import { generateGeoReport, getGeoAiModel, setGeoAiModel, generateGeoRewritePrompt } from '../api.js'
+import { authHeaders } from '../api.js'
 import Spinner from './Spinner.jsx'
 
 const TIER_COLORS = {
@@ -182,20 +183,38 @@ function JSRenderingSection({ data }) {
 // RewriteAssist — only shown when overall_score < 0.90
 // ---------------------------------------------------------------------------
 
-function VariantRow({ v, isWinner }) {
+const PCT = score => `${Math.round((score ?? 0) * 100)}%`
+
+function VariantProgressRow({ v, isWinner, originalScore }) {
+  const pending = v.projected_score === undefined
+  const scoreColor = !pending && v.projected_score >= 0.90
+    ? 'text-green-600'
+    : !pending && v.projected_score >= 0.70
+    ? 'text-amber-600'
+    : 'text-red-600'
+
   return (
     <tr className={`border-t border-gray-100 ${isWinner ? 'bg-green-50' : ''}`}>
       <td className="px-3 py-2 text-center text-xs font-bold text-gray-500">#{v.index + 1}</td>
       <td className="px-3 py-2 text-center">
-        <span className={`text-sm font-bold ${v.issues === 0 ? 'text-green-600' : v.issues <= 2 ? 'text-amber-600' : 'text-red-600'}`}>
-          {v.issues ?? '—'}
-        </span>
+        {pending
+          ? <span className="text-gray-400 text-xs">⏳</span>
+          : v.error
+          ? <span className="text-red-500 text-xs">Error</span>
+          : <span className={`text-sm font-black ${scoreColor}`}>{PCT(v.projected_score)}</span>}
+      </td>
+      <td className="px-3 py-2 text-center text-xs text-gray-500">
+        {pending ? '—' : v.error ? '—' : `${v.issues ?? '?'} issues`}
       </td>
       <td className="px-3 py-2 text-center text-xs">
-        {isWinner ? <span className="px-2 py-0.5 bg-green-100 text-green-700 rounded-full font-bold">Winner</span> : `#${v.rank ?? '?'}`}
+        {isWinner && !pending
+          ? <span className="px-2 py-0.5 bg-green-100 text-green-700 rounded-full font-bold">Winner</span>
+          : v.rank ? `#${v.rank}` : '—'}
       </td>
-      <td className="px-3 py-2 text-xs text-gray-500 italic">
-        {v.error ? <span className="text-red-500">{v.error}</span> : (v.text?.slice(0, 60) + (v.text?.length > 60 ? '…' : '') || '—')}
+      <td className="px-3 py-2 text-xs text-gray-500 italic truncate max-w-[160px]">
+        {v.error
+          ? <span className="text-red-500">{v.error}</span>
+          : v.preview || '…'}
       </td>
     </tr>
   )
@@ -203,11 +222,11 @@ function VariantRow({ v, isWinner }) {
 
 function RewriteAssist({ jobId, report }) {
   const [mode, setMode] = useState('prompt')  // 'prompt' | 'rewrite'
-  const [pageContent, setPageContent] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
   const [promptResult, setPromptResult] = useState(null)
-  const [rewriteResult, setRewriteResult] = useState(null)
+  const [variants, setVariants] = useState([])   // live progress rows
+  const [winnerResult, setWinnerResult] = useState(null)  // done event
   const [copied, setCopied] = useState(false)
   const [expanded, setExpanded] = useState(false)
   const promptRef = useRef(null)
@@ -215,8 +234,8 @@ function RewriteAssist({ jobId, report }) {
 
   const score = Math.round((report.overall_score ?? 0) * 100)
 
-  const handleCopy = (ref, text) => {
-    const content = text || ref?.current?.value || ref?.current?.textContent || ''
+  const handleCopy = (ref) => {
+    const content = ref?.current?.value || ref?.current?.textContent || ''
     navigator.clipboard.writeText(content).then(() => {
       setCopied(true)
       setTimeout(() => setCopied(false), 2000)
@@ -227,25 +246,76 @@ function RewriteAssist({ jobId, report }) {
     setLoading(true)
     setError(null)
     setPromptResult(null)
-    setRewriteResult(null)
+    setVariants([])
+    setWinnerResult(null)
+
     try {
       if (mode === 'prompt') {
         const res = await generateGeoRewritePrompt(jobId, { useCachedReport: true })
         setPromptResult(res)
-      } else {
-        if (!pageContent.trim()) {
-          setError('Paste the original page content above before running Auto-Rewrite.')
-          setLoading(false)
-          return
+        setLoading(false)
+        return
+      }
+
+      // Streaming auto-rewrite
+      const res = await fetch('/api/ai/geo-rewrite-stream', {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({ job_id: jobId, tries: 5 }),
+      })
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        throw new Error(err.detail || `Server error ${res.status}`)
+      }
+
+      const reader = res.body.getReader()
+      const decoder = new TextDecoder()
+      let buffer = ''
+
+      // eslint-disable-next-line no-constant-condition
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buffer += decoder.decode(value, { stream: true })
+
+        // Parse complete SSE lines from buffer
+        const lines = buffer.split('\n')
+        buffer = lines.pop()  // keep incomplete last line
+
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue
+          try {
+            const event = JSON.parse(line.slice(6))
+
+            if (event.type === 'meta') {
+              // Pre-populate pending rows so user sees the grid immediately
+              setVariants(Array.from({ length: event.total }, (_, i) => ({ index: i })))
+            } else if (event.type === 'variant') {
+              setVariants(prev => prev.map(v =>
+                v.index === event.index ? { ...v, ...event } : v
+              ))
+            } else if (event.type === 'done') {
+              setWinnerResult(event)
+              // Merge final ranks into variant rows
+              setVariants(event.variants)
+            }
+          } catch (_e) { /* malformed SSE line — skip */ }
         }
-        const res = await runGeoRewrite(jobId, { pageContent, tries: 5 })
-        setRewriteResult(res)
       }
     } catch (e) {
       setError(e.message || 'Failed')
     } finally {
       setLoading(false)
     }
+  }
+
+  const resetMode = (newMode) => {
+    setMode(newMode)
+    setPromptResult(null)
+    setVariants([])
+    setWinnerResult(null)
+    setError(null)
   }
 
   return (
@@ -257,11 +327,11 @@ function RewriteAssist({ jobId, report }) {
             <span className="text-lg">✍️</span>
             <h3 className="font-bold text-indigo-900 text-sm">Rewrite Assist</h3>
             <span className="px-2 py-0.5 bg-amber-100 text-amber-700 text-xs font-bold rounded-full">
-              Score {score}% → target 90%
+              {score}% → target 90%
             </span>
           </div>
           <p className="text-xs text-indigo-700 mt-1">
-            Generate a targeted LLM prompt or auto-rewrite the page to fix failing GEO checks.
+            Get a targeted LLM prompt, or auto-rewrite the page content fetched from the URL.
           </p>
         </div>
         <button
@@ -282,7 +352,7 @@ function RewriteAssist({ jobId, report }) {
             ].map(m => (
               <button
                 key={m.id}
-                onClick={() => { setMode(m.id); setPromptResult(null); setRewriteResult(null); setError(null) }}
+                onClick={() => resetMode(m.id)}
                 className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${
                   mode === m.id ? 'bg-indigo-600 text-white shadow-sm' : 'text-indigo-600 hover:bg-indigo-50'
                 }`}
@@ -292,22 +362,6 @@ function RewriteAssist({ jobId, report }) {
             ))}
           </div>
 
-          {/* Page content textarea (auto-rewrite only) */}
-          {mode === 'rewrite' && (
-            <div>
-              <label className="text-xs font-bold text-indigo-800 block mb-1">
-                Paste original page content (Markdown or plain text)
-              </label>
-              <textarea
-                value={pageContent}
-                onChange={e => setPageContent(e.target.value)}
-                rows={6}
-                placeholder="Paste the page text here…"
-                className="w-full text-xs font-mono border border-indigo-200 rounded-xl p-3 bg-white resize-y focus:outline-none focus:ring-2 focus:ring-indigo-400"
-              />
-            </div>
-          )}
-
           {/* Generate button */}
           <button
             onClick={handleGenerate}
@@ -315,11 +369,9 @@ function RewriteAssist({ jobId, report }) {
             className="px-4 py-2 text-sm font-bold bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 disabled:opacity-50 transition-colors"
           >
             {loading
-              ? (mode === 'rewrite' ? 'Rewriting (5 tries)…' : 'Generating…')
+              ? (mode === 'rewrite' ? `Rewriting… (${variants.filter(v => v.projected_score !== undefined).length}/${variants.length})` : 'Generating…')
               : (mode === 'rewrite' ? '▶ Auto-Rewrite' : '▶ Generate Prompt')}
           </button>
-
-          {loading && <Spinner />}
 
           {error && (
             <div className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-xl p-3">{error}</div>
@@ -328,12 +380,12 @@ function RewriteAssist({ jobId, report }) {
           {/* Prompt mode results */}
           {promptResult && mode === 'prompt' && (
             <div className="space-y-3">
-              <div className="flex items-center gap-3 text-xs text-indigo-700 bg-white border border-indigo-200 rounded-xl p-3">
-                <span>🔴 <strong>{promptResult.mandatory_count}</strong> mandatory fixes</span>
+              <div className="flex flex-wrap items-center gap-3 text-xs text-indigo-700 bg-white border border-indigo-200 rounded-xl p-3">
+                <span>🔴 <strong>{promptResult.mandatory_count}</strong> mandatory</span>
                 <span>·</span>
                 <span>✅ <strong>{promptResult.fixable_count}</strong> fixable without fabrication</span>
                 <span>·</span>
-                <span>📄 Page type: <strong>{promptResult.page_type}</strong></span>
+                <span>📄 <strong>{promptResult.page_type}</strong></span>
               </div>
               <div className="relative">
                 <label className="text-xs font-bold text-indigo-800 block mb-1">System Prompt — paste into your LLM</label>
@@ -352,51 +404,65 @@ function RewriteAssist({ jobId, report }) {
                 </button>
               </div>
               <p className="text-xs text-indigo-600">
-                Paste this prompt into ChatGPT, Claude, or Gemini, then add your page content after it.
+                Paste into ChatGPT, Claude, or Gemini — then add your page content after it.
               </p>
             </div>
           )}
 
-          {/* Auto-rewrite results */}
-          {rewriteResult && mode === 'rewrite' && (
+          {/* Auto-rewrite: live progress table */}
+          {mode === 'rewrite' && variants.length > 0 && (
             <div className="space-y-4">
-              {/* Variant comparison table */}
               <div>
-                <h4 className="text-xs font-bold text-indigo-800 mb-2">Variant Scores (fewer issues = better)</h4>
+                <h4 className="text-xs font-bold text-indigo-800 mb-2">
+                  Projected GEO Score per Attempt
+                  <span className="font-normal text-indigo-500 ml-2">(original: {score}%)</span>
+                </h4>
                 <div className="overflow-x-auto rounded-xl border border-indigo-200 bg-white">
                   <table className="w-full text-xs">
                     <thead className="bg-indigo-50">
                       <tr>
-                        <th className="px-3 py-2 text-center font-bold text-indigo-700">Variant</th>
-                        <th className="px-3 py-2 text-center font-bold text-indigo-700">Issues</th>
-                        <th className="px-3 py-2 text-center font-bold text-indigo-700">Rank</th>
+                        <th className="px-3 py-2 text-center font-bold text-indigo-700 w-16">Try</th>
+                        <th className="px-3 py-2 text-center font-bold text-indigo-700 w-20">GEO Score</th>
+                        <th className="px-3 py-2 text-center font-bold text-indigo-700 w-20">Issues</th>
+                        <th className="px-3 py-2 text-center font-bold text-indigo-700 w-20">Rank</th>
                         <th className="px-3 py-2 text-left font-bold text-indigo-700">Preview</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {rewriteResult.variants?.map(v => (
-                        <VariantRow
+                      {variants.map(v => (
+                        <VariantProgressRow
                           key={v.index}
                           v={v}
-                          isWinner={v.index === rewriteResult.winner_index}
+                          isWinner={winnerResult && v.index === winnerResult.winner_index}
+                          originalScore={report.overall_score}
                         />
                       ))}
                     </tbody>
                   </table>
                 </div>
-                <p className="text-xs text-indigo-600 mt-1">
-                  Winner: variant #{(rewriteResult.winner_index ?? 0) + 1} with {rewriteResult.winner_issues ?? '?'} GEO issues remaining
-                </p>
+
+                {winnerResult && (
+                  <div className="flex items-center gap-2 mt-2 text-xs text-indigo-700">
+                    <span>Winner: try #{(winnerResult.winner_index ?? 0) + 1}</span>
+                    <span>·</span>
+                    <span className="font-bold text-green-700">{PCT(winnerResult.winner_projected_score)}</span>
+                    <span className="text-green-600">
+                      (+{Math.round((winnerResult.improvement?.gain ?? 0) * 100)}pp vs original)
+                    </span>
+                  </div>
+                )}
               </div>
 
               {/* Winner text */}
-              {rewriteResult.winner_text && (
+              {winnerResult?.winner_text && (
                 <div className="relative">
-                  <label className="text-xs font-bold text-indigo-800 block mb-1">Best Rewrite (copy into your CMS)</label>
+                  <label className="text-xs font-bold text-indigo-800 block mb-1">
+                    Best Rewrite — try #{(winnerResult.winner_index ?? 0) + 1} (copy into your CMS)
+                  </label>
                   <textarea
                     ref={winnerRef}
                     readOnly
-                    value={rewriteResult.winner_text}
+                    value={winnerResult.winner_text}
                     rows={14}
                     className="w-full text-xs font-mono border border-indigo-200 rounded-xl p-3 bg-white resize-y"
                   />
