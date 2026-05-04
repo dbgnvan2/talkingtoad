@@ -76,6 +76,92 @@ All endpoints require `Authorization: Bearer <token>` except `/api/health`.
 | POST | `/api/ai/page-advisor` | Get AI-generated SEO recommendations for a specific page. |
 | POST | `/api/ai/site-advisor` | Get AI-generated site-wide SEO recommendations. |
 
+## GEO Analyzer (v2.1)
+
+LLM-based content analysis for Generative Engine Optimization. Produces a structured `GEOReport` covering query matching, chunk self-containedness, central claim detection, JS rendering checks, and Aggarwal et al. evidence-tiered scoring.
+
+| Method | Endpoint | Description |
+|---|---|---|
+| POST | `/api/ai/geo-report` | Generate (or return cached) GEO report for a job's URL. See schema below. |
+| GET | `/api/geo/ai-model` | List available AI models and the currently selected model. |
+| POST | `/api/geo/ai-model` | Set the AI model for GEO analysis. Body: `{"model_id": "gpt-4o"}`. |
+
+### `POST /api/ai/geo-report` Request
+
+```json
+{
+  "job_id": "abc123",
+  "url": "https://example.com/blog/article",
+  "model": "gpt-4o",
+  "force_refresh": false
+}
+```
+
+`job_id` is required. `url` overrides the job's start URL (for per-page analysis). `force_refresh: true` bypasses the cached report.
+
+### `POST /api/ai/geo-report` Response
+
+```json
+{
+  "success": true,
+  "cached": false,
+  "report": {
+    "url": "https://example.com/blog/article",
+    "model_used": "gpt-4o",
+    "overall_score": 0.72,
+    "aggarwal_score": 0.67,
+    "findings": [
+      {
+        "code": "QUERY_MATCH_SCORE",
+        "label": "Query Match Score",
+        "evidence_tier": "Empirical",
+        "pass_fail": "pass",
+        "score": 0.83,
+        "findings": ["7/8 queries answered"],
+        "details": {"answered": 7, "total": 8}
+      }
+    ],
+    "query_match_table": [
+      {"query": "What is OpenBrain?", "best_chunk": "...", "answered": "Yes", "reason": "..."}
+    ],
+    "chunk_containedness": [
+      {"heading": "How Does It Work?", "self_contained": true, "reason": "..."}
+    ],
+    "js_rendering": {
+      "js_rendered_content_differs": false,
+      "content_cloaking_detected": false,
+      "ua_content_differs": false,
+      "raw_token_count": 1240,
+      "rendered_token_count": 1258,
+      "topic_jaccard": 0.91,
+      "playwright_available": true,
+      "error": null
+    },
+    "playwright_available": true,
+    "error": null
+  }
+}
+```
+
+**Evidence tiers:** `Empirical` (Aggarwal et al. measured, weight 3) > `Mechanistic` (retrieval mechanics, weight 2) > `Conventional` (industry advice, weight 1). `aggarwal_score` is computed only from Empirical findings.
+
+### `GET /api/geo/ai-model` Response
+
+```json
+{
+  "selected": "gpt-4o",
+  "available": [
+    {"id": "gpt-4o", "provider": "openai", "label": "GPT-4o (recommended)"},
+    {"id": "gpt-4o-mini", "provider": "openai", "label": "GPT-4o Mini (fast)"},
+    {"id": "gemini-1.5-flash", "provider": "gemini", "label": "Gemini 1.5 Flash (fast)"},
+    {"id": "gemini-1.5-pro", "provider": "gemini", "label": "Gemini 1.5 Pro"},
+    {"id": "gemini-2.0-flash", "provider": "gemini", "label": "Gemini 2.0 Flash"}
+  ]
+}
+```
+
+Only models for which an API key is configured are returned in `available`.
+
 ## GEO Image AI (v1.9)
 
 | Method | Endpoint | Description |

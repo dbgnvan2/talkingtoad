@@ -1055,4 +1055,324 @@ Rewrite some subheadings as questions. For example, change `Our Impact` to `What
 
 ---
 
-*Last updated: April 2026 — covers all active issue codes in spec v1.4 + v1.5 + v1.6 + v1.7. All issues now include diagnostic `extra` data.*
+---
+
+## GEO ANALYZER v2.1
+
+GEO (Generative Engine Optimization) checks measure how well content is structured for retrieval and citation by AI systems (Google AI Overviews, Perplexity, ChatGPT). Checks are grouped by evidence tier:
+
+- **Empirical** — Measured by Aggarwal et al. (2023); controlled evidence that these tactics increase AI citation rates
+- **Mechanistic** — Derived from known retrieval mechanics (chunking, rendering, indexing)
+- **Conventional** — Industry practice; plausible but not independently measured
+
+---
+
+### STATISTICS_COUNT_LOW
+**Severity:** 🟡 warning | **Evidence:** Empirical | **Impact:** 7 | **Effort:** 2
+
+**What it is**
+A 500+ word page opens with no statistics, percentages, data ranges, or numeric claims in its first 150 words.
+
+**Why it matters**
+Aggarwal et al. (2023) found that pages with statistics are measurably more likely to be cited by AI systems. Statistics signal factual authority and give AI systems quotable, specific claims rather than vague prose.
+
+**How to fix**
+Add at least one specific numeric claim in the opening paragraph: research figures, organisation reach (e.g., "We served 2,400 families last year"), dates, percentages, or measurements. Even a single well-placed statistic materially increases AI quotability.
+
+---
+
+### EXTERNAL_CITATIONS_LOW
+**Severity:** 🟡 warning | **Evidence:** Empirical | **Impact:** 7 | **Effort:** 2
+
+**What it is**
+A 500+ word page has no outbound links to external sources anywhere in the body text.
+
+**Why it matters**
+Aggarwal et al. (2023) found that pages citing external sources are measurably more cited by AI systems. External links signal that your claims are grounded in broader evidence and allow AI systems to cross-reference your assertions.
+
+**How to fix**
+Link to at least one or two authoritative external sources — government statistics, research papers, peer organisations, or official documentation. `.gov`, `.edu`, and peer-reviewed sources carry the most weight.
+
+---
+
+### QUOTATIONS_MISSING
+**Severity:** 🟡 warning | **Evidence:** Empirical | **Impact:** 6 | **Effort:** 2
+
+**What it is**
+A 500+ word page contains no direct quotations from named sources — no `<blockquote>` tags and no attribution patterns ("according to", "stated that", etc.).
+
+**Why it matters**
+Aggarwal et al. (2023) found quotations measurably increase AI citation rates. Direct quotes from named authorities increase perceived credibility and give AI systems citable soundbites.
+
+**How to fix**
+Add one or more `<blockquote>` quotes from relevant experts, stakeholders, or published sources. Include the source name. Even a sentence-length attribution ("According to the WHO, …") helps.
+
+---
+
+### ORPHAN_CLAIM_TECHNICAL
+**Severity:** 🟡 warning | **Evidence:** Empirical | **Impact:** 6 | **Effort:** 2
+
+**What it is**
+A technical or how-to page makes three or more specific factual claims with no accompanying source links or attributions.
+
+**Why it matters**
+Unsourced claims in technical content reduce AI citation likelihood. AI systems prefer content where specific assertions are traceable to a source. Orphaned claims also make content harder for readers to verify.
+
+**How to fix**
+Add a source link or attribution phrase next to each specific factual claim: "According to MDN Web Docs, …", "Research by [source] found …", or a hyperlink to the source.
+
+---
+
+### RAW_HTML_JS_DEPENDENT
+**Severity:** 🟡 warning | **Evidence:** Mechanistic | **Impact:** 6 | **Effort:** 3
+
+**What it is**
+The raw HTML response is a near-empty SPA shell (detects `<div id="root">` or similar React/Vue mount points with a text-to-HTML ratio below 5%). All visible content is loaded via JavaScript after initial page load.
+
+**Why it matters**
+AI crawlers that only fetch raw HTML (not all do JavaScript execution) will see an empty page. Even crawlers that execute JavaScript may miss content due to timing issues. This is the highest-risk rendering pattern for AI indexing.
+
+**How to fix**
+Enable server-side rendering (SSR) or static site generation (SSG) for key pages. Frameworks like Next.js, Nuxt, and Gatsby support this. At minimum, ensure critical content (H1, first paragraph, key claims) is present in the raw HTML response.
+
+---
+
+### JS_RENDERED_CONTENT_DIFFERS
+**Severity:** 🟡 warning | **Evidence:** Mechanistic | **Impact:** 6 | **Effort:** 4
+
+**What it is**
+JavaScript execution adds more than 20% new content tokens versus the raw HTML. The page has substantial content that only appears after JavaScript runs.
+
+**Why it matters**
+AI crawlers that skip JS execution will miss this content. Even crawlers that do run JavaScript may index an older or incomplete version. Critical content hidden behind JavaScript is effectively invisible to some AI retrieval pipelines.
+
+**How to fix**
+Move key content (product descriptions, service details, key facts) to server-rendered HTML. Reserve JavaScript for interactive UI elements, not primary information delivery.
+
+---
+
+### CONTENT_CLOAKING_DETECTED
+**Severity:** 🔴 critical | **Evidence:** Mechanistic | **Impact:** 8 | **Effort:** 4
+
+**What it is**
+The JS-rendered page content has a topic Jaccard similarity below 0.30 versus the raw HTML — meaning the visible page is on a substantially different topic than what crawlers see in the raw response.
+
+**Why it matters**
+This pattern — different content for crawlers versus users — is called cloaking. Whether intentional or accidental (e.g., a React app loading entirely different content than the SSR shell), it can result in AI systems indexing misleading content and may violate search engine guidelines.
+
+**How to fix**
+Ensure the raw HTML and JS-rendered content cover the same topics. If the raw HTML is a loading shell, implement SSR so the meaningful content is in the initial response. If cloaking is unintentional, audit your rendering pipeline.
+
+---
+
+### UA_CONTENT_DIFFERS
+**Severity:** 🟡 warning | **Evidence:** Mechanistic | **Impact:** 7 | **Effort:** 3
+
+**What it is**
+AI bots (GPTBot, ClaudeBot) receive significantly less content than a normal browser request — less than 80% of the JS-rendered token count. The server is serving different content based on user agent.
+
+**Why it matters**
+Intentionally or unintentionally blocking AI crawlers from your content means it won't be indexed for AI-generated answers. If your robots.txt allows these bots but your server is blocking them in practice, you have an inconsistency that harms AI visibility.
+
+**How to fix**
+Check that your CDN, WAF, and server aren't blocking or stripping content for AI user agents. If intentional, ensure your robots.txt accurately reflects this policy.
+
+---
+
+### FIRST_VIEWPORT_NO_ANSWER
+**Severity:** 🟡 warning | **Evidence:** Mechanistic | **Impact:** 5 | **Effort:** 2
+
+**What it is**
+The first 150 words of the page contain no definition or direct answer — no "X is a …", no TL;DR, no "in short" statement, and no definitional signal.
+
+**Why it matters**
+AI systems use the first passage of a page as the primary candidate for a featured snippet or AI Overview answer. If the opening doesn't contain a clear, self-contained definition or answer, the page is unlikely to be quoted in response to direct questions.
+
+**How to fix**
+Open with a clear definition or direct answer to the core question the page addresses. For example: "OpenBrain is a personal AI memory database that…" or "TL;DR: This guide covers how to…". Place this in the first paragraph, before any context or backstory.
+
+---
+
+### AUTHOR_BYLINE_MISSING
+**Severity:** 🟡 warning | **Evidence:** Mechanistic | **Impact:** 4 | **Effort:** 2
+
+**What it is**
+A blog post or article page (`BlogPosting`, `Article`, or `NewsArticle` JSON-LD type, or blog-path URL) has no detectable author attribution — no `rel="author"`, `itemprop="author"`, JSON-LD `author` field, or byline CSS class.
+
+**Why it matters**
+Author attribution is an E-E-A-T (Experience, Expertise, Authority, Trustworthiness) signal. AI systems and search engines use author identity to assess content credibility. Anonymous articles score lower for expertise signals.
+
+**How to fix**
+Add a visible author byline to article pages. In WordPress, ensure the author display is enabled in your theme. Add `itemprop="author"` to the byline element, or include `"author": {"@type": "Person", "name": "..."}` in your JSON-LD.
+
+---
+
+### DATE_PUBLISHED_MISSING
+**Severity:** 🔵 info | **Evidence:** Mechanistic | **Impact:** 3 | **Effort:** 1
+
+**What it is**
+A blog post or article page has no `datePublished` in JSON-LD and no `og:article:published_time` meta tag.
+
+**Why it matters**
+AI systems and search engines use publication dates to assess content freshness and to display dates in search results. Missing dates make it harder for AI to determine whether information is current.
+
+**How to fix**
+Add `"datePublished": "2026-01-15"` to your article's JSON-LD schema. In WordPress, Yoast and Rank Math include this automatically. You can also add `<meta property="article:published_time" content="...">`.
+
+---
+
+### DATE_MODIFIED_MISSING
+**Severity:** 🔵 info | **Evidence:** Mechanistic | **Impact:** 2 | **Effort:** 1
+
+**What it is**
+A blog post or article page has no `dateModified` in JSON-LD and no `og:article:modified_time` meta tag.
+
+**Why it matters**
+Last-modified dates signal content freshness to AI systems. A page with a recent `dateModified` is preferred over stale content when AI systems need current information.
+
+**How to fix**
+Add `"dateModified": "2026-04-01"` to your JSON-LD schema. In WordPress, update this automatically when the post is edited by configuring Yoast or Rank Math to include the modification date.
+
+---
+
+### CODE_BLOCK_MISSING_TECHNICAL
+**Severity:** 🟡 warning | **Evidence:** Mechanistic | **Impact:** 4 | **Effort:** 2
+
+**What it is**
+A technical how-to page (URL contains `/tutorial`, `/guide`, `/how-to`, `/docs`, `/setup`, etc., with 3+ numbered steps or step-like headings) has no `<code>` or `<pre>` blocks.
+
+**Why it matters**
+Technical content without code blocks is harder for AI systems to parse as instructional content. Code blocks create structured, citable examples and signal to AI that this is authoritative technical guidance rather than marketing prose.
+
+**How to fix**
+Add `<code>` blocks for inline commands and `<pre><code>` blocks for multi-line examples, shell commands, or configuration snippets. This is especially important for any step where a reader needs to type or paste something.
+
+---
+
+### COMPARISON_TABLE_MISSING
+**Severity:** 🔵 info | **Evidence:** Mechanistic | **Impact:** 3 | **Effort:** 2
+
+**What it is**
+A page with comparison language in a heading ("vs", "versus", "compared to", "alternatives") has no `<table>` element.
+
+**Why it matters**
+AI systems extract comparison data from tables far more reliably than from prose. A "vs" heading without a structured table means AI systems may miss or misrepresent the comparison in AI-generated answers.
+
+**How to fix**
+Add an HTML `<table>` with clear column headers comparing the options. A simple 3–5 row table with feature/attribute rows is enough. Most WordPress page builders have a table block.
+
+---
+
+### CHUNKS_NOT_SELF_CONTAINED
+**Severity:** 🟡 warning | **Evidence:** Mechanistic | **Impact:** 5 | **Effort:** 4
+
+**What it is**
+Detected (via LLM analysis) that one or more H2/H3 sections cannot be understood without reading the surrounding context — they rely on pronouns, terms, or references defined elsewhere in the page.
+
+**Why it matters**
+AI retrieval systems chunk pages by heading sections and evaluate each chunk independently. A chunk that begins with "This works by…" without defining what "this" is, or that refers to a term explained three sections earlier, will be poorly understood when retrieved in isolation.
+
+**How to fix**
+Start each H2/H3 section with a self-contained opening sentence that re-states the subject. Avoid opening with pronouns. Each section should be understandable without reading the rest of the page.
+
+---
+
+### CENTRAL_CLAIM_BURIED
+**Severity:** 🟡 warning | **Evidence:** Mechanistic | **Impact:** 5 | **Effort:** 3
+
+**What it is**
+Detected (via LLM analysis) that the central claim or definition of the page appears more than 150 words into the content — after backstory, context, or introductory material.
+
+**Why it matters**
+AI systems prioritise the first passage of content for featured snippet selection and AI Overview generation. If your core claim is buried after a long preamble, it will be overlooked in favour of pages that lead with the answer.
+
+**How to fix**
+Restructure the page to state the core claim or definition in the first paragraph. Background and supporting detail can follow. Think of it as inverted-pyramid journalism: answer first, elaborate second.
+
+---
+
+### LINK_PROFILE_PROMOTIONAL
+**Severity:** 🟡 warning | **Evidence:** Mechanistic | **Impact:** 4 | **Effort:** 2
+
+**What it is**
+The page's outbound link profile is dominated by affiliate or promotional links (URLs with `?ref=`, `?aff=`, `?affiliate=`, `/go/`, or `/ref/` patterns), and has no authority or reference links.
+
+**Why it matters**
+High promotional link density signals low editorial independence to AI systems. Pages that primarily link to affiliate destinations score lower for authority than pages linking to research, official sources, or reference material.
+
+**How to fix**
+Balance promotional links with authoritative external links to `.gov`, `.edu`, research papers, or official documentation. Ensure your outbound link profile reflects genuine reference intent, not just monetisation.
+
+---
+
+### STRUCTURED_ELEMENTS_LOW
+**Severity:** 🔵 info | **Evidence:** Mechanistic | **Impact:** 3 | **Effort:** 2
+
+**What it is**
+A 500+ word page has no structured formatting elements — no lists (`<ul>`, `<ol>`), no tables, no definition lists, no code blocks.
+
+**Why it matters**
+Structured elements create extractable, scannable content that AI systems can parse into discrete facts. Pure prose without structure forces AI to do more inference to extract key points, reducing accuracy and quotability.
+
+**How to fix**
+Break up dense prose with bullet lists, numbered steps, or tables where appropriate. Key facts, features, and process steps are natural candidates for lists.
+
+---
+
+### JSON_LD_INVALID
+**Severity:** 🟡 warning | **Evidence:** Conventional | **Impact:** 4 | **Effort:** 2
+
+**What it is**
+A `<script type="application/ld+json">` block exists on the page but is missing a `@type` or `@context` property, or is not valid JSON.
+
+**Why it matters**
+Invalid JSON-LD is silently ignored by search engines and AI systems. An existing but broken schema block is worse than no schema — it creates the appearance of structured data without the benefit.
+
+**How to fix**
+Ensure every JSON-LD block has at minimum `"@context": "https://schema.org"` and a `"@type"` value. Validate your schema at [schema.org/SchemaTextEncoder](https://validator.schema.org/) or Google's Rich Results Test.
+
+---
+
+### FAQ_SCHEMA_MISSING
+**Severity:** 🔵 info | **Evidence:** Conventional | **Impact:** 3 | **Effort:** 2
+
+**What it is**
+The page has FAQ-like H2/H3 headings (containing question words, "FAQ", or ending with `?`) but has no `FAQPage` JSON-LD schema.
+
+**Why it matters**
+`FAQPage` schema explicitly signals Q&A structure to AI systems, making the content a much stronger candidate for direct-answer citations. FAQ headings without schema miss this signal.
+
+**How to fix**
+Add `FAQPage` JSON-LD schema listing each question and its answer. Yoast SEO Premium and Rank Math generate this automatically from FAQ blocks. Google Search Console may reward eligible pages with FAQ-style rich results.
+
+---
+
+### PROMOTIONAL_CONTENT_INTERRUPTS
+**Severity:** 🔵 info | **Evidence:** Conventional | **Impact:** 3 | **Effort:** 3
+
+**What it is**
+Detected (via LLM analysis) that the page interrupts informational content with promotional material — call-to-action blocks, "Sign up now" banners, or sales copy interspersed within substantive sections.
+
+**Why it matters**
+AI systems extracting passage-level content may include promotional interruptions in cited quotes, or may deprioritise the page as a trustworthy information source. Clean informational content without promotional interruptions is more likely to be cited accurately.
+
+**How to fix**
+Move promotional CTAs to the top or bottom of the page, or into clearly separated sidebar sections. Keep the body content focused on informational value with promotional elements contained in dedicated blocks.
+
+---
+
+### AI_TXT_MISSING
+**Severity:** 🔵 info | **Evidence:** Conventional | **Impact:** 1 | **Effort:** 1
+
+**What it is**
+No `/ai.txt` file found at the site root.
+
+**Why it matters**
+`ai.txt` is an emerging companion to `robots.txt` specifically for AI agents, allowing granular permissions (training, search, user-fetch) per bot. While not yet widely enforced, early adoption ensures forward compatibility as AI crawlers formalise this standard.
+
+**How to fix**
+Create a plain text file at `yoursite.com/ai.txt` following the draft specification. TalkingToad's AI Readiness panel provides guidance. At minimum, a permissive `ai.txt` explicitly welcoming AI crawlers signals cooperative intent.
+
+---
+
+*Last updated: May 2026 — covers all active issue codes in spec v1.4 + v1.5 + v1.6 + v1.7 + v2.1 (GEO Analyzer). All issues include diagnostic `extra` data.*

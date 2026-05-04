@@ -54,7 +54,7 @@ How-to guides, setup instructions, troubleshooting.
 |---------|---------|--------|
 | Core Crawler | v1.5 | ✅ Implemented |
 | Image Analysis | v1.9.1 | ✅ Implemented |
-| AI-Readiness | v1.7 + v2.0 draft | ✅ v1.7 / ⏳ v2.0 |
+| AI-Readiness | v2.1 | ✅ Implemented |
 | WordPress Integration | v1.0 | ✅ Implemented |
 
 See [specs/README.md](specs/README.md) for detailed version history and implementation status per feature.
@@ -78,6 +78,6 @@ See [specs/README.md](specs/README.md) for detailed version history and implemen
 
 ---
 
-**Project Version:** 1.9.1  
+**Project Version:** 2.1  
 **Last Updated:** May 3, 2026  
 **GitHub:** https://github.com/dbgnvan2/talkingtoad

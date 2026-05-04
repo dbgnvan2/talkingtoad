@@ -6,7 +6,7 @@ TalkingToad is a lightweight, web-based SEO crawler for nonprofit organisations.
 
 **GitHub:** https://github.com/dbgnvan2/talkingtoad
 **Specs:** See `docs/specs/README.md` for complete specification index
-**Current Version:** 1.9.1
+**Current Version:** 2.1
 
 ---
 
@@ -202,6 +202,40 @@ Sitemap and Crawlability category tabs show what was found (sitemap URL, URL cou
 - **Tab consolidation:** 17 flat tabs replaced with 5 grouped sections: Overview, Issues (10 categories), Media, Pages, Actions. "Fix History" placeholder removed.
 - **GEO Settings:** Pre-crawl blocking prompt removed from Home page. Non-blocking banner added to Results Summary tab instead.
 - **llms.txt generator:** No longer auto-generates on page load. User clicks "Generate Recommendation" button. Shows status badge: "llms.txt Retrieved" (green) when saved content exists, "llms.txt Recommendation" (amber) when generated from crawl data. "Save to Job Data" button only appears after generation.
+
+### GEO Analyzer (v2.1)
+
+**Static checks (fired during crawl):**
+22 new issue codes across three evidence tiers. Key additions:
+- **Empirical tier (Aggarwal et al. measured):** `STATISTICS_COUNT_LOW`, `EXTERNAL_CITATIONS_LOW`, `QUOTATIONS_MISSING`, `ORPHAN_CLAIM_TECHNICAL`
+- **Mechanistic tier (retrieval mechanics):** `RAW_HTML_JS_DEPENDENT`, `JS_RENDERED_CONTENT_DIFFERS`, `CONTENT_CLOAKING_DETECTED`, `UA_CONTENT_DIFFERS`, `FIRST_VIEWPORT_NO_ANSWER`, `AUTHOR_BYLINE_MISSING`, `DATE_PUBLISHED_MISSING`, `DATE_MODIFIED_MISSING`, `CODE_BLOCK_MISSING_TECHNICAL`, `COMPARISON_TABLE_MISSING`, `CHUNKS_NOT_SELF_CONTAINED`, `CENTRAL_CLAIM_BURIED`, `LINK_PROFILE_PROMOTIONAL`, `STRUCTURED_ELEMENTS_LOW`
+- **Conventional tier:** `JSON_LD_INVALID`, `FAQ_SCHEMA_MISSING`, `PROMOTIONAL_CONTENT_INTERRUPTS`, `AI_TXT_MISSING`
+
+**Parser extensions** (`api/crawler/parser.py`): 9 new `ParsedPage` fields: `is_spa_shell`, `author_detected`, `date_published`, `date_modified`, `code_block_count`, `table_count`, `structured_element_count`, `first_150_words`, `blockquote_count`.
+
+**Link classifier** (`api/services/link_classifier.py`): Classifies outbound links as authority (.gov, .edu, research), reference (Wikipedia, Britannica), promotional (?ref=, /go/), internal, or other.
+
+**JS renderer** (`api/services/js_renderer.py`): Fetches with GPTBot/ClaudeBot/generic UAs + Playwright headless Chromium. Computes token-set diff and Jaccard similarity for cloaking detection. Optional — degrades gracefully when Playwright is unavailable.
+
+**GEO analyzer service** (`api/services/geo_analyzer.py`): LLM-based analysis producing a `GEOReport` with:
+- Query match table (5–8 AI-generated queries scored Yes/Partial/No)
+- Chunk self-containedness (per H2/H3 section)
+- Central claim detection (is the core definition in the first 150 words?)
+- Promotional content detection (does sales copy interrupt information?)
+- Weighted scoring: Empirical ×3, Mechanistic ×2, Conventional ×1
+- Separate `aggarwal_score` computed only from Empirical findings
+
+**New API endpoints:**
+- `POST /api/ai/geo-report` — Generate or return cached GEO report for a job
+- `GET /api/geo/ai-model` — List available models and selected model
+- `POST /api/geo/ai-model` — Persist model selection
+
+**Frontend:**
+- `GEOReportPanel.jsx` — Score cards, evidence-tier grouped findings, query match table, chunk containedness, JS rendering tab, model selector
+- `AIReadinessPanel.jsx` — Updated with 3 new GEO issue groups + embedded `GEOReportPanel` at top
+- `GeoSettingsModal.jsx` — Added AI model selector dropdown
+
+**Tests:** 75 new tests across `test_geo_static_checks.py`, `test_link_classifier.py`, `test_js_renderer.py`, `test_geo_analyzer.py`.
 
 ---
 
