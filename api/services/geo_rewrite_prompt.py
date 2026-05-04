@@ -761,12 +761,10 @@ async def stream_rewrite_variants(
     AsyncGenerator that runs n rewrites sequentially, yielding one SSE event
     per completed variant and a final 'done' event with the winner.
 
-    Projected score: re-evaluates the QUERY_MATCH_SCORE on each rewrite (same
-    queries from the cached GEO report, re-scored by the LLM).  All other
-    original findings are kept unchanged.  This produces scores in the same
-    space as the original geo_report.overall_score so improvement is visible.
-
-    Content fails (static checks) are also computed and shown separately.
+    Projected score: 80% query coverage (same queries re-scored vs the rewrite)
+    + 20% content quality (5 static checks: stats, citations, quotes, viewport
+    answer, structure).  This makes the issues count affect the score so variants
+    with the same query coverage but different issue counts are distinguishable.
 
     Yields JSON-encoded strings in SSE format: "data: {...}\\n\\n"
     """
@@ -783,18 +781,17 @@ async def stream_rewrite_variants(
         result = await _generate_one_rewrite(page_content, system_prompt, model, provider, i)
 
         if result.get("text"):
-            # Re-score query match on the rewrite text (1 LLM call per variant)
+            issues, c_score = _content_score(url, result["text"], page_type)
             if query_table:
                 new_qm_score = await _score_rewrite_query_match(
                     result["text"], query_table, model, provider
                 )
-                projected_score = _project_score_from_findings(findings_for_projection, new_qm_score)
+                query_projected = _project_score_from_findings(findings_for_projection, new_qm_score)
+                # Blend: 80% query coverage + 20% content quality so issue
+                # count actually affects the projected score
+                projected_score = round(0.8 * query_projected + 0.2 * c_score, 4)
             else:
-                # No query table available — fall back to content score
-                _, projected_score = _content_score(url, result["text"], page_type)
-
-            # Also count static issues (shown in Issues column but not in projected_score)
-            issues, _ = _content_score(url, result["text"], page_type)
+                projected_score = c_score
         else:
             issues, projected_score = 999, 0.0
 

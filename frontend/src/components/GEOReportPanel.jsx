@@ -442,11 +442,9 @@ function RewriteAssist({ jobId, report }) {
                 </h4>
                 {metaInfo && (
                   <p className="text-xs text-indigo-500 mb-2">
-                    Re-scores how well each rewrite answers the same queries used in the original analysis.
-                    {' '}Original score: <span className="font-bold text-indigo-700">{PCT(metaInfo.current_score)}</span>
-                    {metaInfo.has_query_table
-                      ? ' · Scoring via query re-match (same questions, new text)'
-                      : ' · Scoring via content signals (no query table cached)'}
+                    Projected score = 80% query coverage (same questions re-scored) + 20% content quality (stats, citations, quotes, structure).
+                    {' '}Original GEO score: <span className="font-bold text-indigo-700">{PCT(metaInfo.current_score)}</span>
+                    {!metaInfo.has_query_table && ' · No query table cached — scoring via content signals only'}
                   </p>
                 )}
                 <div className="overflow-x-auto rounded-xl border border-indigo-200 bg-white">
