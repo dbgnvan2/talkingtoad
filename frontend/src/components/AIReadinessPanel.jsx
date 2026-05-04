@@ -4,8 +4,49 @@ import SeverityBadge from './SeverityBadge.jsx'
 import IssueHelpPanel from './IssueHelpPanel.jsx'
 import Spinner from './Spinner.jsx'
 import { getIssueHelp } from '../data/issueHelp.js'
+import GEOReportPanel from './GEOReportPanel.jsx'
 
 const ISSUE_GROUPS = {
+  geo_aggarwal: {
+    label: 'Aggarwal GEO Signals',
+    icon: '🏆',
+    issues: [
+      'STATISTICS_COUNT_LOW',
+      'EXTERNAL_CITATIONS_LOW',
+      'QUOTATIONS_MISSING',
+      'ORPHAN_CLAIM_TECHNICAL',
+    ],
+  },
+  geo_mechanistic: {
+    label: 'Content Retrievability',
+    icon: '⚙️',
+    issues: [
+      'RAW_HTML_JS_DEPENDENT',
+      'JS_RENDERED_CONTENT_DIFFERS',
+      'CONTENT_CLOAKING_DETECTED',
+      'UA_CONTENT_DIFFERS',
+      'FIRST_VIEWPORT_NO_ANSWER',
+      'AUTHOR_BYLINE_MISSING',
+      'DATE_PUBLISHED_MISSING',
+      'DATE_MODIFIED_MISSING',
+      'CODE_BLOCK_MISSING_TECHNICAL',
+      'COMPARISON_TABLE_MISSING',
+      'CHUNKS_NOT_SELF_CONTAINED',
+      'CENTRAL_CLAIM_BURIED',
+      'LINK_PROFILE_PROMOTIONAL',
+      'STRUCTURED_ELEMENTS_LOW',
+    ],
+  },
+  geo_conventional: {
+    label: 'GEO Conventional Signals',
+    icon: '💡',
+    issues: [
+      'JSON_LD_INVALID',
+      'FAQ_SCHEMA_MISSING',
+      'PROMOTIONAL_CONTENT_INTERRUPTS',
+      'AI_TXT_MISSING',
+    ],
+  },
   ai_bot: {
     label: 'AI Bot Access',
     icon: '🤖',
@@ -127,6 +168,25 @@ export default function AIReadinessPanel({ jobId, domain, onPageClick, onShowHel
         >
           ℹ️ Help
         </button>
+      </div>
+
+      {/* GEO Deep Analysis (LLM-based) */}
+      <div className="bg-white border border-indigo-200 rounded-2xl p-6 shadow-sm">
+        <div className="flex items-center gap-2 mb-4">
+          <span className="text-2xl">🔬</span>
+          <div>
+            <p className="font-bold text-gray-800">GEO Deep Analysis</p>
+            <p className="text-xs text-gray-500">LLM-powered: query matching, chunk self-containedness, central claim, JS rendering</p>
+          </div>
+        </div>
+        <GEOReportPanel jobId={jobId} domain={domain} />
+      </div>
+
+      {/* Static issue checks */}
+      <div className="flex items-center gap-3 pt-2">
+        <div className="flex-1 h-px bg-gray-200" />
+        <span className="text-xs font-bold text-gray-500 uppercase tracking-widest">Static Checks</span>
+        <div className="flex-1 h-px bg-gray-200" />
       </div>
 
       {/* Group cards */}

@@ -106,6 +106,17 @@ class ParsedPage:
     # v1.9 Image Intelligence fields
     image_data: list = None  # list[dict] - comprehensive image data for ImageInfo
 
+    # v2.1 GEO Analyzer fields
+    is_spa_shell: bool = False           # raw HTML is a JS app shell with near-zero text
+    author_detected: bool = False        # rel=author / itemprop=author / byline class found
+    date_published: str | None = None    # datePublished from JSON-LD or <meta>
+    date_modified: str | None = None     # dateModified from JSON-LD
+    code_block_count: int = 0            # <pre> + <code> elements
+    table_count: int = 0                 # <table> elements
+    structured_element_count: int = 0    # <ul>+<ol>+<table>+<dl>+<pre>+<code>
+    first_150_words: str | None = None   # first 150 words of visible body text
+    blockquote_count: int = 0            # <blockquote> elements
+
 
 def parse_page(
     result: FetchResult,
@@ -233,6 +244,16 @@ def parse_page(
         pdf_metadata=pdf_metadata,
         # v1.9 Image Intelligence
         image_data=_extract_image_data(soup, page_url),
+        # v2.1 GEO Analyzer fields
+        is_spa_shell=_detect_spa_shell(soup),
+        author_detected=_detect_author(soup),
+        date_published=_extract_date_published(soup),
+        date_modified=_extract_date_modified(soup),
+        code_block_count=_count_code_blocks(soup),
+        table_count=len(soup.find_all("table")),
+        structured_element_count=_count_structured_elements(soup),
+        first_150_words=_extract_first_n_words(soup, 150),
+        blockquote_count=len(soup.find_all("blockquote")),
     )
 
 
@@ -881,3 +902,133 @@ def _extract_filename_from_url(url: str) -> str:
     except Exception:
         pass
     return ""
+
+
+# ---------------------------------------------------------------------------
+# v2.1 GEO Analyzer helpers
+# ---------------------------------------------------------------------------
+
+import re as _re
+
+_SPA_SHELL_IDS = {"root", "app", "__next", "__nuxt", "react-root", "vue-app"}
+_SPA_SHELL_TAGS = {"app-root", "ng-view", "ion-app"}
+
+
+def _detect_spa_shell(soup: BeautifulSoup) -> bool:
+    """Return True if the page looks like a JS app-shell with minimal raw text."""
+    for id_val in _SPA_SHELL_IDS:
+        tag = soup.find(id=id_val)
+        if tag:
+            inner = tag.get_text(strip=True)
+            if len(inner) < 50:
+                return True
+    for tag_name in _SPA_SHELL_TAGS:
+        if soup.find(tag_name):
+            return True
+    return False
+
+
+_AUTHOR_CLASSES = _re.compile(
+    r"\b(author|byline|contributor|writer|posted-by|entry-author)\b", _re.I
+)
+
+
+def _detect_author(soup: BeautifulSoup) -> bool:
+    """Return True if an author signal is present."""
+    # rel=author link
+    if soup.find("a", rel=lambda r: r and "author" in r):
+        return True
+    # itemprop=author
+    if soup.find(attrs={"itemprop": "author"}):
+        return True
+    # JSON-LD author field
+    for script in soup.find_all("script", type="application/ld+json"):
+        try:
+            data = json.loads(script.string or "")
+            if isinstance(data, dict) and "author" in data:
+                return True
+            if isinstance(data, list):
+                for item in data:
+                    if isinstance(item, dict) and "author" in item:
+                        return True
+        except Exception:
+            pass
+    # meta name=author
+    if soup.find("meta", attrs={"name": "author"}):
+        return True
+    # class-based byline
+    for tag in soup.find_all(True, class_=True):
+        classes = " ".join(tag.get("class", []))
+        if _AUTHOR_CLASSES.search(classes):
+            return True
+    return False
+
+
+def _extract_date_published(soup: BeautifulSoup) -> str | None:
+    """Extract datePublished from JSON-LD or <meta> tags."""
+    for script in soup.find_all("script", type="application/ld+json"):
+        try:
+            data = json.loads(script.string or "")
+            items = data if isinstance(data, list) else [data]
+            for item in items:
+                if isinstance(item, dict) and "datePublished" in item:
+                    return str(item["datePublished"])
+        except Exception:
+            pass
+    for attr in ("article:published_time", "og:article:published_time",
+                 "datePublished", "date"):
+        tag = soup.find("meta", attrs={"property": attr}) or \
+              soup.find("meta", attrs={"name": attr})
+        if tag and tag.get("content"):
+            return tag["content"]
+    return None
+
+
+def _extract_date_modified(soup: BeautifulSoup) -> str | None:
+    """Extract dateModified from JSON-LD or <meta> tags."""
+    for script in soup.find_all("script", type="application/ld+json"):
+        try:
+            data = json.loads(script.string or "")
+            items = data if isinstance(data, list) else [data]
+            for item in items:
+                if isinstance(item, dict) and "dateModified" in item:
+                    return str(item["dateModified"])
+        except Exception:
+            pass
+    for attr in ("article:modified_time", "og:article:modified_time",
+                 "dateModified", "last-modified"):
+        tag = soup.find("meta", attrs={"property": attr}) or \
+              soup.find("meta", attrs={"name": attr})
+        if tag and tag.get("content"):
+            return tag["content"]
+    return None
+
+
+def _count_code_blocks(soup: BeautifulSoup) -> int:
+    """Count <pre> and top-level <code> elements (not nested inside <pre>)."""
+    pres = soup.find_all("pre")
+    codes = [c for c in soup.find_all("code") if not c.find_parent("pre")]
+    return len(pres) + len(codes)
+
+
+def _count_structured_elements(soup: BeautifulSoup) -> int:
+    """Count <ul>, <ol>, <table>, <dl>, <pre>, <code> elements."""
+    total = 0
+    for tag in ("ul", "ol", "table", "dl", "pre"):
+        total += len(soup.find_all(tag))
+    codes = [c for c in soup.find_all("code") if not c.find_parent("pre")]
+    total += len(codes)
+    return total
+
+
+def _extract_first_n_words(soup: BeautifulSoup, n: int) -> str | None:
+    """Extract first *n* words from visible body text."""
+    body = soup.find("body") or soup
+    # Remove script, style, nav, header, footer noise
+    for noise in body.find_all(["script", "style", "nav", "header", "footer", "aside"]):
+        noise.decompose()
+    text = body.get_text(separator=" ", strip=True)
+    words = text.split()
+    if not words:
+        return None
+    return " ".join(words[:n])

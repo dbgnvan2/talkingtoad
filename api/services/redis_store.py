@@ -96,6 +96,7 @@ class RedisJobStore:
             "robots_txt_found", "robots_txt_rules", "sitemap_found",
             "sitemap_url_found", "sitemap_url_count",
             "executive_summary",
+            "geo_report",
         }
         unknown = set(fields) - _ALLOWED
         if unknown:

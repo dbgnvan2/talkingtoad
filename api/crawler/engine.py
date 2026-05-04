@@ -311,6 +311,17 @@ async def run_crawl(
         except Exception as e:
             log.warning("ai_bot_check_error", extra={"error": str(e)})
 
+        # ── 2.8. ai.txt check (GEO.6.2) ─────────────────────────────────────
+        try:
+            ai_txt_url = f"{root_url}/ai.txt"
+            ai_txt_res = await fetch_page(ai_txt_url, client)
+            if ai_txt_res.status_code != 200:
+                all_issues.append(make_issue("AI_TXT_MISSING", normalised_start,
+                                             extra={"expected_url": ai_txt_url,
+                                                    "status_code": ai_txt_res.status_code}))
+        except Exception:
+            pass
+
         # If no sitemap found, record that as an issue
         if sitemap_result.missing_issue:
             all_issues.append(

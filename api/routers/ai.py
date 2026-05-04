@@ -396,3 +396,75 @@ async def apply_geo_metadata(body: ApplyGeoMetadataRequest, store=Depends(get_st
         "wordpress_updated": wp_updated,
         "wordpress_error": wp_error,
     }
+
+
+# ── GEO.10.1: GEO Report endpoint ─────────────────────────────────────────
+
+@router.post("/geo-report")
+async def generate_geo_report(
+    body: dict,
+    store=Depends(get_store),
+):
+    """
+    Generate a full GEO analysis report for a job's target URL.
+
+    - Runs all LLM-based GEO checks (query match, chunk containedness,
+      central claim, promotional content detection).
+    - Runs JS rendering comparison if Playwright is installed.
+    - Caches the report on the job record.
+
+    Request body: {"job_id": "...", "model": "gpt-4o" (optional)}
+    """
+    job_id = body.get("job_id")
+    if not job_id:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=400, detail="job_id is required")
+
+    job = await store.get_job(job_id)
+    if not job:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    target_url = job.target_url
+    preferred_model = body.get("model")
+
+    # Return cached report if available
+    if job.geo_report and not body.get("force_refresh"):
+        return {"success": True, "cached": True, "report": job.geo_report}
+
+    # Fetch the page HTML
+    import httpx as _httpx
+    try:
+        async with _httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
+            resp = await client.get(
+                target_url,
+                headers={"User-Agent": "TalkingToadGEOBot/2.1"},
+            )
+            raw_html = resp.text
+    except Exception as e:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=502, detail=f"Failed to fetch page: {e}")
+
+    # Build page_data from job if available
+    page_data = {}
+
+    # Run GEO analysis
+    from api.services.geo_analyzer import generate_geo_report as _generate
+    report = await _generate(
+        target_url,
+        raw_html,
+        preferred_model=preferred_model,
+        page_data=page_data,
+    )
+
+    report_dict = report.to_dict()
+
+    # Cache on job
+    try:
+        import json as _json
+        await store.update_job(job_id, geo_report=_json.dumps(report_dict))
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).warning(f"Failed to cache geo_report: {e}")
+
+    return {"success": True, "cached": False, "report": report_dict}

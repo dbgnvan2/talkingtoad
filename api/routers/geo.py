@@ -208,3 +208,67 @@ async def test_geo_config(
         "errors": errors,
         "message": "Configuration is valid" if is_valid else "Configuration has errors",
     }
+
+
+# ── GEO.9.1: AI Model Selection ───────────────────────────────────────────
+
+_GEO_MODELS = [
+    {"id": "gpt-4o",           "provider": "openai",  "label": "GPT-4o (recommended)"},
+    {"id": "gpt-4o-mini",      "provider": "openai",  "label": "GPT-4o Mini (fast)"},
+    {"id": "gemini-1.5-flash", "provider": "gemini",  "label": "Gemini 1.5 Flash (fast)"},
+    {"id": "gemini-1.5-pro",   "provider": "gemini",  "label": "Gemini 1.5 Pro"},
+    {"id": "gemini-2.0-flash", "provider": "gemini",  "label": "Gemini 2.0 Flash"},
+]
+
+_GEO_MODEL_STORE_KEY = "__geo_analyzer_model__"
+
+
+@router.get("/ai-model")
+async def get_geo_ai_model(store=Depends(get_store)) -> dict[str, Any]:
+    """Return available AI models filtered by configured API keys and currently selected model."""
+    import os
+    has_openai = bool(os.getenv("OPENAI_API_KEY"))
+    has_gemini = bool(os.getenv("GEMINI_API_KEY"))
+
+    available = [
+        m for m in _GEO_MODELS
+        if (m["provider"] == "openai" and has_openai)
+        or (m["provider"] == "gemini" and has_gemini)
+    ]
+
+    # Retrieve persisted selection
+    selected_model = None
+    try:
+        config = await store.get_geo_config(_GEO_MODEL_STORE_KEY)
+        if config:
+            selected_model = getattr(config, "model", None)
+    except Exception:
+        pass
+
+    # Default: first available model (OpenAI preferred)
+    if not selected_model and available:
+        selected_model = available[0]["id"]
+
+    return {
+        "available": available,
+        "selected": selected_model,
+        "has_openai": has_openai,
+        "has_gemini": has_gemini,
+    }
+
+
+@router.post("/ai-model")
+async def set_geo_ai_model(
+    body: dict,
+    store=Depends(get_store),
+) -> dict[str, Any]:
+    """Persist the selected AI model for GEO analysis."""
+    model_id = body.get("model")
+    valid_ids = {m["id"] for m in _GEO_MODELS}
+    if model_id not in valid_ids:
+        raise HTTPException(status_code=400, detail=f"Unknown model: {model_id}")
+    # Persist using geo_config store with a sentinel domain key
+    from api.models.geo_config import GeoConfig
+    config = GeoConfig(domain=_GEO_MODEL_STORE_KEY, model=model_id)
+    await store.save_geo_config(config)
+    return {"success": True, "selected": model_id}

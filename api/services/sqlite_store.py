@@ -83,6 +83,7 @@ class SQLiteJobStore:
             ("sitemap_url_found", "TEXT"),
             ("sitemap_url_count", "INTEGER"),
             ("executive_summary", "TEXT"),
+            ("geo_report", "TEXT"),
         ]
         for col, col_type in job_columns:
             try:
@@ -212,6 +213,7 @@ class SQLiteJobStore:
             "robots_txt_found", "robots_txt_rules", "sitemap_found",
             "sitemap_url_found", "sitemap_url_count",
             "executive_summary",
+            "geo_report",
         }
         unknown = set(fields) - _ALLOWED
         if unknown:
@@ -1215,6 +1217,7 @@ def _row_to_job(row: dict) -> CrawlJob:
         settings=CrawlSettings(**settings_data),
         llms_txt_custom=row.get("llms_txt_custom"),
         executive_summary=row.get("executive_summary"),
+        geo_report=json.loads(row["geo_report"]) if row.get("geo_report") else None,
     )
 
 

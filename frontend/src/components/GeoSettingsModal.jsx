@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { getGeoSettings, saveGeoSettings } from '../api.js'
+import { getGeoSettings, saveGeoSettings, getGeoAiModel, setGeoAiModel } from '../api.js'
 
 /**
  * Modal for configuring GEO (Generative Engine Optimization) settings.
@@ -18,15 +18,24 @@ export default function GeoSettingsModal({ domain, onClose, onSaved }) {
   const [topicEntities, setTopicEntities] = useState([''])
   const [locationPool, setLocationPool] = useState([''])
 
-  // Load existing configuration
+  // AI model selection
+  const [availableModels, setAvailableModels] = useState([])
+  const [selectedModel, setSelectedModel] = useState('')
+
+  // Load existing configuration and models
   useEffect(() => {
     async function load() {
       try {
-        const config = await getGeoSettings(domain)
+        const [config, modelData] = await Promise.all([
+          getGeoSettings(domain),
+          getGeoAiModel().catch(() => ({ available: [], selected: null })),
+        ])
         setOrgName(config.org_name || '')
         setPrimaryLocation(config.primary_location || '')
         setTopicEntities(config.topic_entities?.length ? config.topic_entities : [''])
         setLocationPool(config.location_pool?.length ? config.location_pool : [''])
+        setAvailableModels(modelData.available || [])
+        setSelectedModel(modelData.selected || '')
       } catch (err) {
         console.error('Failed to load GEO settings:', err)
         setError('Failed to load settings: ' + err.message)
@@ -36,6 +45,11 @@ export default function GeoSettingsModal({ domain, onClose, onSaved }) {
     }
     load()
   }, [domain])
+
+  const handleModelChange = async (modelId) => {
+    setSelectedModel(modelId)
+    await setGeoAiModel(modelId).catch(err => console.error('Failed to save model:', err))
+  }
 
   const handleSave = async () => {
     // Validate required fields
@@ -259,6 +273,27 @@ export default function GeoSettingsModal({ domain, onClose, onSaved }) {
               Service areas and nearby cities for geographic optimization
             </p>
           </div>
+
+          {/* AI Model Selector */}
+          {availableModels.length > 0 && (
+            <div>
+              <label className="block text-sm font-bold text-gray-700 mb-2">
+                AI Model for GEO Analysis
+              </label>
+              <select
+                value={selectedModel}
+                onChange={(e) => handleModelChange(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+              >
+                {availableModels.map(m => (
+                  <option key={m.id} value={m.id}>{m.label}</option>
+                ))}
+              </select>
+              <p className="text-xs text-gray-500 mt-1">
+                Used when running LLM-based GEO analysis from the AI Readiness tab
+              </p>
+            </div>
+          )}
 
           {/* Info Box */}
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">

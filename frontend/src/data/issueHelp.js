@@ -2013,6 +2013,335 @@ const issueHelp = {
       "a summary, abstract, or free alternative (preprint, institutional repository). For deleted or archived pages, " +
       "use archive.org or similar services.",
   },
+
+  // ── v2.1 GEO Analyzer: Aggarwal et al. checks (Empirical) ───────────────
+  STATISTICS_COUNT_LOW: {
+    title: "No statistics",
+    category: "ai_readiness",
+    severity: "warning",
+    confidence: "Empirical",
+    definition:
+      "This 500+ word page contains no statistics — no numbers paired with units, percentages, dates, or counts. " +
+      "A statistic is a specific numeric claim like '40 Gbps throughput', 'reduces errors by 23%', or 'released in March 2024'.",
+    impact:
+      "Evidence tier: Empirical. Aggarwal et al. (2023) measured a statistically significant increase in AI engine " +
+      "citation rates when pages included specific statistics. This is one of only three tactics with controlled measurement.",
+    fix:
+      "Add concrete data points: percentages, measurements, dates, counts. Replace vague claims ('fast performance') " +
+      "with specific ones ('processes 10,000 requests per second'). Every factual claim should have a number attached if possible.",
+  },
+
+  EXTERNAL_CITATIONS_LOW: {
+    title: "No external citations",
+    category: "ai_readiness",
+    severity: "warning",
+    confidence: "Empirical",
+    definition:
+      "This 500+ word page has no outbound links to external authoritative sources in body text. An external citation " +
+      "is a link to a source outside your domain (e.g., a research paper, government site, or official documentation).",
+    impact:
+      "Evidence tier: Empirical. Aggarwal et al. (2023) found that pages with source citations were cited significantly " +
+      "more often by generative AI engines. External links signal factual grounding.",
+    fix:
+      "Add links to authoritative external sources: .gov, .edu, research papers (via DOI/PubMed), official documentation " +
+      "(MDN, W3C), or major news sources. Aim for at least 2–3 external citations per 500 words.",
+  },
+
+  QUOTATIONS_MISSING: {
+    title: "No expert quotations",
+    category: "ai_readiness",
+    severity: "warning",
+    confidence: "Empirical",
+    definition:
+      "This 500+ word page contains no direct quotations from named sources — no blockquotes and no attribution " +
+      "patterns like 'according to [Name]', '— [Name]', or '[Name] stated'.",
+    impact:
+      "Evidence tier: Empirical. Aggarwal et al. (2023) found quotations measurably increased AI citation rates. " +
+      "Quoted statements give AI systems a citable, verifiable unit of content.",
+    fix:
+      "Add direct quotes from named experts, researchers, or official sources. Use <blockquote> for longer quotes. " +
+      "Always attribute: 'According to Dr. Smith...', 'As noted in the 2023 report...'",
+  },
+
+  ORPHAN_CLAIM_TECHNICAL: {
+    title: "Unsourced technical claims",
+    category: "ai_readiness",
+    severity: "warning",
+    confidence: "Empirical",
+    definition:
+      "This technical or how-to page has 3 or more factual claims (specific capabilities, numbers, or procedures) " +
+      "that are not paired with a source link or attribution. An orphan claim states a fact but provides no evidence.",
+    impact:
+      "Evidence tier: Empirical. Aggarwal et al. (2023) found that sourced content is cited more reliably by AI engines. " +
+      "Unsourced technical claims cannot be verified, reducing their trustworthiness for AI systems.",
+    fix:
+      "Add a source link or attribution next to each specific capability claim or procedure step. " +
+      "Even linking to official documentation ('per the RFC', 'see the Python docs') satisfies the requirement.",
+  },
+
+  // ── v2.1 GEO Analyzer: Mechanistic checks ────────────────────────────────
+  RAW_HTML_JS_DEPENDENT: {
+    title: "JS-only content (no SSR)",
+    category: "ai_readiness",
+    severity: "warning",
+    confidence: "Mechanistic",
+    definition:
+      "The raw HTML for this page is a JavaScript app shell — a nearly empty container like <div id='root'> " +
+      "with no meaningful text content. All page content is rendered by JavaScript after load.",
+    impact:
+      "Evidence tier: Mechanistic. AI crawlers (GPTBot, ClaudeBot) may not execute JavaScript. If they cannot, " +
+      "they see an empty page and cannot extract or cite any content.",
+    fix:
+      "Implement server-side rendering (SSR) or static site generation (SSG) for key pages. Frameworks like Next.js, " +
+      "Nuxt.js, and SvelteKit support SSR out of the box. Ensure critical content is in the HTML response.",
+  },
+
+  JS_RENDERED_CONTENT_DIFFERS: {
+    title: "JS-gated content",
+    category: "ai_readiness",
+    severity: "warning",
+    confidence: "Mechanistic",
+    definition:
+      "The rendered page (with JavaScript executed) contains substantially more content than the raw HTML — " +
+      "over 20% more tokens. Significant content is only accessible after JavaScript runs.",
+    impact:
+      "Evidence tier: Mechanistic. AI crawlers that don't execute JavaScript miss this content entirely. " +
+      "Even crawlers that do render JS may time out before lazy-loaded content appears.",
+    fix:
+      "Pre-render key content as static HTML. Use SSR or pre-rendering for important body text, headings, " +
+      "and facts. Dynamic elements like comments can remain JS-rendered.",
+  },
+
+  CONTENT_CLOAKING_DETECTED: {
+    title: "Possible content cloaking",
+    category: "ai_readiness",
+    severity: "error",
+    confidence: "Mechanistic",
+    definition:
+      "The topic of the rendered page appears significantly different from the raw HTML content. " +
+      "The page's top keywords shift substantially between what's in the raw HTML and what JavaScript renders.",
+    impact:
+      "Evidence tier: Mechanistic. Serving different content to crawlers vs users (cloaking) violates " +
+      "search quality guidelines. AI systems citing the page may cite content users never see.",
+    fix:
+      "Audit the difference between raw HTML and rendered content. Ensure the same topic and facts are " +
+      "present in both. If content is legitimately dynamic (personalised), use canonical signals.",
+  },
+
+  UA_CONTENT_DIFFERS: {
+    title: "AI bot content stripping",
+    category: "ai_readiness",
+    severity: "warning",
+    confidence: "Mechanistic",
+    definition:
+      "Requests made with AI crawler user agents (GPTBot/1.0, ClaudeBot/1.0) receive substantially less " +
+      "content than a browser — over 20% fewer tokens. The server appears to strip content for AI bots.",
+    impact:
+      "Evidence tier: Mechanistic. Intentionally serving thin content to AI crawlers prevents indexing " +
+      "and citation. AI systems cannot cite content they cannot see.",
+    fix:
+      "Check your server configuration, CDN rules, and middleware for user-agent-based content filtering. " +
+      "Ensure GPTBot and ClaudeBot receive the same response as other crawlers.",
+  },
+
+  FIRST_VIEWPORT_NO_ANSWER: {
+    title: "No lead answer",
+    category: "ai_readiness",
+    severity: "warning",
+    confidence: "Mechanistic",
+    definition:
+      "The first 150 words of this page contain no direct answer signal — no definition ('X is...'), " +
+      "no TL;DR, no summary phrase ('In short', 'Key takeaway:', 'The short answer is').",
+    impact:
+      "Evidence tier: Mechanistic. AI chunkers process content top-to-bottom. The text before the first " +
+      "heading is what they see first and weight most heavily.",
+    fix:
+      "Lead with a concise definition or answer in the first paragraph. State the main point immediately. " +
+      "Example: 'X is a method for doing Y. It works by Z.' Then expand with detail below.",
+  },
+
+  AUTHOR_BYLINE_MISSING: {
+    title: "No author attribution",
+    category: "ai_readiness",
+    severity: "warning",
+    confidence: "Mechanistic",
+    definition:
+      "This blog or article page has no author byline, no rel='author' link, no itemprop='author', " +
+      "and no 'author' field in JSON-LD schema. The content has no named human source.",
+    impact:
+      "Evidence tier: Mechanistic. AI systems use author attribution as an expertise and authority signal. " +
+      "Anonymous content is harder to attribute and may rank lower for E-E-A-T signals.",
+    fix:
+      "Add a visible author byline with the author's name. Include rel='author' on the author link. " +
+      "Add an 'author' field to your JSON-LD BlogPosting or Article schema with the author's name.",
+  },
+
+  DATE_PUBLISHED_MISSING: {
+    title: "Missing publication date",
+    category: "ai_readiness",
+    severity: "info",
+    confidence: "Mechanistic",
+    definition:
+      "This blog or article page has no publication date in JSON-LD schema or Open Graph meta tags.",
+    impact:
+      "Evidence tier: Mechanistic. Freshness is a ranking signal for time-sensitive queries. " +
+      "Without a date, AI systems cannot assess whether the content is current.",
+    fix:
+      "Add datePublished to your JSON-LD BlogPosting/Article schema. Also add " +
+      "<meta property='article:published_time' content='YYYY-MM-DD'>.",
+  },
+
+  DATE_MODIFIED_MISSING: {
+    title: "Missing last-modified date",
+    category: "ai_readiness",
+    severity: "info",
+    confidence: "Mechanistic",
+    definition:
+      "This blog or article page has no dateModified field in JSON-LD schema.",
+    impact:
+      "Evidence tier: Mechanistic. Regular updates signal that content is maintained and current. " +
+      "dateModified helps AI systems prefer fresh content over stale alternatives.",
+    fix:
+      "Add dateModified to your JSON-LD schema, updated whenever you make substantive changes. " +
+      "Pair with datePublished for complete freshness signalling.",
+  },
+
+  CODE_BLOCK_MISSING_TECHNICAL: {
+    title: "No code blocks in technical guide",
+    category: "ai_readiness",
+    severity: "warning",
+    confidence: "Mechanistic",
+    definition:
+      "This technical how-to or guide page has numbered steps but no <pre> or <code> blocks.",
+    impact:
+      "Evidence tier: Mechanistic. Code blocks are unambiguously extractable as structured data. " +
+      "AI systems can reproduce formatted code accurately; prose descriptions are often paraphrased.",
+    fix:
+      "Wrap all command-line examples, code snippets, and configuration in <code> (inline) " +
+      "or <pre><code> (block) tags.",
+  },
+
+  COMPARISON_TABLE_MISSING: {
+    title: "Comparison without table",
+    category: "ai_readiness",
+    severity: "info",
+    confidence: "Mechanistic",
+    definition:
+      "This page uses comparison language in headings ('vs', 'versus', 'compared to') but has no HTML table.",
+    impact:
+      "Evidence tier: Mechanistic. Tables are the most reliably extractable format for comparisons. " +
+      "AI systems can read HTML tables as structured data.",
+    fix:
+      "Add a comparison table with clear column headers and rows for each attribute being compared.",
+  },
+
+  CHUNKS_NOT_SELF_CONTAINED: {
+    title: "Sections lack context",
+    category: "ai_readiness",
+    severity: "warning",
+    confidence: "Mechanistic",
+    definition:
+      "More than half of this page's H2/H3 sections are not understandable when read in isolation.",
+    impact:
+      "Evidence tier: Mechanistic. AI retrieval systems serve individual chunks, not whole pages. " +
+      "A chunk that assumes context from the previous section will be confusing when cited alone.",
+    fix:
+      "Open each H2/H3 section with a context sentence that restates the subject.",
+  },
+
+  CENTRAL_CLAIM_BURIED: {
+    title: "Main point buried",
+    category: "ai_readiness",
+    severity: "warning",
+    confidence: "Mechanistic",
+    definition:
+      "The central claim or answer of this page does not appear in the first 150 words.",
+    impact:
+      "Evidence tier: Mechanistic. AI systems weight early content more heavily when deciding what to extract.",
+    fix:
+      "State the main point in the first paragraph. Use the inverted pyramid: most important first.",
+  },
+
+  LINK_PROFILE_PROMOTIONAL: {
+    title: "All-internal link profile",
+    category: "ai_readiness",
+    severity: "info",
+    confidence: "Empirical",
+    definition:
+      "Over 80% of outbound body-text links on this page point to the same organisation's own domains.",
+    impact:
+      "Evidence tier: Empirical. Pages with external citations are cited more by AI engines (Aggarwal et al., 2023). " +
+      "An all-internal link profile provides no external authority signals.",
+    fix:
+      "Add links to third-party authoritative sources to validate claims and signal factual grounding.",
+  },
+
+  STRUCTURED_ELEMENTS_LOW: {
+    title: "Low structured element count",
+    category: "ai_readiness",
+    severity: "info",
+    confidence: "Mechanistic",
+    definition:
+      "This 500+ word page has no lists, tables, code blocks, or definition lists — all content is prose.",
+    impact:
+      "Evidence tier: Mechanistic. Structured elements are more reliably extracted by AI chunkers than continuous prose.",
+    fix:
+      "Convert appropriate content to structured formats: bullet lists, numbered steps, tables, code blocks.",
+  },
+
+  // ── v2.1 GEO Analyzer: Conventional checks ───────────────────────────────
+  JSON_LD_INVALID: {
+    title: "Invalid JSON-LD schema",
+    category: "ai_readiness",
+    severity: "warning",
+    confidence: "Conventional",
+    definition:
+      "A JSON-LD script block is present but missing @type or @context — both are required for valid Schema.org markup.",
+    impact:
+      "Evidence tier: Conventional. Malformed JSON-LD is ignored by search engines and AI parsers.",
+    fix:
+      "Ensure every JSON-LD block includes '@context': 'https://schema.org' and a valid '@type'. " +
+      "Validate at validator.schema.org.",
+  },
+
+  FAQ_SCHEMA_MISSING: {
+    title: "FAQ without schema",
+    category: "ai_readiness",
+    severity: "info",
+    confidence: "Conventional",
+    definition:
+      "This page has an FAQ section but no FAQPage JSON-LD schema marking up the Q&A pairs.",
+    impact:
+      "Evidence tier: Conventional. FAQPage schema enables rich results and makes Q&A pairs machine-readable.",
+    fix:
+      "Add FAQPage JSON-LD schema mirroring your visible FAQ content. Validate with Google's Rich Results Test.",
+  },
+
+  PROMOTIONAL_CONTENT_INTERRUPTS: {
+    title: "Promotional content in article",
+    category: "ai_readiness",
+    severity: "info",
+    confidence: "Conventional",
+    definition:
+      "More than one mid-article section has been classified as promotional rather than informational.",
+    impact:
+      "Evidence tier: Conventional. Promotional sections may be de-weighted by AI systems, though effect size is unconfirmed.",
+    fix:
+      "Move CTAs and product pitches to the end of the article or to a sidebar.",
+  },
+
+  AI_TXT_MISSING: {
+    title: "No ai.txt file",
+    category: "ai_readiness",
+    severity: "info",
+    confidence: "Conventional",
+    definition:
+      "No /ai.txt file was found at the site root. This emerging convention is proposed for declaring AI content policies.",
+    impact:
+      "Evidence tier: Conventional. No AI engine currently uses /ai.txt as a ranking signal.",
+    fix:
+      "Optional: create /ai.txt with a plain-text declaration of your AI content policies.",
+  },
   };
 
 

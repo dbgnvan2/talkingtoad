@@ -70,3 +70,5 @@ class CrawlJob(BaseModel):
     llms_txt_custom: str | None = None
     # AI-generated executive summary (cached after first generation)
     executive_summary: str | None = None
+    # v2.1 GEO Analyzer report (cached after first generation)
+    geo_report: dict | None = None

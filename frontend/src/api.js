@@ -836,3 +836,28 @@ export async function markIssueFixed(jobId, pageUrl, issueCodes) {
   })
   return checkResponse(res)
 }
+
+// v2.1 GEO Analyzer API functions
+
+export async function generateGeoReport(jobId, { model, forceRefresh = false } = {}) {
+  const res = await fetch('/api/ai/geo-report', {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify({ job_id: jobId, model, force_refresh: forceRefresh }),
+  })
+  return checkResponse(res)
+}
+
+export async function getGeoAiModel() {
+  const res = await fetch('/api/geo/ai-model', { headers: authHeaders() })
+  return checkResponse(res)
+}
+
+export async function setGeoAiModel(modelId) {
+  const res = await fetch('/api/geo/ai-model', {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify({ model: modelId }),
+  })
+  return checkResponse(res)
+}
