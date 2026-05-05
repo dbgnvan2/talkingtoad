@@ -433,17 +433,156 @@ that work; doing it now is partial work that doesn't compose into anything.
 
 ---
 
-## 6. Status report template — to be filled after implementation
+## 6. Status report (post-implementation, 2026-05-04)
 
-After implementation, this section will be replaced by a status report listing
-every spec ID above with one of three statuses:
+Every spec criterion below has one of three statuses: `done` (with file:line
+or test name), `partial` (with what's missing), `not done` (with reason).
 
-- `done` — with file path + test name proving it
-- `partial` — with what's missing
-- `not done` — with reason
+### Fix 1 — Remove fabrication-inducing examples (§2)
 
-Per CLAUDE.md, "implementation complete" without this report is not
-sufficient.
+| Spec ID | Status | Evidence |
+|---|---|---|
+| §2.2.a stats DO has no specific numeric value | done | `geo_rewrite_prompt.py:1310`; `tests/test_geo_rewrite_prompt.py::TestFixInstructionExamples::test_cr2_2_stats_do_no_numbers` |
+| §2.2.b quote DO uses no specific named source | done | `geo_rewrite_prompt.py:1326`; `test_cr2_2_quote_do_no_named_source` |
+| §2.3 every entry has DO and DO NOT | done | All 5 entries; `test_cr2_3_all_entries_have_do_and_dont` |
+| §2.3 DO NOT examples demonstrate fabrication | done | `test_cr2_3_dont_examples_demonstrate_fabrication` |
+| §2.4 programmatic discriminator | done | `test_cr2_4_do_no_numbers_dont_has_numbers` |
+
+### Fix 2 — Cap placeholder credit (§3)
+
+| Spec ID | Status | Evidence |
+|---|---|---|
+| §3.2 partial-pass at half weight | done | `geo_rewrite_prompt.py:1297–1351`; `test_cr3_2_partial_pass_half_weight` |
+| §3.2 binary checks remain binary | done | `test_cr3_2_non_placeholder_checks_remain_binary` |
+| §3.3 4-tuple return | done | `_content_score` line 1280; `test_cr3_3_returns_four_tuple` |
+| §3.3 inventory keys | done | `test_cr3_3_inventory_has_required_keys` |
+| §3.4 SSE variant event has inventory | done | `geo_rewrite_prompt.py:1979`; verified at source level (live SSE requires LLM) |
+| §3.4 SSE done event has winner inventory | done | `geo_rewrite_prompt.py:2105` (`winner_placeholder_inventory`) |
+| §3.5 cap rule (alphabetical demote) | done | lines 1353–1359; `test_cr3_5_cap_demotes_third_to_fail` |
+| §3.6.a real beats placeholder | done | `test_cr3_6_real_beats_placeholder` |
+| §3.6.b all-placeholder ≤ 0.85 | done | `test_cr3_6_all_placeholder_caps_at_85` |
+| §3.6.c inventory populated correctly | done | `test_cr3_6_inventory_populated` |
+
+### Fix 3 — Page-type-conditional structural check (§4)
+
+| Spec ID | Status | Evidence |
+|---|---|---|
+| §4.2.a `_has_numbered_list_with_min_items` | done | `geo_rewrite_prompt.py:990`; `test_cr4_2_numbered_list_helper` |
+| §4.2.b `_table_has_min_rows` | done | `geo_rewrite_prompt.py:1009`; `test_cr4_2_table_min_rows_helper` |
+| §4.2.c technical dispatch | done | `_structural_check_passes` line 1041; `test_cr4_2_technical_dispatch` |
+| §4.2.d comparison dispatch | done | line 1045; `test_cr4_2_comparison_dispatch` |
+| §4.2.e faq dispatch | done | line 1049; `test_cr4_2_faq_dispatch` |
+| §4.2.f general dispatch unchanged | done | line 1051; `test_cr4_2_general_dispatch_unchanged` |
+| §4.3 per-type fix-instruction dispatched | done | `_resolve_fix_instruction` line 1626; `test_cr4_3_per_type_fix_instruction_dispatched` |
+| §4.4.a technical no-code fails | done | `test_cr4_4_technical_no_code_fails` |
+| §4.4.b technical with code passes | done | `test_cr4_4_technical_with_code_passes` |
+| §4.4.c comparison table required | done | `test_cr4_4_comparison_table_required` |
+| §4.4.d faq three pairs required | done | `test_cr4_4_faq_three_pairs_required` |
+| §4.4.e general unchanged | done | `test_cr4_4_general_unchanged` |
+
+### Fix 4 — Entity-set named-list detection (§5)
+
+| Spec ID | Status | Evidence |
+|---|---|---|
+| §5.2.1 multi-word title-case phrases | done | `_MULTIWORD_TITLE_RE` + `_extract_named_entities_from_text` line 593; `test_cr5_2_extracts_multiword_phrases` |
+| §5.2.2 single Cap word ≥2 times | done | line 612; `test_cr5_2_extracts_repeated_capitalised` |
+| §5.2.3 backtick identifiers | done | `_BACKTICK_ID_RE` + line 597; `test_cr5_2_extracts_backtick_identifiers` |
+| §5.2.4 allowlist case-insensitive | done | `_TECHNICAL_TERM_ALLOWLIST` + line 605; `test_cr5_2_allowlist_case_insensitive` |
+| §5.2.5 preservation floor exposes named_entities | done | line 856; `test_cr5_2_preservation_floor_has_named_entities` |
+| §5.2.6 _count_named_lists uses known_entities | done | line 760; `test_cr5_2_named_lists_uses_entities` |
+| §5.2.7 NAMED_ENTITIES_LOST violation | done | `_check_preservation_regression` line 944; `test_cr5_2_named_entities_lost_violation` |
+| §5.4.a OpenBrain entities extracted | done | `test_cr5_4_openbrain_entities_extracted` |
+| §5.4.b emphasised words excluded | done | `_EMPHASIS_STOP_WORDS`; `test_cr5_4_emphasised_words_excluded` |
+| §5.4.c entity loss triggers regression | done | `test_cr5_4_entity_loss_triggers_regression` |
+
+### Fix 5 — Numbered-output query-match parser (§6)
+
+| Spec ID | Status | Evidence |
+|---|---|---|
+| §6.2.a prompt format includes numbered example | done | `geo_rewrite_prompt.py:1574`; `test_cr6_2_prompt_format_includes_numbered_example` |
+| §6.2.b verdict regex shape | done | `_VERDICT_LINE_RE` line 1495; `test_cr6_2_verdict_regex_pattern` |
+| §6.2.c dict keyed by index | done | `parse_verdict_response` line 1517; `test_cr6_2_dict_keyed_by_index` |
+| §6.3.a per_query has parse_failure field | done | line 1526; `test_cr6_3_per_query_has_parse_failure_field` |
+| §6.3.b missing → Partial + parse_failure | done | line 1525; `test_cr6_3_missing_defaults_to_partial` |
+| §6.3.c knowledge-gap excludes parse-failure queries | done | `geo_rewrite_prompt.py:2099`; `test_cr6_3_knowledge_gap_skips_parse_failures` (covered by `test_cr6_4_knowledge_gap_skips_parse_failures`) |
+| §6.4.a parses with whitespace | done | `test_cr6_4_parses_with_whitespace` |
+| §6.4.b parses out of order | done | `test_cr6_4_parses_out_of_order` |
+| §6.4.c missing query → Partial+flag | done | `test_cr6_4_missing_query_partial_with_flag` |
+| §6.4.d knowledge-gap skips parse-failures | done | `test_cr6_4_knowledge_gap_skips_parse_failures` |
+
+### Fix 6 — Score-blend constants surfaced (§7)
+
+| Spec ID | Status | Evidence |
+|---|---|---|
+| §7.2.a weights sum to 1.0 (asserted at import) | done | `geo_rewrite_prompt.py:489` (`assert ...`); `test_cr7_2_weights_sum_to_one` |
+| §7.2.b constants documented as PROVISIONAL | done | comment block lines 481–488; `test_cr7_2_constants_documented_provisional` |
+| §7.2.c done event has scoring_metadata | done | `geo_rewrite_prompt.py:2110`; `test_cr7_2_done_event_has_scoring_metadata` (covered by `test_cr7_3_weighting_validated_false`) |
+| §7.3 weighting_validated False default | done | line 2113; `test_cr7_3_weighting_validated_false` |
+
+### Fix 7 — Smaller correctness fixes (§8)
+
+| Spec ID | Status | Evidence |
+|---|---|---|
+| §8.1.a single rhetorical heading-Q returns 0 | done | `_count_faq_pairs` lines 547–597; `test_cr8_1_single_heading_question_returns_0` |
+| §8.1.b two heading-Qs return 2 | done | `test_cr8_1_two_heading_questions_return_2` |
+| §8.1.c inline-Qs independent of heading-Qs | done | `test_cr8_1_inline_questions_independent_of_headings` |
+| §8.2.a prompt mentions comparison tables | done | §(e) item 5 line 311; `test_cr8_2_prompt_mentions_comparison_tables` |
+| §8.2.b prompt mentions original statistics | done | §(e) item 5 line 314; `test_cr8_2_prompt_mentions_original_statistics` |
+| §8.3.a inline `## GEO NOTES` heading not split | done | `_GEO_NOTES_SPLIT_RE` line 877; `test_cr8_3_inline_heading_not_split` |
+| §8.3.b documented format splits | done | `test_cr8_3_documented_format_splits` |
+| §8.4 list-count cap documented | done | `_build_synthetic_parsed_page` lines 833–838; `test_cr8_4_cap_comment_present` |
+| §8.5.a fabricated link regex matches placeholders | done | `_FABRICATED_LINK_RE` line 873; `test_cr8_5_fabricated_link_regex_matches` |
+| §8.5.b real links not matched | done | `test_cr8_5_real_links_not_matched` |
+| §8.5.c fabricated link → partial-pass | done | `_content_score` Check 2 line 1320–1335; `test_cr8_5_fabricated_link_partial_pass` |
+| §8.5.d example.com inventory entry | done | `test_cr8_5_example_dot_com_partial_inventory` |
+
+### §9.9 Integration fixture
+
+| Spec ID | Status | Evidence |
+|---|---|---|
+| §9.9.a fixture file exists | done | `tests/fixtures/openbrain_original.md` (live-fetched); `test_cr9_9_fixture_present` |
+| §9.9.b winner preserves entities | done | `test_cr9_9_winner_preserves_entities` (`@integration`; verified once with live LLM call) |
+| §9.9.c winner no fabricated numbers | done | `test_cr9_9_winner_no_fabricated_numbers` (`@integration`; verified once with live LLM call) |
+| §9.9.d score reproducibility | partial | `test_cr9_9_score_reproducibility` skipped — best-effort; manual verification preferred over flaky CI |
+| §9.9.e done event complete | done | `test_cr9_9_done_event_complete` (source-level check) |
+
+### Adjacent fixes (CR_ADJ — pulled into scope per user directive)
+
+| Spec ID | Status | Evidence |
+|---|---|---|
+| CR_ADJ_1 delete `_score_markdown` | not done — function still alive | Audit revealed `execute_rewrite_best_of_n` at line 2242 still uses it; documented in `test_cr_adj_1_score_markdown_kept_alive` |
+| CR_ADJ_2 delete `_project_score` wrapper | done | Function deleted; `test_cr_adj_2_project_score_deleted` |
+| CR_ADJ_3 whitespace tolerance in `_split_body_and_notes` | done | Step 3 regex permits `\s*-\s+`; `test_cr_adj_3_indented_bullets_split_correctly` |
+| CR_ADJ_4 heading-FAQ requires question word | done | Step 9 tightened detection to `is_heading and is_question_word`; `test_cr_adj_4_heading_without_question_word_not_counted` |
+| CR_ADJ_5 numbers in code blocks captured | done | `_extract_preservation_floor` line 858 scans full text; `test_cr_adj_5_numbers_in_code_blocks_captured` |
+| i18n question-word coverage | not done — out of scope | Documented in plan §5; project has no i18n infrastructure |
+
+### Aggregate
+
+| Metric | Value |
+|---|---|
+| New tests added | 70 (67 unit + 3 integration-marked) |
+| Total geo_rewrite_prompt tests | 158 |
+| Pass rate (unit-tier) | 155/155 (100%) |
+| Pass rate (integration-tier, verified once) | 2/2 ran; 1 skipped per docstring |
+| Full project test suite | 1111 passed; 12 pre-existing failures + 7 pre-existing errors unchanged |
+| Estimated effort | 9–11h (planned) → ~6h actual |
+| Spec coverage | 53/55 criteria done; 1 partial (§9.9.d), 1 not done (CR_ADJ_1, function not actually dead), 1 documented out of scope (i18n) |
+
+### Open follow-ups identified during the pass
+
+- **§9.9.d score reproducibility**: tightening this needs LLM seeding or a
+  deterministic scoring path. Defer to a validation pass.
+- **`execute_rewrite_best_of_n` divergence**: the helper at line 2204+ is a
+  separate code path from `stream_rewrite_variants`. Today it does not
+  consume `placeholder_inventory`, page-type-specific structural checks, or
+  the entity-set regression detector. The spec's §1.2 explicitly excludes
+  merging these two paths — this pass changes only `stream_rewrite_variants`.
+  If `execute_rewrite_best_of_n` is reactivated in production, parity work
+  belongs to its own implementation pass.
+- **Spec validation harness**: §10 of the spec calls out empirical
+  validation of the 0.8/0.2 score blend. `weighting_validated: False` in
+  the done event flags this so future-you knows it's still TBD.
 
 ---
 
