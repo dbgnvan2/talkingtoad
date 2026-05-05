@@ -1001,6 +1001,91 @@ def _check_preservation_regression(
     return violations
 
 
+# ---------------------------------------------------------------------------
+# Page-type-conditional structural check (Fix 3 / §4)
+# ---------------------------------------------------------------------------
+
+def _has_numbered_list_with_min_items(text: str, min_items: int) -> bool:
+    """Return True if any numbered-list block has ≥ min_items consecutive items.
+
+    A numbered-list block is a run of consecutive lines matching _NUMBERED_LINE_RE
+    (e.g. `1. step`).  Continuation indents and blank lines reset the run.
+    """
+    lines = text.splitlines()
+    longest = 0
+    current = 0
+    for line in lines:
+        if _NUMBERED_LINE_RE.match(line):
+            current += 1
+            longest = max(longest, current)
+        elif line.strip() == "":
+            # blank line breaks the run only if the next non-blank line isn't a list
+            # — for simplicity we reset on any blank
+            current = 0
+        else:
+            current = 0
+    return longest >= min_items
+
+
+def _table_has_min_rows(text: str, min_rows: int) -> bool:
+    """Return True if any markdown table has ≥ min_rows DATA rows (excluding header
+    and separator rows).
+
+    A markdown table is a run of pipe-delimited lines.  The first row is the header,
+    the second row is the `|---|---|` separator, the rest are data rows.
+    """
+    in_table = False
+    has_separator = False
+    data_rows = 0
+    longest_data_rows = 0
+    for line in text.splitlines():
+        is_pipe_row = bool(re.match(r"^\|.+\|$", line.rstrip()))
+        is_separator = bool(re.match(r"^\|[\s|:\-]+\|$", line.rstrip()))
+        if is_pipe_row:
+            in_table = True
+            if is_separator:
+                has_separator = True
+            elif has_separator:
+                data_rows += 1
+        else:
+            if in_table:
+                longest_data_rows = max(longest_data_rows, data_rows)
+            in_table = False
+            has_separator = False
+            data_rows = 0
+    if in_table:
+        longest_data_rows = max(longest_data_rows, data_rows)
+    return longest_data_rows >= min_rows
+
+
+def _structural_check_passes(body: str, page_type: str) -> bool:
+    """Page-type-conditional structural sufficiency check (Fix 3 / §4.2).
+
+    technical:  code block OR numbered list with ≥3 steps
+    comparison: table with ≥2 data rows OR ≥1 named list
+    faq:        ≥3 detected Q&A pairs
+    article:    any list, table, or code block (legacy behaviour)
+    general:    same as article (legacy behaviour)
+    """
+    if page_type == "technical":
+        has_code = bool(_MD_CODE_RE.search(body))
+        has_step_list = _has_numbered_list_with_min_items(body, 3)
+        return has_code or has_step_list
+    if page_type == "comparison":
+        has_table = _table_has_min_rows(body, 2)
+        has_named_list = _count_named_lists(body) >= 1
+        return has_table or has_named_list
+    if page_type == "faq":
+        return _count_faq_pairs(body) >= 3
+    # article / general / unknown → any structured element
+    return (
+        bool(_MD_UL_RE.search(body))
+        or bool(_MD_OL_RE.search(body))
+        or bool(_MD_TABLE_RE.search(body))
+        or bool(_MD_CODE_RE.search(body))
+    )
+
+
 def _content_score(
     url: str,
     content: str,
@@ -1120,17 +1205,14 @@ def _content_score(
         except Exception:
             pass  # skip check if import fails
 
-    # ── Check 5 — Structured elements ───────────────────────────────────────
-    # Binary check; not placeholder-eligible.  Page-type-conditional dispatch
-    # lands in Step 6 (§4 / Fix 3); keep generic behaviour for now.
+    # ── Check 5 — Structured elements (page-type-conditional, Fix 3 / §4) ───
+    # Binary check; not placeholder-eligible.  Dispatched per page_type:
+    #   technical:  code block OR numbered list ≥3 steps
+    #   comparison: table ≥2 data rows OR named list
+    #   faq:        ≥3 Q&A pairs
+    #   article/general: any list/table/code block (legacy behaviour)
     if word_count >= 500:
-        has_structure = (
-            bool(_MD_UL_RE.search(body))
-            or bool(_MD_OL_RE.search(body))
-            or bool(_MD_TABLE_RE.search(body))
-            or bool(_MD_CODE_RE.search(body))
-        )
-        if not has_structure:
+        if not _structural_check_passes(body, page_type):
             fails.add("STRUCTURED_ELEMENTS_LOW")
 
     # ── Score computation ───────────────────────────────────────────────────
@@ -1383,6 +1465,33 @@ _CONTENT_FIX_INSTRUCTIONS: dict[str, str] = {
         "the original (e.g. 'OpenBrain vs MemGPT vs Mem0' according to a 2024 benchmark)._\n"
         "  (Adding fabricated structural elements is worse than the missing structure itself.)"
     ),
+    "STRUCTURED_ELEMENTS_LOW_TECHNICAL": (
+        "**STRUCTURED_ELEMENTS_LOW** (technical page) — No code block AND no numbered "
+        "procedure with ≥3 steps was found.\n"
+        "Fix: Add a code block showing actual configuration, syntax, or commands "
+        "(e.g. MCP config JSON, shell setup commands) that already appear in the original. "
+        "If no code is justified, convert the setup section to a numbered list with at "
+        "least 3 steps.\n"
+        "✅ DO: _Format the existing 5-step setup section as a numbered list._\n"
+        "❌ DO NOT: _Invent code samples or commands that did not appear in the original page._"
+    ),
+    "STRUCTURED_ELEMENTS_LOW_COMPARISON": (
+        "**STRUCTURED_ELEMENTS_LOW** (comparison page) — No comparison table with ≥2 "
+        "data rows AND no named-list contrasting at least two options was found.\n"
+        "Fix: Add a Markdown table with rows for each compared item (already named in the "
+        "original) and columns for each compared dimension. Tables are the most extractable "
+        "format for 'X vs Y' queries.\n"
+        "✅ DO: _Add a 3-row table comparing the alternatives that the original page already "
+        "names, using the dimensions discussed in the prose._\n"
+        "❌ DO NOT: _Invent rows for products not mentioned in the original._"
+    ),
+    "STRUCTURED_ELEMENTS_LOW_FAQ": (
+        "**STRUCTURED_ELEMENTS_LOW** (FAQ page) — Fewer than 3 Q&A pairs detected.\n"
+        "Fix: Restore or split existing content into at least 3 Q&A pairs. Each pair is a "
+        "question heading or question-word line followed by a 1–4 sentence answer.\n"
+        "✅ DO: _Split the existing FAQ section into ≥3 distinct question/answer pairs._\n"
+        "❌ DO NOT: _Invent Q&A pairs to hit the threshold — restore them from the original instead._"
+    ),
     "FIRST_VIEWPORT_NO_ANSWER": (
         "**FIRST_VIEWPORT_NO_ANSWER** — The first 100–200 words do not contain a direct answer.\n"
         "Fix: Rewrite the intro so the first sentence states what the subject IS, concretely. "
@@ -1440,6 +1549,27 @@ _REGRESSION_FIX_INSTRUCTIONS: dict[str, str] = {
 }
 
 
+_PAGE_TYPE_FIX_SUFFIX = {
+    "technical": "_TECHNICAL",
+    "comparison": "_COMPARISON",
+    "faq": "_FAQ",
+}
+
+
+def _resolve_fix_instruction(code: str, page_type: str) -> str | None:
+    """Look up the fix instruction for `code`, preferring page-type-specific
+    variants (e.g. STRUCTURED_ELEMENTS_LOW_TECHNICAL) before the generic key.
+
+    Returns None if neither key exists in _CONTENT_FIX_INSTRUCTIONS.
+    """
+    suffix = _PAGE_TYPE_FIX_SUFFIX.get(page_type)
+    if suffix:
+        specific = f"{code}{suffix}"
+        if specific in _CONTENT_FIX_INSTRUCTIONS:
+            return _CONTENT_FIX_INSTRUCTIONS[specific]
+    return _CONTENT_FIX_INSTRUCTIONS.get(code)
+
+
 def _build_improvement_prompt(
     original_system_prompt: str,
     attempt_num: int,
@@ -1448,6 +1578,7 @@ def _build_improvement_prompt(
     current_score: float = 0.0,
     placeholder_issues: list[str] | None = None,
     regression_violations: list[str] | None = None,
+    page_type: str = "general",
 ) -> str:
     """
     Wrap the original system prompt with targeted improvement-mode framing.
@@ -1456,12 +1587,15 @@ def _build_improvement_prompt(
     provided (from _content_score), the prompt gives specific per-check instructions
     rather than a generic checklist — and explicitly warns about GEO NOTES placeholders
     and regression violations from the previous try.
+
+    page_type lets the fix-instruction lookup choose page-type-specific variants
+    (e.g. STRUCTURED_ELEMENTS_LOW_TECHNICAL for technical pages).
     """
     failing = failing_checks or []
     ph_issues = placeholder_issues or []
     regressions = regression_violations or []
 
-    # Build targeted fix section
+    # Build targeted fix section (with page-type-specific dispatch per Fix 3 / §4.3)
     if failing:
         fix_lines = ["## FAILING CONTENT CHECKS — FIX THESE FIRST\n"]
         fix_lines.append(
@@ -1469,8 +1603,9 @@ def _build_improvement_prompt(
             "Each one has an exact fix described below.\n"
         )
         for code in failing:
-            if code in _CONTENT_FIX_INSTRUCTIONS:
-                fix_lines.append(_CONTENT_FIX_INSTRUCTIONS[code])
+            instruction = _resolve_fix_instruction(code, page_type)
+            if instruction:
+                fix_lines.append(instruction)
                 fix_lines.append("")
         targeted_fixes = "\n".join(fix_lines)
     else:
@@ -1631,6 +1766,7 @@ async def stream_rewrite_variants(
                 current_score=current_best_score,
                 placeholder_issues=current_best_ph_issues,
                 regression_violations=current_best_regressions,
+                page_type=page_type,
             )
         )
 

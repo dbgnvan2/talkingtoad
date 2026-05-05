@@ -1550,3 +1550,161 @@ class TestFabricatedLinkScoring:
         _, _, codes, inv = _content_score("http://x.com", text, "general")
         assert "EXTERNAL_CITATIONS_LOW" not in codes
         assert "EXTERNAL_CITATIONS_LOW" not in inv["partial_pass_checks"]
+
+
+# ---------------------------------------------------------------------------
+# Fix 3 — CR4_* — page-type-conditional structural check
+# ---------------------------------------------------------------------------
+
+# A 500+ word base with neither structure nor answer signal that we can append to.
+# Sized generously so structural-check tests still trigger Check 5 after the
+# fixture content is appended (Check 5 requires word_count >= 500).
+_BARE_PROSE_500 = (
+    "This document covers various memory approaches in depth. " * 80
+)
+
+
+class TestPageTypeStructuralCheck:
+    """CR4.x — _structural_check_passes dispatches per page_type; helpers behave correctly."""
+
+    # ── §4.2.a — _has_numbered_list_with_min_items ──────────────────────────
+
+    def test_cr4_2_numbered_list_helper(self):
+        """§4.2.a — helper returns True only when ≥ min_items consecutive items present."""
+        from api.services.geo_rewrite_prompt import _has_numbered_list_with_min_items
+        text_3 = "1. step one\n2. step two\n3. step three\n"
+        text_2 = "1. step one\n2. step two\nbroken by prose\n3. step three\n"
+        assert _has_numbered_list_with_min_items(text_3, 3) is True
+        assert _has_numbered_list_with_min_items(text_2, 3) is False
+        # 2 consecutive in text_2 should still satisfy min=2
+        assert _has_numbered_list_with_min_items(text_2, 2) is True
+
+    # ── §4.2.b — _table_has_min_rows ────────────────────────────────────────
+
+    def test_cr4_2_table_min_rows_helper(self):
+        """§4.2.b — helper counts data rows excluding header + separator."""
+        from api.services.geo_rewrite_prompt import _table_has_min_rows
+        # Header + separator + 2 data rows
+        table_2 = (
+            "| Col A | Col B |\n"
+            "|-------|-------|\n"
+            "| a1    | b1    |\n"
+            "| a2    | b2    |\n"
+        )
+        assert _table_has_min_rows(table_2, 2) is True
+        assert _table_has_min_rows(table_2, 3) is False
+        # No table at all
+        assert _table_has_min_rows("just prose with | a pipe | here", 1) is False
+
+    # ── §4.2.c-f — dispatch ────────────────────────────────────────────────
+
+    def test_cr4_2_technical_dispatch(self):
+        """§4.2.c — technical: code OR numbered list ≥3 passes; bullets-only fails."""
+        from api.services.geo_rewrite_prompt import _structural_check_passes
+        bullets_only = "Some prose.\n- a\n- b\n- c\n"
+        with_code = "Some prose.\n```\nnpm install foo\n```\n"
+        with_steps = "Some prose.\n1. one\n2. two\n3. three\n"
+        assert _structural_check_passes(bullets_only, "technical") is False
+        assert _structural_check_passes(with_code, "technical") is True
+        assert _structural_check_passes(with_steps, "technical") is True
+
+    def test_cr4_2_comparison_dispatch(self):
+        """§4.2.d — comparison: table ≥2 rows OR named list passes; prose-only fails."""
+        from api.services.geo_rewrite_prompt import _structural_check_passes
+        prose = "OpenBrain is open. ChatGPT memory is closed.\n"
+        with_table = (
+            "| Feature | OpenBrain | ChatGPT |\n"
+            "|---------|-----------|---------|\n"
+            "| Open    | Yes       | No      |\n"
+            "| Self-host | Yes     | No      |\n"
+        )
+        # Named list per current heuristic (proper noun past idx=0)
+        with_named_list = (
+            "- Use Supabase for storage\n"
+            "- Try OpenAI memory plugin\n"
+        )
+        assert _structural_check_passes(prose, "comparison") is False
+        assert _structural_check_passes(with_table, "comparison") is True
+        assert _structural_check_passes(with_named_list, "comparison") is True
+
+    def test_cr4_2_faq_dispatch(self):
+        """§4.2.e — faq: ≥3 Q&A pairs passes; <3 fails."""
+        from api.services.geo_rewrite_prompt import _structural_check_passes
+        two_pairs = (
+            "## What is X?\nA brief explanation.\n\n"
+            "## How does Y work?\nIt does Y by Z.\n\n"
+        )
+        three_pairs = two_pairs + "## Why use W?\nBecause of reasons.\n"
+        assert _structural_check_passes(two_pairs, "faq") is False
+        assert _structural_check_passes(three_pairs, "faq") is True
+
+    def test_cr4_2_general_dispatch_unchanged(self):
+        """§4.2.f — general/article: any structured element passes (legacy behaviour)."""
+        from api.services.geo_rewrite_prompt import _structural_check_passes
+        with_bullets = "Some prose.\n- a\n- b\n"
+        prose_only = "Just prose with no structured elements at all.\n"
+        for pt in ("general", "article"):
+            assert _structural_check_passes(with_bullets, pt) is True
+            assert _structural_check_passes(prose_only, pt) is False
+
+    # ── §4.3 — fix-instruction dispatch ────────────────────────────────────
+
+    def test_cr4_3_per_type_fix_instruction_dispatched(self):
+        """§4.3 — _resolve_fix_instruction returns page-type-specific variant when defined."""
+        from api.services.geo_rewrite_prompt import _resolve_fix_instruction
+        tech = _resolve_fix_instruction("STRUCTURED_ELEMENTS_LOW", "technical")
+        comp = _resolve_fix_instruction("STRUCTURED_ELEMENTS_LOW", "comparison")
+        faq = _resolve_fix_instruction("STRUCTURED_ELEMENTS_LOW", "faq")
+        gen = _resolve_fix_instruction("STRUCTURED_ELEMENTS_LOW", "general")
+        assert tech and "(technical page)" in tech
+        assert comp and "(comparison page)" in comp
+        assert faq and "(FAQ page)" in faq
+        # general falls back to the bare entry (no page-type label)
+        assert gen and "(technical page)" not in gen and "(comparison page)" not in gen
+
+    # ── §4.4 — end-to-end: scoring respects page_type ──────────────────────
+
+    def test_cr4_4_technical_no_code_fails(self):
+        """§4.4.a — technical page with bullets only (no code, no numbered list ≥3) fails."""
+        text = _BARE_PROSE_500 + "\n- bullet 1\n- bullet 2\n- bullet 3\n"
+        _, _, fails, _ = _content_score("http://x.com", text, "technical")
+        assert "STRUCTURED_ELEMENTS_LOW" in fails
+
+    def test_cr4_4_technical_with_code_passes(self):
+        """§4.4.b — same page + a code block passes."""
+        text = _BARE_PROSE_500 + "\n```\nnpm install foo\n```\n"
+        _, _, fails, _ = _content_score("http://x.com", text, "technical")
+        assert "STRUCTURED_ELEMENTS_LOW" not in fails
+
+    def test_cr4_4_comparison_table_required(self):
+        """§4.4.c — comparison page with prose only fails; with table passes."""
+        prose = _BARE_PROSE_500
+        with_table = prose + (
+            "\n| Feature | A | B |\n|---|---|---|\n"
+            "| Open    | Yes | No |\n| Self-host | Yes | No |\n"
+        )
+        _, _, fails_prose, _ = _content_score("http://x.com", prose, "comparison")
+        _, _, fails_table, _ = _content_score("http://x.com", with_table, "comparison")
+        assert "STRUCTURED_ELEMENTS_LOW" in fails_prose
+        assert "STRUCTURED_ELEMENTS_LOW" not in fails_table
+
+    def test_cr4_4_faq_three_pairs_required(self):
+        """§4.4.d — FAQ page with 2 pairs fails; with 3 pairs passes."""
+        two = _BARE_PROSE_500 + (
+            "\n## What is X?\nA brief explanation here.\n"
+            "\n## How does Y work?\nIt does Y by Z.\n"
+        )
+        three = two + "\n## Why use W?\nBecause of reasons.\n"
+        _, _, fails_two, _ = _content_score("http://x.com", two, "faq")
+        _, _, fails_three, _ = _content_score("http://x.com", three, "faq")
+        assert "STRUCTURED_ELEMENTS_LOW" in fails_two
+        assert "STRUCTURED_ELEMENTS_LOW" not in fails_three
+
+    def test_cr4_4_general_unchanged(self):
+        """§4.4.e — general/article pages keep legacy behaviour (any list/table/code passes)."""
+        with_bullets = _BARE_PROSE_500 + "\n- a\n- b\n- c\n"
+        for pt in ("general", "article"):
+            _, _, fails, _ = _content_score("http://x.com", with_bullets, pt)
+            assert "STRUCTURED_ELEMENTS_LOW" not in fails, (
+                f"page_type={pt} should accept any structured element (legacy behaviour)"
+            )
