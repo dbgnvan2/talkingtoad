@@ -479,6 +479,21 @@ _MD_DATE_RE = re.compile(
 _BEST_OF_N = 5
 
 # ---------------------------------------------------------------------------
+# Score blending weights for stream_rewrite_variants (Fix 6 / §7)
+# ---------------------------------------------------------------------------
+# ⚠️  These weights are PROVISIONAL and NOT empirically validated.
+# Future work will measure correlation between projected_score and the actual
+# recrawl GEO score across a corpus of rewrites, then tune the blend.  Until
+# that validation exists, treat any score change of <5 points as within the
+# margin of weighting uncertainty.  See:
+#   docs/implementation_plan_geo_validation.md (planned, not yet written)
+_QUERY_COVERAGE_WEIGHT: float = 0.8
+_CONTENT_QUALITY_WEIGHT: float = 0.2
+assert abs(_QUERY_COVERAGE_WEIGHT + _CONTENT_QUALITY_WEIGHT - 1.0) < 1e-9, (
+    "Score blend weights must sum to 1.0"
+)
+
+# ---------------------------------------------------------------------------
 # Preservation floor extraction (RP1)
 # ---------------------------------------------------------------------------
 
@@ -848,8 +863,40 @@ _PLACEHOLDER_CITATION_RE = re.compile(
 _PLACEHOLDER_QUOTE_RE = re.compile(r"\[QUOTE\s+NEEDED[^\]]*\]", re.I)
 _PLACEHOLDER_STAT_RE = re.compile(r"\[STATISTIC[^\]]*\]", re.I)
 
-# GEO NOTES section delimiter — matches the trailing "---\nGEO NOTES\n..." block
-_GEO_NOTES_SPLIT_RE = re.compile(r"\n---\s*\nGEO NOTES\b.*$", re.S | re.I)
+# Fabricated outbound link detection (Fix 7.5 / §8.5).
+# An LLM-hallucinated citation often points at example.com, placeholder domains,
+# or contains words like "fabricated", "made-up", "todo", "fixme".  These are
+# treated as placeholders (partial credit), not real citations (full pass).
+_FABRICATED_LINK_RE = re.compile(
+    r"https?://"
+    r"(?:"
+    r"example\.(?:com|org|net|io|app)"            # placeholder TLDs
+    r"|placeholder\.[a-z]+"                       # any placeholder.*
+    r"|[^/\s)]*(?:fabricated|made-up|todo|fixme|example|placeholder)[^/\s)]*"
+    r")",
+    re.I,
+)
+
+
+def _is_real_external_link(url: str) -> bool:
+    """Return False if the URL looks like an LLM-hallucinated citation."""
+    return not _FABRICATED_LINK_RE.search(url)
+
+# GEO NOTES section delimiter (Fix 7.3 / §8.3) — matches the documented format only.
+# Required structure:
+#   \n---\n
+#   GEO NOTES\n
+#   - [TAG ...] notes-line(s)\n   ← at least one bracket-tag bullet
+# This prevents accidental truncation when the body coincidentally contains
+# the tokens "GEO NOTES" as a heading.  CR_ADJ_3 extends with leading-whitespace
+# tolerance for the bullet markers (LLMs sometimes indent them).
+_GEO_NOTES_SPLIT_RE = re.compile(
+    r"\n---\s*\n"
+    r"GEO NOTES\s*\n"
+    r"(?:\s*-\s+\[[A-Z][^\]]*\][^\n]*\n?)+"
+    r"\s*$",
+    re.S | re.I,
+)
 
 
 def _split_body_and_notes(text: str) -> tuple[str, str]:
@@ -1216,37 +1263,58 @@ def _project_score_from_findings(
 _CONTENT_FIX_INSTRUCTIONS: dict[str, str] = {
     "EXTERNAL_CITATIONS_LOW": (
         "**EXTERNAL_CITATIONS_LOW** — No citation or markdown link found in the body text.\n"
-        "Fix: Add at least one `[text](https://url)` markdown link to an external source, "
-        "OR embed `[CITATION NEEDED: describe the source type]` INLINE in the body — at the "
-        "point in the paragraph where the citation belongs.\n"
-        "Example: _This approach reduces latency [CITATION NEEDED: peer-reviewed benchmark study]._\n"
+        "Fix: Add at least one `[text](https://url)` markdown link to a source ONLY if that "
+        "source already appeared in the original. Otherwise embed "
+        "`[CITATION NEEDED: describe the source type]` INLINE in the body — at the point in "
+        "the paragraph where the citation belongs.\n"
+        "✅ DO: _This approach reduces latency [CITATION NEEDED: peer-reviewed benchmark study]._\n"
+        "❌ DO NOT: _This approach reduces latency 40% according to a Stanford study._\n"
+        "  (The '40%' figure and 'Stanford study' attribution were not in the original — "
+        "this is fabrication.)\n"
         "⚠️  Listing it in GEO NOTES does NOT count. It must appear in the body paragraph."
     ),
     "STATISTICS_COUNT_LOW": (
         "**STATISTICS_COUNT_LOW** — No specific number with a unit found in the body text.\n"
-        "Fix: Add at least one concrete figure (percentage, time, count, size) OR embed "
-        "`[STATISTIC: describe what data is needed]` INLINE in the body at the relevant point.\n"
-        "Example: _Setup typically takes under 45 minutes [STATISTIC: median time from user survey]._\n"
+        "Fix: Add at least one concrete figure (percentage, time, count, size) ONLY if it "
+        "appeared in the original. Otherwise embed `[STATISTIC: describe what data is needed]` "
+        "INLINE in the body at the relevant point.\n"
+        "✅ DO: _Setup time varies by infrastructure choice [STATISTIC: typical setup duration]._\n"
+        "❌ DO NOT: _Setup typically takes under 45 minutes [STATISTIC: median setup time]._\n"
+        "  (The number '45 minutes' was not in the original — this is fabrication.)\n"
         "⚠️  Listing it in GEO NOTES does NOT count. It must appear in the body paragraph."
     ),
     "QUOTATIONS_MISSING": (
         "**QUOTATIONS_MISSING** — No attribution phrase or blockquote found in the body.\n"
-        "Fix (choose one): Add 'According to [source], …' OR add a Markdown blockquote "
-        "(> text) OR embed `[QUOTE NEEDED: speaker and context]` INLINE at the relevant point.\n"
-        "Example: _According to the Supabase documentation, pgvector supports cosine similarity._\n"
+        "Fix (choose one): Add an attribution that already appeared in the original, OR add a "
+        "Markdown blockquote (> text) preserving original wording, OR embed "
+        "`[QUOTE NEEDED: speaker and context]` INLINE at the relevant point.\n"
+        "✅ DO: _Per the project's official documentation, [QUOTE NEEDED: capability claim from "
+        "primary source]._\n"
+        "❌ DO NOT: _According to the Supabase documentation, pgvector supports cosine similarity._\n"
+        "  (Both the 'Supabase' attribution and the 'cosine similarity' technical claim were "
+        "not in the original — this is fabrication.)\n"
         "⚠️  Listing it in GEO NOTES does NOT count. It must appear in the body paragraph."
     ),
     "STRUCTURED_ELEMENTS_LOW": (
         "**STRUCTURED_ELEMENTS_LOW** — No Markdown list, table, or code block found.\n"
-        "Fix: Convert a suitable prose list to a bulleted list (`- item`) or numbered list "
-        "(`1. step`), add a comparison table (`| Col | Col |`), or add a code block (``` ```).\n"
-        "The setup steps section is the natural candidate for a numbered list."
+        "Fix: Convert existing prose into structured form. Bulleted/numbered lists for steps, "
+        "tables for comparisons, code blocks for syntax. Use only content that already exists "
+        "in the page — do NOT invent items just to fill a table.\n"
+        "✅ DO: _Convert the setup paragraph into a numbered list with one step per line._\n"
+        "❌ DO NOT: _Invent a comparison table listing competing platforms not mentioned in "
+        "the original (e.g. 'OpenBrain vs MemGPT vs Mem0' according to a 2024 benchmark)._\n"
+        "  (Adding fabricated structural elements is worse than the missing structure itself.)"
     ),
     "FIRST_VIEWPORT_NO_ANSWER": (
         "**FIRST_VIEWPORT_NO_ANSWER** — The first 100–200 words do not contain a direct answer.\n"
-        "Fix: Rewrite the intro so the first sentence states what the subject IS, concretely.\n"
-        "Example: _OpenBrain is a personal AI memory database that stores your context in a "
-        "PostgreSQL database you control._\n"
+        "Fix: Rewrite the intro so the first sentence states what the subject IS, concretely. "
+        "Use only facts that appear in the original.\n"
+        "✅ DO: _OpenBrain is a personal AI memory database that stores your context in a "
+        "database you control._\n"
+        "❌ DO NOT: _OpenBrain is the leading personal AI memory database, adopted by millions "
+        "of users according to recent benchmarks._\n"
+        "  ('Leading' and 'millions of users according to recent benchmarks' are unsupported "
+        "superlatives — this is fabrication.)\n"
         "Do NOT start with 'In this guide…', 'Many users face…', or 'Let's explore…'."
     ),
 }
@@ -1507,7 +1575,11 @@ async def stream_rewrite_variants(
                 query_projected = _project_score_from_findings(findings_for_projection, new_qm_score)
                 # Blend: 80% query coverage + 20% content quality so issue
                 # count actually affects the projected score
-                projected_score = round(0.8 * query_projected + 0.2 * c_score, 4)
+                projected_score = round(
+                    _QUERY_COVERAGE_WEIGHT * query_projected
+                    + _CONTENT_QUALITY_WEIGHT * c_score,
+                    4,
+                )
             else:
                 projected_score = c_score
         else:
@@ -1597,6 +1669,11 @@ async def stream_rewrite_variants(
         "winner_projected_score": winner.get("projected_score", 0.0),
         "winner_text": winner.get("text", ""),
         "knowledge_gaps": knowledge_gaps,
+        "scoring_metadata": {
+            "query_coverage_weight": _QUERY_COVERAGE_WEIGHT,
+            "content_quality_weight": _CONTENT_QUALITY_WEIGHT,
+            "weighting_validated": False,
+        },
         "variants": [
             {
                 "index": v["index"],

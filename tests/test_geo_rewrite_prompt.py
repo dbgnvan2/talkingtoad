@@ -10,8 +10,18 @@ Tests:
   C.4 — STYLE CONSTRAINTS section contains anti-AI rules
   C.5 — _build_synthetic_parsed_page extracts correct fields from markdown
   C.6 — _score_markdown returns 0 for ideal content, > 0 for thin content
+
+  CR2_*  — Fix 1 (correctness pass): fix-instruction examples non-fabricating
+  CR3_*  — Fix 2: placeholder cap + 4-tuple return
+  CR4_*  — Fix 3: page-type-conditional structural check
+  CR5_*  — Fix 4: entity-set named-list detection
+  CR6_*  — Fix 5: numbered-output query-match parser
+  CR7_*  — Fix 6: score-blend constants surfaced
+  CR8_*  — Fix 7: small correctness fixes (FAQ, prohibitions, regex, links)
+  CR_ADJ_* — Adjacent fixes pulled into scope
 """
 
+import re
 import pytest
 
 from api.services.geo_rewrite_prompt import (
@@ -435,14 +445,19 @@ class TestSplitBodyAndNotes:
 
     def test_dashes_before_geo_notes_not_in_body(self):
         """The --- separator itself must not appear in the returned body."""
-        text = "Body.\n---\nGEO NOTES\n- note"
+        # Use spec-compliant format (Fix 7.3 / §8.3): bullets must be bracket-tagged
+        text = "Body.\n---\nGEO NOTES\n- [CITATION NEEDED] note"
         body, notes = _split_body_and_notes(text)
         assert "GEO NOTES" not in body
         assert "---" not in body
 
     def test_multiple_dashes_only_splits_at_geo_notes(self):
         """An --- that is NOT followed by GEO NOTES must stay in body."""
-        text = "Section 1.\n\n---\n\nSection 2.\n\n---\nGEO NOTES\n- note"
+        # Use spec-compliant format (Fix 7.3 / §8.3): bullets must be bracket-tagged
+        text = (
+            "Section 1.\n\n---\n\nSection 2.\n\n"
+            "---\nGEO NOTES\n- [CITATION NEEDED] note"
+        )
         body, notes = _split_body_and_notes(text)
         # Section 1 and the first --- are in body
         assert "Section 1" in body
@@ -1116,3 +1131,221 @@ class TestPreservationFloor:
         assert score_zero >= score_one >= score_two, (
             f"Monotonicity violated: zero={score_zero}, one={score_one}, two={score_two}"
         )
+
+
+# =============================================================================
+# CORRECTNESS PASS — spec: docs/implementation_plan_geo_rewrite_correctness_2026-05-04.md
+# =============================================================================
+
+# ---------------------------------------------------------------------------
+# Fix 1 — CR2_* — _CONTENT_FIX_INSTRUCTIONS examples are non-fabricating
+# ---------------------------------------------------------------------------
+
+class TestFixInstructionExamples:
+    """CR2.x — examples in _CONTENT_FIX_INSTRUCTIONS must not model fabrication."""
+
+    _NUMBER_WITH_UNIT_RE = re.compile(
+        r"\d+\s*(?:%|percent|minute|hour|second|day|year|million|billion|thousand)",
+        re.I,
+    )
+    _NAMED_BRAND_IN_DONT_RE = re.compile(
+        r"\b(Supabase|Stanford|Google|Amazon|Microsoft|OpenAI|Anthropic|"
+        r"GitHub|MemGPT|Mem0|Notion|ChatGPT|Claude)\b"
+    )
+
+    def _extract_do(self, instruction: str) -> str | None:
+        """Pull the line(s) immediately following ✅ DO: up to the next sentinel."""
+        m = re.search(
+            r"✅ DO:\s*(.+?)(?=\n\s*(?:❌|⚠️|Do NOT)|\Z)",
+            instruction, re.S
+        )
+        return m.group(1).strip() if m else None
+
+    def _extract_dont(self, instruction: str) -> str | None:
+        """Pull the line(s) immediately following ❌ DO NOT: up to the next sentinel."""
+        m = re.search(
+            r"❌ DO NOT:\s*(.+?)(?=\n\s*(?:⚠️|Do NOT)|\Z)",
+            instruction, re.S
+        )
+        return m.group(1).strip() if m else None
+
+    def test_cr2_2_stats_do_no_numbers(self):
+        """§2.2.a — STATISTICS_COUNT_LOW DO example contains no specific numeric value."""
+        from api.services.geo_rewrite_prompt import _CONTENT_FIX_INSTRUCTIONS
+        do = self._extract_do(_CONTENT_FIX_INSTRUCTIONS["STATISTICS_COUNT_LOW"])
+        assert do is not None, "DO line not extractable"
+        assert not self._NUMBER_WITH_UNIT_RE.search(do), (
+            f"STATS DO contains specific number: {do!r}"
+        )
+
+    def test_cr2_2_quote_do_no_named_source(self):
+        """§2.2.b — QUOTATIONS_MISSING DO example uses no specific named source."""
+        from api.services.geo_rewrite_prompt import _CONTENT_FIX_INSTRUCTIONS
+        do = self._extract_do(_CONTENT_FIX_INSTRUCTIONS["QUOTATIONS_MISSING"])
+        assert do is not None
+        assert not self._NAMED_BRAND_IN_DONT_RE.search(do), (
+            f"QUOTE DO references a specific brand: {do!r}"
+        )
+
+    def test_cr2_3_all_entries_have_do_and_dont(self):
+        """§2.3.a — every entry has both ✅ DO: and ❌ DO NOT: lines."""
+        from api.services.geo_rewrite_prompt import _CONTENT_FIX_INSTRUCTIONS
+        for code, instruction in _CONTENT_FIX_INSTRUCTIONS.items():
+            assert "✅ DO:" in instruction, f"{code} missing ✅ DO:"
+            assert "❌ DO NOT:" in instruction, f"{code} missing ❌ DO NOT:"
+
+    def test_cr2_3_dont_examples_demonstrate_fabrication(self):
+        """§2.3.b — fabrication-prone DO NOT lines must contain a fabrication signal."""
+        from api.services.geo_rewrite_prompt import _CONTENT_FIX_INSTRUCTIONS
+        FABRICATION_PRONE = {
+            "STATISTICS_COUNT_LOW", "QUOTATIONS_MISSING",
+            "EXTERNAL_CITATIONS_LOW", "FIRST_VIEWPORT_NO_ANSWER",
+        }
+        for code in FABRICATION_PRONE:
+            dont = self._extract_dont(_CONTENT_FIX_INSTRUCTIONS[code])
+            assert dont is not None, f"{code} DO NOT not extractable"
+            has_number = bool(self._NUMBER_WITH_UNIT_RE.search(dont))
+            has_named = bool(self._NAMED_BRAND_IN_DONT_RE.search(dont))
+            has_superlative = bool(re.search(
+                r"\b(leading|best|millions of|industry[- ]leading|top[- ]rated)\b",
+                dont, re.I,
+            ))
+            assert has_number or has_named or has_superlative, (
+                f"{code} DO NOT lacks a fabrication signal "
+                f"(no number/named-brand/superlative): {dont!r}"
+            )
+
+    def test_cr2_4_do_no_numbers_dont_has_numbers(self):
+        """§2.4 — across all entries: no DO has numbers; ≥1 DO NOT in stats/cite has them."""
+        from api.services.geo_rewrite_prompt import _CONTENT_FIX_INSTRUCTIONS
+        # Part A: DO lines must never contain a number-with-unit
+        for code, instruction in _CONTENT_FIX_INSTRUCTIONS.items():
+            do = self._extract_do(instruction)
+            if do:
+                assert not self._NUMBER_WITH_UNIT_RE.search(do), (
+                    f"{code} DO contains number with unit: {do!r}"
+                )
+        # Part B: at least one DO NOT in {stats, citations} must contain a number
+        # (proves the test isn't vacuously passing)
+        any_number_in_dont = False
+        for code in ("STATISTICS_COUNT_LOW", "EXTERNAL_CITATIONS_LOW"):
+            dont = self._extract_dont(_CONTENT_FIX_INSTRUCTIONS[code])
+            if dont and self._NUMBER_WITH_UNIT_RE.search(dont):
+                any_number_in_dont = True
+        assert any_number_in_dont, (
+            "No DO NOT example in stats/citations contains a number — "
+            "the contrast test is vacuous."
+        )
+
+
+# ---------------------------------------------------------------------------
+# Fix 6 — CR7_* — score-blend weights surfaced as constants + done event metadata
+# ---------------------------------------------------------------------------
+
+class TestScoreBlendConstants:
+    """CR7.x — _QUERY_COVERAGE_WEIGHT and _CONTENT_QUALITY_WEIGHT are named, sum to 1, exposed."""
+
+    def test_cr7_2_weights_sum_to_one(self):
+        """§7.2.a — weights are module-level and sum to 1.0."""
+        from api.services.geo_rewrite_prompt import (
+            _QUERY_COVERAGE_WEIGHT,
+            _CONTENT_QUALITY_WEIGHT,
+        )
+        assert isinstance(_QUERY_COVERAGE_WEIGHT, float)
+        assert isinstance(_CONTENT_QUALITY_WEIGHT, float)
+        assert abs((_QUERY_COVERAGE_WEIGHT + _CONTENT_QUALITY_WEIGHT) - 1.0) < 1e-9
+
+    def test_cr7_2_constants_documented_provisional(self):
+        """§7.2.b — the constants block flags itself as PROVISIONAL with a doc pointer."""
+        import api.services.geo_rewrite_prompt as mod
+        from pathlib import Path
+        src = Path(mod.__file__).read_text()
+        # The block must be self-documenting
+        assert "PROVISIONAL" in src, "Constants block does not flag itself as provisional"
+        assert "implementation_plan_geo_validation" in src, (
+            "Constants block does not point to the future validation plan"
+        )
+
+    def test_cr7_3_weighting_validated_false(self):
+        """§7.3 — done event scoring_metadata.weighting_validated defaults to False.
+
+        Verified at the source level since stream_rewrite_variants requires LLM calls.
+        """
+        import api.services.geo_rewrite_prompt as mod
+        from pathlib import Path
+        src = Path(mod.__file__).read_text()
+        assert '"weighting_validated": False' in src, (
+            "done_event does not include weighting_validated=False"
+        )
+        assert '"query_coverage_weight": _QUERY_COVERAGE_WEIGHT' in src
+        assert '"content_quality_weight": _CONTENT_QUALITY_WEIGHT' in src
+
+
+# ---------------------------------------------------------------------------
+# Fix 7.3 — CR8_3_* — _GEO_NOTES_SPLIT_RE tightened to documented format
+# ---------------------------------------------------------------------------
+
+class TestGeoNotesSplit:
+    """CR8_3 — body content with 'GEO NOTES' as a heading must NOT be split."""
+
+    def test_cr8_3_inline_heading_not_split(self):
+        """§8.3.a — `## GEO NOTES on this topic` (inline heading) is NOT a notes section."""
+        text = (
+            "Body content here.\n\n"
+            "## GEO NOTES on this topic\n\n"
+            "This paragraph appears to be a notes section but isn't.\n"
+        )
+        body, notes = _split_body_and_notes(text)
+        assert notes == "", f"Inline heading was incorrectly split as notes: {notes!r}"
+        assert "GEO NOTES on this topic" in body
+
+    def test_cr8_3_documented_format_splits(self):
+        """§8.3.b — the canonical `---\\nGEO NOTES\\n- [TAG]...\\n` format IS split."""
+        text = (
+            "Body content here.\n"
+            "\n---\n"
+            "GEO NOTES\n"
+            "- [CITATION NEEDED] added at: section X\n"
+            "- [STATISTIC: median time] added at: setup section\n"
+        )
+        body, notes = _split_body_and_notes(text)
+        assert "CITATION NEEDED" in notes, "Documented format failed to split"
+        assert "Body content here" in body
+        assert "GEO NOTES" not in body
+
+
+# ---------------------------------------------------------------------------
+# Fix 7.5 — CR8_5_* — fabricated outbound link detection (regex only here;
+# integration with _content_score in Step 5 / Fix 2)
+# ---------------------------------------------------------------------------
+
+class TestFabricatedLinkRegex:
+    """CR8_5.a/b — _FABRICATED_LINK_RE matches placeholder URLs, not real ones."""
+
+    def test_cr8_5_fabricated_link_regex_matches(self):
+        """§8.5.a — placeholder/fabricated URLs are matched."""
+        from api.services.geo_rewrite_prompt import _FABRICATED_LINK_RE
+        for url in [
+            "https://example.com",
+            "https://example.com/docs",
+            "https://example.org/path",
+            "http://example.net",
+            "https://placeholder.io/foo",
+            "https://made-up-domain.com",
+            "https://fabricated-source.org",
+            "https://todo.example.app/path",
+            "https://fixme-url.io",
+        ]:
+            assert _FABRICATED_LINK_RE.search(url), f"Should match: {url}"
+
+    def test_cr8_5_real_links_not_matched(self):
+        """§8.5.b — real URLs are NOT matched."""
+        from api.services.geo_rewrite_prompt import _FABRICATED_LINK_RE
+        for url in [
+            "https://supabase.com/docs/pgvector",
+            "https://github.com/foo/bar",
+            "https://docs.python.org/3/library/re.html",
+            "https://www.mindstudio.ai/blog/what-is-openbrain",
+            "https://en.wikipedia.org/wiki/Generative_engine_optimization",
+        ]:
+            assert not _FABRICATED_LINK_RE.search(url), f"Should NOT match: {url}"
