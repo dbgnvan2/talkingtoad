@@ -326,7 +326,7 @@ Omit the GEO NOTES section if you added no placeholders.
 
 9. **Do not introduce specific numbers** (durations such as "45 minutes", percentages,
    survey results, user counts, year ranges) that did not appear in the original text.
-   Use `[STATISTIC NEEDED: describe figure type]` as a placeholder instead.
+   Use `[STATISTIC: describe figure type]` as a placeholder instead.
 
 ---
 
@@ -580,6 +580,27 @@ _EMPHASIS_STOP_WORDS: frozenset[str] = frozenset({
     "The", "This", "That", "These", "Those",
 })
 
+# Pass 5 R4 — Common nouns that are often capitalised at sentence starts or
+# in headings but are NOT named entities.  Distinct from _EMPHASIS_STOP_WORDS
+# (UI labels) — these are topic-domain words that recur across many tech
+# articles ("Memory", "Database", "Platform") and would otherwise get falsely
+# promoted to entities by Strategy 3 on topic-focused pages.
+_DOMAIN_COMMON_NOUNS: frozenset[str] = frozenset({
+    # Generic technical nouns
+    "Memory", "Database", "System", "Platform", "Service", "Server", "Client",
+    "Data", "Information", "Content", "Document", "Page", "Site", "Website",
+    "Application", "App", "Software", "Hardware", "Network", "Internet",
+    "Account", "User", "Users", "Profile", "Project", "Workspace",
+    "File", "Folder", "Directory", "Repository", "Repo",
+    "Function", "Method", "Class", "Object", "Variable", "Parameter",
+    "Field", "Column", "Row", "Table", "Record", "Entry",
+    "Input", "Output", "Response", "Request", "Query", "Result",
+    "Process", "Procedure", "Workflow", "Pipeline", "Task",
+    # Common English nouns frequently capitalised at sentence start
+    "Question", "Answer", "Reason", "Example", "Case", "Issue", "Problem",
+    "Solution", "Approach",
+})
+
 _BACKTICK_ID_RE = re.compile(r"`([a-zA-Z_][a-zA-Z0-9_/.-]*)`")
 _SINGLE_CAP_WORD_RE = re.compile(r"\b[A-Z][a-zA-Z0-9]+\b")
 # Multi-word phrase: 2-4 capitalised tokens; each token may be hyphenated/apostrophe'd
@@ -593,9 +614,21 @@ _MULTIWORD_TITLE_RE = re.compile(
 def _extract_named_entities_from_text(text: str) -> frozenset[str]:
     """Extract candidate named entities from page text (Fix 4 / §5.2 / §5.3).
 
-    Returns a frozenset combining four detection strategies (see docstring above
-    the regex constants).  Allowlisted terms are normalised to lowercase; other
-    forms preserve the source casing.
+    Returns a frozenset combining four detection strategies:
+      1. Backtick-wrapped identifiers (case-preserving)
+      2. Multi-word title-case phrases of 2-4 words (skip if first word is
+         a stop word)
+      3. Single capitalised words appearing **>= 3 times** (Pass 5 R4: threshold
+         raised from 2 to 3 to avoid false positives on coincidental
+         sentence-start capitalisations).  Filters against both
+         _EMPHASIS_STOP_WORDS (UI labels) AND _DOMAIN_COMMON_NOUNS (topic
+         words like "Memory", "Database", "Platform").  Pass 5 R7: also skips
+         words already captured by Strategy 4 (allowlist) to avoid duplicates
+         like "API" and "api" in the same set.
+      4. Allowlisted technical terms (case-insensitive)
+
+    Allowlisted terms are normalised to lowercase; other forms preserve the
+    source casing.
 
     The extractor is conservative — false negatives (missing a real entity) are
     recoverable; false positives cause cascading wrong feedback to the
@@ -626,15 +659,23 @@ def _extract_named_entities_from_text(text: str) -> frozenset[str]:
             continue
         entities.add(phrase)
 
-    # Strategy 3 — single capitalised words appearing >= 2 times
+    # Strategy 3 — single capitalised words appearing >= 3 times.
+    # Pass 5 R4: threshold raised from 2 to 3 (a 2-occurrence word is too
+    # weak a signal — could be a one-time mention plus a sentence-start
+    # coincidence).  Also filters against _DOMAIN_COMMON_NOUNS so words like
+    # "Memory" / "Database" don't get falsely promoted on topic-focused pages.
+    # Pass 5 R7: skips words already captured by Strategy 4 (allowlist) to
+    # avoid duplicate entries like both "API" and "api" in the entity set.
     counter: dict[str, int] = {}
     for m in _SINGLE_CAP_WORD_RE.finditer(text):
         w = m.group(0)
-        if w in _EMPHASIS_STOP_WORDS:
+        if w in _EMPHASIS_STOP_WORDS or w in _DOMAIN_COMMON_NOUNS:
             continue
+        if w.lower() in _TECHNICAL_TERM_ALLOWLIST:
+            continue  # already captured by Strategy 4 (lowercase form)
         counter[w] = counter.get(w, 0) + 1
     for w, count in counter.items():
-        if count >= 2:
+        if count >= 3:  # Pass 5 R4: threshold raised from 2 to 3
             entities.add(w)
 
     return frozenset(entities)
@@ -737,7 +778,20 @@ def _count_faq_pairs(text: str) -> int:
 
 
 def _item_has_named_reference(item_line: str) -> bool:
-    """Return True if a list item line contains a proper noun or quoted string."""
+    """[DEPRECATED — Pass 5 R6] Legacy capitalisation heuristic for named-list
+    detection.
+
+    Replaced by `_item_references_known_entity` which compares against a
+    page-derived entity set.  Retained only for backwards compatibility with
+    callers that don't pass a known_entities set.  In current production code,
+    `_extract_preservation_floor` always provides known_entities, so this
+    function is effectively dead code in the rewrite path.
+
+    Will be removed when no caller passes known_entities=None for >= 2
+    release cycles.
+
+    Return True if a list item line contains a proper noun or quoted string.
+    """
     # Remove bullet/number marker and leading markup
     content = re.sub(r"^[-*+]|\d+[.)]\s*", "", item_line, count=1).strip()
     content = re.sub(r"^[*_]{1,2}", "", content).strip()
@@ -767,6 +821,11 @@ def _count_named_lists(
     to the legacy capitalisation heuristic via _item_has_named_reference.
     When provided, uses _item_references_known_entity which compares against
     the entity set extracted from the original page (Fix 4 / §5.2).
+
+    [Pass 5 R6] The legacy fallback is deprecated.  Production callers always
+    pass a non-empty known_entities set (via `_extract_preservation_floor`).
+    Remove the fallback in a future release after confirming no caller relies
+    on it for >= 2 release cycles.
     """
     lines = text.splitlines()
     named_list_count = 0
@@ -846,6 +905,21 @@ def _extract_preservation_floor(text: str) -> dict:
     # blocks so backtick-wrapped identifiers are captured.
     named_entities = _extract_named_entities_from_text(text)
 
+    # Pass 5 R2: detect what evidence categories the original page contained.
+    # Used by _content_score to decide whether placeholder credit should be
+    # full or partial: full when the original lacked the category (the
+    # rewriter is honestly flagging a content gap), partial when the original
+    # had it (the rewriter dropped real signal).
+    original_had_real_stat = bool(_STAT_RE_FULL.search(text_no_code))
+    original_had_real_citation = any(
+        _is_real_external_link(m.group(2))
+        for m in _MD_LINK_RE.finditer(text_no_code)
+    )
+    original_had_real_quote = (
+        bool(_MD_BLOCKQUOTE_RE.search(text_no_code))
+        or bool(_ATTRIBUTION_RE_FULL.search(text_no_code))
+    )
+
     return {
         "faq_pair_count":      _count_faq_pairs(text_no_code),
         "named_list_count":    _count_named_lists(text_no_code, named_entities),
@@ -858,6 +932,10 @@ def _extract_preservation_floor(text: str) -> dict:
         # the original number set.
         "original_number_set": _extract_specific_numbers(text),
         "named_entities":      named_entities,
+        # Pass 5 R2 — placeholder-credit calibration inputs:
+        "original_had_real_stat":     original_had_real_stat,
+        "original_had_real_citation": original_had_real_citation,
+        "original_had_real_quote":    original_had_real_quote,
     }
 
 
@@ -1064,6 +1142,30 @@ _PLACEHOLDER_CITATION_RE = re.compile(
 _PLACEHOLDER_QUOTE_RE = re.compile(r"\[QUOTE\s+NEEDED[^\]]*\]", re.I)
 _PLACEHOLDER_STAT_RE = re.compile(r"\[STATISTIC[^\]]*\]", re.I)
 
+# Pass 5 R3 — qualitative quantifiers: quantitative-but-vague phrases that
+# signal quantitative thinking without a specific number ("under an hour",
+# "most users").  Used at half-credit in the STATISTICS_COUNT_LOW check.
+#
+# Conservative pattern: each entry is a fixed phrase OR a phrase with a
+# narrow set of completions.  Loose patterns ("many", "often") are excluded
+# to prevent false positives on stylistic prose.  Per spec §12: false
+# negatives are recoverable via a placeholder; false positives inflate
+# scores invisibly — keep this regex narrow.
+_QUALITATIVE_QUANTIFIER_RE = re.compile(
+    r"\b(?:"
+    r"under\s+(?:an?\s+)?(?:second|minute|hour|day|week|month|year)s?"
+    r"|over\s+(?:an?\s+)?(?:second|minute|hour|day|week|month|year)s?"
+    r"|less\s+than\s+(?:an?\s+)?(?:second|minute|hour|day|week|month|year)s?"
+    r"|more\s+than\s+(?:an?\s+)?(?:second|minute|hour|day|week|month|year)s?"
+    r"|(?:most|majority\s+of|nearly\s+all|almost\s+all)\s+"
+    r"(?:users?|customers?|cases?|times?)"
+    r"|a\s+few\s+(?:steps?|minutes?|hours?|days?)"
+    r"|several\s+(?:steps?|minutes?|hours?|days?|users?|cases?)"
+    r"|fraction\s+of\s+(?:the\s+)?(?:cost|time|space|memory|bandwidth)"
+    r")\b",
+    re.I,
+)
+
 # Fabricated outbound link detection (Fix 7.5 / §8.5).
 # An LLM-hallucinated citation often points at example.com, placeholder domains,
 # or contains words like "fabricated", "made-up", "todo", "fixme".  These are
@@ -1189,8 +1291,10 @@ def _check_preservation_regression(
         if rewrite_floor["table_count"] == 0:
             violations.append("TABLE_REMOVED")
 
-    # Outbound link regression: original had ≥2; rewrite has 0
-    if original_features.get("outbound_link_count", 0) >= 2:
+    # Outbound link regression: original had ≥1; rewrite has 0 (Pass 5 R1).
+    # Threshold lowered from 2 to 1 because the cost of missing a real
+    # regression on a one-link page outweighs the cost of a false trigger.
+    if original_features.get("outbound_link_count", 0) >= 1:
         if rewrite_floor["outbound_link_count"] == 0:
             violations.append("OUTBOUND_LINK_REMOVED")
 
@@ -1320,17 +1424,24 @@ def _content_score(
     preservation regression checks are added (weight=2 each), growing the
     denominator accordingly.
 
-    Placeholder credit (Fix 2 / §3):
+    Placeholder credit (Fix 2 / §3, refined by Pass 5 R2):
       - Real evidence (e.g. real outbound link, real number, real attribution)
         → check passes fully.
-      - Only placeholders ([CITATION NEEDED], [STATISTIC: ...], [QUOTE NEEDED: ...])
-        → check passes at 0.5 credit (partial-pass).  fail_weight += weight × 0.5.
+      - Only placeholders ([CITATION NEEDED], [STATISTIC: ...], [QUOTE NEEDED: ...]):
+        - If `original_features` shows the original ALSO lacked this category
+          (Pass 5 R2): full pass — the rewriter is honestly flagging a real
+          content gap.  Rewards good rewrite behaviour.
+        - If the original HAD this category: partial pass at 0.5 credit
+          (fail_weight += weight × 0.5) — the rewriter dropped real signal.
+        - When `original_features` is None, the conservative default treats
+          all categories as having existed (matches Pass 4 behaviour).
       - Neither → check fails fully.
       - Cap rule (§3.5): at most 2 of the 3 placeholder-eligible checks may
         partial-pass; if all three would partial-pass, the alphabetically-first
         check (EXTERNAL_CITATIONS_LOW) is demoted to a full fail.  Tie-break
         is alphabetical because all three weights are equal (3); this is
-        documented and tested by CR3_5.
+        documented and tested by CR3_5.  Pass 5 R2 may shrink the
+        partial_passes set before the cap runs.
       - Fabricated outbound links (per _FABRICATED_LINK_RE) are treated as
         placeholders, not real citations.
 
@@ -1345,22 +1456,53 @@ def _content_score(
     fails: set[str] = set()
     partial_passes: set[str] = set()
 
-    # ── Check 1 — Statistics ────────────────────────────────────────────────
-    # Real: number-with-unit found by _STAT_RE_FULL.
-    # Placeholder: [STATISTIC: ...] in body.
+    # Pass 5 R2 — original-evidence presence (conservative default = True).
+    # When original_features is None, the safe assumption is that the original
+    # had each category of evidence (so placeholder use only gets partial
+    # credit, matching Pass 4 behaviour).  When original_features is provided,
+    # the more accurate "honest content gap" credit kicks in.
+    original_had_stat = (
+        original_features.get("original_had_real_stat", True)
+        if original_features else True
+    )
+    original_had_citation = (
+        original_features.get("original_had_real_citation", True)
+        if original_features else True
+    )
+    original_had_quote = (
+        original_features.get("original_had_real_quote", True)
+        if original_features else True
+    )
+
+    # ── Check 1 — Statistics (3-tier credit per Pass 5 R3) ──────────────────
+    # Real stat (digit + unit)              → full pass
+    # Qualitative quantifier ("under an hour", "most users") → partial pass
+    #   (regardless of original_had_real_stat — qualitative information is
+    #   genuinely quantitative, just less specific than a number)
+    # Placeholder [STATISTIC: ...] only:
+    #   if original had real stats           → partial pass (Pass 5 R2)
+    #   if original lacked real stats        → full pass (honest content gap)
+    # Neither                                → fail
     if word_count >= 500:
         has_real_stat = bool(_STAT_RE_FULL.search(body))
+        has_qualitative_stat = bool(_QUALITATIVE_QUANTIFIER_RE.search(body))
         has_placeholder_stat = bool(_PLACEHOLDER_STAT_RE.search(body))
         if has_real_stat:
             pass  # full pass
-        elif has_placeholder_stat:
+        elif has_qualitative_stat:
+            # Half-credit regardless of original_had_real_stat
             partial_passes.add("STATISTICS_COUNT_LOW")
+        elif has_placeholder_stat:
+            if original_had_stat:
+                partial_passes.add("STATISTICS_COUNT_LOW")
+            # else: full pass (rewriter correctly flagged a content gap)
         else:
             fails.add("STATISTICS_COUNT_LOW")
 
     # ── Check 2 — External citations ────────────────────────────────────────
     # Real: markdown link to a non-fabricated URL.
     # Placeholder: [CITATION NEEDED] OR markdown link to a fabricated URL.
+    # Pass 5 R2: placeholder gets full credit when original lacked citations.
     if word_count >= 500:
         real_links = [
             m for m in _MD_LINK_RE.finditer(body)
@@ -1378,13 +1520,16 @@ def _content_score(
         if has_real_citation:
             pass  # full pass
         elif has_placeholder_citation:
-            partial_passes.add("EXTERNAL_CITATIONS_LOW")
+            if original_had_citation:
+                partial_passes.add("EXTERNAL_CITATIONS_LOW")
+            # else: full pass (rewriter correctly flagged a content gap)
         else:
             fails.add("EXTERNAL_CITATIONS_LOW")
 
     # ── Check 3 — Quotations/attribution ────────────────────────────────────
     # Real: blockquote OR attribution phrase.
     # Placeholder: [QUOTE NEEDED: ...].
+    # Pass 5 R2: placeholder gets full credit when original lacked quotes.
     if word_count >= 500:
         has_real_quote = (
             bool(_MD_BLOCKQUOTE_RE.search(body))
@@ -1394,7 +1539,9 @@ def _content_score(
         if has_real_quote:
             pass
         elif has_placeholder_quote:
-            partial_passes.add("QUOTATIONS_MISSING")
+            if original_had_quote:
+                partial_passes.add("QUOTATIONS_MISSING")
+            # else: full pass (rewriter correctly flagged a content gap)
         else:
             fails.add("QUOTATIONS_MISSING")
 
@@ -1447,7 +1594,7 @@ def _content_score(
             applicable_checks += 1
         if original_features.get("table_count", 0) >= 1:
             applicable_checks += 1
-        if original_features.get("outbound_link_count", 0) >= 2:
+        if original_features.get("outbound_link_count", 0) >= 1:  # Pass 5 R1
             applicable_checks += 1
         if original_features.get("named_list_count", 0) >= 1:
             applicable_checks += 1
@@ -1782,10 +1929,14 @@ _REGRESSION_FIX_INSTRUCTIONS: dict[str, str] = {
         "for AI retrieval — they must appear intact.\n"
     ),
     "OUTBOUND_LINK_REMOVED": (
-        "### RESTORE OUTBOUND CITATION LINKS\n"
-        "The previous draft removed all external links. This is a FAILURE CONDITION.\n"
-        "- Restore every `[text](https://...)` link from the original.\n"
-        "- If a link cannot be verified, use `[SOURCE NEEDED: describe source type]` inline.\n"
+        "### RESTORE OUTBOUND CITATION LINK(S)\n"
+        "The previous draft removed external link(s) that the original had. "
+        "This is a FAILURE CONDITION.\n"
+        "- Restore every `[text](https://...)` link from the original. Even a single "
+        "outbound link to a primary source (vendor docs, RFC, peer-reviewed paper) is "
+        "a real GEO signal that should not be dropped.\n"
+        "- If the URL was lost during rewriting, use `[SOURCE NEEDED: describe source type]` "
+        "inline at the location where the link belongs.\n"
     ),
     "NAMED_LIST_GENERICISED": (
         "### RESTORE NAMED LISTS\n"

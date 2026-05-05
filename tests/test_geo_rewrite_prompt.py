@@ -2293,3 +2293,540 @@ class TestAdjacentFixes:
         assert any("99.9" in n for n in nums), (
             f"'99.9%' from code block must be in original_number_set: {nums}"
         )
+
+
+# =============================================================================
+# PASS 5 — spec: docs/implementation_plan_geo_rewrite_pass5_2026-05-04.md
+# =============================================================================
+
+# ---------------------------------------------------------------------------
+# Fix R1 (§3) — Outbound link regression threshold drops to >= 1
+# ---------------------------------------------------------------------------
+
+class TestOutboundLinkRegressionThreshold:
+    """R1.x — single outbound link loss now triggers OUTBOUND_LINK_REMOVED."""
+
+    def test_R1_single_link_loss_triggers_regression(self):
+        """§3.3 — original had 1 link, rewrite has 0 → fires regression."""
+        original_features = {
+            "outbound_link_count": 1,
+            "named_entities": frozenset(),
+        }
+        rewrite_no_links = "...rewritten text with no outbound links here. " * 50
+        violations = _check_preservation_regression(original_features, rewrite_no_links)
+        assert "OUTBOUND_LINK_REMOVED" in violations
+
+    def test_R1_link_preserved_no_regression(self):
+        """§10.1.b — rewrite preserves the link → no regression."""
+        original_features = {
+            "outbound_link_count": 1,
+            "named_entities": frozenset(),
+        }
+        rewrite_with_link = (
+            "Some prose. See [docs](https://supabase.com/docs) for details. "
+        ) * 50
+        violations = _check_preservation_regression(original_features, rewrite_with_link)
+        assert "OUTBOUND_LINK_REMOVED" not in violations
+
+    def test_R1_zero_original_links_no_regression(self):
+        """§10.1.c — original had no links → never triggers regression."""
+        original_features = {
+            "outbound_link_count": 0,
+            "named_entities": frozenset(),
+        }
+        rewrite = "...no links here at all..."
+        violations = _check_preservation_regression(original_features, rewrite)
+        assert "OUTBOUND_LINK_REMOVED" not in violations
+
+    def test_R1_denominator_includes_one_link_case(self):
+        """§3.2 Change 2 — _content_score grows denominator for 1-link originals."""
+        # Two scoring runs: one with original_features=None, one with 1-link features.
+        # The 1-link case must include the OUTBOUND_LINK_REMOVED check in the
+        # denominator (and trigger the violation since rewrite has 0 links).
+        rewrite = "Plain prose with no outbound links. " * 100  # word_count > 500
+        original_features = {
+            "outbound_link_count": 1,
+            "named_entities": frozenset(),
+        }
+        _, _, fails_with, _ = _content_score(
+            "http://x.com", rewrite, "general", original_features=original_features
+        )
+        assert "OUTBOUND_LINK_REMOVED" in fails_with, (
+            "1-link original with 0-link rewrite must trigger the regression"
+        )
+
+    def test_R1_instruction_handles_single_link(self):
+        """§3.2 Change 3 — fix instruction text mentions single-link case."""
+        from api.services.geo_rewrite_prompt import _REGRESSION_FIX_INSTRUCTIONS
+        instruction = _REGRESSION_FIX_INSTRUCTIONS["OUTBOUND_LINK_REMOVED"]
+        # Must mention the single-link case explicitly
+        assert "single" in instruction.lower(), (
+            "Instruction must call out the single-link case"
+        )
+        # Must reference [SOURCE NEEDED:] as the recovery placeholder
+        assert "[SOURCE NEEDED" in instruction
+
+
+# ---------------------------------------------------------------------------
+# Fix R5 (§7) — Hard Prohibition 9 placeholder name consistency
+# ---------------------------------------------------------------------------
+
+class TestHardProhibition9Format:
+    """R5.x — Hard Prohibition 9 uses [STATISTIC: ...], not [STATISTIC NEEDED: ...]."""
+
+    def test_R5_prompt_uses_consistent_statistic_placeholder(self):
+        """§7.3 — generated prompt has zero `[STATISTIC NEEDED` and contains the corrected form."""
+        report = _make_report()
+        result = generate_rewrite_prompt(report, "general")
+        prompt = result["system_prompt"]
+        assert "[STATISTIC NEEDED" not in prompt, (
+            "Hard Prohibition 9 must not use `[STATISTIC NEEDED` — the rest "
+            "of the prompt uses `[STATISTIC: ...]`."
+        )
+        # Must contain the corrected form
+        assert "[STATISTIC: describe figure type]" in prompt
+
+
+# ---------------------------------------------------------------------------
+# Fix R2 (§4) — Conditional placeholder credit based on original evidence
+# ---------------------------------------------------------------------------
+
+# A 600-word base (safely > 500 word_count gate) with no stat / citation /
+# quote / structure of any kind.  Each test appends evidence as needed.
+_BARE_PROSE_600 = (
+    "This document discusses memory approaches in depth without specific data. "
+) * 80
+
+
+class TestConditionalPlaceholderCredit:
+    """R2.x — placeholder credit becomes full when the original lacked the category."""
+
+    # ── §4.2 Change 1 — preservation floor exposes the new fields ───────────
+
+    def test_R2_floor_has_original_had_real_stat(self):
+        """§4.2.1.a — _extract_preservation_floor returns original_had_real_stat."""
+        floor = _extract_preservation_floor("Setup takes 45 minutes for the install.")
+        assert "original_had_real_stat" in floor
+        assert isinstance(floor["original_had_real_stat"], bool)
+        assert floor["original_had_real_stat"] is True
+        floor2 = _extract_preservation_floor("Setup is straightforward without specifics.")
+        assert floor2["original_had_real_stat"] is False
+
+    def test_R2_floor_has_original_had_real_citation(self):
+        """§4.2.1.b — _extract_preservation_floor returns original_had_real_citation."""
+        floor = _extract_preservation_floor(
+            "See [Supabase docs](https://supabase.com/docs) for details."
+        )
+        assert floor["original_had_real_citation"] is True
+        floor2 = _extract_preservation_floor("Plain prose with no markdown links at all.")
+        assert floor2["original_had_real_citation"] is False
+        # Fabricated link → does NOT count as real citation
+        floor3 = _extract_preservation_floor(
+            "See [docs](https://example.com) for details."
+        )
+        assert floor3["original_had_real_citation"] is False
+
+    def test_R2_floor_has_original_had_real_quote(self):
+        """§4.2.1.c — _extract_preservation_floor returns original_had_real_quote."""
+        floor_quote = _extract_preservation_floor("> This is a real blockquote.")
+        assert floor_quote["original_had_real_quote"] is True
+        floor_attrib = _extract_preservation_floor(
+            "According to the docs, this is documented behaviour."
+        )
+        assert floor_attrib["original_had_real_quote"] is True
+        floor_none = _extract_preservation_floor("Plain prose with no quotes or attribution.")
+        assert floor_none["original_had_real_quote"] is False
+
+    def test_R2_floor_fields_strip_code_blocks(self):
+        """§4.2.1.d — the new fields are computed from text WITH code stripped."""
+        # Numbers ONLY in code → original_had_real_stat is False
+        text_only_in_code = (
+            "Setup is straightforward.\n\n"
+            "```\nBenchmark: 45 minutes for 1M rows\n```\n"
+        )
+        floor = _extract_preservation_floor(text_only_in_code)
+        assert floor["original_had_real_stat"] is False, (
+            "Numbers inside code blocks must not count as real stats for R2"
+        )
+        # The number IS still in original_number_set (CR_ADJ_5 behaviour preserved)
+        assert any("45" in n for n in floor["original_number_set"])
+
+    # ── §4.2 Change 2 — placeholder gets full credit when original lacked ──
+
+    def test_R2_placeholder_full_credit_when_original_lacked_evidence(self):
+        """§4.2 — original lacked stats; rewrite uses placeholder → full pass."""
+        original_features = {
+            "original_had_real_stat":     False,
+            "original_had_real_citation": True,
+            "original_had_real_quote":    True,
+            "named_entities": frozenset(),
+        }
+        rewrite = _BARE_PROSE_600 + " Setup time depends on infra [STATISTIC: typical setup duration]."
+        _, _, fails, inv = _content_score(
+            "https://test.com", rewrite, "general", original_features=original_features
+        )
+        assert "STATISTICS_COUNT_LOW" not in fails
+        assert "STATISTICS_COUNT_LOW" not in inv["partial_pass_checks"], (
+            "Placeholder + original lacked stats → must be full pass, not partial"
+        )
+
+    def test_R2_citation_full_credit_when_original_lacked(self):
+        """§4.2 — same logic for citations."""
+        original_features = {
+            "original_had_real_stat":     True,
+            "original_had_real_citation": False,
+            "original_had_real_quote":    True,
+            "named_entities": frozenset(),
+        }
+        rewrite = _BARE_PROSE_600 + " Architecture details [CITATION NEEDED: vendor docs]."
+        _, _, fails, inv = _content_score(
+            "https://test.com", rewrite, "general", original_features=original_features
+        )
+        assert "EXTERNAL_CITATIONS_LOW" not in fails
+        assert "EXTERNAL_CITATIONS_LOW" not in inv["partial_pass_checks"]
+
+    def test_R2_quote_full_credit_when_original_lacked(self):
+        """§4.2 — same logic for quotations."""
+        original_features = {
+            "original_had_real_stat":     True,
+            "original_had_real_citation": True,
+            "original_had_real_quote":    False,
+            "named_entities": frozenset(),
+        }
+        rewrite = _BARE_PROSE_600 + " Per the project notes [QUOTE NEEDED: capability claim]."
+        _, _, fails, inv = _content_score(
+            "https://test.com", rewrite, "general", original_features=original_features
+        )
+        assert "QUOTATIONS_MISSING" not in fails
+        assert "QUOTATIONS_MISSING" not in inv["partial_pass_checks"]
+
+    def test_R2_placeholder_partial_credit_when_original_had_evidence(self):
+        """§4.2 — original had stats; rewrite uses placeholder → partial pass (penalised)."""
+        original_features = {
+            "original_had_real_stat":     True,
+            "original_had_real_citation": True,
+            "original_had_real_quote":    True,
+            "named_entities": frozenset(),
+        }
+        rewrite = _BARE_PROSE_600 + " Setup time depends on infra [STATISTIC: typical setup duration]."
+        _, _, _, inv = _content_score(
+            "https://test.com", rewrite, "general", original_features=original_features
+        )
+        assert "STATISTICS_COUNT_LOW" in inv["partial_pass_checks"], (
+            "When original had real stats, placeholder must be partial pass"
+        )
+
+    def test_R2_default_when_original_features_missing(self):
+        """§4.2 default — original_features=None → conservative default (cap to 2)."""
+        rewrite = (
+            _BARE_PROSE_600
+            + " [STATISTIC: x] [CITATION NEEDED: y] [QUOTE NEEDED: z]"
+        )
+        _, _, _, inv = _content_score("https://test.com", rewrite, "general")
+        # Without original_features, conservative default treats all 3 as had.
+        # Cap rule then demotes one → at most 2 partial-passes.
+        assert len(inv["partial_pass_checks"]) <= 2
+
+    def test_R2_cap_still_applies_after_filter(self):
+        """§4.2 Change 3 — cap rule still trims surviving partial-passes."""
+        original_features = {
+            "original_had_real_stat":     True,
+            "original_had_real_citation": True,
+            "original_had_real_quote":    True,
+            "named_entities": frozenset(),
+        }
+        rewrite = (
+            _BARE_PROSE_600
+            + " [STATISTIC: x] [CITATION NEEDED: y] [QUOTE NEEDED: z]"
+        )
+        _, _, _, inv = _content_score(
+            "https://test.com", rewrite, "general", original_features=original_features
+        )
+        # All three categories want partial-pass; cap demotes one to fail.
+        assert len(inv["partial_pass_checks"]) <= 2
+
+    def test_R2_docstring_mentions_original_had_logic(self):
+        """§4.2 Change 4 — docstring documents the new conditional rule."""
+        from api.services.geo_rewrite_prompt import _content_score as fn
+        doc = fn.__doc__ or ""
+        assert "Pass 5 R2" in doc, "Docstring must reference Pass 5 R2"
+        assert "honestly flagging" in doc or "content gap" in doc
+
+
+# ---------------------------------------------------------------------------
+# Fix R3 (§5) — Qualitative quantifier half-credit
+# ---------------------------------------------------------------------------
+
+class TestQualitativeQuantifiers:
+    """R3.x — qualitative quantifiers earn STATISTICS_COUNT_LOW partial-pass."""
+
+    def test_R3_qualitative_regex_exists_and_matches_spec_phrases(self):
+        """§5.2 Change 1 — _QUALITATIVE_QUANTIFIER_RE matches the documented phrases."""
+        from api.services.geo_rewrite_prompt import _QUALITATIVE_QUANTIFIER_RE
+        for phrase in [
+            "under an hour",
+            "under a minute",
+            "over a year",
+            "less than an hour",
+            "more than a day",
+            "most users",
+            "majority of customers",
+            "nearly all cases",
+            "almost all times",
+            "a few steps",
+            "several minutes",
+            "fraction of the cost",
+            "fraction of memory",
+        ]:
+            assert _QUALITATIVE_QUANTIFIER_RE.search(phrase), (
+                f"Should match qualitative phrase: {phrase!r}"
+            )
+
+    def test_R3_qualitative_regex_does_not_overmatch(self):
+        """§5.2 + §12 scope-discipline note — narrow regex avoids stylistic prose."""
+        from api.services.geo_rewrite_prompt import _QUALITATIVE_QUANTIFIER_RE
+        # Loose patterns must NOT match
+        for phrase in [
+            "many things",
+            "people often say",
+            "frequently observed",
+            "users find this",         # no quantifier
+            "most teams enjoy this",   # "teams" not in narrow completion list
+        ]:
+            assert not _QUALITATIVE_QUANTIFIER_RE.search(phrase), (
+                f"Should NOT match stylistic prose: {phrase!r}"
+            )
+
+    def test_R3_under_an_hour_passes_at_half_credit(self):
+        """§5.2/§5.3 — 'under an hour' → STATISTICS_COUNT_LOW partial-pass, not fail."""
+        rewrite = _BARE_PROSE_600 + " Setup typically takes under an hour to complete."
+        _, _, fails, inv = _content_score("https://test.com", rewrite, "general")
+        assert "STATISTICS_COUNT_LOW" not in fails
+        assert "STATISTICS_COUNT_LOW" in inv["partial_pass_checks"]
+
+    def test_R3_real_number_passes_at_full_credit(self):
+        """§5.3 control — real number → full pass (not partial)."""
+        rewrite = _BARE_PROSE_600 + " Setup takes 45 minutes to complete."
+        _, _, fails, inv = _content_score("https://test.com", rewrite, "general")
+        assert "STATISTICS_COUNT_LOW" not in fails
+        assert "STATISTICS_COUNT_LOW" not in inv["partial_pass_checks"]
+
+    def test_R3_no_quantifier_fails(self):
+        """§5.3 control — plain prose with no quantifier still fails the check."""
+        rewrite = (
+            "This document covers various topics in depth without specific data here. "
+        ) * 80  # ≈ 720 words, no stat / qualitative / placeholder
+        _, _, fails, _ = _content_score("https://test.com", rewrite, "general")
+        assert "STATISTICS_COUNT_LOW" in fails
+
+    def test_R3_qualitative_does_not_double_count_with_placeholder(self):
+        """§5.3 — both qualitative + placeholder → only one partial-pass entry."""
+        rewrite = (
+            _BARE_PROSE_600
+            + " Setup takes under an hour [STATISTIC: median time] for most installs."
+        )
+        _, _, _, inv = _content_score("https://test.com", rewrite, "general")
+        # Only one entry per code (set semantics) — but explicit assert for clarity
+        assert inv["partial_pass_checks"].count("STATISTICS_COUNT_LOW") <= 1
+
+    def test_R3_majority_users_qualifier_works(self):
+        """§5.3 — 'most users' → partial-pass (catches the OpenBrain pattern)."""
+        rewrite = _BARE_PROSE_600 + " Most users find this approach effective."
+        _, _, fails, inv = _content_score("https://test.com", rewrite, "general")
+        assert "STATISTICS_COUNT_LOW" in inv["partial_pass_checks"]
+        assert "STATISTICS_COUNT_LOW" not in fails
+
+    def test_R3_qualitative_not_extended_to_citations_or_quotes(self):
+        """§5.2 scope-discipline — qualitative-quantifier credit is stats-only.
+
+        A page with only qualitative quantifiers (no real citation, no
+        placeholder, no fabricated link) must still fail EXTERNAL_CITATIONS_LOW
+        and QUOTATIONS_MISSING.
+        """
+        rewrite = _BARE_PROSE_600 + " Setup takes under an hour for most users."
+        _, _, fails, _ = _content_score("https://test.com", rewrite, "general")
+        # Qualitative quantifier rescues stats but NOT citations or quotes
+        assert "EXTERNAL_CITATIONS_LOW" in fails
+        assert "QUOTATIONS_MISSING" in fails
+
+
+# ---------------------------------------------------------------------------
+# Fix R4 (§6) — Tightened entity extraction (stoplist + threshold 3)
+# ---------------------------------------------------------------------------
+
+class TestEntityExtractionTightening:
+    """R4.x — Strategy 3 filters _DOMAIN_COMMON_NOUNS and uses count >= 3."""
+
+    def test_R4_domain_common_nouns_constant_present(self):
+        """§6.2 Change 1 — _DOMAIN_COMMON_NOUNS exists and contains the spec'd words."""
+        from api.services.geo_rewrite_prompt import _DOMAIN_COMMON_NOUNS
+        for word in ("Memory", "Database", "System", "Platform",
+                     "Service", "Network", "Application"):
+            assert word in _DOMAIN_COMMON_NOUNS, (
+                f"_DOMAIN_COMMON_NOUNS missing required entry: {word}"
+            )
+
+    def test_R4_recurring_common_nouns_not_extracted(self):
+        """§6.2 Change 2 / §6.3 — 'Memory' recurring 5+ times is NOT promoted."""
+        from api.services.geo_rewrite_prompt import _extract_named_entities_from_text
+        text = (
+            "Memory is important. Memory matters. Memory should be preserved. "
+            "Memory comes in many forms. Memory is the topic of this article."
+        )
+        entities = _extract_named_entities_from_text(text)
+        assert "Memory" not in entities
+
+    def test_R4_database_recurring_not_extracted(self):
+        """§6.3 — 'Database' recurring is similarly excluded."""
+        from api.services.geo_rewrite_prompt import _extract_named_entities_from_text
+        text = "Database design. Database schemas. Database queries. Database tuning. Database growth."
+        entities = _extract_named_entities_from_text(text)
+        assert "Database" not in entities
+
+    def test_R4_proper_noun_threshold_3(self):
+        """§6.2 Change 3 — proper noun appearing exactly 2 times is NOT extracted."""
+        from api.services.geo_rewrite_prompt import _extract_named_entities_from_text
+        text_twice = "Acme is great. Acme delivers. Other words here."
+        entities_twice = _extract_named_entities_from_text(text_twice)
+        assert "Acme" not in entities_twice, (
+            "Pass 5 R4: 2-occurrence threshold raised to 3"
+        )
+
+        text_thrice = "Acme is great. Acme delivers. Acme excels."
+        entities_thrice = _extract_named_entities_from_text(text_thrice)
+        assert "Acme" in entities_thrice
+
+    def test_R4_allowlisted_term_still_captured_via_strategy_4(self):
+        """§6.3 — single-occurrence allowlisted term still captured via Strategy 4."""
+        from api.services.geo_rewrite_prompt import _extract_named_entities_from_text
+        text = "Supabase makes things easier."
+        entities = _extract_named_entities_from_text(text)
+        assert "supabase" in entities  # captured by allowlist regardless of count
+
+    def test_R4_docstring_documents_threshold_change(self):
+        """§6.2 Change 4 — docstring mentions threshold 3 + new stoplist."""
+        from api.services.geo_rewrite_prompt import _extract_named_entities_from_text
+        doc = _extract_named_entities_from_text.__doc__ or ""
+        assert "Pass 5 R4" in doc
+        assert "3 times" in doc or ">= 3" in doc
+        assert "_DOMAIN_COMMON_NOUNS" in doc
+
+
+# ---------------------------------------------------------------------------
+# Fix R7 (§9) — Strategy 3/4 deduplication
+# ---------------------------------------------------------------------------
+
+class TestStrategy34Dedup:
+    """R7.x — Strategy 3 skips words already captured by Strategy 4 allowlist."""
+
+    def test_R7_api_appears_only_once_in_entity_set(self):
+        """§9.3 — 'API' 4x → only lowercase 'api' from allowlist, not 'API' from Strategy 3."""
+        from api.services.geo_rewrite_prompt import _extract_named_entities_from_text
+        text = "The API is great. API design matters. API patterns. API is fundamental."
+        entities = _extract_named_entities_from_text(text)
+        assert "api" in entities  # captured by Strategy 4 allowlist
+        assert "API" not in entities, (
+            "Pass 5 R7: allowlisted lowercase form must be the only entry"
+        )
+
+    def test_R7_uppercase_acronym_not_in_allowlist_still_captured(self):
+        """§9.3 — non-allowlisted acronym recurring 3+ times still captured by Strategy 3."""
+        from api.services.geo_rewrite_prompt import _extract_named_entities_from_text
+        text = "RACI matrix. RACI roles. RACI assignments. RACI clarification."
+        entities = _extract_named_entities_from_text(text)
+        assert "RACI" in entities
+
+
+# ---------------------------------------------------------------------------
+# Fix R6 (§8) — Document legacy named-list heuristic as deprecated
+# ---------------------------------------------------------------------------
+
+class TestLegacyHeuristicDeprecation:
+    """R6.x — deprecation notes present in source (documentation-only change)."""
+
+    def test_R6_item_has_named_reference_marked_deprecated(self):
+        """§8.2 Change 1 — _item_has_named_reference docstring contains [DEPRECATED]."""
+        from api.services.geo_rewrite_prompt import _item_has_named_reference
+        doc = _item_has_named_reference.__doc__ or ""
+        assert "[DEPRECATED" in doc, "Function must be marked DEPRECATED"
+        assert "Pass 5 R6" in doc
+
+    def test_R6_count_named_lists_mentions_deprecation(self):
+        """§8.2 Change 2 — _count_named_lists docstring mentions Pass 5 R6 deprecation."""
+        from api.services.geo_rewrite_prompt import _count_named_lists
+        doc = _count_named_lists.__doc__ or ""
+        assert "Pass 5 R6" in doc
+        assert "deprecated" in doc.lower()
+
+
+# ---------------------------------------------------------------------------
+# §10.7 — Pass 5 calibration on the OpenBrain fixture pair
+# ---------------------------------------------------------------------------
+# Unit-tier (no LLM call required) since both fixture files are committed.
+# Validates that the Pass 5 changes produce the expected calibration outcomes
+# on a real Pass 4 rewrite.
+
+_OPENBRAIN_REWRITE_PATH = _FIXTURES_DIR / "openbrain_rewrite.md"
+
+
+class TestOpenBrainPass5Calibration:
+    """§10.7 — verify Pass 5 calibration changes on the saved rewrite fixture."""
+
+    def test_openbrain_rewrite_fixture_present(self):
+        """Both fixtures must exist for the calibration tests to run."""
+        assert _OPENBRAIN_PATH.exists(), f"Original fixture missing: {_OPENBRAIN_PATH}"
+        assert _OPENBRAIN_REWRITE_PATH.exists(), (
+            f"Rewrite fixture missing: {_OPENBRAIN_REWRITE_PATH}"
+        )
+
+    def test_openbrain_R1_outbound_link_regression_fires(self):
+        """§10.7 — original had outbound links, rewrite has 0 → OUTBOUND_LINK_REMOVED."""
+        original = _OPENBRAIN_PATH.read_text()
+        rewrite = _OPENBRAIN_REWRITE_PATH.read_text()
+        original_features = _extract_preservation_floor(original)
+        # Sanity: original must have at least 1 outbound link
+        assert original_features["outbound_link_count"] >= 1, (
+            "Test fixture invariant broken: OpenBrain original should have ≥1 outbound link"
+        )
+        _, _, fails, _ = _content_score(
+            "https://www.mindstudio.ai/blog/what-is-openbrain-personal-ai-memory-database",
+            rewrite, "article", original_features=original_features,
+        )
+        assert "OUTBOUND_LINK_REMOVED" in fails, (
+            "Pass 5 R1: outbound link loss must be flagged when original had ≥1 link"
+        )
+
+    def test_openbrain_R3_qualitative_quantifier_partial_pass(self):
+        """§10.7 — rewrite has 'under an hour' → STATISTICS_COUNT_LOW partial-pass."""
+        original = _OPENBRAIN_PATH.read_text()
+        rewrite = _OPENBRAIN_REWRITE_PATH.read_text()
+        original_features = _extract_preservation_floor(original)
+        _, _, fails, inv = _content_score(
+            "https://www.mindstudio.ai/blog/what-is-openbrain-personal-ai-memory-database",
+            rewrite, "article", original_features=original_features,
+        )
+        assert "STATISTICS_COUNT_LOW" in inv["partial_pass_checks"], (
+            "Pass 5 R3: 'under an hour' must earn STATISTICS_COUNT_LOW partial-pass"
+        )
+        assert "STATISTICS_COUNT_LOW" not in fails
+
+    def test_openbrain_R4_common_nouns_not_in_entities(self):
+        """§10.7 — original entities must NOT include Memory/Database/Platform."""
+        original = _OPENBRAIN_PATH.read_text()
+        original_features = _extract_preservation_floor(original)
+        orig_entities = original_features["named_entities"]
+        for noun in ("Memory", "Database", "Platform", "System", "Service"):
+            assert noun not in orig_entities, (
+                f"Pass 5 R4: '{noun}' must not be promoted to entity status "
+                f"on the OpenBrain page (recurring common noun)"
+            )
+
+    def test_openbrain_R4_real_entities_still_extracted(self):
+        """§10.7 control — Supabase/MCP/pgvector/Claude/ChatGPT are still extracted."""
+        original = _OPENBRAIN_PATH.read_text()
+        original_features = _extract_preservation_floor(original)
+        orig_entities = original_features["named_entities"]
+        for entity in ("supabase", "mcp", "pgvector", "claude", "chatgpt"):
+            assert entity in orig_entities, (
+                f"Pass 5 R4 control: '{entity}' should still be extracted via allowlist"
+            )

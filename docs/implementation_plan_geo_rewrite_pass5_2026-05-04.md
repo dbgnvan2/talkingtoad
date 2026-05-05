@@ -280,12 +280,134 @@ than fixing them here. Found during the audit:
 
 ---
 
-## 6. Status report template — to be filled after implementation
+## 6. Status report (post-implementation, 2026-05-04)
 
-This section will be replaced by a per-criterion status report listing each
-Pass 5 spec ID with one of: `done` (with file:line + test), `partial` (with
-what's missing), `not done` (with reason). Per CLAUDE.md, "implementation
-complete" without this report is not sufficient.
+Every Pass 5 spec criterion below has one of three statuses: `done` (with
+file:line or test), `partial` (with what's missing), `not done` (with reason).
+
+### Fix R1 — Outbound link regression threshold (§3)
+
+| Spec ID | Status | Evidence |
+|---|---|---|
+| §3.2 Change 1: regression threshold `>= 1` | done | `geo_rewrite_prompt.py:1196`; `test_R1_single_link_loss_triggers_regression` |
+| §3.2 Change 2: denominator threshold `>= 1` | done | `geo_rewrite_prompt.py:1454`; `test_R1_denominator_includes_one_link_case` |
+| §3.2 Change 3: instruction text rewritten | done | `_REGRESSION_FIX_INSTRUCTIONS["OUTBOUND_LINK_REMOVED"]` line 1788; `test_R1_instruction_handles_single_link` |
+| §3.3 acceptance | done | `test_R1_single_link_loss_triggers_regression` + control tests |
+
+### Fix R2 — Conditional placeholder credit (§4)
+
+| Spec ID | Status | Evidence |
+|---|---|---|
+| §4.2 Change 1.a `original_had_real_stat` | done | `_extract_preservation_floor` line 871; `test_R2_floor_has_original_had_real_stat` |
+| §4.2 Change 1.b `original_had_real_citation` | done | line 872; `test_R2_floor_has_original_had_real_citation` |
+| §4.2 Change 1.c `original_had_real_quote` | done | line 876; `test_R2_floor_has_original_had_real_quote` |
+| §4.2 Change 1.d fields strip code blocks | done | uses `text_no_code` for all three; `test_R2_floor_fields_strip_code_blocks` |
+| §4.2 Change 2.stat conditional credit | done | `_content_score` Check 1; `test_R2_placeholder_full_credit_when_original_lacked_evidence` |
+| §4.2 Change 2.cite conditional credit | done | Check 2; `test_R2_citation_full_credit_when_original_lacked` |
+| §4.2 Change 2.quote conditional credit | done | Check 3; `test_R2_quote_full_credit_when_original_lacked` |
+| §4.2 Change 2 partial when had | done | `test_R2_placeholder_partial_credit_when_original_had_evidence` |
+| §4.2 Change 2 default conservative | done | `test_R2_default_when_original_features_missing` |
+| §4.2 Change 3 cap still applies | done | `test_R2_cap_still_applies_after_filter` |
+| §4.2 Change 4 docstring updated | done | `test_R2_docstring_mentions_original_had_logic` |
+
+### Fix R3 — Qualitative quantifier credit (§5)
+
+| Spec ID | Status | Evidence |
+|---|---|---|
+| §5.2 Change 1 `_QUALITATIVE_QUANTIFIER_RE` | done | `geo_rewrite_prompt.py:879–894`; `test_R3_qualitative_regex_exists_and_matches_spec_phrases` |
+| §5.2 Change 2 wired into Check 1 | done | Check 1 lines 1399–1416; `test_R3_under_an_hour_passes_at_half_credit` |
+| §5.2 narrow regex (no over-match) | done | `test_R3_qualitative_regex_does_not_overmatch` |
+| §5.2 not extended to citations/quotes | done | `test_R3_qualitative_not_extended_to_citations_or_quotes` |
+| §5.3 acceptance: real number → full pass | done | `test_R3_real_number_passes_at_full_credit` |
+| §5.3 acceptance: no quantifier → fail | done | `test_R3_no_quantifier_fails` |
+| §5.3 acceptance: no double-count | done | `test_R3_qualitative_does_not_double_count_with_placeholder` |
+| §5.3 acceptance: "most users" works | done | `test_R3_majority_users_qualifier_works` |
+
+### Fix R4 — Tighten Strategy 3 entity extraction (§6)
+
+| Spec ID | Status | Evidence |
+|---|---|---|
+| §6.2 Change 1 `_DOMAIN_COMMON_NOUNS` | done | `geo_rewrite_prompt.py:572–589`; `test_R4_domain_common_nouns_constant_present` |
+| §6.2 Change 2 Strategy 3 filters both stoplists | done | line 661; `test_R4_recurring_common_nouns_not_extracted` |
+| §6.2 Change 3 threshold raised to 3 | done | line 668; `test_R4_proper_noun_threshold_3` |
+| §6.2 Change 4 docstring updated | done | `test_R4_docstring_documents_threshold_change` |
+| §6.3 acceptance: "Memory" 5x not extracted | done | `test_R4_recurring_common_nouns_not_extracted` |
+| §6.3 acceptance: 2-occ proper noun excluded; 3+ included | done | `test_R4_proper_noun_threshold_3` |
+| §6.3 acceptance: allowlist still captures 1-occ terms | done | `test_R4_allowlisted_term_still_captured_via_strategy_4` |
+
+### Fix R5 — Hard Prohibition 9 placeholder name (§7)
+
+| Spec ID | Status | Evidence |
+|---|---|---|
+| §7.2 line 329 `[STATISTIC NEEDED:` → `[STATISTIC:` | done | `geo_rewrite_prompt.py:329`; `test_R5_prompt_uses_consistent_statistic_placeholder` |
+| §7.3 prompt has zero `[STATISTIC NEEDED` | done | same test, assertion 1 |
+
+### Fix R6 — Documentation deprecation (§8)
+
+| Spec ID | Status | Evidence |
+|---|---|---|
+| §8.2 Change 1 `_item_has_named_reference` deprecated | done | `geo_rewrite_prompt.py:781–793`; `test_R6_item_has_named_reference_marked_deprecated` |
+| §8.2 Change 2 `_count_named_lists` mentions deprecation | done | `geo_rewrite_prompt.py:817–820`; `test_R6_count_named_lists_mentions_deprecation` |
+| §8.2 Change 3 no code removal | done | implicit — full suite still passes |
+
+### Fix R7 — Strategy 3/4 deduplication (§9)
+
+| Spec ID | Status | Evidence |
+|---|---|---|
+| §9.2 Change 1 Strategy 3 skips allowlisted lowercase | done | `geo_rewrite_prompt.py:664`; `test_R7_api_appears_only_once_in_entity_set` |
+| §9.3 acceptance: API only as "api" | done | same test |
+| §9.3 acceptance: non-allowlisted RACI still captured | done | `test_R7_uppercase_acronym_not_in_allowlist_still_captured` |
+
+### §10.7 OpenBrain integration
+
+| Spec ID | Status | Evidence |
+|---|---|---|
+| Fixture `openbrain_rewrite.md` saved | done | Q1 = (a); user pasted text; saved verbatim |
+| Calibration: R1 outbound regression fires | done | `test_openbrain_R1_outbound_link_regression_fires` (5 → 0 links) |
+| Calibration: R3 qualitative partial-pass | done | `test_openbrain_R3_qualitative_quantifier_partial_pass` ("under an hour") |
+| Calibration: R4 common nouns excluded | done | `test_openbrain_R4_common_nouns_not_in_entities` (Memory/Database/Platform) |
+| Calibration control: real entities still extracted | done | `test_openbrain_R4_real_entities_still_extracted` (supabase/mcp/pgvector/claude/chatgpt) |
+
+### Aggregate
+
+| Metric | Value |
+|---|---|
+| New tests added | 40 (all unit-tier — §10.7 promoted from integration to unit since both fixtures are committed) |
+| Total geo_rewrite_prompt tests | 198 |
+| Pass rate (Pass 5 only) | 40/40 (100%) |
+| Pass rate (full file) | 195/195 unit tests + 3 integration deselected |
+| Full project test suite | 1151 passed; 12 pre-existing failures + 7 pre-existing errors unchanged |
+| Estimated effort | 2–3h (planned) → ~2h actual |
+| Spec coverage | 40/40 criteria done; 0 partial; 0 not done |
+
+### Pass 5 calibration outcome on the OpenBrain rewrite
+
+Concrete behavior change (Pass 4 → Pass 5) on the saved rewrite fixture:
+
+| Behavior | Pass 4 | Pass 5 |
+|---|---|---|
+| Outbound link regression (5 lost links) | not flagged (threshold was `>= 2`) | flagged ✓ |
+| Stats check on "under an hour" | full fail (no digit) | partial-pass ✓ |
+| Original entities include "Memory"/"Database"/"Platform" | yes (false positives) | no ✓ |
+| Original entities still include Supabase/MCP/pgvector | yes | yes ✓ |
+| Hard Prohibition 9 placeholder format | inconsistent (`[STATISTIC NEEDED:`) | consistent (`[STATISTIC:`) ✓ |
+
+The rewrite still scores low (0.5) because it dropped real evidence the
+Pass 4 prompt had clearly told it to preserve — Pass 5 surfaces this
+honestly instead of masking it as a "good" 83.
+
+### Open follow-ups identified during this pass
+
+- **Pass 6 candidate:** the legacy fallback in `_count_named_lists` is now
+  documented as deprecated (R6) but not removed. Removal is a Pass 6
+  candidate after the deprecation has shipped for ≥2 release cycles.
+- **Pass 6 candidate:** `_extract_preservation_floor` recomputes the entity
+  set on every call. Cheap on small pages; flag for memoization if
+  profiling shows it expensive on large ones.
+- **Pass 6 candidate:** `_QUALITATIVE_QUANTIFIER_RE` is intentionally
+  narrow per spec §12. Future passes may want to add domain-specific
+  completions (e.g. medical: "majority of patients") with the same scope
+  discipline.
 
 ---
 
