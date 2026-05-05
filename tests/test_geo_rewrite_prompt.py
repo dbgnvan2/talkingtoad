@@ -1708,3 +1708,143 @@ class TestPageTypeStructuralCheck:
             assert "STRUCTURED_ELEMENTS_LOW" not in fails, (
                 f"page_type={pt} should accept any structured element (legacy behaviour)"
             )
+
+
+# ---------------------------------------------------------------------------
+# Fix 4 — CR5_* — entity-set named-list detection
+# ---------------------------------------------------------------------------
+
+class TestNamedEntityExtraction:
+    """CR5.x — _extract_named_entities_from_text + entity-aware regression check."""
+
+    # ── §5.2.1 — multi-word title-case phrases ──────────────────────────────
+
+    def test_cr5_2_extracts_multiword_phrases(self):
+        """§5.2.1 — phrases of 2-4 capitalised words are extracted."""
+        from api.services.geo_rewrite_prompt import _extract_named_entities_from_text
+        text = "We use Claude Desktop with the Model Context Protocol for memory."
+        entities = _extract_named_entities_from_text(text)
+        assert any("Claude Desktop" in e for e in entities), (
+            f"Expected 'Claude Desktop' phrase: {entities}"
+        )
+        assert any("Model Context Protocol" in e for e in entities), (
+            f"Expected 'Model Context Protocol' phrase: {entities}"
+        )
+
+    # ── §5.2.2 — single capitalised words appearing >= 2 times ─────────────
+
+    def test_cr5_2_extracts_repeated_capitalised(self):
+        """§5.2.2 — single Cap word appearing >= 2 times gets extracted."""
+        from api.services.geo_rewrite_prompt import _extract_named_entities_from_text
+        text = "Foobar is a tool. Foobar handles memory. Foobar runs locally."
+        entities = _extract_named_entities_from_text(text)
+        assert "Foobar" in entities
+
+    # ── §5.2.3 — backtick-wrapped identifiers ──────────────────────────────
+
+    def test_cr5_2_extracts_backtick_identifiers(self):
+        """§5.2.3 — `pgvector`, `npm install` are extracted from backticks."""
+        from api.services.geo_rewrite_prompt import _extract_named_entities_from_text
+        text = "Run `npm install` then configure `pgvector` for similarity search."
+        entities = _extract_named_entities_from_text(text)
+        assert "npm" in entities or "pgvector" in entities, (
+            f"Expected backtick-wrapped identifiers: {entities}"
+        )
+
+    # ── §5.2.4 — allowlist case-insensitive ─────────────────────────────────
+
+    def test_cr5_2_allowlist_case_insensitive(self):
+        """§5.2.4 — allowlisted technical terms match case-insensitively."""
+        from api.services.geo_rewrite_prompt import _extract_named_entities_from_text
+        text = "We use Supabase with the MCP protocol and ChatGPT memory."
+        entities = _extract_named_entities_from_text(text)
+        assert "supabase" in entities, f"Expected 'supabase' (allowlist): {entities}"
+        assert "mcp" in entities
+        assert "chatgpt" in entities
+
+    # ── §5.2.5 — preservation floor exposes named_entities ─────────────────
+
+    def test_cr5_2_preservation_floor_has_named_entities(self):
+        """§5.2.5 — _extract_preservation_floor returns named_entities key."""
+        text = "OpenBrain uses Supabase with MCP and pgvector for retrieval."
+        floor = _extract_preservation_floor(text)
+        assert "named_entities" in floor
+        assert isinstance(floor["named_entities"], frozenset)
+
+    # ── §5.2.6 — _count_named_lists uses known_entities ────────────────────
+
+    def test_cr5_2_named_lists_uses_entities(self):
+        """§5.2.6 — passing known_entities switches to entity-membership counting."""
+        from api.services.geo_rewrite_prompt import _count_named_lists
+        text = "- mcp setup\n- supabase config\n- pgvector index\n"
+        # Without known entities: lowercase items don't satisfy capitalisation heuristic
+        assert _count_named_lists(text) == 0
+        # With known entities: each item matches an allowlisted term → counted
+        entities = frozenset({"mcp", "supabase", "pgvector"})
+        assert _count_named_lists(text, entities) == 1
+
+    # ── §5.2.7 — NAMED_ENTITIES_LOST regression check ──────────────────────
+
+    def test_cr5_2_named_entities_lost_violation(self):
+        """§5.2.7 — rewrite preserving <70% of original entities triggers violation."""
+        original_features = {
+            "named_entities": frozenset({"Supabase", "MCP", "Claude", "pgvector"}),
+            # legacy fields all zero
+            "faq_pair_count": 0, "code_block_count": 0, "table_count": 0,
+            "outbound_link_count": 0, "named_list_count": 0,
+        }
+        # Rewrite drops Supabase and MCP — preserves 2/4 = 50% < 70% → violation
+        rewrite = "This is a system that uses Claude with pgvector for retrieval."
+        violations = _check_preservation_regression(original_features, rewrite)
+        assert "NAMED_ENTITIES_LOST" in violations
+
+    # ── §5.4.a — extracts known products from OpenBrain-style paragraph ────
+
+    def test_cr5_4_openbrain_entities_extracted(self):
+        """§5.4.a — Supabase, MCP, pgvector, Claude, ChatGPT all extractable."""
+        from api.services.geo_rewrite_prompt import _extract_named_entities_from_text
+        text = (
+            "OpenBrain is built on Supabase, using the MCP protocol. "
+            "It works with Claude, ChatGPT, and pgvector for similarity search."
+        )
+        entities = _extract_named_entities_from_text(text)
+        # Allowlist matches return lowercased
+        assert "supabase" in entities
+        assert "mcp" in entities
+        assert "pgvector" in entities
+        assert "claude" in entities
+        assert "chatgpt" in entities
+        assert "openbrain" in entities
+
+    # ── §5.4.b — does NOT extract emphasised words ─────────────────────────
+
+    def test_cr5_4_emphasised_words_excluded(self):
+        """§5.4.b — Self-Contained, Required, Important, Setup, Step are NOT extracted."""
+        from api.services.geo_rewrite_prompt import _extract_named_entities_from_text
+        text = (
+            "- Self-Contained sections are Required for AI retrieval\n"
+            "- Important: avoid backward references\n"
+            "- Setup is straightforward\n"
+            "- Step 1: open the dashboard\n"
+        )
+        entities = _extract_named_entities_from_text(text)
+        assert "Self-Contained" not in entities
+        assert "Required" not in entities
+        assert "Important" not in entities
+        assert "Setup" not in entities
+        # "Step" alone wouldn't show since "Step 1" splits to "Step" + "1"
+        assert "Step" not in entities
+
+    # ── §5.4.c — entity loss triggers NAMED_ENTITIES_LOST ──────────────────
+
+    def test_cr5_4_entity_loss_triggers_regression(self):
+        """§5.4.c — rewrite that drops 50% of entities fails the regression check."""
+        # Same as test_cr5_2_named_entities_lost_violation but framed as the §5.4 case
+        original_features = {
+            "named_entities": frozenset({"Supabase", "MCP", "Claude", "pgvector"}),
+            "faq_pair_count": 0, "code_block_count": 0, "table_count": 0,
+            "outbound_link_count": 0, "named_list_count": 0,
+        }
+        rewrite = "This system uses Claude memory with a pgvector index for search."
+        violations = _check_preservation_regression(original_features, rewrite)
+        assert "NAMED_ENTITIES_LOST" in violations

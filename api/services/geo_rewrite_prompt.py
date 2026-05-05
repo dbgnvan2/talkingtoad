@@ -529,6 +529,136 @@ _NUMBER_RE = re.compile(
     re.I,
 )
 
+# ---------------------------------------------------------------------------
+# Named-entity extraction (Fix 4 / §5)
+# ---------------------------------------------------------------------------
+# Replaces the bare capitalisation heuristic in _item_has_named_reference.
+# Strategy:
+#   1. Backtick-wrapped identifiers: `pgvector`, `npm install`
+#   2. Multi-word title-case phrases of 2-4 words: "Claude Desktop"
+#   3. Single capitalised words (or camelCase) appearing >= 2 times
+#   4. Allowlisted technical/product terms (case-insensitive)
+
+_TECHNICAL_TERM_ALLOWLIST: frozenset[str] = frozenset({
+    # protocols / formats / file types
+    "npm", "pip", "git", "bash", "curl", "json", "sql", "api", "mcp",
+    "css", "html", "xml", "yaml", "toml", "ssh", "tls", "https", "http",
+    "oauth", "jwt", "uuid", "regex", "graphql", "rpc", "grpc", "rest",
+    "rss", "atom", "csv", "pdf", "svg", "png", "jpg", "webp",
+    # databases / stores
+    "pgvector", "postgres", "postgresql", "mysql", "sqlite", "redis",
+    "mongodb", "elasticsearch", "supabase", "firebase",
+    # AI / LLM ecosystem
+    "openai", "anthropic", "openbrain", "claude", "chatgpt", "gemini",
+    "gpt", "llm", "rag", "ai", "ml", "mem0", "memgpt", "langchain",
+    # product / platform names
+    "notion", "github", "gitlab", "bitbucket", "linear", "slack", "zoom",
+    "jira", "asana", "trello", "stripe", "twilio",
+    # frontend / runtime
+    "react", "vue", "angular", "svelte", "nextjs", "nuxt", "remix",
+    "node", "deno", "bun", "rust", "python", "typescript", "javascript",
+    "playwright", "puppeteer", "vite", "webpack",
+    # general acronyms used as identifiers
+    "ssr", "csr", "spa", "dom", "ide", "cli", "gui", "url", "uri",
+    "seo", "geo",
+})
+
+# Words that capitalisation alone shouldn't promote to entity status.
+_EMPHASIS_STOP_WORDS: frozenset[str] = frozenset({
+    "Important", "Required", "Recommended", "Optional",
+    "Note", "Notes", "Warning", "Tip", "Caution", "Critical", "Danger",
+    "TODO", "FIXME", "Step", "Steps", "Setup", "Install", "Installation",
+    "Configuration", "Why", "How", "What", "Who", "When", "Where", "Which",
+    "Yes", "No", "True", "False", "OK", "Done", "Pass", "Fail",
+    "First", "Second", "Third", "Next", "Then", "Finally",
+    "The", "This", "That", "These", "Those",
+})
+
+_BACKTICK_ID_RE = re.compile(r"`([a-zA-Z_][a-zA-Z0-9_/.-]*)`")
+_SINGLE_CAP_WORD_RE = re.compile(r"\b[A-Z][a-zA-Z0-9]+\b")
+# Multi-word phrase: 2-4 capitalised tokens; each token may be hyphenated/apostrophe'd
+_MULTIWORD_TITLE_RE = re.compile(
+    r"\b(?:[A-Z][a-zA-Z0-9]+(?:[-'][A-Za-z0-9]+)*)"
+    r"(?:\s+(?:[A-Z][a-zA-Z0-9]+(?:[-'][A-Za-z0-9]+)*)){1,3}"
+    r"\b"
+)
+
+
+def _extract_named_entities_from_text(text: str) -> frozenset[str]:
+    """Extract candidate named entities from page text (Fix 4 / §5.2 / §5.3).
+
+    Returns a frozenset combining four detection strategies (see docstring above
+    the regex constants).  Allowlisted terms are normalised to lowercase; other
+    forms preserve the source casing.
+
+    The extractor is conservative — false negatives (missing a real entity) are
+    recoverable; false positives cause cascading wrong feedback to the
+    rewriting LLM.
+    """
+    entities: set[str] = set()
+
+    # Strategy 1 — backtick identifiers, case-preserving
+    for m in _BACKTICK_ID_RE.finditer(text):
+        ident = m.group(1)
+        if len(ident) >= 2:
+            entities.add(ident)
+
+    # Strategy 4 — allowlisted technical terms (case-insensitive)
+    text_lower = text.lower()
+    for term in _TECHNICAL_TERM_ALLOWLIST:
+        if re.search(rf"\b{re.escape(term)}\b", text_lower):
+            entities.add(term)
+
+    # Strategy 2 — multi-word title-case phrases (skip if first word is stop word)
+    for m in _MULTIWORD_TITLE_RE.finditer(text):
+        phrase = m.group(0).strip()
+        words = phrase.split()
+        if not words or words[0] in _EMPHASIS_STOP_WORDS:
+            continue
+        # Drop phrases where ALL words are common stop words (rare but safe)
+        if all(w in _EMPHASIS_STOP_WORDS for w in words):
+            continue
+        entities.add(phrase)
+
+    # Strategy 3 — single capitalised words appearing >= 2 times
+    counter: dict[str, int] = {}
+    for m in _SINGLE_CAP_WORD_RE.finditer(text):
+        w = m.group(0)
+        if w in _EMPHASIS_STOP_WORDS:
+            continue
+        counter[w] = counter.get(w, 0) + 1
+    for w, count in counter.items():
+        if count >= 2:
+            entities.add(w)
+
+    return frozenset(entities)
+
+
+def _item_references_known_entity(
+    item_line: str, known_entities: frozenset[str]
+) -> bool:
+    """Return True if the bullet item mentions any entity in `known_entities`.
+
+    Allowlisted technical names match case-insensitively; multi-word phrases
+    and proper nouns from Strategies 2/3 match as substrings (case-sensitive
+    for proper nouns, case-insensitive for the pre-lowered allowlist).
+    """
+    if not known_entities:
+        return False
+    # Strip bullet/number marker
+    content = re.sub(r"^[-*+]\s+|^\d+[.)]\s+", "", item_line, count=1).strip()
+    lowered = content.lower()
+    for entity in known_entities:
+        if entity in _TECHNICAL_TERM_ALLOWLIST:
+            # Case-insensitive word-boundary match for allowlisted terms
+            if re.search(rf"\b{re.escape(entity)}\b", lowered):
+                return True
+        else:
+            # Case-preserving substring match for proper nouns / multi-word phrases
+            if entity in content:
+                return True
+    return False
+
 
 def _count_faq_pairs(text: str) -> int:
     """Count Q&A pairs: a question line followed within 5 lines by a non-question answer."""
@@ -589,8 +719,17 @@ def _item_has_named_reference(item_line: str) -> bool:
     return False
 
 
-def _count_named_lists(text: str) -> int:
-    """Count bullet list blocks where ≥2 items contain proper nouns or quoted strings."""
+def _count_named_lists(
+    text: str,
+    known_entities: frozenset[str] | None = None,
+) -> int:
+    """Count bullet list blocks where ≥2 items reference named entities.
+
+    Backwards-compatible: when `known_entities` is None or empty, falls back
+    to the legacy capitalisation heuristic via _item_has_named_reference.
+    When provided, uses _item_references_known_entity which compares against
+    the entity set extracted from the original page (Fix 4 / §5.2).
+    """
     lines = text.splitlines()
     named_list_count = 0
     i = 0
@@ -606,7 +745,15 @@ def _count_named_lists(text: str) -> int:
                 if _BULLET_LINE_RE.match(lines[i]) or _NUMBERED_LINE_RE.match(lines[i]):
                     block_lines.append(lines[i])
                 i += 1
-            named_items = sum(1 for ln in block_lines if _item_has_named_reference(ln))
+            if known_entities:
+                named_items = sum(
+                    1 for ln in block_lines
+                    if _item_references_known_entity(ln, known_entities)
+                )
+            else:
+                named_items = sum(
+                    1 for ln in block_lines if _item_has_named_reference(ln)
+                )
             if named_items >= 2:
                 named_list_count += 1
         else:
@@ -656,13 +803,19 @@ def _extract_preservation_floor(text: str) -> dict:
     # aren't part of the prose content and could inflate counts).
     text_no_code = _MD_CODE_RE.sub("", text)
 
+    # Extract named entities first so the named-list count can use them
+    # (Fix 4 / §5.2.5–§5.2.6).  Entities are extracted from text WITH code
+    # blocks so backtick-wrapped identifiers are captured.
+    named_entities = _extract_named_entities_from_text(text)
+
     return {
         "faq_pair_count":      _count_faq_pairs(text_no_code),
-        "named_list_count":    _count_named_lists(text_no_code),
+        "named_list_count":    _count_named_lists(text_no_code, named_entities),
         "code_block_count":    len(_MD_CODE_RE.findall(text)),
         "table_count":         _count_tables(text_no_code),
         "outbound_link_count": len(_MD_LINK_RE.findall(text_no_code)),
         "original_number_set": _extract_specific_numbers(text_no_code),
+        "named_entities":      named_entities,
     }
 
 
@@ -993,10 +1146,22 @@ def _check_preservation_regression(
         if rewrite_floor["outbound_link_count"] == 0:
             violations.append("OUTBOUND_LINK_REMOVED")
 
-    # Named list genericised: original had ≥1 named list; rewrite has 0
+    # Named list genericised (legacy): original had ≥1 named list; rewrite has 0
     if original_features.get("named_list_count", 0) >= 1:
         if rewrite_floor["named_list_count"] == 0:
             violations.append("NAMED_LIST_GENERICISED")
+
+    # Named entities lost (Fix 4 / §5.2.7): original had named entities;
+    # rewrite preserves <70% of them.  Case-insensitive comparison so a
+    # rewrite that lowercases "Supabase" → "supabase" still counts as preserved.
+    orig_entities = original_features.get("named_entities", frozenset())
+    if orig_entities:
+        rewrite_entities = _extract_named_entities_from_text(rewrite_text)
+        orig_lower = {e.lower() for e in orig_entities}
+        rewrite_lower = {e.lower() for e in rewrite_entities}
+        preserved = orig_lower & rewrite_lower
+        if len(preserved) < 0.7 * len(orig_lower):
+            violations.append("NAMED_ENTITIES_LOST")
 
     return violations
 
@@ -1238,6 +1403,8 @@ def _content_score(
             applicable_checks += 1
         if original_features.get("named_list_count", 0) >= 1:
             applicable_checks += 1
+        if original_features.get("named_entities"):
+            applicable_checks += 1  # Fix 4 / §5.2.7
         total_weight += applicable_checks * _REGRESSION_CHECK_WEIGHT
         fail_weight += len(regression_violations) * _REGRESSION_CHECK_WEIGHT
         fails.update(regression_violations)
