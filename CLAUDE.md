@@ -203,39 +203,44 @@ Sitemap and Crawlability category tabs show what was found (sitemap URL, URL cou
 - **GEO Settings:** Pre-crawl blocking prompt removed from Home page. Non-blocking banner added to Results Summary tab instead.
 - **llms.txt generator:** No longer auto-generates on page load. User clicks "Generate Recommendation" button. Shows status badge: "llms.txt Retrieved" (green) when saved content exists, "llms.txt Recommendation" (amber) when generated from crawl data. "Save to Job Data" button only appears after generation.
 
-### GEO Analyzer (v2.1)
+### Content Quality Advisor & Rewriter (v2.2)
 
-**Static checks (fired during crawl):**
-22 new issue codes across three evidence tiers. Key additions:
-- **Empirical tier (Aggarwal et al. measured):** `STATISTICS_COUNT_LOW`, `EXTERNAL_CITATIONS_LOW`, `QUOTATIONS_MISSING`, `ORPHAN_CLAIM_TECHNICAL`
-- **Mechanistic tier (retrieval mechanics):** `RAW_HTML_JS_DEPENDENT`, `JS_RENDERED_CONTENT_DIFFERS`, `CONTENT_CLOAKING_DETECTED`, `UA_CONTENT_DIFFERS`, `FIRST_VIEWPORT_NO_ANSWER`, `AUTHOR_BYLINE_MISSING`, `DATE_PUBLISHED_MISSING`, `DATE_MODIFIED_MISSING`, `CODE_BLOCK_MISSING_TECHNICAL`, `COMPARISON_TABLE_MISSING`, `CHUNKS_NOT_SELF_CONTAINED`, `CENTRAL_CLAIM_BURIED`, `LINK_PROFILE_PROMOTIONAL`, `STRUCTURED_ELEMENTS_LOW`
-- **Conventional tier:** `JSON_LD_INVALID`, `FAQ_SCHEMA_MISSING`, `PROMOTIONAL_CONTENT_INTERRUPTS`, `AI_TXT_MISSING`
+**Architecture:** Quality-focused evaluation, no metrics. Two standalone tools:
 
-**Parser extensions** (`api/crawler/parser.py`): 9 new `ParsedPage` fields: `is_spa_shell`, `author_detected`, `date_published`, `date_modified`, `code_block_count`, `table_count`, `structured_element_count`, `first_150_words`, `blockquote_count`.
+**Tool A: Advisor** (`api/services/advisor.py`) — Evaluates page for AI retrieval quality
+- Single LLM call with structured JSON response (critic prompt)
+- Six evaluation properties:
+  1. Source Fidelity (when comparing rewrite to original) — fabrications, losses, degradations
+  2. Factual Grounding — specific facts vs generalities; verdict: grounded|weak|minimal
+  3. Self-Containment — per H2/H3: can stand alone or requires prior sections?
+  4. Structural Fitness — prose vs structure mismatches (enumerates but not `<ul>`, etc.)
+  5. Authority Signals — real citations, missing citations, placeholder citations
+  6. Honest Placeholder Use — placeholders at real gaps vs decorative
+- Deterministic markdown report rendering from JSON response
+- Citations required for all findings (user can verify by reading cited text)
+- Decisions: generate rewrite prompt only if grounded AND has issues; generate diagnosis if minimal
+- No scoring, no weighting, no metrics
 
-**Link classifier** (`api/services/link_classifier.py`): Classifies outbound links as authority (.gov, .edu, research), reference (Wikipedia, Britannica), promotional (?ref=, /go/), internal, or other.
+**Tool B: Rewriter** (`api/services/rewriter.py`) — Apply rewrite prompt to content
+- Single LLM call with low temperature (0.2) for faithful rewriting
+- No iteration, no variants, no scoring
+- Simple wrapper: content + prompt → one rewrite
+- Flags if token limit hit; otherwise done
 
-**JS renderer** (`api/services/js_renderer.py`): Fetches with GPTBot/ClaudeBot/generic UAs + Playwright headless Chromium. Computes token-set diff and Jaccard similarity for cloaking detection. Optional — degrades gracefully when Playwright is unavailable.
+**Data Models** (`api/models/advisor.py`):
+- `AdvisorRequest` — url or content, optional original for comparison
+- `AdvisorReport` — findings, strengths, confidence notes, decision flags
+- `RewriterRequest` — content + prompt
+- `RewriterResult` — rewrite text + stopped_by_limit flag
 
-**GEO analyzer service** (`api/services/geo_analyzer.py`): LLM-based analysis producing a `GEOReport` with:
-- Query match table (5–8 AI-generated queries scored Yes/Partial/No)
-- Chunk self-containedness (per H2/H3 section)
-- Central claim detection (is the core definition in the first 150 words?)
-- Promotional content detection (does sales copy interrupt information?)
-- Weighted scoring: Empirical ×3, Mechanistic ×2, Conventional ×1
-- Separate `aggarwal_score` computed only from Empirical findings
+**API Endpoints** (`api/routers/advisor.py`):
+- `POST /api/ai/advisor` — Accept URL or content, return markdown report + should_generate_prompt flag
+- `POST /api/ai/advisor/prompt` — Generate page-specific rewrite prompt from report
+- `POST /api/ai/rewriter` — Rewrite content using provided prompt (optional convenience wrapper)
 
-**New API endpoints:**
-- `POST /api/ai/geo-report` — Generate or return cached GEO report for a job
-- `GET /api/geo/ai-model` — List available models and selected model
-- `POST /api/geo/ai-model` — Persist model selection
-
-**Frontend:**
-- `GEOReportPanel.jsx` — Score cards, evidence-tier grouped findings, query match table, chunk containedness, JS rendering tab, model selector
-- `AIReadinessPanel.jsx` — Updated with 3 new GEO issue groups + embedded `GEOReportPanel` at top
-- `GeoSettingsModal.jsx` — Added AI model selector dropdown
-
-**Tests:** 75 new tests across `test_geo_static_checks.py`, `test_link_classifier.py`, `test_js_renderer.py`, `test_geo_analyzer.py`.
+**Tests:**
+- `test_advisor.py` — 18 tests on report rendering, findings sections, decision logic (deterministic, no LLM mocking)
+- `test_rewriter.py` — 10 tests on LLM calls, token limits, error handling (mocked HTTP)
 
 ---
 
