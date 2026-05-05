@@ -1848,3 +1848,202 @@ class TestNamedEntityExtraction:
         rewrite = "This system uses Claude memory with a pgvector index for search."
         violations = _check_preservation_regression(original_features, rewrite)
         assert "NAMED_ENTITIES_LOST" in violations
+
+
+# ---------------------------------------------------------------------------
+# Fix 5 — CR6_* — numbered-output query-match parser + parse_failure
+# ---------------------------------------------------------------------------
+
+class TestQueryMatchParser:
+    """CR6.x — verdict parser is robust to whitespace/order; missing → Partial+flag."""
+
+    # ── §6.2 — prompt format and regex shape ────────────────────────────────
+
+    def test_cr6_2_prompt_format_includes_numbered_example(self):
+        """§6.2.a — the prompt template embeds an `N: <verdict>` example."""
+        import api.services.geo_rewrite_prompt as mod
+        from pathlib import Path
+        src = Path(mod.__file__).read_text()
+        assert "N: <Yes|Partial|No>" in src
+        assert "Example output for 3 questions" in src
+
+    def test_cr6_2_verdict_regex_pattern(self):
+        """§6.2.b — _VERDICT_LINE_RE matches the documented format and tolerates separators."""
+        from api.services.geo_rewrite_prompt import _VERDICT_LINE_RE
+        # All these should match
+        for line, expected_n, expected_v in [
+            ("1: Yes", 1, "yes"),
+            ("  2. Partial", 2, "partial"),
+            ("3) No", 3, "no"),
+            ("4 - Yes", 4, "yes"),
+            ("10: PARTIAL", 10, "partial"),
+        ]:
+            m = _VERDICT_LINE_RE.match(line)
+            assert m, f"Should match: {line!r}"
+            assert int(m.group(1)) == expected_n
+            assert m.group(2).lower() == expected_v
+
+    def test_cr6_2_dict_keyed_by_index(self):
+        """§6.2.c — parser populates verdicts keyed by question number."""
+        from api.services.geo_rewrite_prompt import parse_verdict_response
+        response = "1: Yes\n2: Partial\n3: No"
+        queries = ["q1", "q2", "q3"]
+        per_query = parse_verdict_response(response, queries)
+        # Verdicts come back in question order, with parse_failure=False
+        assert [r["answered"] for r in per_query] == ["Yes", "Partial", "No"]
+        assert all(r["parse_failure"] is False for r in per_query)
+
+    # ── §6.3 — parse_failure flag and Partial-on-missing default ───────────
+
+    def test_cr6_3_per_query_has_parse_failure_field(self):
+        """§6.3.a — every per-query result has a parse_failure boolean."""
+        from api.services.geo_rewrite_prompt import parse_verdict_response
+        per_query = parse_verdict_response("1: Yes", ["q1"])
+        assert "parse_failure" in per_query[0]
+        assert isinstance(per_query[0]["parse_failure"], bool)
+
+    def test_cr6_3_missing_defaults_to_partial(self):
+        """§6.3.b — missing verdict → Partial + parse_failure=True (NOT 'No')."""
+        from api.services.geo_rewrite_prompt import parse_verdict_response
+        # Question 2 missing
+        per_query = parse_verdict_response("1: Yes\n3: No", ["q1", "q2", "q3"])
+        assert per_query[1]["answered"] == "Partial"
+        assert per_query[1]["parse_failure"] is True
+
+    # ── §6.4 — additional parsing scenarios ────────────────────────────────
+
+    def test_cr6_4_parses_with_whitespace(self):
+        """§6.4.a — leading/trailing whitespace and blank lines tolerated."""
+        from api.services.geo_rewrite_prompt import parse_verdict_response
+        response = "\n  1: Yes  \n\n  2: Partial\n  3: No\n\n"
+        per_query = parse_verdict_response(response, ["q1", "q2", "q3"])
+        assert [r["answered"] for r in per_query] == ["Yes", "Partial", "No"]
+
+    def test_cr6_4_parses_out_of_order(self):
+        """§6.4.b — out-of-order verdict lines are aligned by question number."""
+        from api.services.geo_rewrite_prompt import parse_verdict_response
+        response = "3: No\n1: Yes\n2: Partial"
+        per_query = parse_verdict_response(response, ["q1", "q2", "q3"])
+        assert per_query[0]["answered"] == "Yes"
+        assert per_query[1]["answered"] == "Partial"
+        assert per_query[2]["answered"] == "No"
+
+    def test_cr6_4_missing_query_partial_with_flag(self):
+        """§6.4.c — missing query #2 → Partial + parse_failure=True."""
+        from api.services.geo_rewrite_prompt import parse_verdict_response
+        per_query = parse_verdict_response("1: Yes\n3: No", ["q1", "q2", "q3"])
+        assert per_query[1]["answered"] == "Partial"
+        assert per_query[1]["parse_failure"] is True
+        # Other rows are NOT marked parse_failure
+        assert per_query[0]["parse_failure"] is False
+        assert per_query[2]["parse_failure"] is False
+
+    def test_cr6_4_knowledge_gap_skips_parse_failures(self):
+        """§6.4.d — knowledge-gap detection in source skips queries with any parse_failure.
+
+        Verified at the source level since stream_rewrite_variants requires LLM
+        calls.  We grep for the exact guard.
+        """
+        import api.services.geo_rewrite_prompt as mod
+        from pathlib import Path
+        src = Path(mod.__file__).read_text()
+        # The guard must reference both "all_no" semantics and the parse_failure exclusion
+        assert "any_parse_failure" in src, (
+            "Knowledge-gap detection must check parse_failure"
+        )
+        assert "if all_no and not any_parse_failure" in src, (
+            "Knowledge-gap guard must combine all-No with no-parse-failure"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Fix 7.1 — CR8_1_* — _count_faq_pairs stricter rule for heading-questions
+# ---------------------------------------------------------------------------
+
+class TestFaqStricterRule:
+    """CR8_1.x — single rhetorical heading-question doesn't establish FAQ format."""
+
+    def test_cr8_1_single_heading_question_returns_0(self):
+        """§8.1.a — a single heading-style question with answer is rhetorical, not FAQ."""
+        from api.services.geo_rewrite_prompt import _count_faq_pairs
+        text = (
+            "Some intro paragraph.\n\n"
+            "## Why use OpenBrain?\n"
+            "Because you control your own context.\n\n"
+            "More prose follows.\n"
+        )
+        assert _count_faq_pairs(text) == 0
+
+    def test_cr8_1_two_heading_questions_return_2(self):
+        """§8.1.b — two or more heading-style Q&A pairs DO count as FAQ format."""
+        from api.services.geo_rewrite_prompt import _count_faq_pairs
+        text = (
+            "## What is OpenBrain?\n"
+            "A personal AI memory database you control.\n\n"
+            "## How does it work?\n"
+            "It stores context in a database you own.\n"
+        )
+        assert _count_faq_pairs(text) == 2
+
+    def test_cr8_1_inline_questions_independent_of_headings(self):
+        """§8.1.c — inline-style questions count regardless of heading-question count."""
+        from api.services.geo_rewrite_prompt import _count_faq_pairs
+        # 1 heading-question (would be dropped if no other heading-questions exist)
+        # but 2 inline-style questions counted independently
+        text = (
+            "## Why bother?\n"
+            "It's worth the effort.\n\n"
+            "What is the cost?\n"
+            "Free for personal use.\n\n"
+            "How long does setup take?\n"
+            "About an hour.\n"
+        )
+        # heading_pairs=[1 dropped to 0] + inline_pairs=[2] = 2
+        result = _count_faq_pairs(text)
+        assert result == 2, f"Expected 2 inline pairs (heading dropped), got {result}"
+
+
+# ---------------------------------------------------------------------------
+# Fix 7.2 — CR8_2_* — Hard Prohibition 5 explicit coverage extension
+# ---------------------------------------------------------------------------
+
+class TestHardProhibitionCoverage:
+    """CR8_2.x — §(e) item 5 explicitly mentions comparison tables and original statistics."""
+
+    def test_cr8_2_prompt_mentions_comparison_tables(self):
+        """§8.2.a — prompt §(e) item 5 explicitly calls out 'comparison tables'."""
+        result = generate_rewrite_prompt(_make_report(), "general")
+        prompt = result["system_prompt"]
+        assert "comparison tables" in prompt, (
+            "Hard Prohibition 5 must explicitly mention comparison tables"
+        )
+
+    def test_cr8_2_prompt_mentions_original_statistics(self):
+        """§8.2.b — prompt §(e) item 5 explicitly calls out 'specific statistics ... in the original'."""
+        result = generate_rewrite_prompt(_make_report(), "general")
+        prompt = result["system_prompt"]
+        # Must mention preserving statistics from the original verbatim
+        assert "Specific statistics" in prompt or "specific statistics" in prompt, (
+            "Hard Prohibition 5 must mention original statistics"
+        )
+        assert "appeared in the\n     original" in prompt or "in the original" in prompt
+
+
+# ---------------------------------------------------------------------------
+# Fix 7.4 — CR8_4_* — synthetic page list-count comment
+# ---------------------------------------------------------------------------
+
+class TestSyntheticPageListCountComment:
+    """CR8_4.x — list_count cap at 1 is documented with the depending check named."""
+
+    def test_cr8_4_cap_comment_present(self):
+        """§8.4 — the cap is documented with the dependent check named."""
+        import api.services.geo_rewrite_prompt as mod
+        from pathlib import Path
+        src = Path(mod.__file__).read_text()
+        # Must mention issue_checker (the depending module)
+        assert "issue_checker" in src, "Cap comment must name issue_checker"
+        # Must include "REMOVE THIS CAP" or similar instruction
+        assert "REMOVE THIS CAP" in src or "remove this cap" in src.lower(), (
+            "Cap comment must instruct future maintainers to remove the cap if check changes"
+        )

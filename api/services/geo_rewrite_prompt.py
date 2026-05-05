@@ -306,10 +306,16 @@ Omit the GEO NOTES section if you added no placeholders.
 4. **Do not add new factual claims** not implied by the original text.
 
 5. **Do not delete factual content.** You may restructure and rephrase, but
-   do not remove any of the following from the original: FAQ Q&A pairs, code
-   blocks, tables, named example lists (lists with specific tool or product
-   names), or outbound citation links. Generic descriptions ("memory tools")
-   must never replace specific names ("Supabase", "Claude Desktop", "GitHub").
+   do not remove any of the following from the original:
+   - FAQ Q&A pairs (preserve all of them)
+   - Code blocks (preserve verbatim)
+   - Tables, especially comparison tables (preserve with same rows and columns)
+   - Named example lists (lists with specific tool or product names)
+   - Outbound citation links (preserve target URLs and anchor text)
+   - Specific statistics, numeric claims, or named sources that appeared in the
+     original (preserve verbatim — do not round, summarise, or remove)
+   Generic descriptions ("memory tools") must never replace specific names
+   ("Supabase", "Claude Desktop", "GitHub").
 
 6. **Do not fabricate author names or publication dates.** Use placeholder
    patterns: `[AUTHOR NAME]`, `[PUBLICATION DATE]`, `[LAST UPDATED DATE]`.
@@ -661,9 +667,21 @@ def _item_references_known_entity(
 
 
 def _count_faq_pairs(text: str) -> int:
-    """Count Q&A pairs: a question line followed within 5 lines by a non-question answer."""
+    """Count Q&A pairs: a question line followed within 5 lines by a non-question answer.
+
+    Stricter rule (Fix 7.1 / §8.1 + CR_ADJ_4): heading-style questions only count
+    if there are ≥2 such questions in the document AND each one starts with a
+    recognised question word.  A single rhetorical heading like
+    "## Why use OpenBrain?" in an article does NOT establish FAQ format.
+    Inline-style questions (question-word lines preceded by a blank line) are
+    counted independently.
+
+    Heading-questions are also required to start with a question word
+    (CR_ADJ_4) — `## Migration v2 → v3?` is rhetorical, not a Q&A heading.
+    """
     lines = text.splitlines()
-    count = 0
+    heading_pairs: list[int] = []  # indices of confirmed heading-question pairs
+    inline_pairs: list[int] = []   # indices of confirmed inline-question pairs
     i = 0
     while i < len(lines):
         line = lines[i].rstrip()
@@ -675,11 +693,22 @@ def _count_faq_pairs(text: str) -> int:
         ends_with_q = stripped.rstrip("*_ \t").endswith("?")
         preceded_by_blank = (i == 0) or (not lines[i - 1].strip())
 
-        if ends_with_q and is_short and (is_heading or (is_question_word and preceded_by_blank)):
+        # Heading-style: requires question word AND ends with ? AND short
+        # (CR_ADJ_4 narrows the previous "is_heading or ..." condition).
+        is_heading_question = (
+            is_heading and is_question_word and ends_with_q and is_short
+        )
+        # Inline-style: question word at start of line, preceded by blank, ends with ?
+        is_inline_question = (
+            (not is_heading) and is_question_word and preceded_by_blank
+            and ends_with_q and is_short
+        )
+
+        if is_heading_question or is_inline_question:
             # Look for an answer within the next 5 non-blank lines
             j = i + 1
             non_blank_seen = 0
-            found_answer = False
+            found_answer_at = -1
             while j < len(lines) and non_blank_seen < 5:
                 nl = lines[j].strip()
                 if nl:
@@ -687,15 +716,24 @@ def _count_faq_pairs(text: str) -> int:
                     nl_stripped = re.sub(r"^#+\s*|[*_]{1,2}", "", nl).strip()
                     # Answer: non-blank line that isn't itself a question
                     if not nl_stripped.endswith("?"):
-                        found_answer = True
+                        found_answer_at = j
                         break
                 j += 1
-            if found_answer:
-                count += 1
-                i = j + 1  # advance past the answer
+            if found_answer_at >= 0:
+                if is_heading_question:
+                    heading_pairs.append(i)
+                else:
+                    inline_pairs.append(i)
+                i = found_answer_at + 1  # advance past the answer
                 continue
         i += 1
-    return count
+
+    # Stricter rule: a single heading-question is rhetorical, not FAQ format.
+    # Drop heading-pairs entirely if fewer than 2 were detected.
+    if len(heading_pairs) < 2:
+        heading_pairs = []
+
+    return len(heading_pairs) + len(inline_pairs)
 
 
 def _item_has_named_reference(item_line: str) -> bool:
@@ -929,6 +967,12 @@ def _build_synthetic_parsed_page(
     table_count = 1 if len(table_rows) >= 2 else 0
 
     # Lists
+    # NOTE (Fix 7.4 / §8.4): list_count is capped at 1 because the only consumer
+    # of structured_element_count today is issue_checker._run_geo_checks at
+    # api/crawler/issue_checker.py:1923 which checks `structured_element_count
+    # == 0` only.  If issue_checker ever changes to threshold on counts (e.g.
+    # requires >=2 structured elements), REMOVE THIS CAP and count actually,
+    # otherwise this silently undercounts and pages will fail incorrectly.
     ul_count = len(_MD_UL_RE.findall(markdown_content))
     ol_count = len(_MD_OL_RE.findall(markdown_content))
     list_count = min(ul_count + ol_count, 1)  # at least one list = 1 structured element
@@ -1484,6 +1528,45 @@ def _score_markdown(url: str, markdown_content: str, page_type: str = "general")
 # Query-match re-scoring for rewrite variants
 # ---------------------------------------------------------------------------
 
+# Numbered-output verdict line: `1: Yes`, `2. Partial`, `3) No`, etc.
+# Tolerates leading whitespace, several common separators, and trailing text.
+_VERDICT_LINE_RE = re.compile(
+    r"^\s*(\d+)\s*[:.\-)]\s*(yes|partial|no)\b",
+    re.I,
+)
+
+
+def parse_verdict_response(response: str, queries: list[str]) -> list[dict]:
+    """Parse an LLM verdict response into per-query results (Fix 5 / §6).
+
+    The LLM is instructed to emit lines of the form ``N: <verdict>``.  This
+    parser is robust to:
+      - extra whitespace / prefixes
+      - out-of-order line numbers
+      - missing query numbers (sets parse_failure=True, defaults to "Partial")
+
+    Default-on-missing is "Partial" (not "No") because silent "No" defaults
+    bias scores downward when the LLM misformats output, falsely indicating
+    knowledge gaps.
+    """
+    verdicts: dict[int, str] = {}
+    canonicalise = {"yes": "Yes", "partial": "Partial", "no": "No"}
+    for line in response.splitlines():
+        m = _VERDICT_LINE_RE.match(line)
+        if m:
+            n = int(m.group(1))
+            verdicts[n] = canonicalise[m.group(2).lower()]
+
+    per_query: list[dict] = []
+    for idx, q in enumerate(queries, start=1):
+        answered = verdicts.get(idx)
+        if answered is None:
+            per_query.append({"query": q, "answered": "Partial", "parse_failure": True})
+        else:
+            per_query.append({"query": q, "answered": answered, "parse_failure": False})
+    return per_query
+
+
 async def _score_rewrite_query_match(
     rewrite_text: str,
     original_query_table: list[dict],
@@ -1494,11 +1577,12 @@ async def _score_rewrite_query_match(
     Re-evaluate how well the rewrite text answers the original page's AI queries.
 
     Uses the same queries from the cached GEO report (not re-generating them),
-    then asks the LLM to score each query Yes/Partial/No.
+    then asks the LLM to score each query Yes/Partial/No using the numbered
+    output format (Fix 5 / §6).
 
     Returns (score, per_query_results) where:
       - score: 0.0–1.0 matching QUERY_MATCH_SCORE formula
-      - per_query_results: list of {query, answered} dicts for knowledge-gap tracking
+      - per_query_results: list of {query, answered, parse_failure} dicts
     """
     from api.services.geo_analyzer import _call_ai  # type: ignore
 
@@ -1521,22 +1605,30 @@ async def _score_rewrite_query_match(
         f"You are scoring how well a web page answers user questions.\n\n"
         f"PAGE TEXT:\n{text_sample}\n\n"
         f"QUESTIONS:\n{q_block}\n\n"
-        f"For each question respond with exactly one of: Yes / Partial / No\n"
-        f"Output one answer per line, in question order. No other text."
+        f"For each question, output a single line in the EXACT format:\n"
+        f"  N: <Yes|Partial|No>\n"
+        f"where N is the question number. Output one line per question, "
+        f"in question order. No other text, no commentary.\n\n"
+        f"Example output for 3 questions:\n"
+        f"  1: Yes\n"
+        f"  2: Partial\n"
+        f"  3: No\n"
     )
     try:
         response = await _call_ai(prompt, model, provider)
-        lines = [ln.strip().lower() for ln in response.strip().splitlines() if ln.strip()]
-        per_query = []
-        for idx, q in enumerate(queries):
-            raw = lines[idx] if idx < len(lines) else "no"
-            if raw.startswith("yes"):
-                verdict = "Yes"
-            elif raw.startswith("partial"):
-                verdict = "Partial"
-            else:
-                verdict = "No"
-            per_query.append({"query": q, "answered": verdict})
+        per_query = parse_verdict_response(response, queries)
+        # Log per-query parse failures (helps diagnose silent regressions)
+        n_parse_fail = sum(1 for r in per_query if r.get("parse_failure"))
+        if n_parse_fail:
+            logger.warning(
+                "query_match_parse_failure",
+                extra={
+                    "n_queries": len(queries),
+                    "n_parse_failure": n_parse_fail,
+                },
+            )
+        # Score: Yes=1, Partial=0.5, No=0.  parse_failure rows count as
+        # Partial under §6.3's bias-toward-recoverable-default rule.
         answered = sum(1 for r in per_query if r["answered"] == "Yes")
         partial = sum(1 for r in per_query if r["answered"] == "Partial")
         total = len(queries)
@@ -2036,18 +2128,27 @@ async def stream_rewrite_variants(
 
     # Knowledge ceiling: find queries that scored "No" in every variant that had results.
     # A query at the knowledge ceiling cannot be answered by rewriting — it needs new content.
+    #
+    # Fix 5 / §6.3: a query with ANY parse-failure verdict is excluded from the
+    # ceiling — we don't know what the LLM actually said.  Better to under-report
+    # ceilings than to mark a query as a knowledge gap on the basis of a
+    # malformed LLM response.
     knowledge_gaps: list[str] = []
     if all_per_query_results and query_table:
         all_queries = [q.get("query", "") for q in query_table if q.get("query")]
         for q_text in all_queries:
-            # Collect this query's verdict across all tries that produced results
-            verdicts = [
-                r["answered"]
+            # Collect this query's per-variant rows (full dict, not just verdict)
+            verdict_rows = [
+                r
                 for per_query in all_per_query_results
                 for r in per_query
                 if r["query"] == q_text
             ]
-            if verdicts and all(v == "No" for v in verdicts):
+            if not verdict_rows:
+                continue
+            any_parse_failure = any(r.get("parse_failure") for r in verdict_rows)
+            all_no = all(r["answered"] == "No" for r in verdict_rows)
+            if all_no and not any_parse_failure:
                 knowledge_gaps.append(q_text)
 
     done_event = {
