@@ -531,14 +531,18 @@ class TestContentScoreAdversarial:
     - Monotonicity: more failing checks must never produce a higher score.
     """
 
-    def test_returns_three_tuple(self):
-        """_content_score must return (fail_count, score, failing_codes)."""
+    def test_returns_four_tuple(self):
+        """_content_score must return (fail_count, score, failing_codes, placeholder_inventory).
+
+        Updated to 4-tuple in correctness pass §3.3 (Fix 2).
+        """
         result = _content_score("http://x.com", "short")
-        assert len(result) == 3
-        issues, score, codes = result
+        assert len(result) == 4
+        issues, score, codes, inv = result
         assert isinstance(issues, int)
         assert isinstance(score, float)
         assert isinstance(codes, list)
+        assert isinstance(inv, dict)
 
     def test_geo_notes_placeholder_does_not_inflate_citation_score(self):
         """Core regression: [CITATION NEEDED] in GEO NOTES must NOT count as a citation."""
@@ -547,8 +551,8 @@ class TestContentScoreAdversarial:
             + "\n---\nGEO NOTES\n- [CITATION NEEDED] added at: introduction.\n"
         )
         text_no_notes = _LONG_BODY  # same body, no notes
-        _, score_with_notes, _ = _content_score("http://x.com", text_with_notes_only)
-        _, score_no_notes, _ = _content_score("http://x.com", text_no_notes)
+        _, score_with_notes, _, _ = _content_score("http://x.com", text_with_notes_only)
+        _, score_no_notes, _, _ = _content_score("http://x.com", text_no_notes)
         assert score_with_notes == score_no_notes, (
             "Score with GEO NOTES placeholder must equal score without it; "
             "the notes section must not contribute to citation check"
@@ -560,7 +564,7 @@ class TestContentScoreAdversarial:
             _LONG_BODY
             + "\n---\nGEO NOTES\n- [STATISTIC: user growth rate] added at: body.\n"
         )
-        _, score_notes, codes_notes = _content_score("http://x.com", text_notes_only)
+        _, score_notes, codes_notes, _ = _content_score("http://x.com", text_notes_only)
         # STATISTICS_COUNT_LOW must still fire — notes don't count
         assert "STATISTICS_COUNT_LOW" in codes_notes
 
@@ -570,13 +574,13 @@ class TestContentScoreAdversarial:
             _LONG_BODY
             + " Research confirms this [CITATION NEEDED: peer-reviewed study]."
         )
-        _, _, codes = _content_score("http://x.com", body_with_inline)
+        _, _, codes, _ = _content_score("http://x.com", body_with_inline)
         assert "EXTERNAL_CITATIONS_LOW" not in codes
 
     def test_inline_statistic_counts(self):
         """A number with unit embedded in body must clear STATISTICS_COUNT_LOW."""
         body_with_stat = _LONG_BODY + " Users report 40% faster retrieval."
-        _, _, codes = _content_score("http://x.com", body_with_stat)
+        _, _, codes, _ = _content_score("http://x.com", body_with_stat)
         assert "STATISTICS_COUNT_LOW" not in codes
 
     def test_monotonicity_more_failures_lower_score(self):
@@ -589,10 +593,10 @@ class TestContentScoreAdversarial:
             "- Feature A\n- Feature B\n- Feature C\n\n"
         ) * 10
 
-        _, score_rich, fails_rich = _content_score("http://x.com", rich)
+        _, score_rich, fails_rich, _ = _content_score("http://x.com", rich)
 
         # Thin: no stats, no cites, no quotes, no structure
-        _, score_thin, fails_thin = _content_score("http://x.com", _LONG_BODY)
+        _, score_thin, fails_thin, _ = _content_score("http://x.com", _LONG_BODY)
 
         assert len(fails_rich) <= len(fails_thin), (
             "Rich content must have fewer or equal failing checks than thin content"
@@ -604,12 +608,12 @@ class TestContentScoreAdversarial:
     def test_score_range_is_zero_to_one(self):
         """Score must always be in [0.0, 1.0]."""
         for content in ["", "x", _LONG_BODY, "word " * 1000]:
-            _, score, _ = _content_score("http://x.com", content)
+            _, score, _, _ = _content_score("http://x.com", content)
             assert 0.0 <= score <= 1.0, f"Score {score} out of range for content length {len(content)}"
 
     def test_failing_codes_match_issues_count(self):
         """fail_count must equal len(failing_codes)."""
-        issues, _, codes = _content_score("http://x.com", _LONG_BODY)
+        issues, _, codes, _ = _content_score("http://x.com", _LONG_BODY)
         assert issues == len(codes)
 
     def test_answer_signal_in_notes_does_not_satisfy_viewport_check(self):
@@ -626,7 +630,7 @@ class TestContentScoreAdversarial:
             + "- Direct answer added at: introduction: "
             + "'OpenBrain is a personal AI memory database.'\n"
         )
-        _, _, codes = _content_score("http://x.com", text_with_misleading_notes)
+        _, _, codes, _ = _content_score("http://x.com", text_with_misleading_notes)
         assert "FIRST_VIEWPORT_NO_ANSWER" in codes, (
             "FIRST_VIEWPORT_NO_ANSWER must fire even when the answer phrase appears "
             "only in GEO NOTES — the check must operate on body text only"
@@ -1097,8 +1101,8 @@ class TestPreservationFloor:
         features_with_faq = {"faq_pair_count": 6, "code_block_count": 0,
                               "table_count": 0, "outbound_link_count": 0,
                               "named_list_count": 0}
-        _, score_without, _ = _content_score("http://x.com", _REWRITE_PROSE_ONLY)
-        _, score_with, codes_with = _content_score(
+        _, score_without, _, _ = _content_score("http://x.com", _REWRITE_PROSE_ONLY)
+        _, score_with, codes_with, _ = _content_score(
             "http://x.com", _REWRITE_PROSE_ONLY, original_features=features_with_faq
         )
         assert score_with < score_without, (
@@ -1121,12 +1125,12 @@ class TestPreservationFloor:
                            "table_count": 0, "outbound_link_count": 0,
                            "named_list_count": 0}
 
-        _, score_zero, _ = _content_score("http://x.com", base_content,
-                                          original_features=no_features)
-        _, score_one, _ = _content_score("http://x.com", base_content,
-                                         original_features=one_regression)
-        _, score_two, _ = _content_score("http://x.com", base_content,
-                                         original_features=two_regressions)
+        _, score_zero, _, _ = _content_score("http://x.com", base_content,
+                                              original_features=no_features)
+        _, score_one, _, _ = _content_score("http://x.com", base_content,
+                                            original_features=one_regression)
+        _, score_two, _, _ = _content_score("http://x.com", base_content,
+                                            original_features=two_regressions)
 
         assert score_zero >= score_one >= score_two, (
             f"Monotonicity violated: zero={score_zero}, one={score_one}, two={score_two}"
@@ -1349,3 +1353,200 @@ class TestFabricatedLinkRegex:
             "https://en.wikipedia.org/wiki/Generative_engine_optimization",
         ]:
             assert not _FABRICATED_LINK_RE.search(url), f"Should NOT match: {url}"
+
+
+# ---------------------------------------------------------------------------
+# Fix 2 — CR3_* — placeholder cap + 4-tuple return
+# ---------------------------------------------------------------------------
+
+# Long enough to trigger the word_count >= 500 gate
+_LONG_PROSE_500 = (
+    "OpenBrain is a personal AI memory database that you own and control. "
+    "It addresses the problem of AI assistants forgetting prior context. "
+) * 30  # ≈ 750 words
+
+
+class TestPlaceholderCap:
+    """CR3.x — placeholders earn half-credit; cap at 2 partial-passes; 4-tuple return."""
+
+    # ── §3.2 partial-pass behaviour ─────────────────────────────────────────
+
+    def test_cr3_2_partial_pass_half_weight(self):
+        """§3.2 — placeholder-only ⇒ partial-pass; real evidence ⇒ full pass; neither ⇒ fail."""
+        # Real evidence (real number, real markdown link, real attribution)
+        real_text = (
+            _LONG_PROSE_500
+            + " Users report 40% faster recall. "
+            + " According to peer-reviewed studies, this approach scales. "
+            + " See [Supabase docs](https://supabase.com/docs/pgvector) for details. "
+        )
+        # Same shape but only placeholders
+        placeholder_text = (
+            _LONG_PROSE_500
+            + " Setup time varies [STATISTIC: typical setup duration]. "
+            + " Per the project's notes, [QUOTE NEEDED: capability claim]. "
+            + " Architecture details are documented [CITATION NEEDED: docs]. "
+        )
+        # Neither
+        bare_text = _LONG_PROSE_500
+
+        _, real_score, real_codes, real_inv = _content_score(
+            "http://x.com", real_text, "general"
+        )
+        _, ph_score, ph_codes, ph_inv = _content_score(
+            "http://x.com", placeholder_text, "general"
+        )
+        _, bare_score, bare_codes, bare_inv = _content_score(
+            "http://x.com", bare_text, "general"
+        )
+
+        # Real evidence: none of the 3 placeholder-eligible checks should fire
+        for code in ("STATISTICS_COUNT_LOW", "EXTERNAL_CITATIONS_LOW", "QUOTATIONS_MISSING"):
+            assert code not in real_codes, f"Real evidence should clear {code}"
+            assert code not in real_inv["partial_pass_checks"], (
+                f"Real evidence should not be marked partial-pass for {code}"
+            )
+
+        # Bare text: all 3 should be in failing codes
+        for code in ("STATISTICS_COUNT_LOW", "EXTERNAL_CITATIONS_LOW", "QUOTATIONS_MISSING"):
+            assert code in bare_codes, f"Bare text should fail {code}"
+
+        # Strict ordering: real > placeholder > bare
+        assert real_score > ph_score > bare_score, (
+            f"Score ordering violated: real={real_score} ph={ph_score} bare={bare_score}"
+        )
+
+    def test_cr3_2_non_placeholder_checks_remain_binary(self):
+        """§3.2 — STRUCTURED_ELEMENTS_LOW and FIRST_VIEWPORT_NO_ANSWER are binary."""
+        # Bare prose with no structure and no answer signal
+        text = "This document covers various topics. " * 100  # ≈ 500 words
+        _, _, codes, inv = _content_score("http://x.com", text, "general")
+        # Both binary checks fail; neither is marked partial-pass
+        assert "STRUCTURED_ELEMENTS_LOW" in codes
+        assert "STRUCTURED_ELEMENTS_LOW" not in inv["partial_pass_checks"]
+        assert "FIRST_VIEWPORT_NO_ANSWER" not in inv["partial_pass_checks"]
+
+    # ── §3.3 4-tuple return + inventory shape ───────────────────────────────
+
+    def test_cr3_3_returns_four_tuple(self):
+        """§3.3 — _content_score returns a 4-tuple."""
+        result = _content_score("http://x.com", "short", "general")
+        assert isinstance(result, tuple) and len(result) == 4
+
+    def test_cr3_3_inventory_has_required_keys(self):
+        """§3.3 — placeholder_inventory has the documented keys."""
+        _, _, _, inv = _content_score("http://x.com", "short", "general")
+        assert "partial_pass_checks" in inv
+        assert "placeholder_counts" in inv
+        assert "placeholder_density" in inv
+        assert isinstance(inv["partial_pass_checks"], list)
+        assert isinstance(inv["placeholder_counts"], dict)
+        assert isinstance(inv["placeholder_density"], float)
+        for key in ("citation", "stat", "quote"):
+            assert key in inv["placeholder_counts"]
+
+    # ── §3.5 cap rule ───────────────────────────────────────────────────────
+
+    def test_cr3_5_cap_demotes_third_to_fail(self):
+        """§3.5 — when all 3 placeholder-eligible checks would partial-pass, alphabetically
+        first (EXTERNAL_CITATIONS_LOW) is demoted to a full fail."""
+        text = (
+            _LONG_PROSE_500
+            + " Setup [STATISTIC: median time]. "
+            + " Per docs, [QUOTE NEEDED: claim]. "
+            + " Architecture [CITATION NEEDED: source]. "
+        )
+        _, _, codes, inv = _content_score("http://x.com", text, "general")
+        # Cap: at most 2 partial-passes
+        assert len(inv["partial_pass_checks"]) <= 2, (
+            f"Cap violated: {inv['partial_pass_checks']}"
+        )
+        # The demoted check is the alphabetically first
+        assert "EXTERNAL_CITATIONS_LOW" in codes, (
+            "EXTERNAL_CITATIONS_LOW should be demoted to a full fail under the cap"
+        )
+        assert "EXTERNAL_CITATIONS_LOW" not in inv["partial_pass_checks"]
+
+    # ── §3.6 acceptance ─────────────────────────────────────────────────────
+
+    def test_cr3_6_real_beats_placeholder(self):
+        """§3.6.a — real evidence scores strictly higher than only-placeholder."""
+        real = (
+            _LONG_PROSE_500
+            + " Latency drops 42% [Supabase docs](https://supabase.com/docs/pgvector). "
+            + " According to research, retrieval improves. "
+        )
+        placeholder = (
+            _LONG_PROSE_500
+            + " Latency drops [STATISTIC: improvement]. "
+            + " [CITATION NEEDED: research source]. "
+            + " Per analysis, [QUOTE NEEDED: claim]. "
+        )
+        _, real_score, _, _ = _content_score("http://x.com", real, "general")
+        _, ph_score, _, _ = _content_score("http://x.com", placeholder, "general")
+        assert real_score > ph_score, f"real={real_score} not > ph={ph_score}"
+
+    def test_cr3_6_all_placeholder_caps_at_85(self):
+        """§3.6.b — pure-placeholder content cannot score above 0.85."""
+        text = (
+            "[CITATION NEEDED: source 1] [STATISTIC: figure 1] [QUOTE NEEDED: voice 1] "
+        ) * 50  # ≈ 500 words, ~150 placeholders
+        _, score, _, inv = _content_score("http://x.com", text, "general")
+        assert score <= 0.85, (
+            f"All-placeholder content scored {score}; cap should keep it ≤ 0.85"
+        )
+        assert len(inv["partial_pass_checks"]) <= 2
+
+    def test_cr3_6_inventory_populated(self):
+        """§3.6.c — inventory.partial_pass_checks lists EXTERNAL_CITATIONS_LOW
+        when only-citation-placeholder is present."""
+        # Provide ONLY a citation placeholder; no real link, no real stats/quotes
+        text = (
+            _LONG_PROSE_500
+            + " Background [CITATION NEEDED: peer-reviewed source]. "
+        )
+        _, _, codes, inv = _content_score("http://x.com", text, "general")
+        # EXTERNAL_CITATIONS_LOW should be partial-pass (placeholder present)
+        assert "EXTERNAL_CITATIONS_LOW" in inv["partial_pass_checks"], (
+            f"Expected EXTERNAL_CITATIONS_LOW in partial_pass_checks, got {inv['partial_pass_checks']}"
+        )
+        assert "EXTERNAL_CITATIONS_LOW" not in codes
+        assert inv["placeholder_counts"]["citation"] == 1
+
+
+# ---------------------------------------------------------------------------
+# Fix 7.5 wired into Check 2 — CR8_5_c, CR8_5_d
+# ---------------------------------------------------------------------------
+
+class TestFabricatedLinkScoring:
+    """CR8_5.c/d — fabricated outbound links count as placeholders, not real citations."""
+
+    def test_cr8_5_fabricated_link_partial_pass(self):
+        """§8.5.c — fabricated link triggers partial-pass, not full pass."""
+        text = _LONG_PROSE_500 + " See [docs](https://example.com) for details. "
+        _, _, codes, inv = _content_score("http://x.com", text, "general")
+        # EXTERNAL_CITATIONS_LOW should be in partial_pass_checks (not full fail)
+        assert "EXTERNAL_CITATIONS_LOW" in inv["partial_pass_checks"], (
+            "Fabricated link should mark EXTERNAL_CITATIONS_LOW as partial-pass"
+        )
+        assert "EXTERNAL_CITATIONS_LOW" not in codes
+
+    def test_cr8_5_example_dot_com_partial_inventory(self):
+        """§8.5.d — only-example.com links yield partial inventory entry."""
+        text = (
+            _LONG_PROSE_500
+            + " First source [Foo](https://example.com/foo). "
+            + " Second source [Bar](https://placeholder.io/bar). "
+        )
+        _, _, _, inv = _content_score("http://x.com", text, "general")
+        assert "EXTERNAL_CITATIONS_LOW" in inv["partial_pass_checks"]
+
+    def test_cr8_5_real_link_full_pass(self):
+        """Real link (control case for the above) — EXTERNAL_CITATIONS_LOW fully passes."""
+        text = (
+            _LONG_PROSE_500
+            + " See [Supabase docs](https://supabase.com/docs/pgvector) for details. "
+        )
+        _, _, codes, inv = _content_score("http://x.com", text, "general")
+        assert "EXTERNAL_CITATIONS_LOW" not in codes
+        assert "EXTERNAL_CITATIONS_LOW" not in inv["partial_pass_checks"]

@@ -1006,20 +1006,35 @@ def _content_score(
     content: str,
     page_type: str = "general",
     original_features: dict | None = None,
-) -> tuple[int, float, list[str]]:
+) -> tuple[int, float, list[str], dict]:
     """
     Score rewrite content on 5 GEO content signals + optional preservation regression.
 
-    Returns (fail_count, score 0-1, list_of_failing_check_codes).
+    Returns (fail_count, score 0-1, list_of_failing_check_codes, placeholder_inventory).
+
+    placeholder_inventory keys:
+        partial_pass_checks: list[str]  — checks passing only via placeholders (half credit)
+        placeholder_counts: dict[str, int]  — counts by type (citation/quote/stat)
+        placeholder_density: float  — placeholders per 100 body words
 
     Uses a fixed denominator (weight=13) so baseline and all variant scores
     are directly comparable.  When original_features is provided, up to 5
     preservation regression checks are added (weight=2 each), growing the
     denominator accordingly.
 
-    Placeholder citations/quotes/stats from the rewriting LLM are counted as
-    passes so the scoring rewards good rewrites that identify WHERE evidence
-    should go, even if the editor must fill it in.
+    Placeholder credit (Fix 2 / §3):
+      - Real evidence (e.g. real outbound link, real number, real attribution)
+        → check passes fully.
+      - Only placeholders ([CITATION NEEDED], [STATISTIC: ...], [QUOTE NEEDED: ...])
+        → check passes at 0.5 credit (partial-pass).  fail_weight += weight × 0.5.
+      - Neither → check fails fully.
+      - Cap rule (§3.5): at most 2 of the 3 placeholder-eligible checks may
+        partial-pass; if all three would partial-pass, the alphabetically-first
+        check (EXTERNAL_CITATIONS_LOW) is demoted to a full fail.  Tie-break
+        is alphabetical because all three weights are equal (3); this is
+        documented and tested by CR3_5.
+      - Fabricated outbound links (per _FABRICATED_LINK_RE) are treated as
+        placeholders, not real citations.
 
     GEO NOTES are stripped before scoring so that placeholder descriptions in
     the notes section cannot inflate the score.
@@ -1030,36 +1045,73 @@ def _content_score(
     first_150 = " ".join(tokens[:150])
 
     fails: set[str] = set()
+    partial_passes: set[str] = set()
 
-    # Check 1 — Statistics: search body + placeholders (body only — not GEO NOTES)
+    # ── Check 1 — Statistics ────────────────────────────────────────────────
+    # Real: number-with-unit found by _STAT_RE_FULL.
+    # Placeholder: [STATISTIC: ...] in body.
     if word_count >= 500:
-        has_stat = (
-            bool(_STAT_RE_FULL.search(body))
-            or bool(_PLACEHOLDER_STAT_RE.search(body))
-        )
-        if not has_stat:
+        has_real_stat = bool(_STAT_RE_FULL.search(body))
+        has_placeholder_stat = bool(_PLACEHOLDER_STAT_RE.search(body))
+        if has_real_stat:
+            pass  # full pass
+        elif has_placeholder_stat:
+            partial_passes.add("STATISTICS_COUNT_LOW")
+        else:
             fails.add("STATISTICS_COUNT_LOW")
 
-    # Check 2 — External citations: markdown links OR [CITATION NEEDED] placeholders
+    # ── Check 2 — External citations ────────────────────────────────────────
+    # Real: markdown link to a non-fabricated URL.
+    # Placeholder: [CITATION NEEDED] OR markdown link to a fabricated URL.
     if word_count >= 500:
-        has_citation = (
-            bool(_MD_LINK_RE.search(body))
-            or bool(_PLACEHOLDER_CITATION_RE.search(body))
+        real_links = [
+            m for m in _MD_LINK_RE.finditer(body)
+            if _is_real_external_link(m.group(2))
+        ]
+        fabricated_links = [
+            m for m in _MD_LINK_RE.finditer(body)
+            if not _is_real_external_link(m.group(2))
+        ]
+        has_real_citation = bool(real_links)
+        has_placeholder_citation = (
+            bool(_PLACEHOLDER_CITATION_RE.search(body))
+            or bool(fabricated_links)
         )
-        if not has_citation:
+        if has_real_citation:
+            pass  # full pass
+        elif has_placeholder_citation:
+            partial_passes.add("EXTERNAL_CITATIONS_LOW")
+        else:
             fails.add("EXTERNAL_CITATIONS_LOW")
 
-    # Check 3 — Quotations/attribution: full body + placeholders
+    # ── Check 3 — Quotations/attribution ────────────────────────────────────
+    # Real: blockquote OR attribution phrase.
+    # Placeholder: [QUOTE NEEDED: ...].
     if word_count >= 500:
-        has_quote = (
+        has_real_quote = (
             bool(_MD_BLOCKQUOTE_RE.search(body))
             or bool(_ATTRIBUTION_RE_FULL.search(body))
-            or bool(_PLACEHOLDER_QUOTE_RE.search(body))
         )
-        if not has_quote:
+        has_placeholder_quote = bool(_PLACEHOLDER_QUOTE_RE.search(body))
+        if has_real_quote:
+            pass
+        elif has_placeholder_quote:
+            partial_passes.add("QUOTATIONS_MISSING")
+        else:
             fails.add("QUOTATIONS_MISSING")
 
-    # Check 4 — Answer signal in first 150 words (intentionally strict: first viewport only)
+    # ── Cap rule (§3.5): at most 2 partial-passes ───────────────────────────
+    # All three placeholder-eligible checks have weight 3.  Alphabetical tie-
+    # break (documented in docstring + plan §4 risk) — EXTERNAL_CITATIONS_LOW
+    # demotes first.
+    while len(partial_passes) > 2:
+        # Demote the alphabetically-first remaining partial-pass to a full fail
+        demote = sorted(partial_passes)[0]
+        partial_passes.remove(demote)
+        fails.add(demote)
+
+    # ── Check 4 — Answer signal in first 150 words ──────────────────────────
+    # Binary check; not placeholder-eligible.
     if word_count >= 200:
         try:
             from api.crawler.issue_checker import _has_answer_signal  # type: ignore
@@ -1068,7 +1120,9 @@ def _content_score(
         except Exception:
             pass  # skip check if import fails
 
-    # Check 5 — Structured elements: list items, tables, or code blocks anywhere in body
+    # ── Check 5 — Structured elements ───────────────────────────────────────
+    # Binary check; not placeholder-eligible.  Page-type-conditional dispatch
+    # lands in Step 6 (§4 / Fix 3); keep generic behaviour for now.
     if word_count >= 500:
         has_structure = (
             bool(_MD_UL_RE.search(body))
@@ -1079,8 +1133,12 @@ def _content_score(
         if not has_structure:
             fails.add("STRUCTURED_ELEMENTS_LOW")
 
-    # Base score (fixed denominator)
+    # ── Score computation ───────────────────────────────────────────────────
+    # Full failures contribute their full weight; partial passes contribute
+    # half their weight.  Denominator stays fixed at 13 so scores are
+    # comparable across variants.
     fail_weight = sum(_CONTENT_SCORE_WEIGHT.get(c, 0) for c in fails)
+    fail_weight += sum(_CONTENT_SCORE_WEIGHT.get(c, 0) * 0.5 for c in partial_passes)
     total_weight = _CONTENT_SCORE_TOTAL_WEIGHT
 
     # Preservation regression checks (RP4.3) — each adds to denominator whether or not it fails
@@ -1103,7 +1161,25 @@ def _content_score(
         fails.update(regression_violations)
 
     score = round(1.0 - fail_weight / total_weight, 4) if total_weight > 0 else 1.0
-    return len(fails), score, sorted(fails)
+
+    # ── Placeholder inventory (Fix 2 / §3.3) ────────────────────────────────
+    placeholder_counts = {
+        "citation": len(_PLACEHOLDER_CITATION_RE.findall(body)),
+        "stat": len(_PLACEHOLDER_STAT_RE.findall(body)),
+        "quote": len(_PLACEHOLDER_QUOTE_RE.findall(body)),
+    }
+    total_placeholders = sum(placeholder_counts.values())
+    placeholder_density = (
+        round(total_placeholders / (word_count / 100.0), 4)
+        if word_count > 0 else 0.0
+    )
+    placeholder_inventory = {
+        "partial_pass_checks": sorted(partial_passes),
+        "placeholder_counts": placeholder_counts,
+        "placeholder_density": placeholder_density,
+    }
+
+    return len(fails), score, sorted(fails), placeholder_inventory
 
 
 def _project_score(
@@ -1111,11 +1187,13 @@ def _project_score(
     url: str,
     markdown_content: str,
     page_type: str = "general",
-) -> tuple[int, float, list[str]]:
+) -> tuple[int, float, list[str], dict]:
     """
     Project the content-compliance score for a rewrite variant.
 
-    Returns (content_fail_count, projected_score, failing_check_codes).
+    Returns (content_fail_count, projected_score, failing_check_codes, placeholder_inventory).
+
+    Note: this wrapper is scheduled for deletion in CR_ADJ_2 (Step 13).
     """
     return _content_score(url, markdown_content, page_type)
 
@@ -1561,8 +1639,13 @@ async def stream_rewrite_variants(
         failing_checks: list[str] = []
         regressions: list[str] = []
         per_query_results: list[dict] = []
+        placeholder_inventory: dict = {
+            "partial_pass_checks": [],
+            "placeholder_counts": {"citation": 0, "stat": 0, "quote": 0},
+            "placeholder_density": 0.0,
+        }
         if result.get("text"):
-            issues, c_score, failing_checks = _content_score(
+            issues, c_score, failing_checks, placeholder_inventory = _content_score(
                 url, result["text"], page_type, original_features=original_features
             )
             # Extract regression violations separately for SSE reporting
@@ -1573,8 +1656,8 @@ async def stream_rewrite_variants(
                     result["text"], query_table, model, provider
                 )
                 query_projected = _project_score_from_findings(findings_for_projection, new_qm_score)
-                # Blend: 80% query coverage + 20% content quality so issue
-                # count actually affects the projected score
+                # Blend: query coverage + content quality (weights are provisional;
+                # see _QUERY_COVERAGE_WEIGHT docstring).
                 projected_score = round(
                     _QUERY_COVERAGE_WEIGHT * query_projected
                     + _CONTENT_QUALITY_WEIGHT * c_score,
@@ -1606,6 +1689,7 @@ async def stream_rewrite_variants(
         result["projected_score"] = projected_score
         result["placeholder_issues"] = placeholder_issues
         result["regressions"] = regressions
+        result["placeholder_inventory"] = placeholder_inventory
         variants.append(result)
 
         # Record baseline from first try; update evolutionary best
@@ -1624,6 +1708,7 @@ async def stream_rewrite_variants(
             "issues": issues,
             "projected_score": projected_score,
             "placeholder_issues": placeholder_issues,
+            "placeholder_inventory": placeholder_inventory,
             "regressions": regressions,
             "error": result.get("error"),
             "text": result.get("text", ""),
@@ -1674,12 +1759,18 @@ async def stream_rewrite_variants(
             "content_quality_weight": _CONTENT_QUALITY_WEIGHT,
             "weighting_validated": False,
         },
+        "winner_placeholder_inventory": winner.get("placeholder_inventory", {
+            "partial_pass_checks": [],
+            "placeholder_counts": {"citation": 0, "stat": 0, "quote": 0},
+            "placeholder_density": 0.0,
+        }),
         "variants": [
             {
                 "index": v["index"],
                 "issues": v.get("issues", 999),
                 "projected_score": v.get("projected_score", 0.0),
                 "placeholder_issues": v.get("placeholder_issues", []),
+                "placeholder_inventory": v.get("placeholder_inventory", {}),
                 "regressions": v.get("regressions", []),
                 "rank": v.get("rank"),
                 "error": v.get("error"),
