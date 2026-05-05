@@ -2210,3 +2210,86 @@ class TestIntegrationPipeline:
         src = Path(mod.__file__).read_text()
         assert '"winner_placeholder_inventory"' in src
         assert '"scoring_metadata"' in src
+
+
+# ---------------------------------------------------------------------------
+# CR_ADJ_* — adjacent fixes pulled into scope per user directive 2026-05-04
+# ---------------------------------------------------------------------------
+
+class TestAdjacentFixes:
+    """CR_ADJ.x — adjacent code-quality fixes."""
+
+    def test_cr_adj_1_score_markdown_kept_alive(self):
+        """CR_ADJ_1 — _score_markdown is NOT deleted because execute_rewrite_best_of_n
+        still uses it.  Documented as a discovery in the implementation report.
+        """
+        import api.services.geo_rewrite_prompt as mod
+        # Helper still importable
+        assert hasattr(mod, "_score_markdown"), (
+            "_score_markdown must remain — execute_rewrite_best_of_n uses it"
+        )
+        # Verify the call site still exists
+        from pathlib import Path
+        src = Path(mod.__file__).read_text()
+        assert "_score_markdown(url, res[\"text\"]" in src, (
+            "execute_rewrite_best_of_n call site missing"
+        )
+
+    def test_cr_adj_2_project_score_deleted(self):
+        """CR_ADJ_2 — _project_score wrapper has been deleted (no production callers)."""
+        from api.services import geo_rewrite_prompt as mod
+        assert not hasattr(mod, "_project_score"), (
+            "_project_score should be deleted — it had no production callers"
+        )
+        # _project_score_from_findings is a different (live) function — must remain
+        assert hasattr(mod, "_project_score_from_findings"), (
+            "_project_score_from_findings is a different function and must remain"
+        )
+
+    def test_cr_adj_3_indented_bullets_split_correctly(self):
+        """CR_ADJ_3 — _split_body_and_notes tolerates leading whitespace on bullets."""
+        text = (
+            "Body here.\n\n"
+            "---\n"
+            "GEO NOTES\n"
+            "  - [CITATION NEEDED] indented bullet\n"
+            "  - [STATISTIC: foo] another indented bullet\n"
+        )
+        body, notes = _split_body_and_notes(text)
+        assert "Body here" in body
+        assert "CITATION NEEDED" in notes, (
+            f"Indented bullets failed to split: body={body!r} notes={notes!r}"
+        )
+
+    def test_cr_adj_4_heading_without_question_word_not_counted(self):
+        """CR_ADJ_4 — heading like `## Migration v2 → v3?` (no question word) doesn't count."""
+        from api.services.geo_rewrite_prompt import _count_faq_pairs
+        text = (
+            "## Migration v2 → v3?\n"
+            "Here is how to migrate.\n\n"
+            "## Upgrading to v4?\n"
+            "Here is how to upgrade.\n"
+        )
+        # Both headings end with `?` but neither starts with What/How/Why/etc.
+        # Even though there are 2 such headings, neither qualifies as a Q&A heading.
+        assert _count_faq_pairs(text) == 0, (
+            "Headings without question words must not count as FAQ pairs"
+        )
+
+    def test_cr_adj_5_numbers_in_code_blocks_captured(self):
+        """CR_ADJ_5 — _extract_preservation_floor scans numbers from full text incl. code blocks."""
+        text = (
+            "Some prose here.\n\n"
+            "```\n"
+            "Benchmark: 45 minutes for 1M rows at 99.9% accuracy.\n"
+            "```\n"
+        )
+        floor = _extract_preservation_floor(text)
+        nums = floor["original_number_set"]
+        # Numbers inside the code block must be captured
+        assert any("45 minutes" in n for n in nums), (
+            f"'45 minutes' from code block must be in original_number_set: {nums}"
+        )
+        assert any("99.9" in n for n in nums), (
+            f"'99.9%' from code block must be in original_number_set: {nums}"
+        )

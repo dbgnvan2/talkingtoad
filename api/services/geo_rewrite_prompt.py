@@ -852,7 +852,11 @@ def _extract_preservation_floor(text: str) -> dict:
         "code_block_count":    len(_MD_CODE_RE.findall(text)),
         "table_count":         _count_tables(text_no_code),
         "outbound_link_count": len(_MD_LINK_RE.findall(text_no_code)),
-        "original_number_set": _extract_specific_numbers(text_no_code),
+        # CR_ADJ_5: scan numbers from FULL text (including code blocks) so a
+        # rewrite that preserves a benchmark like ```45 minutes``` verbatim
+        # doesn't trip the hallucination guard for "45 minutes" not being in
+        # the original number set.
+        "original_number_set": _extract_specific_numbers(text),
         "named_entities":      named_entities,
     }
 
@@ -1474,21 +1478,6 @@ def _content_score(
 
     return len(fails), score, sorted(fails), placeholder_inventory
 
-
-def _project_score(
-    original_findings: list[dict],
-    url: str,
-    markdown_content: str,
-    page_type: str = "general",
-) -> tuple[int, float, list[str], dict]:
-    """
-    Project the content-compliance score for a rewrite variant.
-
-    Returns (content_fail_count, projected_score, failing_check_codes, placeholder_inventory).
-
-    Note: this wrapper is scheduled for deletion in CR_ADJ_2 (Step 13).
-    """
-    return _content_score(url, markdown_content, page_type)
 
 
 def _run_static_geo_checks(
