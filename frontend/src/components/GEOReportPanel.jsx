@@ -590,7 +590,7 @@ export default function GEOReportPanel({ jobId, domain }) {
     try {
       const response = await fetch('/api/ai/advisor/prompt', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
         body: JSON.stringify({ report_markdown: report.report_markdown })
       })
       const data = await response.json()
@@ -633,7 +633,7 @@ export default function GEOReportPanel({ jobId, domain }) {
       // Rewrite the page at that URL
       const response = await fetch('/api/ai/rewrite-url', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
         body: JSON.stringify({
           url: targetUrl,
           prompt: generatedPrompt
