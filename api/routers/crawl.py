@@ -2,6 +2,7 @@
 Crawl management endpoints (spec §6.1, §6.2, §6.4).
 
 POST  /api/crawl/start
+GET   /api/crawl/{job_id}
 GET   /api/crawl/{job_id}/status
 POST  /api/crawl/{job_id}/cancel
 GET   /api/crawl/{job_id}/results
@@ -494,6 +495,25 @@ async def start_crawl(
         "job_id": job.job_id,
         "status": "queued",
         "poll_url": f"/api/crawl/{job.job_id}/status",
+    }
+
+
+@router.get("/{job_id}", response_model=None)
+async def get_job(
+    job_id: str,
+    store: SQLiteJobStore | RedisJobStore = Depends(get_store),
+) -> dict | JSONResponse:
+    """Get job details by ID (returns target_url and other metadata)."""
+    job = await store.get_job(job_id)
+    if job is None:
+        return _err("JOB_NOT_FOUND", "No crawl job found with the given ID.", 404)
+
+    return {
+        "job_id": job.job_id,
+        "target_url": job.target_url,
+        "status": job.status,
+        "pages_crawled": job.pages_crawled,
+        "pages_total": job.pages_total,
     }
 
 
