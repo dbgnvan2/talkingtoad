@@ -553,6 +553,10 @@ export default function GEOReportPanel({ jobId, domain }) {
   const [models, setModels] = useState(null)
   const [selectedModel, setSelectedModel] = useState(null)
   const [activeSection, setActiveSection] = useState('findings')
+  const [generatedPrompt, setGeneratedPrompt] = useState(null)
+  const [promptLoading, setPromptLoading] = useState(false)
+  const [rewriteLoading, setRewriteLoading] = useState(false)
+  const [rewriteContent, setRewriteContent] = useState(null)
 
   useEffect(() => {
     getGeoAiModel()
@@ -579,6 +583,74 @@ export default function GEOReportPanel({ jobId, domain }) {
   const handleModelChange = async (modelId) => {
     setSelectedModel(modelId)
     await setGeoAiModel(modelId).catch(() => {})
+  }
+
+  const handleGeneratePrompt = async () => {
+    setPromptLoading(true)
+    try {
+      const response = await fetch('/api/ai/advisor/prompt', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ report_markdown: report.report_markdown })
+      })
+      const data = await response.json()
+      setGeneratedPrompt(data.prompt)
+    } catch (e) {
+      setError('Failed to generate prompt: ' + e.message)
+    } finally {
+      setPromptLoading(false)
+    }
+  }
+
+  const handleRewrite = async () => {
+    if (!report.report_markdown) {
+      setError('No report available to rewrite')
+      return
+    }
+
+    if (!generatedPrompt) {
+      setError('Please generate a rewrite prompt first')
+      return
+    }
+
+    setRewriteLoading(true)
+    setError(null)
+    try {
+      // Get the job's target URL
+      const jobResponse = await fetch(`/api/crawl/${jobId}`)
+      if (!jobResponse.ok) {
+        throw new Error(`Failed to get job details: ${jobResponse.status}`)
+      }
+      const jobData = await jobResponse.json()
+      const targetUrl = jobData.target_url
+
+      if (!targetUrl) {
+        setError('Job has no target URL')
+        setRewriteLoading(false)
+        return
+      }
+
+      // Rewrite the page at that URL
+      const response = await fetch('/api/ai/rewrite-url', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          url: targetUrl,
+          prompt: generatedPrompt
+        })
+      })
+      if (!response.ok) {
+        throw new Error(`Rewriter failed: ${response.status}`)
+      }
+      const data = await response.json()
+      setRewriteContent(data.rewrite)
+      setError(null)
+    } catch (e) {
+      setError('Failed to rewrite: ' + e.message)
+      console.error('Rewrite error:', e)
+    } finally {
+      setRewriteLoading(false)
+    }
   }
 
   const empirical = report?.findings?.filter(f => f.evidence_tier === 'Empirical') ?? []
@@ -630,72 +702,78 @@ export default function GEOReportPanel({ jobId, domain }) {
 
       {report && !loading && (
         <>
-          {/* Score cards */}
-          <div className="grid grid-cols-2 gap-4">
-            <div className="bg-white border border-gray-200 rounded-2xl p-5">
-              <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Overall GEO Score</p>
-              <p className="text-3xl font-black text-gray-900 mb-2">{Math.round((report.overall_score ?? 0) * 100)}%</p>
-              <ScoreBar score={report.overall_score} />
-            </div>
-            <div className="bg-amber-50 border border-amber-200 rounded-2xl p-5">
-              <p className="text-xs font-bold text-amber-700 uppercase tracking-wider mb-2">
-                🏆 Aggarwal Score (Empirical)
-              </p>
-              <p className="text-3xl font-black text-amber-800 mb-2">{Math.round((report.aggarwal_score ?? 0) * 100)}%</p>
-              <ScoreBar score={report.aggarwal_score} />
-              <p className="text-xs text-amber-600 mt-2">Tactics with controlled measurement</p>
-            </div>
-          </div>
-
-          {/* Tier 1 structural scores (spec §4.7) */}
-          {report.tier1_scores && (
-            <div>
-              <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">
-                Structural Audit — Tier 1 Heuristics
-              </p>
-              <div className="grid grid-cols-2 gap-3">
-                {[
-                  { key: 'intro',           label: 'Intro Answer',        desc: 'Direct answer in first 200 words' },
-                  { key: 'query_coverage',  label: 'Query Coverage',       desc: 'H1 terms in intro + section headings' },
-                  { key: 'independence',    label: 'Section Independence', desc: 'Absence of backward cross-references' },
-                  { key: 'section_clarity', label: 'Section Clarity',      desc: 'No vague openers or overlong paragraphs' },
-                ].map(({ key, label, desc }) => {
-                  const val = report.tier1_scores[key] ?? 0
-                  const color = val >= 80 ? 'text-green-700' : val >= 50 ? 'text-amber-700' : 'text-red-600'
-                  const bg    = val >= 80 ? 'bg-green-50 border-green-200' : val >= 50 ? 'bg-amber-50 border-amber-200' : 'bg-red-50 border-red-200'
-                  return (
-                    <div key={key} className={`border rounded-xl p-3 ${bg}`}>
-                      <div className="flex items-center justify-between mb-1">
-                        <p className="text-xs font-bold text-gray-700">{label}</p>
-                        <p className={`text-lg font-black ${color}`}>{val}%</p>
-                      </div>
-                      <div className="w-full h-1.5 bg-gray-200 rounded-full overflow-hidden mb-1">
-                        <div
-                          className={`h-full rounded-full ${val >= 80 ? 'bg-green-500' : val >= 50 ? 'bg-amber-500' : 'bg-red-500'}`}
-                          style={{ width: `${val}%` }}
-                        />
-                      </div>
-                      <p className="text-[10px] text-gray-500">{desc}</p>
-                    </div>
-                  )
-                })}
+          {/* Show old score cards only if NOT using new markdown report */}
+          {!report.report_markdown && (
+            <>
+              {/* Score cards */}
+              <div className="grid grid-cols-2 gap-4">
+                <div className="bg-white border border-gray-200 rounded-2xl p-5">
+                  <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Overall GEO Score</p>
+                  <p className="text-3xl font-black text-gray-900 mb-2">{Math.round((report.overall_score ?? 0) * 100)}%</p>
+                  <ScoreBar score={report.overall_score} />
+                </div>
+                <div className="bg-amber-50 border border-amber-200 rounded-2xl p-5">
+                  <p className="text-xs font-bold text-amber-700 uppercase tracking-wider mb-2">
+                    🏆 Aggarwal Score (Empirical)
+                  </p>
+                  <p className="text-3xl font-black text-amber-800 mb-2">{Math.round((report.aggarwal_score ?? 0) * 100)}%</p>
+                  <ScoreBar score={report.aggarwal_score} />
+                  <p className="text-xs text-amber-600 mt-2">Tactics with controlled measurement</p>
+                </div>
               </div>
-            </div>
-          )}
 
-          {/* Rewrite Assist — shown when score < 90% */}
-          {(report.overall_score ?? 0) < 0.90 && (
-            <RewriteAssist jobId={jobId} report={report} />
+              {/* Tier 1 structural scores (spec §4.7) */}
+              {report.tier1_scores && (
+                <div>
+                  <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">
+                    Structural Audit — Tier 1 Heuristics
+                  </p>
+                  <div className="grid grid-cols-2 gap-3">
+                    {[
+                      { key: 'intro',           label: 'Intro Answer',        desc: 'Direct answer in first 200 words' },
+                      { key: 'query_coverage',  label: 'Query Coverage',       desc: 'H1 terms in intro + section headings' },
+                      { key: 'independence',    label: 'Section Independence', desc: 'Absence of backward cross-references' },
+                      { key: 'section_clarity', label: 'Section Clarity',      desc: 'No vague openers or overlong paragraphs' },
+                    ].map(({ key, label, desc }) => {
+                      const val = report.tier1_scores[key] ?? 0
+                      const color = val >= 80 ? 'text-green-700' : val >= 50 ? 'text-amber-700' : 'text-red-600'
+                      const bg    = val >= 80 ? 'bg-green-50 border-green-200' : val >= 50 ? 'bg-amber-50 border-amber-200' : 'bg-red-50 border-red-200'
+                      return (
+                        <div key={key} className={`border rounded-xl p-3 ${bg}`}>
+                          <div className="flex items-center justify-between mb-1">
+                            <p className="text-xs font-bold text-gray-700">{label}</p>
+                            <p className={`text-lg font-black ${color}`}>{val}%</p>
+                          </div>
+                          <div className="w-full h-1.5 bg-gray-200 rounded-full overflow-hidden mb-1">
+                            <div
+                              className={`h-full rounded-full ${val >= 80 ? 'bg-green-500' : val >= 50 ? 'bg-amber-500' : 'bg-red-500'}`}
+                              style={{ width: `${val}%` }}
+                            />
+                          </div>
+                          <p className="text-[10px] text-gray-500">{desc}</p>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Rewrite Assist — shown when score < 90% */}
+              {(report.overall_score ?? 0) < 0.90 && (
+                <RewriteAssist jobId={jobId} report={report} />
+              )}
+            </>
           )}
 
           {/* Section tabs */}
           <div className="flex gap-1 bg-gray-100 rounded-xl p-1">
             {[
-              { id: 'findings', label: `Findings (${report.findings?.length ?? 0})` },
-              { id: 'query', label: `Query Test (${report.query_match_table?.length ?? 0})` },
-              { id: 'chunks', label: `Chunks (${report.chunk_containedness?.length ?? 0})` },
-              { id: 'js', label: 'JS Rendering' },
-            ].map(tab => (
+              report.report_markdown ? { id: 'report', label: 'Quality Report' } : null,
+              report.findings?.length > 0 ? { id: 'findings', label: `Findings (${report.findings?.length ?? 0})` } : null,
+              report.query_match_table?.length > 0 ? { id: 'query', label: `Query Test (${report.query_match_table?.length ?? 0})` } : null,
+              report.chunk_containedness?.length > 0 ? { id: 'chunks', label: `Chunks (${report.chunk_containedness?.length ?? 0})` } : null,
+              report.playwright_available ? { id: 'js', label: 'JS Rendering' } : null,
+            ].filter(Boolean).map(tab => (
               <button
                 key={tab.id}
                 onClick={() => setActiveSection(tab.id)}
@@ -707,6 +785,116 @@ export default function GEOReportPanel({ jobId, domain }) {
               </button>
             ))}
           </div>
+
+          {/* Markdown Report tab */}
+          {activeSection === 'report' && report.report_markdown && (
+            <div className="space-y-4">
+              {/* Report content */}
+              <div className="bg-white p-5 rounded-xl border border-gray-200">
+                {report.report_markdown.split('\n').map((line, i) => {
+                  if (line.startsWith('# ')) return <h1 key={i} className="text-2xl font-bold mb-4 mt-6">{line.slice(2)}</h1>
+                  if (line.startsWith('## ')) return <h2 key={i} className="text-xl font-bold mb-3 mt-5">{line.slice(3)}</h2>
+                  if (line.startsWith('### ')) return <h3 key={i} className="text-lg font-semibold mb-2 mt-4">{line.slice(4)}</h3>
+                  if (line.startsWith('- ')) return <li key={i} className="ml-4 mb-1">{line.slice(2)}</li>
+                  if (line.startsWith('**') && line.endsWith('**')) return <p key={i} className="font-bold text-gray-800 mb-2">{line.slice(2, -2)}</p>
+                  if (line.trim() === '') return <div key={i} className="mb-2" />
+                  return <p key={i} className="mb-3 text-gray-700 leading-relaxed">{line}</p>
+                })}
+              </div>
+
+              {/* Generate Prompt / Rewrite Section */}
+              <div className="bg-blue-50 border border-blue-200 rounded-xl p-5 space-y-3">
+                <div className="flex items-center gap-2">
+                  <h3 className="font-bold text-blue-900">✨ Generate Rewrite Prompt</h3>
+                </div>
+
+                {!generatedPrompt ? (
+                  <button
+                    onClick={handleGeneratePrompt}
+                    disabled={promptLoading}
+                    className="w-full bg-blue-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-blue-700 disabled:opacity-50"
+                  >
+                    {promptLoading ? 'Generating...' : 'Generate Prompt'}
+                  </button>
+                ) : (
+                  <>
+                    <div className="bg-white p-3 rounded-lg border border-blue-200 max-h-48 overflow-y-auto text-xs text-gray-700 whitespace-pre-wrap">
+                      {generatedPrompt}
+                    </div>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => {
+                          navigator.clipboard.writeText(generatedPrompt)
+                          alert('Prompt copied!')
+                        }}
+                        className="flex-1 bg-gray-200 text-gray-800 font-semibold py-2 px-4 rounded-lg hover:bg-gray-300"
+                      >
+                        Copy Prompt
+                      </button>
+                      <button
+                        onClick={handleRewrite}
+                        disabled={rewriteLoading}
+                        className="flex-1 bg-green-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-green-700 disabled:opacity-50"
+                      >
+                        {rewriteLoading ? 'Rewriting...' : 'Rewrite Page'}
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
+
+              {/* Rewritten Content */}
+              {rewriteContent && (
+                <div className="bg-green-50 border border-green-200 rounded-xl p-5 space-y-3">
+                  <h3 className="font-bold text-green-900">✅ Rewritten Content</h3>
+                  <div className="bg-white p-3 rounded-lg border border-green-200 max-h-96 overflow-y-auto text-sm text-gray-700 whitespace-pre-wrap font-mono text-xs">
+                    {rewriteContent}
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => {
+                        navigator.clipboard.writeText(rewriteContent)
+                        alert('Rewritten content copied to clipboard!')
+                      }}
+                      className="flex-1 bg-green-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-green-700"
+                    >
+                      Copy Content
+                    </button>
+                    <button
+                      onClick={async () => {
+                        try {
+                          const handle = await window.showSaveFilePicker({
+                            suggestedName: 'rewritten-content.md',
+                            types: [{ description: 'Markdown', accept: { 'text/markdown': ['.md'] } }]
+                          }).catch(() => null)
+
+                          if (handle) {
+                            const writable = await handle.createWritable()
+                            await writable.write(rewriteContent)
+                            await writable.close()
+                            alert('File saved successfully!')
+                          }
+                        } catch (e) {
+                          console.error('Save failed:', e)
+                          // Fallback to standard download
+                          const blob = new Blob([rewriteContent], { type: 'text/markdown' })
+                          const url = URL.createObjectURL(blob)
+                          const a = document.createElement('a')
+                          a.href = url
+                          a.download = 'rewritten-content.md'
+                          a.click()
+                          URL.revokeObjectURL(url)
+                        }
+                      }}
+                      className="flex-1 bg-blue-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-blue-700"
+                    >
+                      Download File
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Findings tab */}
           {activeSection === 'findings' && (

@@ -137,7 +137,11 @@ Return JSON with these keys:
             response.raise_for_status()
             data = response.json()
             content = data["choices"][0]["message"]["content"]
-            return json.loads(content)
+            parsed = json.loads(content)
+            logger.info(f"Critic response keys: {list(parsed.keys())}")
+            logger.info(f"Factual grounding: {parsed.get('factual_grounding', {}).get('verdict', 'N/A')}")
+            logger.info(f"Findings count: specific_facts={len(parsed.get('factual_grounding', {}).get('specific_facts', []))}, generalities={len(parsed.get('factual_grounding', {}).get('generalities', []))}")
+            return parsed
     except Exception as e:
         logger.error(f"OpenAI critic call failed: {e}")
         raise
@@ -473,30 +477,48 @@ async def evaluate_page(request: AdvisorRequest) -> tuple[str, bool]:
     Returns:
         (markdown_report, should_generate_prompt)
     """
-    # Fetch or use provided content
-    content = request.content
-    if request.url and not request.content:
-        html = _fetch_page(request.url)
-        content = _html_to_markdown(html)
+    logger.info(f"evaluate_page START: url={request.url}, has_content={bool(request.content)}")
 
-    # Call critic
-    provider, model = _get_model()
-    if provider == "openai":
-        response_data = _call_openai_critic(content, request.original_content)
-    else:
-        response_data = _call_gemini_critic(content, request.original_content)
+    try:
+        # Fetch or use provided content
+        content = request.content
+        if request.url and not request.content:
+            logger.info(f"Fetching page from {request.url}")
+            html = _fetch_page(request.url)
+            content = _html_to_markdown(html)
+            logger.info(f"Fetched content length: {len(content)} chars")
 
-    # Parse response
-    report = _parse_critic_response(response_data, request.original_content)
+        # Call critic
+        logger.info("Getting LLM provider...")
+        provider, model = _get_model()
+        logger.info(f"Using provider: {provider} ({model})")
 
-    # Update assessment based on verdict
-    if report.factual_grounding.verdict == "minimal":
-        report.what_cannot_be_fixed = (
-            "This page's substance is too thin at the source level. Rewriting won't add facts that aren't there. "
-            "The author should expand the content with specific facts, citations, and examples."
-        )
+        if provider == "openai":
+            logger.info("Calling OpenAI critic...")
+            response_data = _call_openai_critic(content, request.original_content)
+        else:
+            logger.info("Calling Gemini critic...")
+            response_data = _call_gemini_critic(content, request.original_content)
+        logger.info(f"Critic response received, keys: {list(response_data.keys())}")
 
-    # Render to markdown
-    markdown = _render_report_to_markdown(report)
+        # Parse response
+        logger.info("Parsing critic response...")
+        report = _parse_critic_response(response_data, request.original_content)
+        logger.info(f"Report parsed: verdict={report.factual_grounding.verdict}")
 
-    return markdown, report.should_generate_prompt
+        # Update assessment based on verdict
+        if report.factual_grounding.verdict == "minimal":
+            report.what_cannot_be_fixed = (
+                "This page's substance is too thin at the source level. Rewriting won't add facts that aren't there. "
+                "The author should expand the content with specific facts, citations, and examples."
+            )
+
+        # Render to markdown
+        logger.info("Rendering report to markdown...")
+        markdown = _render_report_to_markdown(report)
+        logger.info(f"Markdown rendered: {len(markdown)} chars")
+
+        return markdown, report.should_generate_prompt
+    except Exception as e:
+        logger.error(f"ERROR in evaluate_page: {e}", exc_info=True)
+        raise

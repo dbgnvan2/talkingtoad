@@ -30,7 +30,9 @@ router = APIRouter(prefix="/api/ai", tags=["advisor"])
 def get_store() -> SQLiteJobStore | RedisJobStore:
     """Return the app-level job store. Overridden in tests via dependency_overrides."""
     from api.main import _store
-    return _store  # type: ignore[return-value]
+    if not _store:
+        raise RuntimeError("Job store not initialized")
+    return _store
 
 
 # ---------------------------------------------------------------------------
@@ -182,6 +184,45 @@ async def rewrite_content(payload: RewriterRequestPayload) -> RewriterResponsePa
         raise HTTPException(status_code=500, detail=f"Rewriting failed: {e}")
 
 
+class RewriteUrlRequestPayload(BaseModel):
+    """Request to rewrite a page from its URL."""
+    url: str
+    prompt: str
+
+
+@router.post("/rewrite-url", response_model=RewriterResponsePayload)
+async def rewrite_url(payload: RewriteUrlRequestPayload) -> RewriterResponsePayload:
+    """
+    Fetch a page from URL and rewrite it.
+
+    Args:
+        payload.url: URL to fetch and rewrite
+        payload.prompt: Rewrite instructions
+
+    Returns:
+        Rewritten content and flag indicating if token limit was hit
+    """
+    try:
+        # Fetch the page
+        from api.services.advisor import _fetch_page, _html_to_markdown
+        html = _fetch_page(payload.url)
+        content = _html_to_markdown(html)
+
+        # Rewrite it
+        request = RewriterRequest(
+            content=content,
+            prompt=payload.prompt,
+        )
+        result = await rewrite_page(request)
+        return RewriterResponsePayload(
+            rewrite=result.rewrite,
+            stopped_by_limit=result.stopped_by_limit,
+        )
+    except Exception as e:
+        logger.exception(f"Rewrite URL failed for {payload.url}")
+        raise HTTPException(status_code=500, detail=f"Rewriting failed: {e}")
+
+
 # ---------------------------------------------------------------------------
 # Compatibility endpoint for legacy GEO Analyzer button
 # ---------------------------------------------------------------------------
@@ -200,16 +241,16 @@ class LegacyGeoReportResponse(BaseModel):
     should_generate_prompt: bool
 
 
-@router.post("/geo-report", response_model=LegacyGeoReportResponse)
+@router.post("/geo-report")
 async def generate_geo_report_legacy(
     payload: LegacyGeoReportRequest,
     store: SQLiteJobStore | RedisJobStore = Depends(get_store),
-) -> LegacyGeoReportResponse:
+):
     """
     Legacy endpoint: /api/ai/geo-report
 
     Accepts job_id and calls the new Advisor service on that job's target URL.
-    This maintains backward compatibility with the existing frontend.
+    Returns response in old format for UI compatibility.
 
     Args:
         payload.job_id: The crawl job ID
@@ -218,10 +259,13 @@ async def generate_geo_report_legacy(
         store: Job store (injected via dependency)
 
     Returns:
-        Markdown report and should_generate_prompt flag
+        {"success": bool, "cached": bool, "report": {...}}
     """
+    logger.info(f"[GEO-REPORT] ENDPOINT CALLED with job_id={payload.job_id}")
     try:
+        logger.info(f"[GEO-REPORT] Fetching job {payload.job_id}")
         job = await store.get_job(payload.job_id)
+        logger.info(f"[GEO-REPORT] Job fetched: {job.target_url if job else 'NOT FOUND'}")
 
         if not job:
             raise HTTPException(status_code=404, detail=f"Job {payload.job_id} not found")
@@ -230,15 +274,33 @@ async def generate_geo_report_legacy(
             raise HTTPException(status_code=400, detail="Job has no target_url")
 
         # Evaluate the target URL using the new Advisor service
+        logger.info(f"[GEO-REPORT] About to call evaluate_page for {job.target_url}")
         request = AdvisorRequest(url=job.target_url)
         report_markdown, should_generate_prompt = await evaluate_page(request)
+        logger.info(f"[GEO-REPORT] evaluate_page returned: markdown_len={len(report_markdown)}")
 
-        return LegacyGeoReportResponse(
-            report_markdown=report_markdown,
-            should_generate_prompt=should_generate_prompt,
-        )
+        # Return in old format for UI compatibility
+        return {
+            "success": True,
+            "cached": False,
+            "report": {
+                "overall_score": 0.75,  # Placeholder - new system doesn't score
+                "aggarwal_score": 0.75,  # Placeholder
+                "tier1_scores": {},
+                "findings": [],  # New system uses markdown instead
+                "query_match_table": [],
+                "chunk_containedness": [],
+                "js_rendering": None,
+                "model_used": "advisor-v1",
+                "report_markdown": report_markdown,
+                "should_generate_prompt": should_generate_prompt,
+            }
+        }
     except HTTPException:
         raise
     except Exception as e:
-        logger.exception(f"Geo report generation failed for job {payload.job_id}")
-        raise HTTPException(status_code=500, detail=f"Report generation failed: {e}")
+        import traceback
+        error_trace = traceback.format_exc()
+        logger.error(f"Geo report generation failed for job {payload.job_id}: {e}")
+        logger.error(f"Traceback: {error_trace}")
+        raise HTTPException(status_code=500, detail=f"Report generation failed: {str(e)}")
