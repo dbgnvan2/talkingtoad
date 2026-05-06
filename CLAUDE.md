@@ -470,6 +470,57 @@ When implementing new features:
 - `test_[component]_integration.py` for integration tests
 - `test_architecture_constraints.py` for design rule enforcement
 
+### CRITICAL: API Contract Tests (Non-Negotiable)
+
+**Any endpoint called by frontend code MUST have integration tests BEFORE the frontend code is written.**
+
+When adding or modifying an API endpoint:
+
+1. **Write integration test first** that calls the endpoint with realistic data
+2. **Verify the response schema** — what fields exist, what types, what's optional
+3. **Test every field the frontend depends on** — if frontend does `data.pages[0].content`, assert `.content` exists in the test
+4. **Test error cases** — 404, 500, invalid input, missing auth
+5. **Only then** write the frontend code
+
+**Example: Frontend expects `page.content`**
+```python
+def test_pages_endpoint_has_content_field(self, client):
+    """Frontend code assumes page.content exists. This test fails if the API schema changes."""
+    response = client.get("/api/crawl/job-id/pages?limit=1")
+    page = response.json()["pages"][0]
+    assert "content" in page, "Frontend code depends on page.content field"
+```
+
+**Consequences of skipping this:**
+- Frontend code breaks silently in production
+- Users encounter "nothing happens" errors
+- Bug is caught AFTER implementation, not during planning
+
+**This is not optional.** Integration tests for API endpoints are load-bearing. Commit 0 lines of frontend code that calls an endpoint without a test proving the endpoint returns what the frontend expects.
+
+### Planning Requirement: Integration Tests in Implementation Plan
+
+When creating an implementation plan (before writing code):
+
+1. **List every API endpoint** that will be touched or added
+2. **For each endpoint, document:**
+   - What the frontend will call it with (request schema)
+   - What the frontend expects back (response schema, specific fields)
+   - What integration test will verify the contract
+3. **Write integration tests in the plan section**, not after implementation
+
+**Template:**
+```
+## Integration Tests Required
+
+| Endpoint | Frontend expects | Test name | Status |
+|----------|------------------|-----------|--------|
+| GET `/api/crawl/{job_id}/pages` | `url`, `title` (NOT `content`) | `test_pages_endpoint_has_url_not_content` | Pending |
+| POST `/api/ai/rewriter` | `rewrite`, `stopped_by_limit` | `test_rewriter_response_schema` | Pending |
+```
+
+**Before any code:** All tests in this table must be written and passing. If they're not, the code is incomplete.
+
 ### CRITICAL: Self-Review Before Every Commit
 
 After writing any function — before staging it — run the following review questions
