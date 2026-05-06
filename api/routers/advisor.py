@@ -15,14 +15,22 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 
+from fastapi import Depends
+
 from api.models.advisor import AdvisorRequest
 from api.services.advisor import evaluate_page
 from api.services.rewriter import rewrite_page, RewriterRequest
-from api.services.job_store import get_job_store
+from api.services.job_store import SQLiteJobStore, RedisJobStore
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/ai", tags=["advisor"])
+
+
+def get_store() -> SQLiteJobStore | RedisJobStore:
+    """Return the app-level job store. Overridden in tests via dependency_overrides."""
+    from api.main import _store
+    return _store  # type: ignore[return-value]
 
 
 # ---------------------------------------------------------------------------
@@ -193,7 +201,10 @@ class LegacyGeoReportResponse(BaseModel):
 
 
 @router.post("/geo-report", response_model=LegacyGeoReportResponse)
-async def generate_geo_report_legacy(payload: LegacyGeoReportRequest) -> LegacyGeoReportResponse:
+async def generate_geo_report_legacy(
+    payload: LegacyGeoReportRequest,
+    store: SQLiteJobStore | RedisJobStore = Depends(get_store),
+) -> LegacyGeoReportResponse:
     """
     Legacy endpoint: /api/ai/geo-report
 
@@ -204,12 +215,12 @@ async def generate_geo_report_legacy(payload: LegacyGeoReportRequest) -> LegacyG
         payload.job_id: The crawl job ID
         payload.model: Ignored (legacy parameter)
         payload.force_refresh: Ignored (legacy parameter)
+        store: Job store (injected via dependency)
 
     Returns:
         Markdown report and should_generate_prompt flag
     """
     try:
-        store = get_job_store()
         job = await store.get_job(payload.job_id)
 
         if not job:
