@@ -13,6 +13,7 @@ class AdvisorRequest:
     url: str | None = None
     content: str | None = None
     original_content: str | None = None
+    job_id: str | None = None  # Optional: for cached content fallback
 
     def __post_init__(self):
         if not self.url and not self.content:

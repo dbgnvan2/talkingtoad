@@ -82,6 +82,35 @@ def _html_to_markdown(html: str) -> str:
     return html
 
 
+async def _get_cached_page_content(job_id: str, url: str) -> str | None:
+    """Try to get cached page content from crawl results."""
+    try:
+        from api.services.job_store import SQLiteJobStore, RedisJobStore
+
+        # Import here to avoid circular imports
+        from api.routers.crawl import get_store as get_crawl_store
+
+        # Get the store (this is a sync function, so we need to handle it carefully)
+        # For now, use SQLiteJobStore directly as default
+        store = SQLiteJobStore()
+
+        # Get pages for this job
+        pages, total = await store.get_pages_with_issue_counts(job_id)
+
+        # Find the page matching this URL
+        for page in pages:
+            if page.get("url") == url or page.get("url", "").rstrip("/") == url.rstrip("/"):
+                content = page.get("content")
+                if content:
+                    return content
+
+        logger.warning(f"No cached content found for {url} in job {job_id}")
+        return None
+    except Exception as e:
+        logger.error(f"Failed to get cached content: {e}")
+        return None
+
+
 def _call_openai_critic(content: str, original: str | None) -> dict:
     """Call OpenAI API with critic prompt."""
     comparison_note = ""
@@ -489,16 +518,29 @@ async def evaluate_page(request: AdvisorRequest) -> tuple[str, bool]:
     Returns:
         (markdown_report, should_generate_prompt)
     """
-    logger.info(f"evaluate_page START: url={request.url}, has_content={bool(request.content)}")
+    logger.info(f"evaluate_page START: url={request.url}, has_content={bool(request.content)}, job_id={request.job_id}")
 
     try:
         # Fetch or use provided content
         content = request.content
         if request.url and not request.content:
             logger.info(f"Fetching page from {request.url}")
-            html = _fetch_page(request.url)
-            content = _html_to_markdown(html)
-            logger.info(f"Fetched content length: {len(content)} chars")
+            try:
+                html = _fetch_page(request.url)
+                content = _html_to_markdown(html)
+                logger.info(f"Fetched content length: {len(content)} chars")
+            except Exception as fetch_error:
+                logger.warning(f"Fetch failed: {fetch_error}. Trying cached content fallback...")
+                if request.job_id:
+                    content = await _get_cached_page_content(request.job_id, request.url)
+                    if content:
+                        logger.info(f"Using cached content: {len(content)} chars")
+                    else:
+                        logger.error("No cached content found")
+                        raise fetch_error
+                else:
+                    logger.error("No job_id provided for fallback")
+                    raise fetch_error
 
         # Call critic
         logger.info("Getting LLM provider...")

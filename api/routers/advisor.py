@@ -45,6 +45,7 @@ class AdvisorRequestPayload(BaseModel):
     url: Optional[str] = None
     content: Optional[str] = None
     original_content: Optional[str] = None
+    job_id: Optional[str] = None  # For cached content fallback if URL fetch fails
 
 
 class AdvisorResponsePayload(BaseModel):
@@ -97,6 +98,7 @@ async def evaluate_content(payload: AdvisorRequestPayload) -> AdvisorResponsePay
             url=payload.url,
             content=payload.content,
             original_content=payload.original_content,
+            job_id=payload.job_id,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
