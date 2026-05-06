@@ -55,7 +55,10 @@ def _get_model() -> tuple[str, str]:
 def _fetch_page(url: str) -> str:
     """Fetch page HTML from URL."""
     try:
-        with httpx.Client(timeout=_TIMEOUT) as client:
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        }
+        with httpx.Client(timeout=_TIMEOUT, headers=headers) as client:
             response = client.get(url, follow_redirects=True)
             response.raise_for_status()
             return response.text
