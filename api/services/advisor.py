@@ -205,12 +205,14 @@ def _parse_critic_response(data: dict, original: str | None) -> AdvisorReport:
     # Build factual grounding
     fg_data = data.get("factual_grounding", {})
     specific_facts = [
-        Finding(text=f["text"], is_specific=f.get("is_specific", True))
+        Finding(text=f["text"] if isinstance(f, dict) else f, is_specific=f.get("is_specific", True) if isinstance(f, dict) else True)
         for f in fg_data.get("specific_facts", [])
+        if f  # Skip empty entries
     ]
     generalities = [
-        Finding(text=f["text"], issue=f.get("issue"))
+        Finding(text=f["text"] if isinstance(f, dict) else f, issue=f.get("issue") if isinstance(f, dict) else None)
         for f in fg_data.get("generalities", [])
+        if f  # Skip empty entries
     ]
     factual_grounding = FactualGrounding(
         is_critical=fg_data.get("is_critical", False),
@@ -287,7 +289,7 @@ def _parse_critic_response(data: dict, original: str | None) -> AdvisorReport:
         critical_issues.extend([f"Fabrication: {f}" for f in source_fidelity.fabrications])
         critical_issues.extend([f"Loss: {l}" for l in source_fidelity.losses])
     if factual_grounding.is_critical:
-        critical_issues.extend([f["text"] for f in factual_grounding.generalities])
+        critical_issues.extend([f.text for f in factual_grounding.generalities])
 
     # Determine if rewrite prompt should be generated
     should_generate = (
@@ -377,7 +379,8 @@ def _render_report_to_markdown(report: AdvisorReport) -> str:
     if report.factual_grounding.generalities:
         lines.append("**Generalities that should be grounded:**")
         for gen in report.factual_grounding.generalities:
-            lines.append(f"- {gen.text} ({gen.issue})")
+            issue = gen.issue if gen.issue else "lacks specificity"
+            lines.append(f"- {gen.text} ({issue})")
     lines.append("")
 
     # Self-Containment

@@ -18,6 +18,7 @@ from pydantic import BaseModel
 from api.models.advisor import AdvisorRequest
 from api.services.advisor import evaluate_page
 from api.services.rewriter import rewrite_page, RewriterRequest
+from api.services.job_store import get_job_store
 
 logger = logging.getLogger(__name__)
 
@@ -171,3 +172,62 @@ async def rewrite_content(payload: RewriterRequestPayload) -> RewriterResponsePa
     except Exception as e:
         logger.exception("Rewriter failed")
         raise HTTPException(status_code=500, detail=f"Rewriting failed: {e}")
+
+
+# ---------------------------------------------------------------------------
+# Compatibility endpoint for legacy GEO Analyzer button
+# ---------------------------------------------------------------------------
+
+
+class LegacyGeoReportRequest(BaseModel):
+    """Legacy request format from frontend."""
+    job_id: str
+    model: Optional[str] = None
+    force_refresh: bool = False
+
+
+class LegacyGeoReportResponse(BaseModel):
+    """Legacy response format — minimal structure for compatibility."""
+    report_markdown: str
+    should_generate_prompt: bool
+
+
+@router.post("/geo-report", response_model=LegacyGeoReportResponse)
+async def generate_geo_report_legacy(payload: LegacyGeoReportRequest) -> LegacyGeoReportResponse:
+    """
+    Legacy endpoint: /api/ai/geo-report
+
+    Accepts job_id and calls the new Advisor service on that job's target URL.
+    This maintains backward compatibility with the existing frontend.
+
+    Args:
+        payload.job_id: The crawl job ID
+        payload.model: Ignored (legacy parameter)
+        payload.force_refresh: Ignored (legacy parameter)
+
+    Returns:
+        Markdown report and should_generate_prompt flag
+    """
+    try:
+        store = get_job_store()
+        job = await store.get_job(payload.job_id)
+
+        if not job:
+            raise HTTPException(status_code=404, detail=f"Job {payload.job_id} not found")
+
+        if not job.target_url:
+            raise HTTPException(status_code=400, detail="Job has no target_url")
+
+        # Evaluate the target URL using the new Advisor service
+        request = AdvisorRequest(url=job.target_url)
+        report_markdown, should_generate_prompt = await evaluate_page(request)
+
+        return LegacyGeoReportResponse(
+            report_markdown=report_markdown,
+            should_generate_prompt=should_generate_prompt,
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Geo report generation failed for job {payload.job_id}")
+        raise HTTPException(status_code=500, detail=f"Report generation failed: {e}")
