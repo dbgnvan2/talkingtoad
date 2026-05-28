@@ -4,8 +4,15 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Path, Query
 from fastapi.responses import JSONResponse
+
+# v2.3 (M0.12.0) — UUID constraint for path params. Prevents the catch-all
+# `GET /api/fixes/{job_id}` route from silently matching feature-endpoint
+# paths like `/predefined-codes`, `/image-info`, etc. With this regex,
+# those paths return a proper 404 if no sibling router handles them,
+# instead of returning an empty fix list and confusing the frontend.
+_UUID_PATTERN = r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
 
 from api.models.fix import (
     ApplyFixesResponse,
@@ -38,7 +45,7 @@ router = APIRouter(prefix="/api/fixes", dependencies=[Depends(require_auth)])
 
 @router.post("/generate/{job_id}", response_model=GenerateFixesResponse)
 async def generate_fixes_endpoint(
-    job_id: str,
+    job_id: str = Path(..., pattern=_UUID_PATTERN),
     offset: int = Query(default=0, ge=0),
     limit: int = Query(default=20, ge=1, le=50),
     store=Depends(get_store),
@@ -155,7 +162,7 @@ async def generate_fixes_endpoint(
 
 @router.get("/{job_id}", response_model=list[Fix])
 async def list_fixes(
-    job_id: str,
+    job_id: str = Path(..., pattern=_UUID_PATTERN),
     store=Depends(get_store),
 ) -> list[Fix] | JSONResponse:
     """Return all fix proposals for a crawl job."""
@@ -169,8 +176,8 @@ async def list_fixes(
 
 @router.patch("/{fix_id}", response_model=Fix)
 async def update_fix_endpoint(
-    fix_id: str,
     body: FixPatch,
+    fix_id: str = Path(..., pattern=_UUID_PATTERN),
     store=Depends(get_store),
 ) -> Fix | JSONResponse:
     """Update the proposed value or status of a fix."""
@@ -198,7 +205,7 @@ async def update_fix_endpoint(
 
 @router.post("/apply/{job_id}", response_model=ApplyFixesResponse)
 async def apply_fixes_endpoint(
-    job_id: str,
+    job_id: str = Path(..., pattern=_UUID_PATTERN),
     store=Depends(get_store),
 ) -> ApplyFixesResponse | JSONResponse:
     """Apply all approved fixes for a job.
@@ -282,7 +289,7 @@ async def apply_fixes_endpoint(
 
 @router.delete("/{job_id}")
 async def delete_fixes(
-    job_id: str,
+    job_id: str = Path(..., pattern=_UUID_PATTERN),
     store=Depends(get_store),
 ) -> JSONResponse:
     """Clear all fixes for a job so they can be regenerated."""

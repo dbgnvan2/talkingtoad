@@ -15,24 +15,21 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 
-from fastapi import Depends
-
 from api.models.advisor import AdvisorRequest
+from api.routers.crawl import get_store  # v2.3 (M0.5): shared helper; was a duplicate definition
 from api.services.advisor import evaluate_page
+from api.services.auth import require_auth
 from api.services.rewriter import rewrite_page, RewriterRequest
-from api.services.job_store import SQLiteJobStore, RedisJobStore
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api/ai", tags=["advisor"])
-
-
-def get_store() -> SQLiteJobStore | RedisJobStore:
-    """Return the app-level job store. Overridden in tests via dependency_overrides."""
-    from api.main import _store
-    if not _store:
-        raise RuntimeError("Job store not initialized")
-    return _store
+# v2.3 (M0.5): require_auth applied to every endpoint in this router.
+# Previously the router was registered without `dependencies=[Depends(require_auth)]`,
+# which meant /api/ai/advisor, /api/ai/advisor/prompt, /api/ai/rewriter,
+# /api/ai/rewrite-url, /api/ai/geo-report, /api/ai/geo-report/pages were
+# all reachable unauthenticated — burning AI credits and exposing /rewrite-url
+# as an unauthenticated SSRF surface.
+router = APIRouter(prefix="/api/ai", tags=["advisor"], dependencies=[Depends(require_auth)])
 
 
 # ---------------------------------------------------------------------------
@@ -45,7 +42,6 @@ class AdvisorRequestPayload(BaseModel):
     url: Optional[str] = None
     content: Optional[str] = None
     original_content: Optional[str] = None
-    job_id: Optional[str] = None  # For cached content fallback if URL fetch fails
 
 
 class AdvisorResponsePayload(BaseModel):
@@ -98,7 +94,6 @@ async def evaluate_content(payload: AdvisorRequestPayload) -> AdvisorResponsePay
             url=payload.url,
             content=payload.content,
             original_content=payload.original_content,
-            job_id=payload.job_id,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -235,6 +230,7 @@ class LegacyGeoReportRequest(BaseModel):
     job_id: str
     model: Optional[str] = None
     force_refresh: bool = False
+    page_urls: Optional[list[str]] = None  # Selected pages for multi-page analysis; None = target_url only
 
 
 class LegacyGeoReportResponse(BaseModel):
@@ -243,45 +239,114 @@ class LegacyGeoReportResponse(BaseModel):
     should_generate_prompt: bool
 
 
+@router.get("/geo-report/pages")
+async def list_geo_report_pages(
+    job_id: str,
+    store: SQLiteJobStore | RedisJobStore = Depends(get_store),
+):
+    """
+    List crawled pages for a job so the user can select which ones to analyze.
+
+    Args:
+        job_id: The crawl job ID
+        store: Job store (injected)
+
+    Returns:
+        {"pages": [{"url": ..., "title": ..., "issue_count": int}, ...]}
+        Sorted by issue_count descending so most-problematic pages appear first.
+    """
+    job = await store.get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail=f"Job {job_id} not found")
+
+    pages, _total = await store.get_pages_with_issue_counts(job_id)
+
+    out = []
+    for page in pages:
+        issue_counts = page.get("issue_counts") or {}
+        out.append(
+            {
+                "url": page.get("url"),
+                "title": page.get("title") or "",
+                "issue_count": issue_counts.get("total", 0),
+            }
+        )
+
+    # Most-problematic first
+    out.sort(key=lambda p: p["issue_count"], reverse=True)
+
+    return {"pages": out}
+
+
+def _wrap_page_section(url: str, markdown: str) -> str:
+    """Render one per-page block of the combined report."""
+    return f"# {url}\n\n{markdown}".rstrip() + "\n"
+
+
 @router.post("/geo-report")
 async def generate_geo_report_legacy(
     payload: LegacyGeoReportRequest,
     store: SQLiteJobStore | RedisJobStore = Depends(get_store),
 ):
     """
-    Legacy endpoint: /api/ai/geo-report
+    Run the Advisor against either the job's target URL (legacy) or a list of
+    user-selected page URLs (multi-page mode).
 
-    Accepts job_id and calls the new Advisor service on that job's target URL.
-    Returns response in old format for UI compatibility.
+    Per-page errors (e.g. 403 fetch failure) appear inline in the combined
+    report as "could not be analyzed" sections; they do NOT abort the run.
 
     Args:
         payload.job_id: The crawl job ID
+        payload.page_urls: Optional list of page URLs to analyze. Must be a subset
+            of pages from this job (validated against the job's crawled pages).
+            If omitted/None, falls back to analyzing target_url only.
         payload.model: Ignored (legacy parameter)
         payload.force_refresh: Ignored (legacy parameter)
-        store: Job store (injected via dependency)
+        store: Job store (injected)
 
     Returns:
         {"success": bool, "cached": bool, "report": {...}}
     """
-    logger.info(f"[GEO-REPORT] ENDPOINT CALLED with job_id={payload.job_id}")
     try:
-        logger.info(f"[GEO-REPORT] Fetching job {payload.job_id}")
         job = await store.get_job(payload.job_id)
-        logger.info(f"[GEO-REPORT] Job fetched: {job.target_url if job else 'NOT FOUND'}")
-
         if not job:
             raise HTTPException(status_code=404, detail=f"Job {payload.job_id} not found")
 
-        if not job.target_url:
-            raise HTTPException(status_code=400, detail="Job has no target_url")
+        if payload.page_urls is None:
+            # Legacy single-page behavior
+            if not job.target_url:
+                raise HTTPException(status_code=400, detail="Job has no target_url")
+            request = AdvisorRequest(url=job.target_url)
+            report_markdown, should_generate_prompt = await evaluate_page(request)
+        else:
+            # Multi-page: validate URLs belong to this job, then analyze each
+            if len(payload.page_urls) == 0:
+                raise HTTPException(
+                    status_code=400,
+                    detail="page_urls is empty. Select at least one page to analyze.",
+                )
 
-        # Evaluate the target URL using the new Advisor service
-        logger.info(f"[GEO-REPORT] About to call evaluate_page for {job.target_url}")
-        request = AdvisorRequest(url=job.target_url)
-        report_markdown, should_generate_prompt = await evaluate_page(request)
-        logger.info(f"[GEO-REPORT] evaluate_page returned: markdown_len={len(report_markdown)}")
+            pages, _total = await store.get_pages_with_issue_counts(payload.job_id)
+            valid_urls = {p.get("url") for p in pages}
+            invalid = [u for u in payload.page_urls if u not in valid_urls]
+            if invalid:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"page_urls contains URLs not in this job: {invalid}",
+                )
 
-        # Return in old format for UI compatibility
+            sections: list[str] = []
+            any_should_generate = False
+            for url in payload.page_urls:
+                per_page_markdown, per_page_should_generate = await evaluate_page(
+                    AdvisorRequest(url=url)
+                )
+                sections.append(_wrap_page_section(url, per_page_markdown))
+                any_should_generate = any_should_generate or per_page_should_generate
+
+            report_markdown = "\n".join(sections)
+            should_generate_prompt = any_should_generate
+
         return {
             "success": True,
             "cached": False,
@@ -296,7 +361,7 @@ async def generate_geo_report_legacy(
                 "model_used": "advisor-v1",
                 "report_markdown": report_markdown,
                 "should_generate_prompt": should_generate_prompt,
-            }
+            },
         }
     except HTTPException:
         raise

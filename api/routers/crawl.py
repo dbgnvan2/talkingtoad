@@ -1404,6 +1404,15 @@ async def fetch_image_details(
     import json
     from pathlib import Path
 
+    # v2.3 (M0.6.9) SSRF guard: image_url is user-supplied (or comes from
+    # crawled HTML which is also untrusted) and is then fetched raw via httpx
+    # in step 2 below. Without this check, a post-auth user could pivot to
+    # localhost, AWS metadata (169.254.169.254), or internal services on the
+    # Vercel/container runtime.
+    if not is_ssrf_safe(image_url):
+        logger.warning("images_fetch_ssrf_blocked", extra={"image_url": image_url, "job_id": job_id})
+        return _err("SSRF_BLOCKED", "Image URL resolves to a private/internal address.", 400)
+
     print(f"\n{'='*80}")
     print(f"[FETCH] START - Image URL: {image_url}")
     print(f"[FETCH] Job ID: {job_id}")

@@ -412,16 +412,16 @@ class TestSummary:
         result = await store.get_summary("nonexistent")
         assert result == {}
 
-    @patch("api.services.job_store._compute_health_score", create=True)
+    @patch("api.services.redis_store.RedisJobStore._compute_health_score")
     async def test_get_summary_calculates_correctly(
         self, mock_health_fn, store, mock_redis
     ):
         """Test get_summary with a valid job and issues.
 
-        NOTE: The Redis get_summary references _compute_health_score which
-        is not actually defined in the module (likely should be
-        _density_health_score). We patch it here so the test can verify
-        the rest of the logic.
+        The patch target is the staticmethod on RedisJobStore itself, because
+        get_summary calls self._compute_health_score(...). Patching the
+        module-level name (api.services.job_store._compute_health_score)
+        would not intercept that call.
         """
         mock_health_fn.return_value = 75
 
@@ -468,7 +468,7 @@ class TestSummary:
 
         mock_health_fn.assert_called_once()
 
-    @patch("api.services.job_store._compute_health_score", create=True)
+    @patch("api.services.redis_store.RedisJobStore._compute_health_score")
     async def test_get_summary_with_no_issues(
         self, mock_health_fn, store, mock_redis
     ):

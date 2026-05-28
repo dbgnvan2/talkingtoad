@@ -11,6 +11,8 @@ from typing import Any
 import httpx
 from dotenv import load_dotenv
 
+from api.crawler.fetcher import is_ssrf_safe
+
 # Ensure environment is loaded
 load_dotenv()
 
@@ -204,6 +206,21 @@ async def analyze_image_with_ai(image_url: str, current_alt: str = "") -> dict[s
             "semantic_score": 0-100
         }
     """
+    # v2.3 (M0.6.6) SSRF guard at entry — covers both code paths:
+    #   - Gemini path: we fetch image_url locally (see _fetch_image_base64)
+    #   - OpenAI path: image_url is passed to OpenAI which then fetches it
+    # Both paths leak that an internal URL exists. Reject early.
+    if not is_ssrf_safe(image_url):
+        logger.warning("image_ai_analyze_ssrf_blocked", extra={"image_url": image_url})
+        return {
+            "description": "Image URL rejected: resolves to a private/internal address",
+            "suggested_alt": current_alt,
+            "accuracy_score": 0,
+            "quality_score": 0,
+            "issues": ["SSRF_BLOCKED"],
+            "semantic_score": 0
+        }
+
     gemini_key = os.getenv("GEMINI_API_KEY")
     openai_key = os.getenv("OPENAI_API_KEY")
 
@@ -359,6 +376,17 @@ async def _call_openai_vision(image_url: str, prompt: str, api_key: str) -> str:
 async def _fetch_image_base64(image_url: str) -> str:
     """Fetch an image and convert to base64 for Gemini Vision."""
     import base64
+
+    # v2.3 (M0.6.6) SSRF guard: image_url comes from user/WP content and could
+    # point at private/internal addresses. Defense-in-depth: the public entry
+    # points (analyze_image_with_ai, analyze_image_with_geo) also check, but
+    # gate here in case a future caller bypasses them.
+    if not is_ssrf_safe(image_url):
+        logger.warning("image_fetch_ssrf_blocked", extra={"image_url": image_url})
+        raise ValueError(
+            f"SSRF_BLOCKED: image URL resolves to a private/internal address"
+        )
+
     try:
         async with httpx.AsyncClient() as client:
             res = await client.get(image_url, timeout=10.0)
@@ -404,6 +432,16 @@ async def analyze_image_with_geo(
             "success": True
         }
     """
+    # v2.3 (M0.6.6) SSRF guard at entry — see analyze_image_with_ai for rationale.
+    if not is_ssrf_safe(image_url):
+        logger.warning("geo_image_analyze_ssrf_blocked", extra={"image_url": image_url})
+        return {
+            "alt_text": "",
+            "long_description": "",
+            "success": False,
+            "error": "Image URL rejected: resolves to a private/internal address",
+        }
+
     gemini_key = os.getenv("GEMINI_API_KEY")
     openai_key = os.getenv("OPENAI_API_KEY")
 

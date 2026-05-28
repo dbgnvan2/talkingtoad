@@ -137,6 +137,23 @@ async def fetch_page(
         extra_headers["Cache-Control"] = "no-cache, no-store"
         extra_headers["Pragma"] = "no-cache"
 
+    # v2.3 (M0.6.10) SSRF pre-check on the initial URL itself.
+    # Previously the check only ran after the response on the redirect chain,
+    # which meant the initial request was already issued to the target (could
+    # have side effects on internal services). Now we refuse to issue the
+    # request at all if the initial URL resolves to a private address.
+    # Defense-in-depth: callers (engine, sitemap, advisor, etc.) should also
+    # gate their inputs, but this is the universal backstop for anything that
+    # goes through fetch_page() — including the AMP HEAD check in engine.py:820
+    # where attacker-controlled <link rel="amphtml"> could otherwise point at
+    # 169.254.169.254 (AWS metadata).
+    if not is_ssrf_safe(url):
+        logger.warning("ssrf_initial_blocked", extra={"url": url})
+        return FetchResult(
+            url=url, final_url=url, status_code=0,
+            error="SSRF_BLOCKED: URL resolves to a private/internal network",
+        )
+
     try:
         async with client.stream(
             method,
@@ -148,7 +165,7 @@ async def fetch_page(
             redirect_chain = [str(r.url) for r in response.history]
             final_url = str(response.url)
 
-            # SSRF protection: reject if any redirect hop resolves to a private IP
+            # SSRF protection on redirect chain: reject if any hop resolves to a private IP
             for hop_url in redirect_chain + [final_url]:
                 if not is_ssrf_safe(hop_url):
                     logger.warning("ssrf_redirect_blocked", extra={"url": url, "blocked_hop": hop_url})

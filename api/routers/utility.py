@@ -10,6 +10,7 @@ from fastapi import APIRouter, Depends, Query
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
+from api.crawler.fetcher import is_ssrf_safe
 from api.crawler.normaliser import is_wp_noise_path
 from api.crawler.robots import fetch_robots
 from api.crawler.sitemap import fetch_sitemap_recursive
@@ -110,6 +111,21 @@ async def health() -> dict:
 @router.get("/robots")
 async def robots_check(url: str = Query(..., description="Base URL of the site to inspect")):
     """Fetch and parse robots.txt for the given domain (spec §6.3)."""
+    # v2.3 (M0.6.8) SSRF guard: this endpoint accepts an arbitrary user URL and
+    # fetches its robots.txt via httpx — without this check a post-auth user
+    # could pivot to localhost/AWS-metadata.
+    if not is_ssrf_safe(url):
+        logger.warning("robots_check_ssrf_blocked", extra={"url": url})
+        return JSONResponse(
+            status_code=400,
+            content={
+                "error": {
+                    "code": "SSRF_BLOCKED",
+                    "message": "URL resolves to a private/internal address.",
+                    "http_status": 400,
+                }
+            },
+        )
     try:
         async with httpx.AsyncClient() as client:
             data = await fetch_robots(url, client)
@@ -137,6 +153,19 @@ async def robots_check(url: str = Query(..., description="Base URL of the site t
 @router.get("/sitemap")
 async def sitemap_check(url: str = Query(..., description="Base URL of the site to inspect")):
     """Discover and parse the sitemap for the given domain (spec §6.3)."""
+    # v2.3 (M0.6.8) SSRF guard — same rationale as /robots.
+    if not is_ssrf_safe(url):
+        logger.warning("sitemap_check_ssrf_blocked", extra={"url": url})
+        return JSONResponse(
+            status_code=400,
+            content={
+                "error": {
+                    "code": "SSRF_BLOCKED",
+                    "message": "URL resolves to a private/internal address.",
+                    "http_status": 400,
+                }
+            },
+        )
     try:
         async with httpx.AsyncClient() as client:
             result = await fetch_sitemap_recursive(url, client)

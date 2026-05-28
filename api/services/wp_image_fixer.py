@@ -9,6 +9,7 @@ import re
 from pathlib import Path
 from urllib.parse import urlparse, unquote
 
+from api.crawler.fetcher import is_ssrf_safe
 from api.services.wp_client import WPClient
 from api.services.job_store import SQLiteJobStore, RedisJobStore
 
@@ -292,6 +293,14 @@ async def optimize_existing_image(
         # 1. Download original
         original_filename = Path(urlparse(image_url).path).name
         input_path = tmp_path / original_filename
+
+        # v2.3 (M0.6.7) SSRF guard: image_url comes from WP content and could
+        # be attacker-controlled if a compromised WP install lists images on
+        # private hostnames. Reject before downloading.
+        if not is_ssrf_safe(image_url):
+            logger.warning("wp_image_optimize_ssrf_blocked", extra={"image_url": image_url})
+            result["error"] = "SSRF_BLOCKED: image URL resolves to a private/internal address"
+            return result
 
         try:
             async with httpx.AsyncClient(timeout=30.0) as client:
@@ -645,6 +654,15 @@ async def preview_optimization(
 
     try:
         if image_url:
+            # v2.3 (M0.6.7) SSRF guard — same rationale as optimize_existing_image.
+            if not is_ssrf_safe(image_url):
+                logger.warning(
+                    "wp_image_preview_ssrf_blocked", extra={"image_url": image_url}
+                )
+                result["error"] = (
+                    "SSRF_BLOCKED: image URL resolves to a private/internal address"
+                )
+                return result
             # Download to temp for analysis
             with tempfile.NamedTemporaryFile(delete=False, suffix=".tmp") as f:
                 temp_file = Path(f.name)

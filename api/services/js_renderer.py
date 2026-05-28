@@ -20,6 +20,8 @@ from dataclasses import dataclass, field
 import httpx
 from bs4 import BeautifulSoup
 
+from api.crawler.fetcher import is_ssrf_safe
+
 logger = logging.getLogger(__name__)
 
 try:
@@ -141,6 +143,19 @@ async def run_js_render_checks(url: str) -> JSRenderResult:
     Gracefully degrades if Playwright is unavailable.
     """
     result = JSRenderResult(url=url, playwright_available=HAS_PLAYWRIGHT)
+
+    # v2.3 (M0.6.5) SSRF guard: refuse to render URLs that resolve to
+    # private/internal addresses. Critical here because the renderer uses
+    # both httpx (in _fetch_raw) AND a full Playwright browser
+    # (in _render_with_playwright) — both can be used to reach internal
+    # services. Playwright is the higher-risk vector since it has full
+    # browser capability (JavaScript, cookies, redirects).
+    if not is_ssrf_safe(url):
+        logger.warning("js_renderer_ssrf_blocked", extra={"url": url})
+        result.error = (
+            "SSRF_BLOCKED: URL resolves to a private/internal address"
+        )
+        return result
 
     if not HAS_PLAYWRIGHT:
         result.error = "Playwright not installed. Run: pip install playwright && playwright install chromium"

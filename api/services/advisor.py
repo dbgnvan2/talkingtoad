@@ -15,6 +15,7 @@ from typing import Any
 import httpx
 from dotenv import load_dotenv
 
+from api.crawler.fetcher import is_ssrf_safe
 from api.models.advisor import (
     AdvisorReport,
     AdvisorRequest,
@@ -54,6 +55,15 @@ def _get_model() -> tuple[str, str]:
 
 def _fetch_page(url: str) -> str:
     """Fetch page HTML from URL."""
+    # v2.3 (M0.6.3) SSRF guard: refuse to fetch URLs that resolve to
+    # private/internal addresses (localhost, 169.254.169.254 AWS metadata,
+    # RFC1918 ranges, IPv6 loopback/link-local). Without this, the advisor
+    # endpoint can be coerced into reaching internal services.
+    if not is_ssrf_safe(url):
+        logger.warning("advisor_ssrf_blocked", extra={"url": url})
+        raise RuntimeError(
+            f"SSRF_BLOCKED: URL resolves to a private/internal address: {url}"
+        )
     try:
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -80,35 +90,6 @@ def _html_to_markdown(html: str) -> str:
     # For now, return as-is if already markdown, or perform basic conversion
     # This is a placeholder — in real use, call html2text or BeautifulSoup
     return html
-
-
-async def _get_cached_page_content(job_id: str, url: str) -> str | None:
-    """Try to get cached page content from crawl results."""
-    try:
-        from api.services.job_store import SQLiteJobStore, RedisJobStore
-
-        # Import here to avoid circular imports
-        from api.routers.crawl import get_store as get_crawl_store
-
-        # Get the store (this is a sync function, so we need to handle it carefully)
-        # For now, use SQLiteJobStore directly as default
-        store = SQLiteJobStore()
-
-        # Get pages for this job
-        pages, total = await store.get_pages_with_issue_counts(job_id)
-
-        # Find the page matching this URL
-        for page in pages:
-            if page.get("url") == url or page.get("url", "").rstrip("/") == url.rstrip("/"):
-                content = page.get("content")
-                if content:
-                    return content
-
-        logger.warning(f"No cached content found for {url} in job {job_id}")
-        return None
-    except Exception as e:
-        logger.error(f"Failed to get cached content: {e}")
-        return None
 
 
 def _call_openai_critic(content: str, original: str | None) -> dict:
@@ -518,7 +499,7 @@ async def evaluate_page(request: AdvisorRequest) -> tuple[str, bool]:
     Returns:
         (markdown_report, should_generate_prompt)
     """
-    logger.info(f"evaluate_page START: url={request.url}, has_content={bool(request.content)}, job_id={request.job_id}")
+    logger.info(f"evaluate_page START: url={request.url}, has_content={bool(request.content)}")
 
     try:
         # Fetch or use provided content
@@ -530,17 +511,15 @@ async def evaluate_page(request: AdvisorRequest) -> tuple[str, bool]:
                 content = _html_to_markdown(html)
                 logger.info(f"Fetched content length: {len(content)} chars")
             except Exception as fetch_error:
-                logger.warning(f"Fetch failed: {fetch_error}. Trying cached content fallback...")
-                if request.job_id:
-                    content = await _get_cached_page_content(request.job_id, request.url)
-                    if content:
-                        logger.info(f"Using cached content: {len(content)} chars")
-                    else:
-                        logger.error("No cached content found")
-                        raise fetch_error
-                else:
-                    logger.error("No job_id provided for fallback")
-                    raise fetch_error
+                logger.info(f"Skipping advisor analysis — page could not be fetched: {fetch_error}")
+                skip_markdown = (
+                    f"# Page could not be analyzed\n\n"
+                    f"The advisor was unable to fetch this page (`{request.url}`):\n\n"
+                    f"> {fetch_error}\n\n"
+                    f"Refer to the Broken Links / Crawlability sections of your SEO report "
+                    f"for diagnosis of this page."
+                )
+                return skip_markdown, False
 
         # Call critic
         logger.info("Getting LLM provider...")

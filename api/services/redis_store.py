@@ -521,6 +521,14 @@ class RedisJobStore:
             "extra": i.extra,
         }
 
+    def _dict_to_issue(self, d: dict) -> Issue:
+        """Inverse of _issue_to_dict. Used in round-trip serialization tests
+        and anywhere outside get_issues() that needs to rehydrate an Issue
+        from its dict form. get_issues() inlines this as Issue(**d), but the
+        named helper is friendlier for tests and future callers.
+        """
+        return Issue(**d)
+
     def _page_to_dict(self, p: CrawledPage) -> dict:
         return {
             "page_id": p.page_id,
