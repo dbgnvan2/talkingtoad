@@ -274,3 +274,105 @@ class TestCatalogueScoringParity:
             f"Invalid scoring values:\n"
             + "\n".join(f"  {c}: {msg}" for c, msg in invalid.items())
         )
+
+
+class TestCatalogueLiveness:
+    """Every catalogue code must have at least one emission site somewhere
+    in the codebase (a `make_issue("CODE_NAME", ...)` call).
+
+    Adversarial: docs-review §2 flagged ORPHAN_CLAIM_TECHNICAL as a "stub
+    that never fires" (verified: it actually does fire, so the report was
+    out of date). But the same review pattern surfaced
+    PROMOTIONAL_CONTENT_INTERRUPTS, CHUNKS_NOT_SELF_CONTAINED, and similar
+    LLM-based codes that have catalogue entries + scoring + confidence
+    labels + help text but no emission call anywhere. Dead-code entries
+    mislead reviewers ("the app checks this!") and inflate the apparent
+    feature surface.
+
+    This test enumerates the dead codes so they can either be implemented
+    or moved to a documented "v3.0 planned" allowlist below.
+    """
+
+    # Codes whose emission site uses a path the simple
+    # `make_issue("CODE", ...)` grep doesn't catch (architectural alternates),
+    # OR which are stubbed pending v3.0 implementation. Each entry needs a
+    # justification comment so future maintainers know which is which.
+    _DEAD_CODE_ALLOWLIST: set[str] = {
+        # ── Architectural alternates (real emission, different code path) ──
+        # Emitted as dict literal in sitemap.py + engine.py:
+        "SITEMAP_MISSING",
+        # System-warning code (emitted from non-make_issue admin path):
+        "AI_BOT_TABLE_STALE",
+        # Computed as boolean flags on JSRenderResult in js_renderer.py;
+        # emission happens when the engine consumes JSRenderResult into Issues:
+        "JS_RENDERED_CONTENT_DIFFERS",
+        "CONTENT_CLOAKING_DETECTED",
+        "UA_CONTENT_DIFFERS",
+        # Returned as code string from citation_model.classify_citation; emission
+        # happens when the AI advisor consumes the model output:
+        "CITATIONS_ORPHANED",
+
+        # ── v3.0-planned LLM-driven checks (catalogue + help present;
+        #    static implementation not feasible — needs LLM classifier) ──
+        "PROMOTIONAL_CONTENT_INTERRUPTS",
+        "CHUNKS_NOT_SELF_CONTAINED",
+        "CENTRAL_CLAIM_BURIED",
+        "CITATIONS_MISSING_SUBSTANTIAL_CONTENT",
+        "CITATIONS_SOURCES_INACCESSIBLE",
+        "CONTENT_IMAGE_HEAVY",
+        "CONTENT_NOT_EXTRACTABLE_NO_TEXT",
+        "CONTENT_THIN",
+        "CONTENT_UNSTRUCTURED",
+    }
+
+    def test_every_catalogue_code_has_an_emission_site(self):
+        """Walk the api/ tree and assert each catalogue code is referenced
+        in a `make_issue("CODE", ...)` call (or appears in the allowlist).
+        """
+        import os
+        import re
+
+        from api.crawler.issue_checker import _CATALOGUE
+
+        # Search the api/ tree for make_issue("CODE", ...) call sites
+        project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        api_dir = os.path.join(project_root, "api")
+
+        # Combine all .py files into one searchable blob — cheaper than per-file regex
+        blob_parts: list[str] = []
+        for root, _dirs, files in os.walk(api_dir):
+            if "__pycache__" in root:
+                continue
+            for fname in files:
+                if not fname.endswith(".py"):
+                    continue
+                path = os.path.join(root, fname)
+                with open(path) as f:
+                    blob_parts.append(f.read())
+        blob = "\n".join(blob_parts)
+
+        # Pattern: make_issue("CODE_NAME", ...) — also tolerate single quotes
+        # and inline newlines. We just need the code to APPEAR after make_issue(.
+        pattern = re.compile(r"""make_issue\(\s*["']([A-Z][A-Z0-9_]+)["']""")
+        emitted = set(pattern.findall(blob))
+
+        dead = (set(_CATALOGUE.keys()) - emitted) - self._DEAD_CODE_ALLOWLIST
+        assert not dead, (
+            f"Catalogue codes with no emission site (dead code):\n"
+            f"  {sorted(dead)}\n\n"
+            f"For each: either add a make_issue('CODE', ...) call site, "
+            f"or add the code to _DEAD_CODE_ALLOWLIST in this test with a "
+            f"justification comment (and a corresponding 'v3.0 planned' "
+            f"entry in PLAN-V3.0.md)."
+        )
+
+    def test_dead_code_allowlist_only_contains_real_codes(self):
+        """Adversarial: stop the allowlist from accumulating typos that
+        would silently mask future dead codes."""
+        from api.crawler.issue_checker import _CATALOGUE
+
+        unknown = self._DEAD_CODE_ALLOWLIST - set(_CATALOGUE.keys())
+        assert not unknown, (
+            f"_DEAD_CODE_ALLOWLIST contains codes not in _CATALOGUE: "
+            f"{sorted(unknown)}. Remove or fix typos."
+        )

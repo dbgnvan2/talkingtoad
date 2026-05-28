@@ -1872,7 +1872,11 @@ def _run_geo_checks(page: "ParsedPage", url: str, issues: list) -> None:
     # ── Aggarwal et al. checks — only on 500+ word pages ────────────────────
     if word_count >= 500:
         # GEO.A.1: Statistics count
-        stat_count = _count_statistics(page.first_200_words or "", links, page)
+        # v2.3 Cycle E: extended scope from first_200_words to first_600_words
+        # per docs-review §2 STATISTICS_COUNT_LOW recommendation. The 200-word
+        # window missed statistics that appear later in the introduction; the
+        # 600-word scope covers a typical article's first 2-3 paragraphs.
+        stat_count = _count_statistics(page.first_600_words or page.first_200_words or "", links, page)
         if stat_count == 0:
             issues.append(make_issue("STATISTICS_COUNT_LOW", url, extra={
                 "word_count": word_count,

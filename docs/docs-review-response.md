@@ -29,8 +29,8 @@
 - ✅ Cycle B — Auto-gen `issue-codes.md` (commit `9c1a837`): generator script + CI guard test
 - ✅ Cycle C — Class-1 invariants (commit `a28a8f7`): parser no-mutation tests + scoring parity
 - ✅ Cycle D — Frontend defect #9 (this commit): verified already fixed, doc updated
-- ⏳ Cycle E — Weak-check triage (Section 2 items)
-- ⏳ Cycle F — GEO scoring buffer bug verification (Section 3 items, likely mostly moot)
+- ✅ Cycle E — Weak-check triage (this section): STATISTICS_COUNT_LOW scope extended from 200 to 600 words; new dead-code architecture test surfaced 12 catalogue entries needing emission-site work (documented in test allowlist with attribution per code); ORPHAN_CLAIM_TECHNICAL verified to be a real implementation (reviewer's "stub" claim was stale)
+- ⏳ Cycle F — GEO scoring buffer bug verification (Section 3 items, likely mostly moot since `geo_analyzer.py` no longer exists)
 
 **Headline:** the foundational P1 data-corruption risks called out in the
 review (#2 parser tree mutation, #5 apply_fix empty-write) are **already
