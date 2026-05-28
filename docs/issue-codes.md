@@ -1180,10 +1180,10 @@ Check that your CDN, WAF, and server aren't blocking or stripping content for AI
 ---
 
 ### FIRST_VIEWPORT_NO_ANSWER
-**Severity:** 🟡 warning | **Evidence:** Mechanistic | **Impact:** 5 | **Effort:** 2
+**Severity:** 🟡 warning | **Evidence:** Mechanistic | **Confidence:** Heuristic | **Impact:** 5 | **Effort:** 2
 
 **What it is**
-The first 150 words of the page contain no definition or direct answer — no "X is a …", no TL;DR, no "in short" statement, and no definitional signal.
+The first **200** words of the page contain no definition or direct answer — no "X is a …", no TL;DR, no "in short" statement, and no definitional signal.
 
 **Why it matters**
 AI systems use the first passage of a page as the primary candidate for a featured snippet or AI Overview answer. If the opening doesn't contain a clear, self-contained definition or answer, the page is unlikely to be quoted in response to direct questions.

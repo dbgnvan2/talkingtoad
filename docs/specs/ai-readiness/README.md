@@ -1,6 +1,20 @@
+---
+status: current
+last_reviewed: 2026-05-27
+---
+
 # AI-Readiness Module Specifications
 
 Audit site readiness for AI crawler access, citation, and content extraction.
+
+> **v2.3 update:** all 49 AI-readiness codes now carry an explicit
+> confidence label (**Established** / **Reasonable proxy** /
+> **Heuristic**) per the v2.0 spec §2. The confidence pill appears on
+> every issue in the UI and PDF report.
+> An architecture parity test
+> (`tests/test_architecture_constraints.py::TestAIReadinessConfidenceLabels`)
+> enforces that any new ai_readiness code added to `_CATALOGUE` must
+> have an entry in `_AI_READINESS_CONFIDENCE`.
 
 ## Specifications
 

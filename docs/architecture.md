@@ -1,4 +1,21 @@
+---
+status: current
+last_reviewed: 2026-05-27
+note: |
+  Per v2.3 M0.7 the backend now runs as a Railway container, not as a
+  Vercel Python serverless function (the serverless model freezes
+  asyncio BackgroundTasks and kills crawls). Diagrams that show
+  "Vercel Edge Functions" for the API layer are stale. The current
+  layout is documented in deployment-railway.md.
+---
+
 # Architecture
+
+> **Deployment update (v2.3 M0.7):** the API layer now runs as a
+> long-lived container on Railway. The "Vercel Edge Functions" callout
+> in the diagram below is historical. See
+> [`deployment-railway.md`](deployment-railway.md) for the current
+> deployment model and migration steps.
 
 ## System Overview
 

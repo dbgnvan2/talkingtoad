@@ -1,6 +1,22 @@
+---
+status: current
+last_reviewed: 2026-05-27
+note: |
+  Per v2.3 M0.7 the production deployment is now Vercel-frontend +
+  Railway-backend, not Vercel-only serverless. Any references to
+  "Vercel Python serverless" in this doc are historical — see
+  deployment-railway.md for the current model.
+---
+
 # TalkingToad — Application Overview
 
 TalkingToad is a web-based SEO audit tool built for nonprofit organisations. It replicates the core functionality of Screaming Frog SEO Spider with no installation, no cost, and output in plain English rather than technical jargon.
+
+> **Deployment note:** v2.3 ships with the backend on Railway (long-lived
+> container) and the frontend on Vercel (static SPA). The earlier
+> Vercel-Python-serverless model is **deprecated** because serverless
+> function freezes kill the crawler's asyncio BackgroundTasks. See
+> [`deployment-railway.md`](deployment-railway.md) for the current setup.
 
 ---
 

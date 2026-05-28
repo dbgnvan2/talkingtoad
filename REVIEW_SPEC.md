@@ -1,4 +1,23 @@
-# TalkingToad — Code Review Specification
+---
+status: superseded-by docs/functional-specification.md
+last_reviewed: 2026-05-27
+note: |
+  Pre-v2.3 review-prompt document. Most items in the original section
+  (Redis tests, ImageAnalysisPanel tests, file sizes for Results.jsx /
+  wp_fixer.py) have been addressed or invalidated by the v2.x
+  stabilization work. Use docs/functional-specification.md +
+  docs/docs-review-response.md for current state. Kept as historical
+  record of what a v2.0-era review focused on.
+---
+
+# TalkingToad — Code Review Specification (historical)
+
+> **Status:** superseded by `docs/functional-specification.md` (the
+> doc to actually use for QA review) + `docs/docs-review-response.md`
+> (triage of findings).
+>
+> Most items below were addressed during v2.x stabilization. Retained
+> for historical reference; do not use as a current review prompt.
 
 ## Purpose
 

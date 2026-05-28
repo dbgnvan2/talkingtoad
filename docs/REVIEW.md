@@ -1,7 +1,19 @@
-# TalkingToad — Critical Review Document
+---
+status: superseded-by ../functional-specification.md
+last_reviewed: 2026-05-27
+note: |
+  Historical pre-v2.3 review document. Line-count claims for
+  Results.jsx and wp_fixer.py are stale per M0.3 reconciliation.
+  The "2024-04-13" date is likely a 2026 typo (the file predates
+  the v2.3 stabilization work). For current state, use
+  functional-specification.md and docs-review-response.md.
+---
 
-> **Last Updated:** 2024-04-13
-> **Purpose:** Provide context for external review of architecture, code quality, and improvement opportunities.
+# TalkingToad — Critical Review Document (historical)
+
+> **Status:** superseded by `functional-specification.md` (current state) +
+> `docs-review-response.md` (triage of findings). Retained for context.
+> **Original date stamp:** 2024-04-13 (likely 2026 typo).
 
 ---
 
