@@ -273,14 +273,30 @@ The catch-all `GET /api/fixes/{job_id}` was silently shadowing 5 missing GET end
 - [ ] WP domain validation on both write endpoints (per CLAUDE.md v1.9.4 "22 WP-touching endpoints" claim)
 
 #### M0.12.2 — `api/routers/heading_router.py`
-- [ ] `GET /api/fixes/find-heading`
-- [ ] `GET /api/fixes/analyze-heading-sources`
-- [ ] `POST /api/fixes/change-heading-level`
-- [ ] `POST /api/fixes/change-heading-text`
-- [ ] `POST /api/fixes/bulk-replace-heading`
-- [ ] `POST /api/fixes/heading-to-bold`
+
+**Discovery (2026-05-27):** Only 3 of the 6 heading service functions exist
+in `api/services/wp_heading_fixer.py` (`analyze_heading_sources`,
+`change_heading_level`, `change_heading_text`). The other 3 are referenced
+by the frontend but the service code was either never implemented or lost
+in a prior refactor. User-approved decision: implement all three with
+inferred semantics.
+
+**Existing services (route restoration only):**
+- [ ] `GET /api/fixes/analyze-heading-sources` → `analyze_heading_sources(wp, page_url, crawled_headings)`. Note: takes crawled_headings from store, not as query param.
+- [ ] `POST /api/fixes/change-heading-level` → `change_heading_level(wp, page_url, heading_text, from_level, to_level)`
+- [ ] `POST /api/fixes/change-heading-text` → `change_heading_text(wp, page_url, old_text, new_text, level=1)` (M0.9 P4 already shipped — Gutenberg dead code removed, 3 new Gutenberg block tests added)
+
+**Missing services to implement first:**
+- [ ] `find_heading(store, job_id, heading_text, level=None) -> list[dict]` — search the job's crawled pages' `headings_outline` for matching text+level. Pure read against store; no WP API. Returns `[{page_url, level, text}]`.
+- [ ] `bulk_replace_heading(wp, store, job_id, heading_text, from_level, to_level=None) -> dict` — find all pages with matching heading via `find_heading`, then iterate calling `change_heading_level`. Returns `{matched, applied, skipped, errors, results: [...]}`. `to_level=None` is a no-op (returns matches without changing anything — useful for "preview before bulk apply").
+- [ ] `convert_heading_to_bold(wp, page_url, heading_text, level) -> dict` — fetch WP content, replace `<h{level}>X</h{level}>` with `<p><strong>X</strong></p>`. Reuse the same find/replace machinery as `change_heading_text`. Frontend's `Results.jsx:751` is the actual caller.
+
+**Then the router endpoints:**
+- [ ] `GET /api/fixes/find-heading?job_id=...&heading_text=...&level=...` (level optional)
+- [ ] `POST /api/fixes/bulk-replace-heading?job_id=...&heading_text=...&from_level=...&to_level=...`
+- [ ] `POST /api/fixes/heading-to-bold?page_url=...&level=...&heading_text=...`
 - [ ] WP domain validation on all write endpoints
-- [ ] **Include M0.9 P4 fix:** the dead/broken Gutenberg block at `wp_heading_fixer.py:608-618` is reviewed and either implemented or removed during this router's tests
+- [ ] Each new service function: ≥3 contract tests including one adversarial case
 
 #### M0.12.3 — `api/routers/image_router.py`
 - [ ] `GET /api/fixes/image-info`
