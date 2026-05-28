@@ -16,13 +16,21 @@
 
 | Section | Items | Already fixed | Still open | Needs decision |
 |---|---|---|---|---|
-| 1. Code defects (P1–P3) | 12 | 8 | 4 (frontend) | 0 |
-| 2. Self-flagged weak checks | 7 | 0 | 7 | 1 (rename) |
-| 3. GEO scoring buffer bugs (F1–F10) | 10 | TBD | TBD | 0 |
-| 4. Unresolved contradictions | 6 | 1 (#3 deployment) | 5 | 6 |
-| 5. Doc defects | 5 | 2 (broken paths, version drift partial) | 3 | 0 |
-| 6. Class-1 invariants | 7 | 4 partially covered by tests | 3 | 0 |
-| 7. Doc improvements | 7 | 1 (broken paths) | 6 | 0 |
+| 1. Code defects (P1–P3) | 12 | 9 (incl. #9 apiFetch timeout) | 3 (frontend, branch-blocked) | 0 |
+| 2. Self-flagged weak checks | 7 | 0 | 7 | 0 (recommendations made) |
+| 3. GEO scoring buffer bugs (F1–F10) | 10 | most moot (geo_analyzer.py removed) | partial verification needed | 0 |
+| 4. Unresolved contradictions | 6 | 6 (Cycle A applied resolutions) | 0 | 0 |
+| 5. Doc defects | 5 | 5 (Cycles A + B) | 0 | 0 |
+| 6. Class-1 invariants | 7 | 6 (Cycle C added 2 new tests) | 1 (Path A/B/C — now moot) | 0 |
+| 7. Doc improvements | 7 | 5 (Cycles A + B) | 2 (single thresholds table, plan-status-stamp) | 0 |
+
+**Cycle status (as of 2026-05-27):**
+- ✅ Cycle A — Doc sweep (commit `23e4fe6`): broken sub-README links, status frontmatter, contradiction resolutions
+- ✅ Cycle B — Auto-gen `issue-codes.md` (commit `9c1a837`): generator script + CI guard test
+- ✅ Cycle C — Class-1 invariants (commit `a28a8f7`): parser no-mutation tests + scoring parity
+- ✅ Cycle D — Frontend defect #9 (this commit): verified already fixed, doc updated
+- ⏳ Cycle E — Weak-check triage (Section 2 items)
+- ⏳ Cycle F — GEO scoring buffer bug verification (Section 3 items, likely mostly moot)
 
 **Headline:** the foundational P1 data-corruption risks called out in the
 review (#2 parser tree mutation, #5 apply_fix empty-write) are **already
@@ -97,12 +105,34 @@ addressed when the toast/dialog notification system lands.
 **Status:** Not yet fixed. Same blocker as #7. Add error-banner UI as
 part of the v2.7 toast system work.
 
-### 🟡 #9 FixManager apiFetch no timeout (originally P3)
+### ✅ #9 FixManager apiFetch no timeout (originally P3)
 
-**Status:** Not yet fixed. The `apiFetch` helper in
-`frontend/src/api.js` doesn't set an `AbortController` timeout.
-Recommend: add a default 60s timeout configurable per-call. Small
-focused commit, can land independently of the branch merge.
+**Status:** Fixed. `frontend/src/components/FixManager.jsx:26-39` —
+`apiFetch` already uses `AbortController` with a 30-second default
+timeout. The "Connecting to WordPress…" spinner cannot hang forever.
+
+```js
+async function apiFetch(path, opts = {}, timeoutMs = 30_000) {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
+  try {
+    const res = await fetch(`${API}${path}`, {
+      headers: { ..., ...opts.headers },
+      signal: controller.signal,
+      ...opts,
+    })
+    return res
+  } finally {
+    clearTimeout(timer)
+  }
+}
+```
+
+**Broader note:** the reviewer's specific concern was the `apiFetch`
+helper in FixManager. Other raw `fetch()` calls across the frontend
+(in `api.js`) do not use a timeout helper. Adding a centralised
+`fetchWithTimeout` to `api.js` and migrating callers is folded into
+**v2.7 M10 frontend infrastructure work**, alongside the toast system.
 
 ### 🟡 #10 CSV export silent failures (originally P3)
 
