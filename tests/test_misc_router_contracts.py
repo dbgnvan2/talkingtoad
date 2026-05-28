@@ -216,3 +216,58 @@ class TestSaveLLMSTxt:
     async def test_missing_body_returns_422(self, api_client, auth_headers):
         r = await api_client.post("/api/utility/save-llms-txt", headers=auth_headers)
         assert r.status_code == 422
+
+
+class TestGenerateLLMSTxt:
+    @pytest.mark.asyncio
+    async def test_requires_auth(self, api_client):
+        r = await api_client.get("/api/utility/generate-llms-txt?job_id=x")
+        assert r.status_code == 401
+
+    @pytest.mark.asyncio
+    async def test_unknown_job_returns_404(self, api_client, auth_headers):
+        r = await api_client.get(
+            "/api/utility/generate-llms-txt?job_id=does-not-exist",
+            headers=auth_headers,
+        )
+        assert r.status_code == 404
+
+
+# ===================================================================
+# GEO router
+# ===================================================================
+
+
+class TestGeoRouter:
+    @pytest.mark.parametrize("method,path", [
+        ("get",  "/api/geo/ai-model"),
+        ("post", "/api/geo/ai-model"),
+        ("get",  "/api/geo/test"),
+    ])
+    @pytest.mark.asyncio
+    async def test_endpoint_requires_auth(self, api_client, method, path):
+        if method == "post":
+            r = await api_client.post(path)
+        else:
+            r = await api_client.get(path)
+        assert r.status_code == 401
+
+
+# ===================================================================
+# Crawl router — endpoints not covered in test_crawl_router_contracts.py
+# ===================================================================
+
+
+class TestCrawlExtraEndpoints:
+    @pytest.mark.parametrize("method,path", [
+        ("get",  "/api/crawl/recent"),
+        ("post", "/api/crawl/some-id/images/analyze-ai"),
+        ("get",  "/api/crawl/some-id/export/ai-images-pdf"),
+    ])
+    @pytest.mark.asyncio
+    async def test_endpoint_requires_auth(self, api_client, method, path):
+        if method == "post":
+            r = await api_client.post(path)
+        else:
+            r = await api_client.get(path)
+        assert r.status_code == 401
