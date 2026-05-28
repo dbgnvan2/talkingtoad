@@ -17,6 +17,7 @@ from __future__ import annotations
 from fastapi import APIRouter
 from api.routers.fix_manager_router import router as fix_manager_router
 from api.routers.heading_router import router as heading_router
+from api.routers.batch_optimizer_router import router as batch_optimizer_router
 from api.routers.image_router import router as image_router
 from api.routers.orphaned_media_router import router as orphaned_media_router
 from api.routers.title_router import router as title_router
@@ -37,10 +38,10 @@ router.include_router(title_router, tags=["fixes"])
 router.include_router(heading_router, tags=["fixes"])
 router.include_router(image_router, tags=["fixes"])
 router.include_router(orphaned_media_router, tags=["fixes"])
+router.include_router(batch_optimizer_router, tags=["fixes"])
 router.include_router(fix_manager_router, tags=["fixes"])
 
-# TODO (v2.3 M0.12.5-6): the remaining domain routers will land in this order:
-# - batch_optimizer_router (batch-optimize/start, status, pause, resume, cancel, list)
+# TODO (v2.3 M0.12.6): the remaining domain router will land in:
 # - link_router (link-sources, replace-link, verify-broken-links, mark-*-fixed, apply-one, wp-value)
 
 __all__ = ["router"]
