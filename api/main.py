@@ -51,11 +51,76 @@ def _configure_logging() -> None:
         datefmt="%H:%M:%S",
         force=True
     )
-    print(f"DEBUG: Environment loaded. API_KEY_READ={os.getenv('API_KEY_READ')}")
+    # v2.3 (M0.8 P8) — was: print(f"... API_KEY_READ={os.getenv('API_KEY_READ')}")
+    # which leaked the actual key value to stdout/logs. Log only whether it's
+    # set, never the value.
+    _api_key_set = bool(os.getenv("API_KEY_READ"))
+    logging.getLogger(__name__).debug(
+        "env_loaded", extra={"api_key_read_set": _api_key_set}
+    )
 
 
 _configure_logging()
 logger = logging.getLogger(__name__)
+
+
+# ── Production safety checks (M0.8) ────────────────────────────────────────
+
+def _is_production() -> bool:
+    """Detect production environment via common host-provider markers.
+
+    Recognises:
+    - VERCEL=1                (Vercel)
+    - RAILWAY_ENVIRONMENT=*   (Railway, set by their build system)
+    - RENDER=true             (Render)
+    - ENV=production          (generic)
+    """
+    return any([
+        os.getenv("VERCEL") == "1",
+        os.getenv("RAILWAY_ENVIRONMENT"),
+        os.getenv("RENDER") == "true",
+        os.getenv("ENV", "").lower() == "production",
+    ])
+
+
+def _assert_production_safe() -> None:
+    """Fail-closed safety checks. Refuses to start the app if a footgun would
+    leave the production deployment open or unsafe.
+
+    v2.3 M0.8:
+    - P2: AUTH_TOKEN empty in production = open API. Refuse to start.
+    - P3: ALLOWED_ORIGINS=* with allow_credentials=True is a CSRF surface.
+      Refuse to start in production (allowed in dev for convenience).
+    """
+    if not _is_production():
+        if not os.getenv("AUTH_TOKEN"):
+            # NOTE: don't use extra={"message": ...} — that key conflicts
+            # with logging's own LogRecord.message attribute.
+            logger.warning(
+                "AUTH_TOKEN is unset — running in dev mode (all requests "
+                "allowed). Set AUTH_TOKEN before deploying to production."
+            )
+        return
+
+    # ── PRODUCTION CHECKS ──
+    if not os.getenv("AUTH_TOKEN"):
+        raise RuntimeError(
+            "P2 fail-closed: AUTH_TOKEN is empty in a production environment "
+            "(VERCEL/RAILWAY/RENDER/ENV=production detected). Set AUTH_TOKEN "
+            "before starting. Refusing to boot with an open API."
+        )
+
+    raw_origins = os.getenv("ALLOWED_ORIGINS", "")
+    origin_list = [o.strip() for o in raw_origins.split(",") if o.strip()]
+    if "*" in origin_list:
+        raise RuntimeError(
+            "P3 fail-closed: ALLOWED_ORIGINS=* combined with allow_credentials=True "
+            "is a CSRF surface. Set ALLOWED_ORIGINS to your specific frontend "
+            "origin(s) in production."
+        )
+
+
+_assert_production_safe()
 
 # ── Job store singleton ────────────────────────────────────────────────────
 
