@@ -1,32 +1,16 @@
 {
   "version": 2,
-  "builds": [
+  "buildCommand": "cd frontend && npm install && npm run build",
+  "outputDirectory": "frontend/dist",
+  "rewrites": [
     {
-      "src": "api/main.py",
-      "use": "@vercel/python"
+      "source": "/api/(.*)",
+      "destination": "https://$BACKEND_HOST/api/$1"
     },
     {
-      "src": "frontend/package.json",
-      "use": "@vercel/static-build",
-      "config": { "distDir": "dist" }
+      "source": "/(.*)",
+      "destination": "/index.html"
     }
   ],
-  "functions": {
-    "api/main.py": {
-      "maxDuration": 300
-    }
-  },
-  "routes": [
-    {
-      "src": "/api/(.*)",
-      "dest": "/api/main.py"
-    },
-    {
-      "handle": "filesystem"
-    },
-    {
-      "src": "/(.*)",
-      "dest": "/index.html"
-    }
-  ]
+  "$comment_M0_7": "v2.3 M0.7 — Backend moved off Vercel serverless (BackgroundTasks doesn't survive serverless freezes). Frontend stays on Vercel as a static SPA. /api/* proxies to the Railway backend via the BACKEND_HOST env var (set in Vercel project settings, value is your Railway service domain, e.g. talkingtoad-api.up.railway.app). See docs/deployment-railway.md."
 }

@@ -1,0 +1,60 @@
+# v2.3 M0.7 — keep the image small and fast to build.
+
+# Python noise
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# Virtualenvs (we use the container's system Python, not host venvs)
+venv/
+.venv/
+env/
+ENV/
+
+# Frontend (deployed separately to Vercel; not part of the API image)
+frontend/
+node_modules/
+
+# Local dev artifacts
+*.db
+*.db-journal
+*.log
+talkingtoad.db
+server.log
+archive/
+
+# Local secrets — never bake into image, always read from env at runtime
+.env
+.env-ttoad
+.env.local
+wp-credentials.json
+
+# Git + dev tooling
+.git/
+.gitignore
+.github/
+.claude/
+.vscode/
+.idea/
+
+# Tests (run on CI, not in production image)
+tests/
+
+# Docs (not needed in the running container)
+docs/
+*.md
+!README.md
+
+# Editor / OS
+.DS_Store
+Thumbs.db
+
+# Other configs
+.firecrawl/
