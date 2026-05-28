@@ -605,17 +605,20 @@ async def change_heading_text(
     )
     updated_content = pattern.sub(_replace_text, raw_content)
 
-    # Also handle Gutenberg heading blocks
-    gb_pattern = re.compile(
-        rf'("content"\s*:\s*")<h{level}[^>]*?>.*?</h{level}>(")' ,
-        re.IGNORECASE,
-    )
-    for m in gb_pattern.finditer(raw_content):
-        block_html = m.group(0)
-        inner_plain = html_module.unescape(re.sub(r'<[^>]+>', '', block_html)).strip()
-        if norm_old in inner_plain:
-            # Already handled by HTML replacement above
-            pass
+    # v2.3 (M0.9 P4): Removed a no-op block here that claimed to "also handle
+    # Gutenberg heading blocks" but only contained `pass`. The block compiled
+    # a regex, iterated matches, and discarded the results — a silent dead-end
+    # masked as defensive code. The main `pattern.sub(...)` above already
+    # handles Gutenberg blocks because WordPress stores them as raw HTML
+    # inside <!-- wp:heading --> comments, e.g.:
+    #
+    #     <!-- wp:heading -->
+    #     <h2 class="wp-block-heading">Title</h2>
+    #     <!-- /wp:heading -->
+    #
+    # The H tag inside the block comment is raw, not entity-encoded, so the
+    # `<h{level}(\s[^>]*)?>(.+?)</h{level}>` regex matches it as-is. Confirmed
+    # by tests/test_wp_fixer.py::TestChangeHeadingText::test_gutenberg_block.
 
     if count == 0:
         return {"success": False, "changed": 0,

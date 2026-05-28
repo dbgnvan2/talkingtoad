@@ -554,6 +554,110 @@ class TestChangeHeadingText:
         assert result["success"] is False
         assert "Connection refused" in result["error"]
 
+    # v2.3 (M0.9 P4) — Gutenberg block coverage. Pre-v2.3 wp_heading_fixer.py
+    # had a dead block claiming to "also handle Gutenberg heading blocks" but
+    # containing only `pass`. The block was removed in M0.9. These tests prove
+    # the main regex actually handles Gutenberg blocks correctly, so removal
+    # was safe. If a future refactor breaks Gutenberg replacement, these fail.
+
+    async def test_gutenberg_block_simple_heading(self):
+        """WordPress stores Gutenberg headings as raw <h2> inside <!-- wp:heading --> block comments.
+
+        Adversarial: pre-fix code had a no-op block that pretended to handle
+        Gutenberg. The comment "Already handled by HTML replacement above" was
+        technically correct but un-tested — this test pins that behaviour.
+        """
+        wp = _make_wp_client("https://example.org")
+        gutenberg_content = (
+            "<!-- wp:paragraph -->\n"
+            "<p>Intro text.</p>\n"
+            "<!-- /wp:paragraph -->\n\n"
+            "<!-- wp:heading -->\n"
+            "<h2 class=\"wp-block-heading\">Old Section Title</h2>\n"
+            "<!-- /wp:heading -->\n\n"
+            "<!-- wp:paragraph -->\n"
+            "<p>Body text.</p>\n"
+            "<!-- /wp:paragraph -->"
+        )
+        self._setup_wp_for_content(wp, gutenberg_content)
+
+        result = await change_heading_text(
+            wp,
+            "https://example.org/test-page/",
+            "Old Section Title",
+            "New Section Title",
+            level=2,
+        )
+
+        assert result["success"] is True
+        assert result["changed"] == 1
+        updated = wp.patch.call_args.kwargs["json"]["content"]
+        # H2 inside the Gutenberg block was replaced; block comment markers preserved
+        assert "<h2 class=\"wp-block-heading\">New Section Title</h2>" in updated
+        assert "<!-- wp:heading -->" in updated
+        assert "<!-- /wp:heading -->" in updated
+        assert "Old Section Title" not in updated
+
+    async def test_gutenberg_block_multiple_headings_same_level(self):
+        """When multiple Gutenberg H2s exist, only the matching one is replaced."""
+        wp = _make_wp_client("https://example.org")
+        gutenberg_content = (
+            "<!-- wp:heading -->\n"
+            "<h2 class=\"wp-block-heading\">First Section</h2>\n"
+            "<!-- /wp:heading -->\n\n"
+            "<!-- wp:heading -->\n"
+            "<h2 class=\"wp-block-heading\">Target Section</h2>\n"
+            "<!-- /wp:heading -->\n\n"
+            "<!-- wp:heading -->\n"
+            "<h2 class=\"wp-block-heading\">Third Section</h2>\n"
+            "<!-- /wp:heading -->"
+        )
+        self._setup_wp_for_content(wp, gutenberg_content)
+
+        result = await change_heading_text(
+            wp,
+            "https://example.org/test-page/",
+            "Target Section",
+            "Replaced Section",
+            level=2,
+        )
+
+        assert result["success"] is True
+        assert result["changed"] == 1
+        updated = wp.patch.call_args.kwargs["json"]["content"]
+        assert "First Section" in updated
+        assert "Third Section" in updated
+        assert "Replaced Section" in updated
+        assert "Target Section" not in updated
+
+    async def test_gutenberg_block_h3_inside_h2_does_not_cross_match(self):
+        """Adversarial: requesting level=2 must not touch H3 blocks with the same text."""
+        wp = _make_wp_client("https://example.org")
+        gutenberg_content = (
+            "<!-- wp:heading -->\n"
+            "<h2 class=\"wp-block-heading\">Shared Title</h2>\n"
+            "<!-- /wp:heading -->\n\n"
+            "<!-- wp:heading {\"level\":3} -->\n"
+            "<h3 class=\"wp-block-heading\">Shared Title</h3>\n"
+            "<!-- /wp:heading -->"
+        )
+        self._setup_wp_for_content(wp, gutenberg_content)
+
+        result = await change_heading_text(
+            wp,
+            "https://example.org/test-page/",
+            "Shared Title",
+            "New Title",
+            level=2,
+        )
+
+        assert result["success"] is True
+        assert result["changed"] == 1
+        updated = wp.patch.call_args.kwargs["json"]["content"]
+        # Only the H2 changed; the H3 with the same text is untouched
+        assert "<h2 class=\"wp-block-heading\">New Title</h2>" in updated
+        assert "<h3 class=\"wp-block-heading\">Shared Title</h3>" in updated
+
 
 # ===================================================================
 # find_attachment_by_url
