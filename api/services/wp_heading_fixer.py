@@ -781,3 +781,251 @@ async def _fix_heading_in_template_parts(
         except Exception:
             pass
     return None
+
+
+
+# ---------------------------------------------------------------------------
+# v2.3 M0.12.2: Re-introduced heading services
+# These three functions were referenced by the frontend (findHeading,
+# bulkReplaceHeading, convertHeadingToBold in frontend/src/api.js) but had no
+# backend implementation — either never written, or lost during a refactor.
+# Implemented with semantics inferred from the frontend call sites.
+# ---------------------------------------------------------------------------
+
+
+async def find_heading(
+    store,
+    job_id: str,
+    heading_text: str,
+    level: int | None = None,
+) -> list[dict]:
+    """Search a crawl job's pages for headings matching *heading_text*.
+
+    Pure read against the store — no WP API. Returns one entry per match,
+    so a page with the same heading at multiple levels yields multiple rows.
+
+    Args:
+        store: Job store (SQLite or Redis).
+        job_id: The crawl job to search.
+        heading_text: Text to match. Comparison is normalized (whitespace
+            collapsed, smart quotes/dashes equalised, case-insensitive) via
+            the existing _text_matches helper.
+        level: If provided (1-6), only match headings at that level.
+
+    Returns:
+        List of {page_url, level, text} dicts. Empty list if no matches.
+    """
+    pages = await store.get_pages(job_id)
+    matches: list[dict] = []
+    for page in pages:
+        for heading in page.headings_outline or []:
+            h_text = heading.get("text", "")
+            h_level = heading.get("level")
+            if level is not None and h_level != level:
+                continue
+            if _text_matches(h_text, heading_text):
+                matches.append({
+                    "page_url": page.url,
+                    "level": h_level,
+                    "text": h_text,
+                })
+    return matches
+
+
+async def bulk_replace_heading(
+    wp: WPClient,
+    store,
+    job_id: str,
+    heading_text: str,
+    from_level: int,
+    to_level: int | None = None,
+) -> dict:
+    """Find all pages with *heading_text* at *from_level* and change them to *to_level*.
+
+    Two modes:
+    - ``to_level is None``: preview-only. Returns matched pages without
+      touching WP. Useful for the UI to show "applying this fix will affect
+      N pages: ..." before the user confirms.
+    - ``to_level is set``: iterate matches, calling change_heading_level for
+      each. Skips pages where from_level == to_level (no-op). Records
+      per-page success/failure.
+
+    Returns:
+        {
+          "matched": int,           # total pages with matching heading
+          "applied": int,           # successfully changed
+          "skipped": int,           # already at to_level, or to_level is None
+          "errors": int,            # change_heading_level returned success=False
+          "results": [              # one entry per matched page
+            {"page_url", "success", "changed", "error", ...}
+          ],
+        }
+    """
+    matched = await find_heading(store, job_id, heading_text, level=from_level)
+
+    if to_level is None:
+        # Preview mode — report matches without modifying WP.
+        return {
+            "matched": len(matched),
+            "applied": 0,
+            "skipped": len(matched),  # nothing to do is "skipped", not "errored"
+            "errors": 0,
+            "results": [
+                {**m, "success": True, "changed": 0, "preview": True, "error": None}
+                for m in matched
+            ],
+        }
+
+    if from_level == to_level:
+        # Adversarial guard — caller asked for a no-op.
+        return {
+            "matched": len(matched),
+            "applied": 0,
+            "skipped": len(matched),
+            "errors": 0,
+            "results": [
+                {**m, "success": True, "changed": 0,
+                 "error": "no-op: from_level == to_level"}
+                for m in matched
+            ],
+        }
+
+    results: list[dict] = []
+    applied = 0
+    errors = 0
+    for m in matched:
+        try:
+            r = await change_heading_level(
+                wp=wp,
+                page_url=m["page_url"],
+                heading_text=heading_text,
+                from_level=from_level,
+                to_level=to_level,
+            )
+            if r.get("success"):
+                applied += 1
+            else:
+                errors += 1
+            results.append({**m, **r})
+        except Exception as exc:
+            logger.exception(
+                "bulk_replace_heading_per_page_failed",
+                extra={"page_url": m["page_url"], "error": str(exc)},
+            )
+            errors += 1
+            results.append({
+                **m,
+                "success": False,
+                "changed": 0,
+                "error": str(exc),
+            })
+
+    return {
+        "matched": len(matched),
+        "applied": applied,
+        "skipped": 0,
+        "errors": errors,
+        "results": results,
+    }
+
+
+async def convert_heading_to_bold(
+    wp: WPClient,
+    page_url: str,
+    heading_text: str,
+    level: int,
+) -> dict:
+    """Convert a specific <h{level}>X</h{level}> to <p><strong>X</strong></p>.
+
+    Reuses the same find/replace machinery as change_heading_text — find the
+    post, fetch its content, locate the matching heading tag, replace, PATCH.
+
+    Args:
+        wp: WPClient for the target site.
+        page_url: URL of the page containing the heading.
+        heading_text: Text of the heading to convert. Matched fuzzy (after
+            normalize: stripped tags, decoded entities, collapsed whitespace).
+        level: H level (1-6) the heading currently is at.
+
+    Returns:
+        {
+          "success": bool,
+          "changed": int,
+          "location": "post" | None,
+          "error": str | None,
+        }
+    """
+    from api.services.wp_fixer import find_post_by_url
+
+    if level not in (1, 2, 3, 4, 5, 6):
+        return {"success": False, "changed": 0,
+                "error": f"Invalid level: {level} (must be 1-6)"}
+
+    post_info = await find_post_by_url(wp, page_url)
+    if not post_info:
+        return {"success": False, "changed": 0,
+                "error": f"Could not find WordPress post for {page_url}"}
+
+    post_id = post_info["id"]
+    post_type = post_info["type"]
+    endpoint_base = "pages" if post_type == "page" else "posts"
+
+    try:
+        r = await wp.get(f"{endpoint_base}/{post_id}?context=edit")
+        if r.status_code != 200:
+            return {"success": False, "changed": 0,
+                    "error": f"HTTP {r.status_code} fetching post content"}
+        content_data = r.json().get("content") or {}
+        raw_content = content_data.get("raw", "") or ""
+    except Exception as exc:
+        return {"success": False, "changed": 0, "error": str(exc)}
+
+    def _normalize_for_compare(text: str) -> str:
+        return re.sub(r'\s+', '', html_module.unescape(text)).strip()
+
+    norm_target = _normalize_for_compare(heading_text)
+
+    count = 0
+
+    def _replace(m: re.Match) -> str:
+        nonlocal count
+        inner = m.group(2)
+        plain = _normalize_for_compare(re.sub(r'<[^>]+>', '', inner))
+        if plain != norm_target:
+            return m.group(0)
+        count += 1
+        # Preserve the inner HTML if present (e.g. <strong> inside the H),
+        # but ensure the OUTER wrapper is <p><strong>...</strong></p>.
+        # If inner already contains <strong>, just use the plain text to
+        # avoid <strong><strong>X</strong></strong> nesting.
+        if '<strong' in inner.lower() or '<b ' in inner.lower() or inner.lower().startswith('<b>'):
+            # Strip the existing emphasis tags and use plain text
+            inner_text = html_module.escape(
+                re.sub(r'<[^>]+>', '', inner).strip()
+            )
+            return f'<p><strong>{inner_text}</strong></p>'
+        # Inner has no bold; wrap as-is
+        return f'<p><strong>{inner}</strong></p>'
+
+    pattern = re.compile(
+        rf'<h{level}(\s[^>]*)?>(.+?)</h{level}>',
+        re.IGNORECASE | re.DOTALL,
+    )
+    updated_content = pattern.sub(_replace, raw_content)
+
+    if count == 0:
+        return {"success": False, "changed": 0,
+                "error": f'H{level} "{heading_text}" was not found in the post content.'}
+
+    try:
+        r = await wp.patch(
+            f"{endpoint_base}/{post_id}",
+            json={"content": updated_content},
+        )
+        if r.status_code == 200:
+            return {"success": True, "changed": count, "location": "post", "error": None}
+        body = r.json()
+        return {"success": False, "changed": 0,
+                "error": body.get("message", f"HTTP {r.status_code}")}
+    except Exception as exc:
+        return {"success": False, "changed": 0, "error": str(exc)}

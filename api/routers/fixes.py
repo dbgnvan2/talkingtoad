@@ -16,6 +16,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 from api.routers.fix_manager_router import router as fix_manager_router
+from api.routers.heading_router import router as heading_router
 from api.routers.title_router import router as title_router
 
 # Main router
@@ -28,14 +29,13 @@ router = APIRouter()
 # fix_manager_router, because fix_manager_router has catch-all routes like
 # GET /{job_id} (constrained to UUID). FastAPI matches by registration order
 # and returns 422 from a pattern-validation failure rather than continuing to
-# the next router. Registering title_router first means
-# GET /api/fixes/predefined-codes hits the literal title_router route, not
-# the UUID-constrained catch-all.
+# the next router. Registering literal-path routers first means requests like
+# GET /api/fixes/predefined-codes hit the literal route, not the catch-all.
 router.include_router(title_router, tags=["fixes"])
+router.include_router(heading_router, tags=["fixes"])
 router.include_router(fix_manager_router, tags=["fixes"])
 
-# TODO (v2.3 M0.12.2-6): the remaining domain routers will land in this order:
-# - heading_router (find, analyze-sources, change-level/text, bulk-replace, to-bold)
+# TODO (v2.3 M0.12.3-6): the remaining domain routers will land in this order:
 # - image_router (info, update-meta, refresh, optimize-*)
 # - orphaned_media_router (orphaned-media/{job_id})
 # - batch_optimizer_router (batch-optimize/start, status, pause, resume, cancel, list)
