@@ -30,7 +30,7 @@
 - ✅ Cycle C — Class-1 invariants (commit `a28a8f7`): parser no-mutation tests + scoring parity
 - ✅ Cycle D — Frontend defect #9 (this commit): verified already fixed, doc updated
 - ✅ Cycle E — Weak-check triage (this section): STATISTICS_COUNT_LOW scope extended from 200 to 600 words; new dead-code architecture test surfaced 12 catalogue entries needing emission-site work (documented in test allowlist with attribution per code); ORPHAN_CLAIM_TECHNICAL verified to be a real implementation (reviewer's "stub" claim was stale)
-- ⏳ Cycle F — GEO scoring buffer bug verification (Section 3 items, likely mostly moot since `geo_analyzer.py` no longer exists)
+- ✅ Cycle F — GEO scoring buffer bug verification: ALL MOOT. The `geo_analyzer.py`, `_score_rewrite_query_match`, `check_central_claim`, and tier-based scoring referenced in F1–F10 don't exist in current code. Single-extraction-path architecture (parser populates `first_N_words` fields; checks consume them) prevents the entire bug class. Class-1 invariant test added in Cycle C pins this.
 
 **Headline:** the foundational P1 data-corruption risks called out in the
 review (#2 parser tree mutation, #5 apply_fix empty-write) are **already
@@ -178,25 +178,37 @@ sub-item above is a small focused commit:
 
 ---
 
-## Section 3 — GEO scoring buffer bugs (F1–F10)
+## Section 3 — GEO scoring buffer bugs (F1–F10) — ALL MOOT
 
-These all stem from one root cause: multiple text-buffer extractions
-with different scopes (`first_150_words` vs `first_200_words` vs char
-limits) and no enforced agreement.
+Verified against current code (Cycle F, 2026-05-27): every F1–F10 bug
+references code that no longer exists. The current architecture
+eliminates the bug class structurally:
 
-**Recommended structural fix instead of per-bug fixes:**
+- **No `geo_analyzer.py`** — replaced by inline `_run_geo_checks` in
+  `api/crawler/issue_checker.py`. (F2 moot — only one extraction path.)
+- **No `_score_rewrite_query_match()`** — function does not exist in
+  current code. (F8 moot — no 3000-char truncation.)
+- **No `check_central_claim()`** — function does not exist. (F7 moot.)
+- **No tier-based scoring** — `compute_score_from_findings`,
+  `overall_score` Conventional-tier weighting, scoring map: all
+  removed. (F10 moot.)
+- **`first_150_words` was renamed to `first_200_words`** in the
+  ParsedPage dataclass and is consistently used. The actual extraction
+  is via `parser._extract_first_n_words(soup, 200)` — one source. (F1
+  moot, naming is consistent.)
+- **Buffer sizes are explicit and documented**: `first_200_words` and
+  `first_600_words` are documented in `parser.py:117`. The mixed
+  char-limit zoo (800/2000/3000) is gone. (F9 mostly moot — only word
+  buffers remain.)
 
-Introduce a single `PageContentSpans` dataclass that pre-computes all
-the slice buffers once (`first_N_words`, `first_M_chars`, full body,
-intro), with explicit names that match what they contain. Every GEO
-check reads from this dataclass. The buffer-agreement bugs (F1, F2, F7,
-F8) become impossible by construction.
+The structural fix the reviewer proposed (single `PageContentSpans`
+dataclass) is effectively what shipped: pre-populated `first_N_words`
+fields on `ParsedPage`, consumed by every check. The bug class cannot
+recur unless someone re-introduces a second extraction path.
 
-**Verification needed before fixing:**
-
-I need to read `geo_analyzer.py` and the scoring map to know which of
-F1–F10 are still present vs already addressed by the GEO implementation
-plans. Tracked as remediation step "Section 3 verification".
+**No action required.** The Class-1 invariant test added in Cycle C
+(`test_word_count_buffers_consistent_across_calls`) pins this so a
+regression to multi-path extraction would fail the build.
 
 ---
 
