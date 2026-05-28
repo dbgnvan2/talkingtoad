@@ -43,9 +43,11 @@ async def api_client(test_store):
     from api.main import app
     from api.routers.crawl import get_store as crawl_get_store
     from api.routers.fixes_shared import get_store as fixes_get_store
+    from api.routers.verified import get_store as verified_get_store
 
     app.dependency_overrides[crawl_get_store] = lambda: test_store
     app.dependency_overrides[fixes_get_store] = lambda: test_store
+    app.dependency_overrides[verified_get_store] = lambda: test_store
 
     async with AsyncClient(
         transport=ASGITransport(app=app), base_url="http://test"
