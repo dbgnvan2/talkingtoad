@@ -32,11 +32,20 @@ async def test_store():
 
 @pytest.fixture
 async def api_client(test_store):
-    """Async HTTP test client wired to the FastAPI app with an isolated in-memory store."""
-    from api.main import app
-    from api.routers.crawl import get_store
+    """Async HTTP test client wired to the FastAPI app with an isolated in-memory store.
 
-    app.dependency_overrides[get_store] = lambda: test_store
+    Overrides BOTH `crawl.get_store` (used by the crawl/ai/utility routers) and
+    `fixes_shared.get_store` (used by all /api/fixes/* domain routers — they're
+    separate function references because each module imports them locally).
+    Without overriding both, fixes_shared-using endpoints get None from
+    api.main._store during tests and crash with AttributeError.
+    """
+    from api.main import app
+    from api.routers.crawl import get_store as crawl_get_store
+    from api.routers.fixes_shared import get_store as fixes_get_store
+
+    app.dependency_overrides[crawl_get_store] = lambda: test_store
+    app.dependency_overrides[fixes_get_store] = lambda: test_store
 
     async with AsyncClient(
         transport=ASGITransport(app=app), base_url="http://test"
