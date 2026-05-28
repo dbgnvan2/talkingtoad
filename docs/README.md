@@ -16,7 +16,8 @@ Complete documentation for TalkingToad — an SEO crawler with WordPress integra
 |---|---|
 | [architecture.md](architecture.md) | Full system architecture, crawler pipeline, data models |
 | [api.md](api.md) | API endpoint reference (request/response schemas, auth) |
-| [issue-codes.md](issue-codes.md) | Issue codes with descriptions, severity, category |
+| [issue-codes.md](issue-codes.md) | Issue codes with descriptions, severity, category (auto-generated from `_CATALOGUE`) |
+| [thresholds.md](thresholds.md) | Canonical table of every numeric threshold the app uses |
 | [user-guide.md](user-guide.md) | End-user guide to running audits and fixes |
 | [overview.md](overview.md) | High-level project overview |
 | [deployment-railway.md](deployment-railway.md) | Production deployment: Vercel frontend + Railway backend |

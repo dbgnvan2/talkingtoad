@@ -12,6 +12,8 @@
 > - `CLAUDE.md` — implementation conventions and tech stack
 > - `architecture.md` — system architecture and data flow
 > - `api.md` — API endpoint reference
+> - `thresholds.md` — canonical table of every numeric threshold (acceptance criteria here cite these)
+> - `issue-codes.md` — every issue code, auto-generated from `_CATALOGUE`
 > - `deployment-railway.md` — production deployment
 > - `PLAN-V3.0.md` — roadmap for features not shipped today
 
