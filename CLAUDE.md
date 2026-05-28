@@ -1,12 +1,22 @@
 # TalkingToad — Nonprofit SEO Crawler
 
+> **What this file is:** the lean, machine-readable rulebook for working in this repo. Rules, constraints, and file paths only. No version history, no feature descriptions.
+>
+> **Historical narrative and feature snapshots** live in [`docs/legacy_changelog.md`](docs/legacy_changelog.md).
+>
+> **Current behaviour** lives in the canonical docs:
+> `docs/functional-specification.md` (read-only master) · `docs/architecture.md` · `docs/api.md` · `docs/issue-codes.md` · `docs/thresholds.md` · `docs/specs/`.
+
+---
+
 ## Project Overview
 
-TalkingToad is a lightweight, web-based SEO crawler for nonprofit organisations. It replicates the essential functionality of Screaming Frog SEO Spider — free, zero-installation, simple results — deployed on Vercel with a React frontend and Python/FastAPI backend.
+Lightweight web-based SEO crawler for nonprofit organisations — Screaming-Frog-style technical SEO, plus image intelligence, WordPress fix automation, and AI-readiness checks.
 
-**GitHub:** https://github.com/dbgnvan2/talkingtoad
-**Specs:** See `docs/specs/README.md` for complete specification index
-**Current Version:** 2.3 (v3.0 work in progress — see PLAN-V3.0.md)
+- **GitHub:** https://github.com/dbgnvan2/talkingtoad
+- **Specs index:** `docs/specs/README.md`
+- **Current version:** 2.3 (v3.0 in progress — see `PLAN-V3.0.md`)
+- **Issue catalogue:** 131 codes in `_CATALOGUE` / `_ISSUE_SCORING` / `_AI_READINESS_CONFIDENCE` (see `docs/issue-codes.md`)
 
 ---
 
@@ -19,12 +29,23 @@ TalkingToad is a lightweight, web-based SEO crawler for nonprofit organisations.
 | HTTP Client | httpx (async) |
 | HTML Parser | BeautifulSoup4 + lxml |
 | PDF Parser | pypdf |
-| PDF Generator | fpdf2 (Letter format, robust Unicode) |
-| Excel Generator | openpyxl (Tabbed workbooks) |
-| Image Processing| Pillow (WebP optimization) |
+| PDF Generator | fpdf2 (Letter format, Latin-1 safe text cleaning) |
+| Excel Generator | openpyxl (tabbed workbooks) |
+| Image Processing | Pillow (WebP optimization) |
 | AI Analysis | Google Gemini / OpenAI |
 | Data Store | SQLite (dev) / Upstash Redis (prod) |
-| Hosting | Vercel (frontend SPA + Python serverless) |
+| Hosting | Vercel SPA frontend + Railway container backend (see `docs/deployment-railway.md`) |
+
+---
+
+## Critical Local Files (DO NOT COMMIT)
+
+- `wp-credentials.json` — WordPress API credentials
+- `.env` — main environment variables
+- `.env-ttoad` — custom override environment variables
+- `talkingtoad.db` — local SQLite database
+
+Treat any new credential/secret file as in this class by default; add it to `.gitignore` in the same change that introduces it.
 
 ---
 
@@ -34,24 +55,39 @@ TalkingToad is a lightweight, web-based SEO crawler for nonprofit organisations.
 TalkingToad/
 ├── api/                         # FastAPI backend
 │   ├── crawler/                 # Async crawl engine + issue detection
-│   │   ├── engine.py            # Async BFS crawler (~1000 lines)
-│   │   ├── issue_checker.py     # SEO issue detection (~1500 lines)
-│   │   ├── image_analyzer.py    # Image analysis and scoring (~500 lines)
+│   │   ├── engine.py            # Async BFS crawler
+│   │   ├── issue_checker.py     # SEO issue detection (_CATALOGUE source of truth)
+│   │   ├── image_analyzer.py    # Image analysis and scoring
 │   │   ├── parser.py            # BeautifulSoup HTML extraction
 │   │   ├── normaliser.py        # URL normalization + WP noise detection
+│   │   ├── fetcher.py           # is_ssrf_safe() + fetch_page()
 │   │   ├── robots.py            # robots.txt parser
 │   │   └── sitemap.py           # XML sitemap parser
 │   ├── models/                  # Pydantic models (Job, Page, Issue, Fix, Image)
-│   │   └── image.py             # ImageInfo data model
-│   ├── routers/                 # API endpoints (crawl, fixes, utility, verified, ai)
+│   ├── routers/                 # API endpoints
+│   │   ├── crawl.py             # Crawl lifecycle + summary/pages/comparison
+│   │   ├── fixes.py             # Fix-manager router registration
+│   │   ├── fixes_shared.py      # Shared fix helpers (get_store, validators)
+│   │   ├── fix_title.py         # Title/meta fix domain
+│   │   ├── fix_heading.py       # Heading fix domain
+│   │   ├── fix_image.py         # Image-metadata fix domain
+│   │   ├── fix_orphaned_media.py
+│   │   ├── fix_batch_optimizer.py
+│   │   ├── fix_link.py          # Link/anchor fix domain
+│   │   ├── verified.py          # Re-verification endpoints
+│   │   ├── ai.py                # AI advisor/rewriter/analyzer endpoints
+│   │   ├── geo.py               # GEO settings + image GEO metadata
+│   │   └── utility.py           # llms.txt, ignored patterns, exports
 │   └── services/                # Business logic
-│       ├── wp_fixer.py          # WordPress REST API integration (~525 lines after v2.0 split)
-│       ├── wp_title_fixer.py    # Title trim helpers (split from wp_fixer.py)
-│       ├── wp_heading_fixer.py  # Heading helpers (~1031 lines incl. v2.3 M0.12.2 additions)
+│       ├── wp_fixer.py          # WordPress REST API integration
+│       ├── wp_title_fixer.py    # Title trim helpers
+│       ├── wp_heading_fixer.py  # Heading helpers
 │       ├── wp_image_fixer.py    # Image metadata + Workflow A/B optimization
 │       ├── wp_client.py         # Authenticated WP REST client
 │       ├── wp_shared.py         # Shared field specs, get_fixable_codes
 │       ├── ai_analyzer.py       # Gemini/OpenAI integration
+│       ├── advisor.py           # Quality advisor (v2.2)
+│       ├── rewriter.py          # Content rewriter (v2.2)
 │       ├── report_generator.py  # PDF audit generation (fpdf2)
 │       ├── excel_generator.py   # Excel export (openpyxl)
 │       ├── job_store.py         # SQLite/Redis abstraction
@@ -60,395 +96,59 @@ TalkingToad/
 │       ├── upload_validator.py  # Pre-upload validation
 │       └── batch_optimizer.py   # Batch job management
 ├── frontend/                    # React + Vite SPA
-│   ├── src/pages/               # Home, Progress, Results (Results.jsx ~1831 lines; still a known refactor candidate per PLAN-V3.0.md M9.3)
+│   ├── src/pages/               # Home, Progress, Results (Results.jsx — see PLAN-V3.0.md M9.3 refactor note)
 │   ├── src/components/          # FixManager, LLMSTxtGenerator, etc.
-│   └── src/data/issueHelp.js    # Help content for all issue codes
+│   └── src/data/issueHelp.js    # Help content; MUST stay in sync with _CATALOGUE
 ├── tests/                       # Pytest suite (asyncio)
-└── docs/                        # Specifications, architecture, API reference
+└── docs/                        # Flat structure — no architecture/, api/, reference/ subdirs
     ├── README.md                # Documentation index
-    ├── specs/                   # Feature specifications (organized by domain)
-    │   ├── core-crawler/        # v1.4 & v1.5 specs
-    │   ├── image-analysis/      # v1.9 & v1.9.1 specs
-    │   ├── ai-readiness/        # v2.0 draft spec
-    │   └── wordpress-integration/
-    ├── architecture/            # System design and data flow
-    │   └── architecture.md
-    ├── api/                     # API endpoint reference
-    │   └── api.md
-    └── reference/               # Issue codes, scoring
-        └── issue-codes.md
+    ├── architecture.md          # System design
+    ├── api.md                   # API reference
+    ├── issue-codes.md           # Auto-generated from _CATALOGUE
+    ├── thresholds.md            # Canonical numeric thresholds
+    ├── functional-specification.md  # READ-ONLY master
+    ├── legacy_changelog.md      # Evicted historical content
+    ├── pending/                 # Pending micro-spec proposals (see rules below)
+    └── specs/                   # Per-feature specs
+        ├── core-crawler/
+        ├── image-analysis/
+        ├── ai-readiness/
+        └── wordpress-integration/
 ```
 
----
-
-## Critical Local Files (DO NOT COMMIT)
-- `wp-credentials.json`: WordPress API credentials
-- `.env`: Main environment variables
-- `.env-ttoad`: Custom override environment variables
-- `talkingtoad.db`: Local SQLite database
+> All canonical docs live flat in `docs/`. Earlier READMEs referenced `docs/architecture/`, `docs/api/`, `docs/reference/` subdirectories — those never existed.
 
 ---
 
-## Key Features (v1.9.1)
+## Hard Constraints (read these before changing anything)
 
-1. **Crawler:** Async engine with robots.txt/sitemap support and 50+ SEO issue checks.
-2. **WordPress Fix Manager:** One-click remediation for titles, meta, and headings via WP REST API.
-3. **Image Intelligence Engine (v1.9):**
-   - 3-level data architecture: Scan (instant) → Fetch (live WP + image file) → AI Analysis
-   - WordPress Media Library integration (alt text, title, caption, description)
-   - Performance scoring (file size, compression, load time)
-   - Accessibility scoring (alt text quality, length, semantic accuracy)
-   - AI-powered alt text generation with vision models
-   - GEO-optimized metadata (see `docs/specs/image-analysis/v1.9.1-geo-optimization-spec.md`)
-4. **Image Optimization Module (v1.9.1):**
-   - Download existing WP images → optimize → upload as NEW file
-   - Upload local images → optimize → upload to WordPress
-   - WebP conversion with target file size < 200KB
-   - GPS EXIF coordinate injection
-   - SEO filename generation (keyword-city-small.webp)
-   - GEO AI metadata generation (alt text, description, caption)
-   - Batch processing with pause/resume/cancel controls
-   - Local archiving of originals and optimized files
-5. **AI Readiness:** /llms.txt generator (on-demand, not auto-generated) and AI semantic audit (Gemini/OpenAI). Shows "Retrieved" badge when saved content exists, "Recommendation" badge when generated from crawl data.
-6. **Reporting:** Professional 8.5" x 11" PDF audits and tabbed Excel workbooks.
+### Specification Change Management (load-bearing)
 
----
+1. **READ-ONLY files:** `docs/functional-specification.md`, `docs/thresholds.md`, and any file with `status: current` frontmatter. You are strictly forbidden from editing these directly.
+2. **Micro-spec first:** Before writing any implementation code or tests for a new feature, enhancement, or bug fix, write a targeted micro-specification snippet.
+3. **Save the proposal:** Place the snippet in `docs/pending/` using the naming convention `YYYY-MM-DD_feature-name.md`.
+4. **Stop and notify:** After saving the pending file, stop immediately and notify the user to review and approve. Do not modify source code until approval is explicitly granted.
 
-## Recent Enhancements (v1.9.2)
+After approval:
+- Implement the change and write the tests in the same cycle.
+- Update `docs/issue-codes.md` (auto-generator) and `docs/thresholds.md` if scoring or numeric bounds changed.
+- After a logical milestone or version bump, the user runs the Gemini Compiler pipeline: the contents of `docs/functional-specification.md` plus all files in `docs/pending/` are fed into a fresh Gemini context, the compiled output replaces `docs/functional-specification.md`, and `docs/pending/` is cleared.
 
-### Banner H1 Suppression
-`suppress_banner_h1` defaults to `True` everywhere (model, frontend, rescan, standalone scan). Only the first H1 is considered a banner candidate. CSS classes (`entry-title`, `page-title`, etc.) are also used as a signal. Single-H1 pages never have their only H1 removed.
+### WordPress Safety
 
-### Fix Panel Enhancements
-- **TITLE_H1_MISMATCH:** Dual editor (SEO Title + Content H1 Heading) with individual and combined apply buttons. Uses `change_heading_text` endpoint.
-- **LINK_EMPTY_ANCHOR:** Per-link "Fixed" buttons that remove individual hrefs from the issue. Backend: `POST /api/fixes/mark-anchor-fixed`. Empty anchors now capture `aria_label` and `has_children` data.
-- **Duplicate Issues:** TITLE_DUPLICATE, META_DESC_DUPLICATE, TITLE_META_DUPLICATE_PAIR now show the duplicate URLs in the UI.
-- **SEMANTIC_DENSITY_LOW:** Full KB breakdown (text, scripts, styles, SVG, markup) with a visual bar and diagnosis of the biggest contributor.
-- **Issue Extra Data:** All 50+ issue codes now include diagnostic data in `extra` so the user can see what triggered the issue.
+- **DO NOT IMPLEMENT URL CHANGES VIA WP API.** The WordPress REST API is not reliable for operations that change URLs (slugs, permalinks, redirects). Do not add endpoints or fix flows that do this.
+- **DO NOT AUTOMATE IMAGE LINK UPDATES IN POSTS/PAGES.** Image optimization uploads a new file; the user manually replaces the old image in the post.
+- **Domain-validate every WP call.** Every WP-touching endpoint must call `_validate_wp_domain_for_job(store, job_id)` or `_validate_wp_domain_for_url(url)`. Mismatches return 403 `DOMAIN_MISMATCH`.
 
-### Auto-Rescan After Fix
-After any WP fix (heading, title, meta, image), the page is automatically rescanned to update issues in the database. Health score refreshes live.
+### GUI Architecture
 
-### Broken Link Source Tracking
-Internal broken links track which page discovered them via `discovered_from` dict in engine. `extra.source_url` is populated. "Show Source Pages" endpoint has fallback to issue extra when links table is empty.
+- **DO NOT change the GUI structure or navigation flow on your own.** Explicit user instructions are required before altering how data is displayed or navigated.
 
-### Ignored Image Patterns
-Global config: `POST/GET/DELETE /api/ignored-image-patterns`. Substring match patterns (e.g. `/location.svg`) to exclude theme icons from IMG_ALT_MISSING. Stored in `ignored_image_patterns` table. UI in Settings > "Ignored Imgs" tab.
+### Security Defaults
 
-### Sitemap & Robots.txt Discovery Display
-Sitemap and Crawlability category tabs show what was found (sitemap URL, URL count, robots.txt rules) even when there are no issues. Data stored on job record.
-
-### Scoring Fixes
-- **Image Scoring:** Performance score no longer requires `load_time_ms` -- `file_size_bytes` alone (from HEAD requests) is sufficient. Image health score includes all images with file size data, not just fully-fetched ones.
-- **Health Score:** Trailing slashes are normalized when matching issues to crawled pages.
-
-### WordPress Integration Fixes
-- **`find_post_by_url`:** Falls back to single-slug match when exact URL doesn't match (handles different parent paths). Image attachment finder strips WP size suffixes (e.g. `-600x403`) from filenames.
-- **Heading Text Change:** `POST /api/fixes/change-heading-text` endpoint. Handles inline HTML, entity encoding, and whitespace normalization. Preserves `<h1>` tag attributes. Heading text is HTML-escaped before insertion to prevent XSS.
-
-### Security Hardening (v1.9.3)
-- **SSRF Protection:** `target_url` is validated against private/internal IPs (localhost, 169.254.x.x, 10.x.x.x, 192.168.x.x) via DNS resolution before crawl starts. Redirect chains are also validated — each hop is checked and blocked if it resolves to a private IP. Validation lives in `api/crawler/fetcher.py:is_ssrf_safe()`.
-- **Authentication:** AI (`/api/ai/*`), GEO (`/api/geo/*`), and utility (`/api/*`) routers now require `AUTH_TOKEN` bearer auth. The `/api/health` endpoint is exempt (on a separate public router).
-- **XSS Prevention:** `change_heading_text` in `wp_fixer.py` now HTML-escapes `new_text` before inserting into `<h{level}>` tags, preventing stored XSS via WordPress post content.
-- **RedisJobStore Parity:** Added missing `get_ignored_image_patterns()`, `add_ignored_image_pattern()`, `remove_ignored_image_pattern()`, `get_ignored_image_pattern_list()` methods. Updated `update_job()` `_ALLOWED` whitelist to match SQLite (added `phase`, `external_links_checked`, `external_links_total`, `robots_txt_found`, `robots_txt_rules`, `sitemap_found`).
-
-### Bug Fixes (v1.9.3)
-- **Missing `import re`:** Added module-level `import re` in `engine.py` — was only imported inside `_fetch_image_full()` but used at top-level for `/llms.txt` parsing.
-- **PDF/Excel Export:** Fixed `get_images()` unpacking in export endpoints — method returns `list[ImageInfo]`, not a tuple.
-
-### Security: WordPress Domain Validation (v1.9.4)
-- **Cross-site protection:** All 22 WP-touching endpoints now validate that `wp-credentials.json` domain matches the crawl job's target domain. Prevents data leakage (reading wrong site's media library) and accidental writes (modifying wrong WordPress site) when scanning multiple client domains.
-- **Validation helpers:** `_validate_wp_domain_for_job(store, job_id)` for job-based endpoints, `_validate_wp_domain_for_url(url)` for URL-based endpoints. Returns 403 DOMAIN_MISMATCH on mismatch.
-- **DELETE media endpoint hardened:** Now requires `job_id` parameter for domain verification.
-- **AI router:** `apply-geo-metadata` validates domain before writing to WordPress.
-
-### UI: Domain Display (v1.9.4)
-- **Progress page:** Domain shown in prominent green badge during scanning.
-- **Results page:** Domain appended to all section headers from backend `summary.target_url` — "Audit Results - domain", "Metadata - domain", "Orphaned Images - domain", etc.
-- **Backend:** `get_summary()` now includes `target_url` in both SQLite and Redis stores.
-
-### Frontend Quality (v1.9.4)
-- **React hooks fix:** `useMemo` in `CategoryTab` and `SeverityTab` was placed after early return, violating Rules of Hooks and causing blank category pages. Moved above early return.
-- **FixInlinePanel hooks fix:** 10 hooks (`useState`/`useEffect`/`useRef`) were after an early return for `TITLE_H1_MISMATCH`. Moved conditional return after all hooks.
-- **ESLint:** Added `.eslintrc.cjs` with `react-hooks/rules-of-hooks: 'error'`. Build now runs `eslint --quiet` before `vite build` — hooks violations block the build.
-- **File Save dialog:** Downloads (CSV, PDF, Excel) use `showSaveFilePicker` API for a proper Save As dialog with filename/folder selection. Falls back to standard download on unsupported browsers.
-
-### Report Improvements (v1.9.4)
-- **PDF category pages:** Each issue type now shows count of affected pages, description, and full URL listings (was showing only issue names with no data).
-- **PDF help text:** Uses rich help content from `issueHelp.js` (via `api/services/issue_help_data.py`) instead of empty DB fields. Plain black text, no blue shading boxes. Sub-headings bold 9pt, body text regular 10pt.
-- **PDF Top 10 Pages:** Color-coded issue counts (red/amber/blue) on one line instead of truncated text. URLs in normal weight font.
-- **PDF orphan prevention:** Issue titles kept together with their help text — page breaks inserted before the title if insufficient room remains.
-- **PDF Help Text option:** Available for both full and summary-only reports (was hidden when Summary Only checked).
-- **PDF issue sorting:** Within each category, issues sorted by severity (critical first) then by affected page count.
-- **PDF filenames:** Use domain name instead of job ID (e.g. `TalkingToad-Audit-example.com.pdf`). Same for Excel and CSV exports. Frontend extracts filename from Content-Disposition header.
-- **PDF action checklist:** "What to Do Next" page with top 15 prioritized actions, checkboxes, severity colors, and recommendations.
-- **PDF AI executive summary:** Optional 3-5 sentence plain-language narrative generated via Gemini/OpenAI, inserted as Page 2. Skipped gracefully if no AI keys configured.
-- **Excel export fix:** `ImageInfo` objects converted via `.to_dict()` instead of crashing on `.get()` call.
-
-### New Issue Codes (v1.9.5)
-- **OG_IMAGE_MISSING:** Missing `og:image` meta tag — critical for social media sharing previews.
-- **TWITTER_CARD_MISSING:** Missing `twitter:card` meta tag for Twitter/X rich previews.
-- **CONTENT_STALE:** Page `Last-Modified` header older than 12 months.
-- **ANCHOR_TEXT_GENERIC:** Links use "click here", "read more", etc. (15 patterns matched).
-- **HEADING_EMPTY:** H1-H6 tags with no text content.
-- **WWW_CANONICALIZATION:** Both www and non-www versions resolve without redirecting to each other.
-- **Fixability tagging:** Every issue tagged as `wp_fixable` (20), `content_edit` (27), or `developer_needed` (40). Exposed in API responses via `fixability` field.
-- **Architecture parity test:** Enforces that every code in `issueHelp.js` matches `_CATALOGUE` and vice versa.
-
-### Crawl Comparison (v1.9.5)
-- `GET /api/crawl/{job_id}/comparison` — compares health score, issue counts, and severity breakdown against the previous crawl for the same domain.
-- `list_jobs_by_domain()` added to SQLite and Redis job stores.
-
-### AI Executive Summary (v1.9.5)
-- `GET /api/crawl/{job_id}/executive-summary` — generates and caches a plain-language summary via AI.
-- Cached on job record after first generation (`executive_summary` column).
-
-### UI Improvements (v1.9.5)
-- **Tab consolidation:** 17 flat tabs replaced with 5 grouped sections: Overview, Issues (10 categories), Media, Pages, Actions. "Fix History" placeholder removed.
-- **GEO Settings:** Pre-crawl blocking prompt removed from Home page. Non-blocking banner added to Results Summary tab instead.
-- **llms.txt generator:** No longer auto-generates on page load. User clicks "Generate Recommendation" button. Shows status badge: "llms.txt Retrieved" (green) when saved content exists, "llms.txt Recommendation" (amber) when generated from crawl data. "Save to Job Data" button only appears after generation.
-
-### Content Quality Advisor & Rewriter (v2.2)
-
-**Architecture:** Quality-focused evaluation, no metrics. Two standalone tools:
-
-**Tool A: Advisor** (`api/services/advisor.py`) — Evaluates page for AI retrieval quality
-- Single LLM call with structured JSON response (critic prompt)
-- Six evaluation properties:
-  1. Source Fidelity (when comparing rewrite to original) — fabrications, losses, degradations
-  2. Factual Grounding — specific facts vs generalities; verdict: grounded|weak|minimal
-  3. Self-Containment — per H2/H3: can stand alone or requires prior sections?
-  4. Structural Fitness — prose vs structure mismatches (enumerates but not `<ul>`, etc.)
-  5. Authority Signals — real citations, missing citations, placeholder citations
-  6. Honest Placeholder Use — placeholders at real gaps vs decorative
-- Deterministic markdown report rendering from JSON response
-- Citations required for all findings (user can verify by reading cited text)
-- Decisions: generate rewrite prompt only if grounded AND has issues; generate diagnosis if minimal
-- No scoring, no weighting, no metrics
-
-**Tool B: Rewriter** (`api/services/rewriter.py`) — Apply rewrite prompt to content
-- Single LLM call with low temperature (0.2) for faithful rewriting
-- No iteration, no variants, no scoring
-- Simple wrapper: content + prompt → one rewrite
-- Flags if token limit hit; otherwise done
-
-**Data Models** (`api/models/advisor.py`):
-- `AdvisorRequest` — url or content, optional original for comparison
-- `AdvisorReport` — findings, strengths, confidence notes, decision flags
-- `RewriterRequest` — content + prompt
-- `RewriterResult` — rewrite text + stopped_by_limit flag
-
-**API Endpoints** (`api/routers/advisor.py`):
-- `POST /api/ai/advisor` — Accept URL or content, return markdown report + should_generate_prompt flag
-- `POST /api/ai/advisor/prompt` — Generate page-specific rewrite prompt from report
-- `POST /api/ai/rewriter` — Rewrite content using provided prompt (optional convenience wrapper)
-
-**Tests:**
-- `test_advisor.py` — 18 tests on report rendering, findings sections, decision logic (deterministic, no LLM mocking)
-- `test_rewriter.py` — 10 tests on LLM calls, token limits, error handling (mocked HTTP)
-
----
-
-## Image Intelligence Engine (v1.9)
-
-### Architecture: 3-Level Data Model
-
-1. **Level 1: Scan Details** (Instant, from initial crawl)
-   - HTML attributes: alt, title, rendered dimensions
-   - Surrounding text context (±200 chars)
-   - Decorative detection
-   - Data source: `html_only`
-
-2. **Level 2: Fetch** (Live data from WordPress + image file)
-   - WordPress Media Library: alt_text, title, caption, description
-   - Image file analysis: intrinsic dimensions, format, file size, load time
-   - Content hash for duplicate detection
-   - Data source: `full_fetch`
-
-3. **Level 3: AI Analysis** (Vision model analysis)
-   - AI-generated image description
-   - Suggested alt text (80-125 chars)
-   - Accuracy and quality scores
-   - Data source: AI analysis metadata
-
-### Image Issue Codes
-| Code | Category | Description |
-|---|---|---|
-| `IMG_ALT_MISSING` | accessibility | Non-decorative image missing alt text |
-| `IMG_ALT_TOO_SHORT` | accessibility | Alt text < 5 characters |
-| `IMG_ALT_TOO_LONG` | accessibility | Alt text > 125 characters |
-| `IMG_ALT_GENERIC` | accessibility | Generic terms (e.g., "image", "photo") |
-| `IMG_ALT_DUP_FILENAME` | accessibility | Alt text duplicates filename |
-| `IMG_ALT_MISUSED` | accessibility | Decorative image has meaningful alt text |
-| `IMG_OVERSIZED` | performance | File size > 200KB |
-| `IMG_SLOW_LOAD` | performance | Load time > 1000ms |
-| `IMG_OVERSCALED` | performance | Intrinsic size > 2x rendered size |
-| `IMG_POOR_COMPRESSION` | performance | Bytes per pixel > 0.5 |
-| `IMG_FORMAT_LEGACY` | performance | JPEG/PNG/GIF > 50KB (should use WebP/AVIF) |
-| `IMG_NO_SRCSET` | technical | Missing srcset when scaled down |
-| `IMG_BROKEN` | technical | HTTP 4xx/5xx status |
-| `IMG_DUPLICATE_CONTENT` | technical | Same content hash as another image |
-
-### GEO-Optimized AI Analysis (v1.9.1)
-
-**Status:** ✅ Implemented and tested
-
-**Specs:** See `geo_image_ai_spec.md` and `geo_image_ai_prompt.md`
-
-**Objective:** Generate semantically aligned, entity-rich Alt Text and Long Descriptions that satisfy both WCAG 2.2 and Generative Engine Optimization (GEO) standards.
-
-**Triple-Context Packet:**
-1. Image bytes (high-resolution for vision analysis)
-2. Page context (surrounding text + H1 from page)
-3. Global settings (org name, location pool, topic entities)
-
-**Output Requirements:**
-- Alt text: 80-125 chars with geographic and topic entities
-- Description: 150-300 words, GEO-rich, factual for AI Overviews
-- Entity density: Names, Places, Topics (not just keywords)
-
-**Implementation:**
-- Frontend: GeoAnalysisModal.jsx for reviewing/editing AI suggestions
-- Frontend: GeoSettingsModal.jsx for configuring domain-specific settings
-- Backend: `/api/ai/image/analyze-geo` for GEO analysis
-- Backend: `/api/ai/image/apply-geo-metadata` for updating WordPress + database
-- Backend: `/api/geo/settings` for saving/retrieving GEO configuration
-
-**Configuration:** See section 5 in `geo_image_ai_spec.md`
-
-### WordPress Integration
-
-**Slug-Based Queries:** Uses WordPress REST API `slug` parameter for accurate image matching.
-
-**Fields Fetched:**
-- `alt_text`: WordPress alt text field
-- `title`: Media title (HTML stripped)
-- `caption`: Media caption (HTML stripped)
-- `description`: Media description (HTML stripped)
-- `source_url`: Full image URL for verification
-
-**Exact URL Verification:** Only updates image metadata if WordPress `source_url` matches exactly.
-
----
-
-## Image Optimization Module (v1.9.1)
-
-### Two Workflows
-
-**Workflow A: Existing Image (from crawl)**
-1. Image already exists in WordPress (from crawl results)
-2. Download original from WordPress URL
-3. Resize → WebP → GPS EXIF → SEO rename
-4. Archive original + optimized to local folder
-5. Upload NEW optimized version to WordPress
-6. **Result:** 2 files in WordPress (original stays, new added)
-7. User manually replaces old image on page
-
-**Workflow B: New Local Image (file picker)**
-1. User selects file from local drive
-2. Resize → WebP → GPS EXIF → SEO rename
-3. Archive original + optimized to local folder
-4. Upload to WordPress
-5. **Result:** 1 file in WordPress (just the optimized one)
-
-### Key Files
-
-| File | Purpose |
-|---|---|
-| `api/services/exif_injector.py` | GPS coordinate injection via piexif |
-| `api/services/upload_validator.py` | Pre-upload validation (size, GPS, format) |
-| `api/services/batch_optimizer.py` | Batch job management with pause/resume/cancel |
-| `api/services/image_processor.py` | WebP optimization + SEO filename generation |
-| `api/services/wp_fixer.py` | `optimize_existing_image()` workflow |
-| `frontend/src/components/OptimizeExistingModal.jsx` | Single image optimization UI |
-| `frontend/src/components/BatchOptimizePanel.jsx` | Batch processing UI |
-
-### Batch Processing
-
-- Parallel execution with configurable concurrency (default: 3)
-- Progress tracking per image
-- Pause/resume without losing progress
-- Cancel stops remaining images
-- Per-image results with page URLs and error details
-
-### Archive Structure
-
-```
-archive/
-├── {job_id}/
-│   ├── originals/{original_filename}
-│   └── optimized/{seo_filename}.webp
-```
-
-### Tests
-
-- `tests/test_image_optimization.py` - EXIF, SEO filename, validation, integration
-- `tests/test_batch_optimizer.py` - Batch creation, controls, status, cleanup
-
----
-
-## AI Integration (v1.7+)
-
-### API Keys
-Set in `.env` or `.env-ttoad`:
-```
-GEMINI_API_KEY=your-gemini-api-key
-OPENAI_API_KEY=your-openai-api-key
-```
-**Priority:** OpenAI is used if both keys are present; Gemini is the fallback.
-
-### Gemini Configuration
-- **Model:** `gemini-1.5-flash` (v1 stable endpoint)
-- **Endpoint:** `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent`
-- **Timeout:** 20 seconds
-
-### OpenAI Configuration
-- **Model:** `gpt-4o`
-- **Endpoint:** `https://api.openai.com/v1/chat/completions`
-- **Timeout:** 20 seconds
-
-### AI Prompt Library (`api/services/ai_analyzer.py`)
-| Prompt Key | Purpose |
-|---|---|
-| `title_meta_optimize` | Rewrite title/meta for AI "quotability" (60/160 char limits) |
-| `semantic_alignment` | Check H1 vs body content for conflicting signals |
-
-### AI-Readiness Issue Codes
-| Code | Severity | What it checks |
-|---|---|---|
-| `LLMS_TXT_MISSING` | info | No `/llms.txt` at site root |
-| `LLMS_TXT_INVALID` | warning | Invalid format or >20 URLs |
-| `SEMANTIC_DENSITY_LOW` | warning | Text-to-HTML ratio < 10% |
-| `DOCUMENT_PROPS_MISSING` | warning | PDF missing Title/Subject metadata |
-| `JSON_LD_MISSING` | warning | No JSON-LD structured data |
-| `CONVERSATIONAL_H2_MISSING` | info | No question-based H2 headings |
-
-### AI Endpoints
-| Method | Endpoint | Description |
-|---|---|---|
-| POST | `/api/ai/analyze` | Analyze a page using AI, returns remediation suggestions |
-| GET | `/api/ai/test` | Test connectivity to Gemini/OpenAI providers |
-| GET | `/api/utility/generate-llms-txt?job_id={id}` | Generate curated `/llms.txt` from crawl data |
-
----
-
-## Issue Categories
-
-| Category | Example Codes |
-|---|---|
-| `metadata` | TITLE_MISSING, META_DESC_TOO_LONG, OG_TITLE_MISSING |
-| `heading` | H1_MISSING, H1_MULTIPLE, HEADING_SKIP |
-| `broken_link` | BROKEN_LINK_404, IMG_BROKEN, EXTERNAL_LINK_TIMEOUT |
-| `redirect` | REDIRECT_CHAIN, REDIRECT_LOOP, REDIRECT_302 |
-| `crawlability` | ROBOTS_BLOCKED, NOINDEX_META, THIN_CONTENT, ORPHAN_PAGE |
-| `duplicate` | TITLE_DUPLICATE, META_DESC_DUPLICATE |
-| `sitemap` | SITEMAP_MISSING, NOT_IN_SITEMAP |
-| `security` | HTTP_PAGE, HTTPS_REDIRECT_MISSING, MIXED_CONTENT |
-| `url_structure` | URL_UPPERCASE, URL_HAS_SPACES, URL_TOO_LONG |
-| `ai_readiness` | LLMS_TXT_MISSING, JSON_LD_MISSING, SEMANTIC_DENSITY_LOW |
-
-**Scoring:** Each issue has `impact` (1-10) and `effort` (1-5). Priority = `(impact × 10) − (effort × 2)`.
-**Health Score:** `max(0, 100 − Σ issue impacts)` across all issues.
+- **SSRF:** All outbound fetches go through `api/crawler/fetcher.py:is_ssrf_safe()`. Private/internal IPs are blocked at start *and* on every redirect hop.
+- **Auth:** `/api/ai/*`, `/api/geo/*`, and `/api/*` utility routers require `AUTH_TOKEN` bearer auth via `require_auth`. In production, an empty `AUTH_TOKEN` is **fail-closed**. `/api/health` is the only public endpoint (separate router).
+- **XSS:** Any helper that injects user-supplied text into HTML (e.g. `change_heading_text`) must HTML-escape before insertion.
 
 ---
 
@@ -456,38 +156,36 @@ OPENAI_API_KEY=your-openai-api-key
 
 ### CRITICAL: Testing and Documentation Requirements
 
-**YOU MUST create tests for ALL new functionality. NO EXCEPTIONS.**
+**You must create tests for all new functionality. No exceptions.**
 
-When implementing new features:
-1. **Write tests FIRST or IMMEDIATELY after** implementing the feature
-2. **Update documentation** in `/docs` for any architectural changes
-3. **Update CLAUDE.md** if coding standards or key features change
-4. **Never commit untested code** - regressions waste user time and trust
+1. Write tests first, or immediately after implementing the feature.
+2. Update documentation in `/docs` for any architectural or behaviour change.
+3. Update `CLAUDE.md` only if rules, constraints, or paths change — not for feature descriptions.
+4. Never commit untested code.
 
 **Required test types:**
-- **Unit tests** for business logic (issue detection, scoring, analysis)
-- **Integration tests** for API endpoints (request → response → side effects)
-- **Architecture constraint tests** for design rules (e.g., "scan must never call WP API")
-- **Serialization tests** for API responses (verify all model fields are included)
+- **Unit tests** for business logic (issue detection, scoring, analysis).
+- **Integration tests** for API endpoints (request → response → side effects).
+- **Architecture constraint tests** for design rules (e.g. "scan must never call WP API", catalogue ↔ help ↔ scoring ↔ confidence-label parity).
+- **Serialization tests** for API responses (verify every model field a frontend reads is included).
 
 **Test file naming:**
-- `test_[feature].py` for feature tests
-- `test_[component]_integration.py` for integration tests
-- `test_architecture_constraints.py` for design rule enforcement
+- `test_[feature].py` — feature tests
+- `test_[component]_integration.py` — integration tests
+- `test_architecture_constraints.py` — design-rule enforcement
 
 ### CRITICAL: API Contract Tests (Non-Negotiable)
 
-**Any endpoint called by frontend code MUST have integration tests BEFORE the frontend code is written.**
+**Any endpoint called by frontend code must have an integration test before the frontend code is written.**
 
-When adding or modifying an API endpoint:
+1. Write the integration test first with realistic data.
+2. Verify the response schema — fields, types, optionality.
+3. Assert every field the frontend depends on. If the frontend does `data.pages[0].content`, assert `.content` exists in the test.
+4. Test error cases — 404, 500, invalid input, missing auth.
+5. Only then write the frontend code.
 
-1. **Write integration test first** that calls the endpoint with realistic data
-2. **Verify the response schema** — what fields exist, what types, what's optional
-3. **Test every field the frontend depends on** — if frontend does `data.pages[0].content`, assert `.content` exists in the test
-4. **Test error cases** — 404, 500, invalid input, missing auth
-5. **Only then** write the frontend code
+**Example:**
 
-**Example: Frontend expects `page.content`**
 ```python
 def test_pages_endpoint_has_content_field(self, client):
     """Frontend code assumes page.content exists. This test fails if the API schema changes."""
@@ -496,67 +194,45 @@ def test_pages_endpoint_has_content_field(self, client):
     assert "content" in page, "Frontend code depends on page.content field"
 ```
 
-**Consequences of skipping this:**
-- Frontend code breaks silently in production
-- Users encounter "nothing happens" errors
-- Bug is caught AFTER implementation, not during planning
-
-**This is not optional.** Integration tests for API endpoints are load-bearing. Commit 0 lines of frontend code that calls an endpoint without a test proving the endpoint returns what the frontend expects.
+**Consequences of skipping this:** frontend code breaks silently in production, users see "nothing happens" errors, the bug is caught after implementation, not during planning. This is not optional.
 
 ### Planning Requirement: Integration Tests in Implementation Plan
 
-When creating an implementation plan (before writing code):
-
-1. **List every API endpoint** that will be touched or added
-2. **For each endpoint, document:**
-   - What the frontend will call it with (request schema)
-   - What the frontend expects back (response schema, specific fields)
-   - What integration test will verify the contract
-3. **Write integration tests in the plan section**, not after implementation
-
-**Template:**
-```
-## Integration Tests Required
+Every implementation plan (written before code) must include a table of API endpoints:
 
 | Endpoint | Frontend expects | Test name | Status |
-|----------|------------------|-----------|--------|
+|---|---|---|---|
 | GET `/api/crawl/{job_id}/pages` | `url`, `title` (NOT `content`) | `test_pages_endpoint_has_url_not_content` | Pending |
 | POST `/api/ai/rewriter` | `rewrite`, `stopped_by_limit` | `test_rewriter_response_schema` | Pending |
-```
 
-**Before any code:** All tests in this table must be written and passing. If they're not, the code is incomplete.
+Before any code: every test in this table must be written and passing.
 
 ### CRITICAL: Self-Review Before Every Commit
 
-After writing any function — before staging it — run the following review questions
-and fix any issue found. This is not optional. Silent wrong answers are worse than crashes.
+After writing any function — before staging it — answer these review questions in code (as tests), not in your head.
 
 **For every text-processing function (regex search, word count, score input):**
 1. What is the *actual* text in the buffer? Name every section that could appear in it.
-2. Is there any text in the buffer that should NOT count toward the result?
-   (footers, appendices, GEO NOTES, nav elements, metadata sections)
-3. What input produces a passing/matching result for the *wrong* reason?
-   Write one test that tries to fool the function with that input.
+2. Is there any text in the buffer that should NOT count toward the result? (footers, appendices, GEO NOTES, nav elements, metadata sections)
+3. What input produces a passing/matching result for the *wrong* reason? Write one test that tries to fool the function with that input.
 
 **For every scoring function (any function returning a 0–1 score or numeric rating):**
 1. Is the denominator fixed or dynamic? If dynamic, what can inflate or shrink it?
 2. What input produces the *highest* score? Is that actually the best content?
 3. Does more failure always produce a lower score? Write one monotonicity test.
 
-**The one-question shortcut:** "What would a correct-looking but wrong result look like?"
-If you can describe it, write a test that produces it and assert it fails.
+**The one-question shortcut:** "What would a correct-looking but wrong result look like?" If you can describe it, write a test that produces it and assert it fails.
 
-These questions must be answered in code (as tests), not in your head.
 A function without at least one adversarial test case is not done.
 
 ### Code Quality Standards
 
-- **GUI Architecture:** DO NOT change the GUI structure or navigation flow on your own. You MUST have explicit instructions from the user before altering how data is displayed or navigated.
-- **Python:** Async-first, Pydantic models, strictly typed, `load_dotenv()` required in service entry points.
-- **React:** Functional components, Tailwind CSS, explicit loading/error states for all API calls.
-- **Reporting:** 1-inch margins, Letter format, Latin-1 safe text cleaning.
-- **Issue Codes:** Source of truth is `api/crawler/issue_checker.py` (`_ISSUE_SCORING`, `_CATALOGUE`).
-- **Frontend Help:** Issue explanations in `frontend/src/data/issueHelp.js` must match `docs/issue-codes.md`.
+- **Python:** async-first, Pydantic models, strictly typed, `load_dotenv()` in service entry points.
+- **React:** functional components, Tailwind CSS, explicit loading/error states for every API call. Hooks before any early return.
+- **Linting:** ESLint with `react-hooks/rules-of-hooks: 'error'` is wired into the frontend build — hooks violations block the build. Do not disable.
+- **Reporting:** Letter format, 1-inch margins, Latin-1-safe text cleaning.
+- **Issue codes — source of truth:** `api/crawler/issue_checker.py` (`_CATALOGUE`, `_ISSUE_SCORING`, `_AI_READINESS_CONFIDENCE`). `frontend/src/data/issueHelp.js` and `docs/issue-codes.md` must stay in sync — the parity tests will fail otherwise.
+- **CI guards:** endpoint-coverage test, issue-codes.md generator-sync test, dead-code allowlist. Do not bypass; fix the underlying drift.
 
 ---
 
@@ -575,27 +251,35 @@ pytest tests/ -v
 
 ---
 
-## Key Documentation
+## Key Documentation Pointers
 
-**Start here:** `docs/README.md` — Complete documentation index
+**Start here:** `docs/README.md` — flat documentation index.
 
-**Specifications (organized by feature domain):**
+**Specifications (per feature domain):**
+
 | Feature | Latest Version | File |
 |---|---|---|
 | Core Crawler | v1.5 | `docs/specs/core-crawler/README.md` |
 | Image Analysis | v1.9.1 | `docs/specs/image-analysis/README.md` |
-| AI-Readiness | v2.0 draft | `docs/specs/ai-readiness/README.md` |
+| AI-Readiness | v2.0 (in progress for v3.0) | `docs/specs/ai-readiness/README.md` |
 | WordPress Integration | v1.0 | `docs/specs/wordpress-integration/README.md` |
 
-**Architecture & Reference:**
+**Canonical references:**
+
 | Document | Purpose |
 |---|---|
-| `docs/architecture/architecture.md` | System design, data flow, design decisions |
-| `docs/api/api.md` | Full API endpoint reference |
-| `docs/reference/issue-codes.md` | All issue codes with explanations and fixes |
+| `docs/architecture.md` | System design, data flow, design decisions |
+| `docs/api.md` | Full API endpoint reference |
+| `docs/issue-codes.md` | All issue codes — auto-generated from `_CATALOGUE` |
+| `docs/thresholds.md` | Every numeric threshold the app uses |
+| `docs/functional-specification.md` | READ-ONLY master spec |
+| `docs/legacy_changelog.md` | Historical narrative and superseded feature snapshots |
 
-**Project Management:**
+**Project management:**
+
 | File | Purpose |
 |---|---|
-| `PLAN.md` | Implementation milestones and checklist |
+| `PLAN-V3.0.md` | v3.0 plan: 11 milestones, release phasing |
+| `PLAN.md` | Original pre-v3 implementation plan |
 | `TODO.md` | Technical debt and future improvements |
+| `REVIEW_SPEC.md` | Code review specification |

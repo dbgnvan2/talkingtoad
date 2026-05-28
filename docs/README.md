@@ -69,3 +69,8 @@ Several implementation-plan markdown files live in this directory for in-progres
 > linked to subdirectories like `architecture/`, `api/`, `reference/`,
 > `guides/` that never existed. All docs live flat in `docs/` and `docs/specs/`.
 > Broken links are fixed in this rewrite. See PLAN-V3.0.md M0.10.
+
+> **Workflow note:** The day-to-day proposal → approval → implementation
+> cycle and the per-milestone Gemini Compiler step are documented in
+> `CLAUDE.md` under "Specification Change Management". This README is the
+> documentation index only.
