@@ -6,7 +6,7 @@ TalkingToad is a lightweight, web-based SEO crawler for nonprofit organisations.
 
 **GitHub:** https://github.com/dbgnvan2/talkingtoad
 **Specs:** See `docs/specs/README.md` for complete specification index
-**Current Version:** 2.1
+**Current Version:** 2.3 (v3.0 work in progress — see PLAN-V3.0.md)
 
 ---
 
@@ -45,7 +45,12 @@ TalkingToad/
 │   │   └── image.py             # ImageInfo data model
 │   ├── routers/                 # API endpoints (crawl, fixes, utility, verified, ai)
 │   └── services/                # Business logic
-│       ├── wp_fixer.py          # WordPress REST API integration (~2500 lines)
+│       ├── wp_fixer.py          # WordPress REST API integration (~525 lines after v2.0 split)
+│       ├── wp_title_fixer.py    # Title trim helpers (split from wp_fixer.py)
+│       ├── wp_heading_fixer.py  # Heading helpers (~1031 lines incl. v2.3 M0.12.2 additions)
+│       ├── wp_image_fixer.py    # Image metadata + Workflow A/B optimization
+│       ├── wp_client.py         # Authenticated WP REST client
+│       ├── wp_shared.py         # Shared field specs, get_fixable_codes
 │       ├── ai_analyzer.py       # Gemini/OpenAI integration
 │       ├── report_generator.py  # PDF audit generation (fpdf2)
 │       ├── excel_generator.py   # Excel export (openpyxl)
@@ -55,7 +60,7 @@ TalkingToad/
 │       ├── upload_validator.py  # Pre-upload validation
 │       └── batch_optimizer.py   # Batch job management
 ├── frontend/                    # React + Vite SPA
-│   ├── src/pages/               # Home, Progress, Results (~3500 lines)
+│   ├── src/pages/               # Home, Progress, Results (Results.jsx ~1831 lines; still a known refactor candidate per PLAN-V3.0.md M9.3)
 │   ├── src/components/          # FixManager, LLMSTxtGenerator, etc.
 │   └── src/data/issueHelp.js    # Help content for all issue codes
 ├── tests/                       # Pytest suite (asyncio)

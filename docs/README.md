@@ -1,83 +1,70 @@
 # TalkingToad Documentation
 
-Complete documentation for TalkingToad — a free, zero-installation SEO crawler for nonprofit organizations.
+Complete documentation for TalkingToad — an SEO crawler with WordPress integration. Currently used by nonprofit organizations; v3.0 plan expands to a paid customer base.
 
 ## Getting Started
 
-**New to TalkingToad?** Start with [CLAUDE.md](../CLAUDE.md) in the project root for an overview of features and tech stack.
+**New to TalkingToad?** Start with [CLAUDE.md](../CLAUDE.md) in the project root for an overview of features, tech stack, and coding standards.
 
-## Documentation Structure
+**Setting up for deploy?** See [deployment-railway.md](deployment-railway.md) for the v2.3 architecture (Vercel frontend + Railway backend).
 
-### 📋 Specifications
-All formal specifications organized by feature domain.
+**Planning v3.0?** See [../PLAN-V3.0.md](../PLAN-V3.0.md) for the full plan: 11 milestones, release phasing, strategic decisions on AI providers and deployment.
 
-→ **[specs/README.md](specs/README.md)** — Browse specs by feature (Core Crawler, Image Analysis, AI-Readiness, WordPress)
+## Core Documentation
 
-### 🏗️ Architecture & Design
-System design, data flow, and architectural decisions.
-
-- [architecture.md](architecture/architecture.md) — Full system architecture, crawler pipeline, data models
-- [design-decisions.md](architecture/design-decisions.md) — Why we chose Redis over SQLite, async-first design, etc.
-
-### 🔌 API Reference
-Complete API endpoint documentation.
-
-- [api.md](api/api.md) — All endpoints, request/response schemas, authentication
-
-### 📖 Reference
-Issue codes, scoring formulas, configuration.
-
-- [issue-codes.md](reference/issue-codes.md) — All 50+ issue codes with descriptions, severity, category
-- [scoring.md](reference/scoring.md) — Health score calculation, impact/effort weighting
-
-### 🛠️ Guides
-How-to guides, setup instructions, troubleshooting.
-
-- [local-dev-setup.md](guides/local-dev-setup.md) — Running TalkingToad locally
-- [wordpress-config.md](guides/wordpress-config.md) — WordPress credential setup, app passwords
-
-## Quick Navigation
-
-| I want to... | Go to... |
+| Document | Purpose |
 |---|---|
-| Understand the project overview | [CLAUDE.md](../CLAUDE.md) at project root |
-| See all feature specs | [specs/README.md](specs/README.md) |
-| Understand system architecture | [architecture/architecture.md](architecture/architecture.md) |
-| Find an API endpoint | [api/api.md](api/api.md) |
-| Look up an issue code | [reference/issue-codes.md](reference/issue-codes.md) |
-| Set up WordPress integration | [guides/wordpress-config.md](guides/wordpress-config.md) |
-| Run locally | [guides/local-dev-setup.md](guides/local-dev-setup.md) |
+| [architecture.md](architecture.md) | Full system architecture, crawler pipeline, data models |
+| [api.md](api.md) | API endpoint reference (request/response schemas, auth) |
+| [issue-codes.md](issue-codes.md) | Issue codes with descriptions, severity, category |
+| [user-guide.md](user-guide.md) | End-user guide to running audits and fixes |
+| [overview.md](overview.md) | High-level project overview |
+| [deployment-railway.md](deployment-railway.md) | Production deployment: Vercel frontend + Railway backend |
 
-## Specification Versions
+## Specifications
 
-| Feature | Version | Status |
-|---------|---------|--------|
-| Core Crawler | v1.5 | ✅ Implemented |
-| Image Analysis | v1.9.1 | ✅ Implemented |
-| AI-Readiness | v2.1 | ✅ Implemented |
-| WordPress Integration | v1.0 | ✅ Implemented |
+| Spec | File |
+|---|---|
+| All feature specs index | [specs/README.md](specs/README.md) |
+| Core Crawler (v1.5) | [specs/core-crawler/README.md](specs/core-crawler/README.md) |
+| Image Analysis (v1.9.1) | [specs/image-analysis/README.md](specs/image-analysis/README.md) |
+| AI-Readiness (v2.0 — in progress for v3.0) | [specs/ai-readiness/README.md](specs/ai-readiness/README.md) |
+| WordPress Integration (v1.0) | [specs/wordpress-integration/README.md](specs/wordpress-integration/README.md) |
 
-See [specs/README.md](specs/README.md) for detailed version history and implementation status per feature.
+## Status & Review Documents
 
-## Key Documents by Topic
+| Document | Purpose |
+|---|---|
+| [REMEDIATION_STATUS.md](REMEDIATION_STATUS.md) | Status report from the pre-v2.0 codebase remediation work |
+| [REVIEW.md](REVIEW.md) | Critical-review document for external code-review sessions |
+| [STATUS_GEO_ADVISOR_REWRITER.md](STATUS_GEO_ADVISOR_REWRITER.md) | Status of GEO Advisor + Rewriter shipped in v2.2 |
 
-### For Developers
-- [architecture/architecture.md](architecture/architecture.md) — Data flow, design patterns, constraints
-- [api/api.md](api/api.md) — Endpoint contracts
-- [CLAUDE.md](../CLAUDE.md) — Coding standards, testing requirements, tech stack
+## Implementation Plan Documents
 
-### For Product/Planning
-- [specs/core-crawler/README.md](specs/core-crawler/README.md) — Core features
-- [specs/image-analysis/README.md](specs/image-analysis/README.md) — Image Intelligence roadmap
-- [specs/ai-readiness/README.md](specs/ai-readiness/README.md) — AI-readiness module (v2 draft)
+Several implementation-plan markdown files live in this directory for in-progress or completed work. They're useful for understanding why specific changes landed:
 
-### For Nonprofits Using TalkingToad
-- [guides/local-dev-setup.md](guides/local-dev-setup.md) — Getting started
-- [reference/issue-codes.md](reference/issue-codes.md) — Understanding audit results
-- [guides/wordpress-config.md](guides/wordpress-config.md) — One-click fix setup
+- `implementation_plan_geo_*.md` — GEO analyzer/rewriter milestone plans
+- `image-scan-spec.md`, `image-scan-implementation-plan.md` — Image scan architecture
+- `image-optimization-spec.md` — v1.9.1 image optimization
+- `fix-agent-spec.md`, `geo-frontend-integration.md`, `ROUTER_IMPLEMENTATION_GUIDE.md` — Implementation guides
+- `geo_image_ai_spec.md`, `geo_image_ai_prompt.md` (under specs/) — Vision AI prompts
+
+## Project Management
+
+| File | Purpose |
+|---|---|
+| [../PLAN-V3.0.md](../PLAN-V3.0.md) | Full v3.0 plan: 11 milestones, 15-17 weeks, release phasing |
+| [../PLAN.md](../PLAN.md) | Original implementation plan (pre-v3) |
+| [../TODO.md](../TODO.md) | Project TODO and technical debt |
+| [../REVIEW_SPEC.md](../REVIEW_SPEC.md) | Code review specification |
 
 ---
 
-**Project Version:** 2.1  
-**Last Updated:** May 3, 2026  
+**Project Version:** 2.3 (v3.0 in progress)
+**Last Updated:** 2026-05-27
 **GitHub:** https://github.com/dbgnvan2/talkingtoad
+
+> **Doc structure note (v2.3 M0.10):** Earlier versions of this README
+> linked to subdirectories like `architecture/`, `api/`, `reference/`,
+> `guides/` that never existed. All docs live flat in `docs/` and `docs/specs/`.
+> Broken links are fixed in this rewrite. See PLAN-V3.0.md M0.10.
