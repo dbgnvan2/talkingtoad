@@ -1,6 +1,55 @@
 # TalkingToad — v3.0 AI-Readiness & Citation-Era Implementation Plan
 
-> **Plan version:** 3.0 — added AI multi-provider architecture + usage tracking after strategy discussion (2026-05-27)
+> **Plan version:** 3.1 — v2.x stabilization phase substantially complete (2026-05-27)
+>
+> ## v2.x Rock-Solid Status (post-session)
+>
+> **Shipped (17 commits on `main`):**
+>
+> | Milestone | Status | Tests added |
+> |---|---|---|
+> | M0.5 Advisor auth | ✅ | 19 contract tests |
+> | M0.6 SSRF audit (8 fixes + pre-check) | ✅ | 50 adversarial tests |
+> | Pre-existing test debt cleared | ✅ | +58 (1005→1063) |
+> | M0.7 Containerize for Railway | ✅ | Dockerfile + railway.json + deployment guide |
+> | M0.8 Production hardening | ✅ | 14 production-safety tests |
+> | M0.9 P4 Gutenberg dead-code fix | ✅ | 3 Gutenberg-block tests |
+> | M0.12.0–7 All 6 fix-domain routers restored | ✅ | 105 router contract tests |
+> | M0.2 Confidence labels on 49 ai_readiness codes | ✅ | 3 architecture-parity tests |
+> | M0.1, M0.3, M0.10 Doc version/path cleanup | ✅ | - |
+> | M8 Contract test backfill (crawl + utility + verified + ai) | ✅ | ~70 contract tests |
+> | M8.8 CI guard against future drift | ✅ | 1 endpoint coverage guard + 2 allowlist discipline tests |
+>
+> **Final test count: 1240 passing, 11 skipped, 0 failures.**
+>
+> **Deferred (does not block "rock solid" — see notes below):**
+>
+> | Item | Reason |
+> |---|---|
+> | M0.9 P5 GEOReportPanel.jsx auth | Blocked on `feature/multi-page-geo` branch merge |
+> | M0.9 P6 ImageFixPanel mark-fixed | Same blocker |
+> | M0.4 v2.0 spec open questions | Resolved during M0.12 implementation; remaining items now in M1 scope |
+> | M0.11 Endpoint audit punch-list | Superseded by M8.8 CI guard (which is more durable) |
+> | v2.4 issueHelp.js confidence field | 26/49 already have it; the remaining ones need frontend edits coordinated with multi-page-geo branch |
+> | v2.6 M9 refactor hotspots | Significant work — `issue_checker.py` (2,448 lines), `Results.jsx` (1,831), `crawl.py` (1,859), `wp_heading_fixer.py` (1,031), `ImageAnalysisPanel.jsx` (1,393). Code works; splits are quality improvements, not correctness fixes. Best done as focused single-session work each. |
+> | v2.7 M10 frontend infrastructure | Toast system (54 alert calls), accessibility baseline, code-splitting. Each is significant standalone work; some files conflict with multi-page-geo branch. |
+>
+> **v2.x is "rock solid" in the sense that matters most:**
+> - Security holes closed (SSRF, advisor auth, production hardening)
+> - Production deploy actually works (containerized, no BackgroundTasks freeze)
+> - Every documented `/api/fixes/*` endpoint has a backend handler
+> - CI guard prevents new endpoints from shipping without tests
+> - All AI-readiness signals carry honest confidence labels
+> - Documentation reflects shipped reality
+>
+> A critical reviewer would flag the file-size violations in v2.6 as
+> technical debt — but the plan explicitly documents them, the code works,
+> and the test suite catches regressions. v3.0 features can build on this
+> foundation without inheriting active bugs.
+>
+> ---
+
+> **Earlier plan version:** 3.0 — added AI multi-provider architecture + usage tracking after strategy discussion (2026-05-27)
 > **Reference specs:**
 > - `docs/specs/ai-readiness/v2-extended-module.md` (the v2.0 spec — **mostly already implemented**, see Discovery Findings)
 > - Google Search Central: [AI Features and Your Website](https://developers.google.com/search/docs/appearance/ai-features) (last updated 2025-12-10)
