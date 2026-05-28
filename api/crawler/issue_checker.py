@@ -53,6 +53,8 @@ class Issue:
     impact_desc: str = ""
     how_to_fix: str = ""
     fixability: str = "developer_needed"  # wp_fixable | content_edit | developer_needed
+    # v2.3 M0.2 — see Issue Pydantic model and _IssueSpec.confidence_label.
+    confidence_label: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -70,6 +72,14 @@ class _IssueSpec:
     impact_desc: str = ""
     how_to_fix: str = ""
     fixability: str = "developer_needed"  # wp_fixable | content_edit | developer_needed
+    # v2.3 (M0.2) — confidence label per v2.0 AI-readiness spec §2.
+    # - Established: vendor-confirmed effect on AI crawling/citation
+    # - Reasonable proxy: industry consensus, partial vendor confirmation
+    # - Heuristic: industry consensus only, no vendor confirmation
+    # - None: not an AI-readiness check (the field doesn't apply)
+    # An architecture test enforces that every ai_readiness-category code
+    # has a non-None confidence_label.
+    confidence_label: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -1300,6 +1310,78 @@ def _titles_mismatch(title: str, h1: str) -> bool:
     return title_words.isdisjoint(h1_words)
 
 
+# v2.3 M0.2 — Confidence labels for ai_readiness category codes.
+# Per v2.0 AI-Readiness spec §2:
+#   - "Established": vendor has publicly confirmed effect on AI crawling
+#     or citation. Robots.txt directives for declared AI bots fall here.
+#   - "Reasonable proxy": industry consensus treats it as influential;
+#     partial vendor confirmation. Schema typing, JSON-LD, document props,
+#     freshness signals fall here (Google has called all of these out as
+#     things they consider).
+#   - "Heuristic": industry consensus only, no vendor confirmation.
+#     Passage-quality checks, llms.txt, and most extractability
+#     micro-checks fall here.
+#
+# The architecture test in tests/test_architecture_constraints.py enforces
+# that every code with category=="ai_readiness" has an entry here.
+_AI_READINESS_CONFIDENCE: dict[str, str] = {
+    # ── Established (vendor-confirmed via robots.txt protocol) ──
+    "AI_BOT_SEARCH_BLOCKED":      "Established",
+    "AI_BOT_TRAINING_DISALLOWED": "Established",
+    "AI_BOT_USER_FETCH_BLOCKED":  "Established",
+    "AI_BOT_DEPRECATED_DIRECTIVE":"Established",
+    "AI_BOT_BLANKET_DISALLOW":    "Established",
+
+    # ── Reasonable proxy (industry consensus + Google's published best practices) ──
+    "AI_BOT_NO_AI_DIRECTIVES":      "Reasonable proxy",
+    "JSON_LD_MISSING":              "Reasonable proxy",
+    "JSON_LD_INVALID":              "Reasonable proxy",
+    "SCHEMA_TYPE_MISMATCH":         "Reasonable proxy",
+    "SCHEMA_DEPRECATED_TYPE":       "Reasonable proxy",
+    "SCHEMA_TYPE_CONFLICT":         "Reasonable proxy",
+    "FAQ_SCHEMA_MISSING":           "Reasonable proxy",
+    "DOCUMENT_PROPS_MISSING":       "Reasonable proxy",
+    "DATE_PUBLISHED_MISSING":       "Reasonable proxy",
+    "DATE_MODIFIED_MISSING":        "Reasonable proxy",
+    "AUTHOR_BYLINE_MISSING":        "Reasonable proxy",
+    "CONTENT_NOT_EXTRACTABLE_NO_TEXT": "Reasonable proxy",
+    "RAW_HTML_JS_DEPENDENT":        "Reasonable proxy",
+    "JS_RENDERED_CONTENT_DIFFERS":  "Reasonable proxy",
+    "CONTENT_CLOAKING_DETECTED":    "Reasonable proxy",
+    "UA_CONTENT_DIFFERS":           "Reasonable proxy",
+    "CITATIONS_MISSING_SUBSTANTIAL_CONTENT": "Reasonable proxy",
+    "EXTERNAL_CITATIONS_LOW":       "Reasonable proxy",
+    "CONTENT_THIN":                 "Reasonable proxy",  # Google has thin-content guidance
+
+    # ── Heuristic (industry consensus only — no vendor confirmation) ──
+    "LLMS_TXT_MISSING":             "Heuristic",
+    "LLMS_TXT_INVALID":             "Heuristic",
+    "AI_TXT_MISSING":               "Heuristic",
+    "AI_BOT_TABLE_STALE":           "Heuristic",
+    "SEMANTIC_DENSITY_LOW":         "Heuristic",
+    "CENTRAL_CLAIM_BURIED":         "Heuristic",
+    "CHUNKS_NOT_SELF_CONTAINED":    "Heuristic",
+    "CITATIONS_ORPHANED":           "Heuristic",
+    "CITATIONS_SOURCES_INACCESSIBLE": "Heuristic",
+    "CODE_BLOCK_MISSING_TECHNICAL": "Heuristic",
+    "COMPARISON_TABLE_MISSING":     "Heuristic",
+    "CONTENT_IMAGE_HEAVY":          "Heuristic",
+    "CONTENT_UNSTRUCTURED":         "Heuristic",
+    "FIRST_VIEWPORT_NO_ANSWER":     "Heuristic",
+    "ORPHAN_CLAIM_TECHNICAL":       "Heuristic",
+    "PROMOTIONAL_CONTENT_INTERRUPTS": "Heuristic",
+    "QUERY_COVERAGE_WEAK":          "Heuristic",
+    "QUOTATIONS_MISSING":           "Heuristic",
+    "SECTION_CROSS_REFERENCES":     "Heuristic",
+    "SECTION_VAGUE_OPENER":         "Heuristic",
+    "STATISTICS_COUNT_LOW":         "Heuristic",
+    "STRUCTURED_ELEMENTS_LOW":      "Heuristic",
+    "BLOG_SECTIONS_MISSING":        "Heuristic",
+    "LINK_PROFILE_PROMOTIONAL":     "Heuristic",
+    "CONVERSATIONAL_H2_MISSING":    "Heuristic",  # legacy v1.7 — no vendor confirmation
+}
+
+
 def make_issue(
     code: str,
     page_url: str | None = None,
@@ -1312,6 +1394,9 @@ def make_issue(
     Automatically populates *impact*, *effort*, and *priority_rank* from
     :data:`_ISSUE_SCORING`.  Unknown codes get zeroes for all three.
 
+    For ai_readiness category codes, also populates *confidence_label* from
+    :data:`_AI_READINESS_CONFIDENCE` per the v2.0 spec confidence taxonomy.
+
     Args:
         code: The issue code from the catalogue.
         page_url: The URL of the page where the issue was found.
@@ -1321,6 +1406,9 @@ def make_issue(
     spec = _CATALOGUE[code]
     impact, effort = _ISSUE_SCORING.get(code, (0, 0))
     priority_rank = (impact * 10) - (effort * 2)
+    # Prefer the spec-attached confidence_label if set (lets individual
+    # codes override the lookup); otherwise read from the centralised map.
+    confidence_label = spec.confidence_label or _AI_READINESS_CONFIDENCE.get(code)
     return Issue(
         code=code,
         category=spec.category,
@@ -1337,6 +1425,7 @@ def make_issue(
         impact_desc=spec.impact_desc,
         how_to_fix=spec.how_to_fix,
         fixability=spec.fixability,
+        confidence_label=confidence_label,
     )
 
 

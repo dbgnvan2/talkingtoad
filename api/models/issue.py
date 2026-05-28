@@ -64,3 +64,8 @@ class Issue(BaseModel):
     how_to_fix: str = ""           # detailed remediation help
     extra: dict | None = None      # supplementary data (e.g. source_url for broken links)
     fixability: str = "developer_needed"  # wp_fixable | content_edit | developer_needed
+    # v2.3 (M0.2) — confidence label for AI-readiness category issues.
+    # See _IssueSpec.confidence_label in api/crawler/issue_checker.py for the
+    # taxonomy (Established / Reasonable proxy / Heuristic). None for issues
+    # outside the ai_readiness category.
+    confidence_label: str | None = None

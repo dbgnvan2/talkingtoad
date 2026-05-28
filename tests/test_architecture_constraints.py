@@ -370,3 +370,69 @@ class TestIssueCodeParity:
             f"  {sorted(missing_from_frontend)}\n"
             f"Add help entries for these codes in issueHelp.js."
         )
+
+
+class TestAIReadinessConfidenceLabels:
+    """v2.3 M0.2 — every ai_readiness code must declare a confidence label.
+
+    Per v2.0 AI-Readiness spec §2 — the module is useful only if users know
+    what they're being told. A heuristic check labelled as Established (or
+    vice versa) misleads about the strength of evidence. The single-source
+    catalogue (_AI_READINESS_CONFIDENCE in issue_checker.py) makes labelling
+    explicit; this test catches new ai_readiness codes that get added
+    without a label.
+    """
+
+    def test_every_ai_readiness_code_has_confidence_label(self):
+        from api.crawler.issue_checker import (
+            _AI_READINESS_CONFIDENCE,
+            _CATALOGUE,
+        )
+
+        ai_readiness_codes = {
+            code for code, spec in _CATALOGUE.items()
+            if spec.category == "ai_readiness"
+        }
+        labelled_codes = set(_AI_READINESS_CONFIDENCE.keys())
+
+        unlabelled = ai_readiness_codes - labelled_codes
+        assert not unlabelled, (
+            f"ai_readiness codes in _CATALOGUE missing from "
+            f"_AI_READINESS_CONFIDENCE:\n  {sorted(unlabelled)}\n"
+            f"Add an entry per the v2.0 spec confidence taxonomy:\n"
+            f"  - 'Established': vendor-confirmed effect on AI citation\n"
+            f"  - 'Reasonable proxy': industry consensus + Google's "
+            f"published best practices\n"
+            f"  - 'Heuristic': industry consensus only"
+        )
+
+    def test_confidence_labels_use_canonical_values(self):
+        """Adversarial: someone types 'established' (lowercase) — must fail.
+        Per spec the three labels are the only allowed strings."""
+        from api.crawler.issue_checker import _AI_READINESS_CONFIDENCE
+
+        valid_labels = {"Established", "Reasonable proxy", "Heuristic"}
+        invalid = {
+            code: label
+            for code, label in _AI_READINESS_CONFIDENCE.items()
+            if label not in valid_labels
+        }
+        assert not invalid, (
+            f"Invalid confidence labels (must be one of {valid_labels}):\n"
+            f"  {invalid}"
+        )
+
+    def test_make_issue_propagates_confidence_label(self):
+        """make_issue() must surface the confidence label on the resulting Issue."""
+        from api.crawler.issue_checker import make_issue
+        # LLMS_TXT_MISSING is labelled Heuristic
+        issue = make_issue("LLMS_TXT_MISSING", page_url="https://example.com/")
+        assert issue.confidence_label == "Heuristic"
+
+        # AI_BOT_SEARCH_BLOCKED is labelled Established
+        issue = make_issue("AI_BOT_SEARCH_BLOCKED", page_url="https://example.com/")
+        assert issue.confidence_label == "Established"
+
+        # A non-ai-readiness code (TITLE_MISSING) gets no label.
+        issue = make_issue("TITLE_MISSING", page_url="https://example.com/")
+        assert issue.confidence_label is None
