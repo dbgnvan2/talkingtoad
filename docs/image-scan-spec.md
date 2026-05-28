@@ -1,3 +1,11 @@
+---
+status: historical
+last_reviewed: 2026-05-27
+note: |
+  Earlier image-scan spec (labelled 'v2.0' in title but lives under v1.9 file naming — see docs-review §5.4).
+  The shipped spec is docs/specs/image-analysis/v1.9-image-intelligence-engine.md.
+  Retain for historical context.
+---
 # Image Intelligence & Optimization Specification v2.0
 
 ## Purpose

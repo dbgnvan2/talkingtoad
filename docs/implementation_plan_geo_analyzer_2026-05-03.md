@@ -1,3 +1,10 @@
+---
+status: historical
+last_reviewed: 2026-05-27
+note: |
+  GEO analyzer v2.1 implementation plan.
+  Work shipped May 2026.
+---
 # GEO Analyzer v2.1 — Implementation Plan
 
 **Date:** 2026-05-03 (revised same day)  

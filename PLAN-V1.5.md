@@ -1,3 +1,11 @@
+---
+status: historical
+last_reviewed: 2026-05-27
+note: |
+  v1.5 extensions plan.
+  Work shipped.
+  For current/future work see PLAN-V3.0.md.
+---
 # TalkingToad — v1.5 Extension Implementation Plan
 
 > **Reference spec:** `nonprofit-crawler-spec-v1.5-extensions.md`

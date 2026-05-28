@@ -1,3 +1,7 @@
+---
+status: current
+last_reviewed: 2026-05-27
+---
 # Docs Review Response — Triage & Remediation Plan
 
 > **Companion document to** the external docs-folder review register

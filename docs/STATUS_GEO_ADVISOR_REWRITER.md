@@ -1,3 +1,11 @@
+---
+status: historical
+last_reviewed: 2026-05-27
+note: |
+  GEO Advisor/Rewriter v2.2 ship report from May 2026.
+  Accurate for that release.
+  For current state see docs/functional-specification.md §6.
+---
 # GEO Advisor & Rewriter Implementation Status
 
 ## Overview

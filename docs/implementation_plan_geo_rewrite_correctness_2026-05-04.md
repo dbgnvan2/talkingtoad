@@ -1,3 +1,10 @@
+---
+status: historical
+last_reviewed: 2026-05-27
+note: |
+  GEO rewrite-correctness implementation plan.
+  Work shipped May 2026.
+---
 # GEO Rewrite Prompt — Correctness Pass: Implementation Plan
 
 **Date:** 2026-05-04

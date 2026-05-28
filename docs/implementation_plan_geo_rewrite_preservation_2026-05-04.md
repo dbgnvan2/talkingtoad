@@ -1,3 +1,10 @@
+---
+status: historical
+last_reviewed: 2026-05-27
+note: |
+  GEO rewrite preservation implementation plan.
+  Work shipped May 2026.
+---
 # GEO Rewrite Preservation Floor — Implementation Plan
 
 **Date:** 2026-05-04  

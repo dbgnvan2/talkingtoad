@@ -1,3 +1,11 @@
+---
+status: historical
+last_reviewed: 2026-05-27
+note: |
+  v1.9.1 image optimization spec.
+  Implementation shipped; routes restored in v2.3 M0.12.3 and M0.12.5.
+  See docs/specs/image-analysis/v1.9.1-geo-optimization-spec.md for current.
+---
 # Functional Specification: Image Intelligence & Optimization Engine (Python)
 
 ## 1. Objective

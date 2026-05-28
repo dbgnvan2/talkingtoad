@@ -1,9 +1,31 @@
+---
+status: current
+last_reviewed: 2026-05-27
+api_version: 2.3
+---
+
 # API Reference
 
-Base URL: `https://yourcrawler.vercel.app` (prod) / `http://localhost:8000` (dev)
+> **Project version:** 2.3 (v3.0 in progress — see `../PLAN-V3.0.md`).
+> **Deployment:** v2.3 runs the backend on Railway (long-lived
+> container). The Vercel-Python-serverless deployment is deprecated.
+> See [`deployment-railway.md`](deployment-railway.md).
 
-All POST/PATCH requests require `Content-Type: application/json`.
-All endpoints require `Authorization: Bearer <token>` except `/api/health`.
+**Base URL:** `https://<your-railway-service>.up.railway.app` (prod) /
+`http://localhost:8000` (dev).
+The Vercel frontend proxies `/api/*` to the Railway backend via the
+`BACKEND_HOST` env var.
+
+All POST/PATCH requests require `Content-Type: application/json` unless
+they accept multipart uploads (image-upload endpoints).
+All endpoints require `Authorization: Bearer <token>` except
+`/api/health`. Production refuses to start if `AUTH_TOKEN` is unset
+(see [`thresholds.md`](thresholds.md) and `api/main.py::_assert_production_safe`).
+
+For per-endpoint acceptance criteria see
+[`functional-specification.md`](functional-specification.md). For the
+full coverage matrix (which test exercises which endpoint) see the
+same doc's §9 verification matrix.
 
 ---
 

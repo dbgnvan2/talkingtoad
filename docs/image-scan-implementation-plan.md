@@ -1,3 +1,11 @@
+---
+status: historical
+last_reviewed: 2026-05-27
+note: |
+  v1.9 image-scan implementation plan.
+  Implementation is shipped.
+  For current state see docs/specs/image-analysis/.
+---
 # Image Intelligence & Optimization Plan - v1.9image
 
 ## Release Overview

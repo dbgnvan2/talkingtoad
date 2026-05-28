@@ -1,3 +1,11 @@
+---
+status: historical
+last_reviewed: 2026-05-27
+note: |
+  Original v1.4 implementation plan.
+  Foundation work shipped.
+  For current/future work see PLAN-V3.0.md.
+---
 # TalkingToad — Implementation Plan
 
 > This plan follows the spec in `nonprofit-crawler-spec-v1.4.md` §15.

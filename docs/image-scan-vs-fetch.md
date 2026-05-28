@@ -1,3 +1,10 @@
+---
+status: historical
+last_reviewed: 2026-05-27
+note: |
+  Pre-v1.9 design comparison doc.
+  The chosen architecture is the 3-level Image Intelligence Engine — see docs/specs/image-analysis/.
+---
 # Image Analysis: Scan vs Fetch
 
 ## What the SCAN detects (Automatic during crawl)

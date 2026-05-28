@@ -1,3 +1,10 @@
+---
+status: historical
+last_reviewed: 2026-05-27
+note: |
+  GEO tier1/tier2 implementation plan.
+  Work shipped May 2026.
+---
 # GEO Tier 1 + Tier 2 Implementation Plan
 
 **Date:** 2026-05-04  

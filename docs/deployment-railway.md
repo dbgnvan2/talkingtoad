@@ -1,3 +1,7 @@
+---
+status: current
+last_reviewed: 2026-05-27
+---
 # TalkingToad Deployment — Railway (backend) + Vercel (frontend)
 
 > Status: v2.3 deployment model. Previous Vercel-only setup is deprecated

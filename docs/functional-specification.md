@@ -1,3 +1,7 @@
+---
+status: current
+last_reviewed: 2026-05-27
+---
 # TalkingToad — Functional Specification
 
 > **Status:** v2.3 (rock-solid baseline). Reflects shipped behaviour on

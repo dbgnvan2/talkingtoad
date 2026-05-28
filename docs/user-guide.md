@@ -1,3 +1,8 @@
+---
+status: current
+last_reviewed: 2026-05-27
+---
+
 # User Guide — TalkingToad SEO Crawler
 
 ## What is TalkingToad?

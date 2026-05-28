@@ -1,3 +1,11 @@
+---
+status: historical
+last_reviewed: 2026-05-27
+note: |
+  Pre-v2.0 fix-agent specification.
+  Items in section 'Fixes 1-12' — 9 of 12 have been verified as fixed in v2.3 (see docs/docs-review-response.md).
+  Retain for historical context.
+---
 # TalkingToad — Bug Fix Specification for Code Agent
 
 > **Scope:** Fix all bugs identified in the expert review. Vercel-specific issues

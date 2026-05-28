@@ -1,3 +1,10 @@
+---
+status: historical
+last_reviewed: 2026-05-27
+note: |
+  Implementation guide for the v2.0 router split.
+  The v2.3 split (M0.12) finished the work; see docs/specs/wordpress-integration/README.md for the current 6-domain-router layout.
+---
 # Fix Manager Router Implementation Guide
 
 This document provides a template and pattern for implementing the 6 pending routers in the Fix Manager module. All routers follow the same architectural pattern established by `fix_manager_router.py`.

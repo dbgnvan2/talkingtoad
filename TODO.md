@@ -1,3 +1,7 @@
+---
+status: current
+last_reviewed: 2026-05-27
+---
 # TalkingToad — Project TODO & Technical Debt
 
 This file tracks infrastructure improvements, testing gaps, and future features that aren't part of the current milestone but are critical for long-term stability.

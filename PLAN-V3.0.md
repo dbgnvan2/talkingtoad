@@ -1,3 +1,7 @@
+---
+status: current
+last_reviewed: 2026-05-27
+---
 # TalkingToad — v3.0 AI-Readiness & Citation-Era Implementation Plan
 
 > **Plan version:** 3.1 — v2.x stabilization phase substantially complete (2026-05-27)

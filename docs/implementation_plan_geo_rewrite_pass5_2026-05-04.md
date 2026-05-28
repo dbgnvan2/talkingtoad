@@ -1,3 +1,10 @@
+---
+status: historical
+last_reviewed: 2026-05-27
+note: |
+  GEO rewrite pass-5 implementation plan.
+  Work shipped May 2026.
+---
 # GEO Rewrite Prompt — Pass 5 Revisions: Implementation Plan
 
 **Date:** 2026-05-04

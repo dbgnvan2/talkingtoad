@@ -1,8 +1,22 @@
+---
+status: historical
+last_reviewed: 2026-05-27
+note: |
+  This is the pre-v2.0 remediation status report. The Phase 1 "Results.jsx
+  → 450 lines" claim is INCORRECT — that extraction was partial; Results.jsx
+  was still 1,831 lines when the v2.3 review found it. The v2.3 work (see
+  PLAN-V3.0.md M9.3) tracks the remaining Results.jsx extraction as
+  outstanding. Other phases in this doc are accurate as of May 2026.
+  For current state: docs/functional-specification.md +
+  docs/docs-review-response.md.
+---
+
 # TalkingToad Codebase Remediation — Complete Status Report
 
-**Date:** May 3, 2026  
-**Scope:** Comprehensive codebase audit and remediation before AI-Readiness v2.0  
-**Status:** ✅ COMPLETE
+**Date:** May 3, 2026
+**Scope:** Comprehensive codebase audit and remediation before AI-Readiness v2.0
+**Status:** ✅ COMPLETE for the May 2026 audit scope. **Phase 1 finding
+about Results.jsx line count is inaccurate** — see banner above.
 
 ---
 
@@ -40,7 +54,17 @@ Extracted major sections from 3,057-line monolithic `Results.jsx` into separate 
 
 **Before/After:**
 - Before: Results.jsx = 3,057 lines (monolithic)
-- After: Results.jsx = 450 lines (tab registry) + 6 components (avg 210 lines each)
+- ~~After: Results.jsx = 450 lines (tab registry) + 6 components (avg 210 lines each)~~
+
+> **CORRECTION (v2.3 review, 2026-05-27):** The "450 lines" claim was
+> aspirational, not actual. The 6 extracted components do exist, but
+> the Results.jsx parent file was not slimmed down — it was still
+> **1,831 lines** when the v2.3 audit ran. The extraction is partial:
+> components like `PageDetail`, `IssueCard`, `ImageFixPanel`,
+> `SettingsToolbar`, `ExportReportModal`, `AIRecommendationsPanel`,
+> `SiteRecommendationsPanel`, `OrphanedSummaryCards`, `PageFocusPanel`,
+> `HeadingsPanel` still live inside Results.jsx. The full extraction
+> is tracked as **v3.0 M9.3** in `../PLAN-V3.0.md`.
 
 ---
 

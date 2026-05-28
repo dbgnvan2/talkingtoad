@@ -1,3 +1,11 @@
+---
+status: historical
+last_reviewed: 2026-05-27
+note: |
+  Frontend-integration plan for GEO analyzer.
+  v2.1 work shipped.
+  See docs/specs/ai-readiness/v2-extended-module.md and docs/functional-specification.md §6 for current state.
+---
 # GEO Image AI Frontend Integration Guide
 
 ## Overview

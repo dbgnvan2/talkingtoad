@@ -1,3 +1,11 @@
+---
+status: historical
+last_reviewed: 2026-05-27
+note: |
+  GEO scoring-audit plan from May 2026.
+  Many F1-F10 items are now moot — the geo_analyzer.py file the audit referenced no longer exists.
+  See docs/docs-review-response.md Section 3 for verification.
+---
 # GEO Scoring Audit — Remediation Plan
 
 **Date:** 2026-05-04  
