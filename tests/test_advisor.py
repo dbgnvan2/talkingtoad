@@ -417,3 +417,50 @@ class TestReportDecisions:
             should_generate_prompt=False,
         )
         assert report.should_generate_prompt is False
+
+
+class TestFetchFailureSkip:
+    """When the page can't be fetched, advisor returns a skip-report — never raises, never fakes content."""
+
+    @pytest.mark.asyncio
+    async def test_fetch_failure_returns_skip_markdown(self, monkeypatch):
+        """A 403 / network error in _fetch_page → clean skip report, should_generate_prompt=False."""
+        from api.services.advisor import evaluate_page
+        from api.models.advisor import AdvisorRequest
+
+        def _boom(url: str) -> str:
+            raise RuntimeError(f"Failed to fetch {url}: Client error '403 Forbidden'")
+
+        monkeypatch.setattr("api.services.advisor._fetch_page", _boom)
+
+        markdown, should_generate_prompt = await evaluate_page(
+            AdvisorRequest(url="https://example.com/blocked")
+        )
+
+        assert should_generate_prompt is False
+        assert "could not be analyzed" in markdown.lower()
+        assert "403" in markdown
+        assert "https://example.com/blocked" in markdown
+
+    @pytest.mark.asyncio
+    async def test_fetch_failure_does_not_call_llm(self, monkeypatch):
+        """Adversarial: skip path must not invoke any LLM critic — no fake content gets graded."""
+        from api.services.advisor import evaluate_page
+        from api.models.advisor import AdvisorRequest
+
+        def _boom(url: str) -> str:
+            raise RuntimeError("connection refused")
+
+        def _llm_must_not_be_called(*args, **kwargs):
+            raise AssertionError("LLM critic must not be called when fetch fails")
+
+        monkeypatch.setattr("api.services.advisor._fetch_page", _boom)
+        monkeypatch.setattr("api.services.advisor._call_openai_critic", _llm_must_not_be_called)
+        monkeypatch.setattr("api.services.advisor._call_gemini_critic", _llm_must_not_be_called)
+
+        markdown, should_generate_prompt = await evaluate_page(
+            AdvisorRequest(url="https://example.com/blocked")
+        )
+
+        assert should_generate_prompt is False
+        assert markdown  # non-empty skip message

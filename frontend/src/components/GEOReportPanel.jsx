@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react'
-import { generateGeoReport, getGeoAiModel, setGeoAiModel, generateGeoRewritePrompt } from '../api.js'
+import { generateGeoReport, getGeoAiModel, setGeoAiModel, generateGeoRewritePrompt, getGeoReportPages } from '../api.js'
 import { authHeaders } from '../api.js'
 import Spinner from './Spinner.jsx'
 
@@ -558,6 +558,12 @@ export default function GEOReportPanel({ jobId, domain }) {
   const [rewriteLoading, setRewriteLoading] = useState(false)
   const [rewriteContent, setRewriteContent] = useState(null)
 
+  // Page selection state (multi-page GEO report)
+  const [pages, setPages] = useState(null)        // null = not loaded, [] = loaded but empty
+  const [pagesLoading, setPagesLoading] = useState(false)
+  const [pagesError, setPagesError] = useState(null)
+  const [selectedUrls, setSelectedUrls] = useState(() => new Set())
+
   useEffect(() => {
     getGeoAiModel()
       .then(data => {
@@ -567,11 +573,42 @@ export default function GEOReportPanel({ jobId, domain }) {
       .catch(() => {})
   }, [])
 
+  useEffect(() => {
+    if (!jobId) return
+    setPagesLoading(true)
+    getGeoReportPages(jobId)
+      .then(data => {
+        setPages(data.pages || [])
+      })
+      .catch(err => {
+        setPagesError(err.message || 'Could not load pages')
+        setPages([])
+      })
+      .finally(() => setPagesLoading(false))
+  }, [jobId])
+
+  const togglePage = (url) => {
+    setSelectedUrls(prev => {
+      const next = new Set(prev)
+      if (next.has(url)) next.delete(url)
+      else next.add(url)
+      return next
+    })
+  }
+
+  const selectAllPages = () => {
+    if (!pages) return
+    setSelectedUrls(new Set(pages.map(p => p.url)))
+  }
+
+  const clearSelectedPages = () => setSelectedUrls(new Set())
+
   const handleRun = async (forceRefresh = false) => {
     setLoading(true)
     setError(null)
     try {
-      const result = await generateGeoReport(jobId, { model: selectedModel, forceRefresh })
+      const pageUrls = selectedUrls.size > 0 ? Array.from(selectedUrls) : undefined
+      const result = await generateGeoReport(jobId, { model: selectedModel, forceRefresh, pageUrls })
       setReport(result.report)
     } catch (e) {
       setError(e.message || 'Analysis failed')
@@ -682,10 +719,85 @@ export default function GEOReportPanel({ jobId, domain }) {
             disabled={loading}
             className="px-4 py-2 text-sm font-bold bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 disabled:opacity-50 transition-colors"
           >
-            {loading ? 'Analyzing…' : report ? 'Re-run' : '▶ Run GEO Analysis'}
+            {loading
+              ? 'Analyzing…'
+              : report
+                ? 'Re-run'
+                : selectedUrls.size > 0
+                  ? `▶ Run GEO on ${selectedUrls.size} page${selectedUrls.size === 1 ? '' : 's'}`
+                  : '▶ Run GEO Analysis (home only)'}
           </button>
         </div>
       </div>
+
+      {/* Page selection (multi-page GEO report) */}
+      {!report && (
+        <div className="bg-white border border-gray-200 rounded-2xl p-4">
+          <div className="flex items-center justify-between mb-3">
+            <div>
+              <p className="text-sm font-bold text-gray-800">Pages to analyze</p>
+              <p className="text-xs text-gray-500 mt-0.5">
+                Each page = one AI call. Leave all unchecked to analyze just the home page.
+              </p>
+            </div>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={selectAllPages}
+                disabled={!pages || pages.length === 0}
+                className="text-xs font-bold text-indigo-600 hover:text-indigo-800 disabled:opacity-50"
+              >
+                Select all
+              </button>
+              <span className="text-gray-300">|</span>
+              <button
+                type="button"
+                onClick={clearSelectedPages}
+                disabled={selectedUrls.size === 0}
+                className="text-xs font-bold text-gray-600 hover:text-gray-800 disabled:opacity-50"
+              >
+                Clear
+              </button>
+            </div>
+          </div>
+
+          {pagesLoading && <p className="text-xs text-gray-500">Loading pages…</p>}
+          {pagesError && !pagesLoading && (
+            <p className="text-xs text-red-600">{pagesError}</p>
+          )}
+          {!pagesLoading && pages && pages.length === 0 && !pagesError && (
+            <p className="text-xs text-gray-500">No crawled pages found for this job.</p>
+          )}
+          {!pagesLoading && pages && pages.length > 0 && (
+            <div className="max-h-64 overflow-y-auto border border-gray-100 rounded-lg divide-y divide-gray-100">
+              {pages.map(p => (
+                <label
+                  key={p.url}
+                  className="flex items-center gap-2 px-3 py-1.5 text-xs hover:bg-gray-50 cursor-pointer"
+                >
+                  <input
+                    type="checkbox"
+                    checked={selectedUrls.has(p.url)}
+                    onChange={() => togglePage(p.url)}
+                    className="flex-shrink-0"
+                  />
+                  <span className="flex-1 min-w-0 truncate font-mono text-gray-700">{p.url}</span>
+                  {p.title && (
+                    <span className="hidden sm:block text-gray-500 truncate max-w-[14rem]">{p.title}</span>
+                  )}
+                  <span className={`flex-shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                    p.issue_count > 5 ? 'bg-red-100 text-red-700'
+                      : p.issue_count > 0 ? 'bg-amber-100 text-amber-700'
+                      : 'bg-gray-100 text-gray-500'
+                  }`}>
+                    {p.issue_count} {p.issue_count === 1 ? 'issue' : 'issues'}
+                  </span>
+                </label>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Evidence tier legend */}
       <div className="flex flex-wrap gap-2 text-xs">

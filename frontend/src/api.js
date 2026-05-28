@@ -839,11 +839,21 @@ export async function markIssueFixed(jobId, pageUrl, issueCodes) {
 
 // v2.1 GEO Analyzer API functions
 
-export async function generateGeoReport(jobId, { model, forceRefresh = false } = {}) {
+export async function generateGeoReport(jobId, { model, forceRefresh = false, pageUrls } = {}) {
+  const body = { job_id: jobId, model, force_refresh: forceRefresh }
+  if (pageUrls !== undefined) body.page_urls = pageUrls
   const res = await fetch('/api/ai/geo-report', {
     method: 'POST',
     headers: authHeaders(),
-    body: JSON.stringify({ job_id: jobId, model, force_refresh: forceRefresh }),
+    body: JSON.stringify(body),
+  })
+  return checkResponse(res)
+}
+
+export async function getGeoReportPages(jobId) {
+  const res = await fetch(`/api/ai/geo-report/pages?job_id=${encodeURIComponent(jobId)}`, {
+    method: 'GET',
+    headers: authHeaders(),
   })
   return checkResponse(res)
 }

@@ -783,7 +783,7 @@ function HeadingsPanel({ jobId, pageUrl, headings, onUpdate }) {
           const isEditing = editingIdx === idx
 
           return (
-            <div key={`h${h.level}-${h.text}`} className="flex items-start gap-3 p-3 bg-gray-50 rounded-xl group hover:bg-gray-100 transition-colors">
+            <div key={`h${h.level}-${h.text}-${idx}`} className="flex items-start gap-3 p-3 bg-gray-50 rounded-xl group hover:bg-gray-100 transition-colors">
               <span className={`flex-shrink-0 w-10 h-10 flex items-center justify-center rounded-lg text-sm font-black ${
                 h.level === 1 ? 'bg-red-100 text-red-700' :
                 h.level === 2 ? 'bg-amber-100 text-amber-700' :
