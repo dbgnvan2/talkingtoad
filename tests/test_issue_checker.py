@@ -2128,3 +2128,41 @@ class TestCrossPageAdversarial:
         issues = check_cross_page(pages)
         codes = [i.code for i in issues]
         assert "TITLE_DUPLICATE" in codes
+
+
+# ---------------------------------------------------------------------------
+# Adversarial Boundaries — Headings Domain (QA Audit / Cycle P)
+# ---------------------------------------------------------------------------
+# Per docs/pending/2026-05-28_adversarial-audit-headings.md.
+
+class TestHeadingsAdversarial:
+    def test_empty_headings_none_value_does_not_crash(self):
+        """V1: h.get('text', '') returns None when the key is present
+        with an explicit None value (parser artifact for malformed
+        heading tags). None.strip() then raises AttributeError and
+        crashes the crawl during the empty-headings comprehension."""
+        from api.crawler.checkers.headings import _check_headings
+        page = _page(headings_outline=[{"level": 2, "text": None}])
+        issues: list = []
+        _check_headings(page, issues)
+        codes = [i.code for i in issues]
+        # A None-valued text counts as empty, so HEADING_EMPTY should fire.
+        assert "HEADING_EMPTY" in codes
+
+    def test_missing_text_key_does_not_cause_keyerror(self):
+        """V2: strict h['text'] bracket access in the H1_MISSING and
+        HEADING_SKIP diagnostic comprehensions throws KeyError when the
+        parser omits the 'text' key entirely. The author knew the key
+        might be missing (the empty-headings check uses .get()) — these
+        formatters silently disagree."""
+        from api.crawler.checkers.headings import _check_headings
+        page = _page(
+            h1_tags=[],  # Triggers H1_MISSING
+            headings_outline=[
+                {"level": 1},  # Missing 'text' key
+                {"level": 3, "text": "Skip"}  # Skips from H1 to H3 → HEADING_SKIP
+            ]
+        )
+        issues: list = []
+        _check_headings(page, issues)
+        assert isinstance(issues, list)
