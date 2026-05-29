@@ -1111,9 +1111,31 @@ def _count_cross_references(soup: BeautifulSoup) -> int:
 
 
 def _count_long_paragraphs(soup: BeautifulSoup, threshold: int = 150) -> int:
-    """Count <p> elements whose word count exceeds threshold."""
+    """Count <p> elements whose word count exceeds threshold.
+
+    Excludes paragraphs that live inside chrome elements (``<nav>``,
+    ``<header>``, ``<footer>``, ``<aside>``, ``<script>``, ``<style>``).
+    Without this exclusion, every site-wide footer with a long privacy
+    blurb or nav with a long announcement would trigger PARA_TOO_LONG
+    on every page — a high-volume false positive that drowns out real
+    body-content readability issues. (M1.4 / Cycle W.)
+
+    Uses a non-mutating ancestor check rather than ``soup.decompose()``
+    because subsequent parser steps depend on chrome elements still
+    being present in the soup (e.g. ``_extract_schema_blocks`` reads
+    JSON-LD that legitimately lives in ``<head>`` / ``<footer>``).
+    """
+    # Match the same exclusion set used by `_count_visible_body_words`
+    # and `_check_query_coverage_weak` so all three signals agree on
+    # what "body content" means.
+    _CHROME_TAGS = {"nav", "header", "footer", "aside", "script", "style"}
     count = 0
     for p in soup.find_all("p"):
+        # Skip paragraphs whose ancestor chain contains a chrome element.
+        # `find_parent` walks up the DOM until it hits a matching tag
+        # or runs out of ancestors — no mutation.
+        if p.find_parent(_CHROME_TAGS) is not None:
+            continue
         if len(p.get_text(separator=" ", strip=True).split()) > threshold:
             count += 1
     return count

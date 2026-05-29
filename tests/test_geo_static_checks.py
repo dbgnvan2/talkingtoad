@@ -640,6 +640,83 @@ def test_parser_long_paragraphs_detected_in_html():
     assert _count_long_paragraphs(soup) == 1
 
 
+def test_parser_long_paragraphs_excludes_footer_nav_aside_chrome():
+    """Adversarial (M1.4 / Cycle W): a long paragraph that lives inside
+    <footer>, <nav>, <aside>, or <header> is boilerplate, not body
+    content, and must NOT trigger PARA_TOO_LONG.
+
+    Pre-fix `_count_long_paragraphs` iterated every <p> in the soup and
+    falsely counted footer / nav paragraphs (e.g. a long privacy-policy
+    blurb in the footer of every page across the site). The neighbouring
+    `_check_query_coverage_weak` already strips these tags via
+    `.decompose()` — `_count_long_paragraphs` should be consistent with
+    that pattern (but using a non-mutating approach, since decompose()
+    would corrupt the soup for any later parser pass that depends on
+    nav/footer content).
+    """
+    from bs4 import BeautifulSoup
+    from api.crawler.parser import _count_long_paragraphs
+    long_text = " ".join(["word"] * 200)  # 200 words > 150 threshold
+    short_text = " ".join(["word"] * 50)
+    html = f"""
+    <html><body>
+      <nav><p>{long_text}</p></nav>
+      <header><p>{long_text}</p></header>
+      <main><p>{short_text}</p></main>
+      <aside><p>{long_text}</p></aside>
+      <footer><p>{long_text}</p></footer>
+    </body></html>"""
+    soup = BeautifulSoup(html, "html.parser")
+    # All four long paragraphs are inside chrome elements; only the
+    # <main> body paragraph (which is short) should be considered.
+    assert _count_long_paragraphs(soup) == 0
+
+
+def test_parser_long_paragraphs_still_counts_body_content():
+    """Regression guard for the chrome-exclusion fix: a long paragraph
+    in the actual body (not inside any chrome element) must still fire."""
+    from bs4 import BeautifulSoup
+    from api.crawler.parser import _count_long_paragraphs
+    long_text = " ".join(["word"] * 200)
+    short_chrome = " ".join(["word"] * 30)
+    html = f"""
+    <html><body>
+      <nav><p>{short_chrome}</p></nav>
+      <main>
+        <article>
+          <p>{long_text}</p>
+        </article>
+      </main>
+      <footer><p>{short_chrome}</p></footer>
+    </body></html>"""
+    soup = BeautifulSoup(html, "html.parser")
+    assert _count_long_paragraphs(soup) == 1
+
+
+def test_parser_long_paragraphs_does_not_mutate_soup():
+    """Implementation contract: the chrome-exclusion fix must NOT use
+    `.decompose()` or any other in-place mutation, because subsequent
+    parser steps depend on nav/header/footer still being present in the
+    soup (e.g. `_extract_schema_blocks` reads JSON-LD that lives in
+    chrome). Pre-fix, no mutation happened (the bug was that nothing
+    was excluded at all). Post-fix, we must preserve that no-mutation
+    property while ALSO excluding chrome from the count."""
+    from bs4 import BeautifulSoup
+    from api.crawler.parser import _count_long_paragraphs
+    html = """
+    <html><body>
+      <nav><p>nav text</p></nav>
+      <main><p>main text</p></main>
+      <footer><p>footer text</p></footer>
+    </body></html>"""
+    soup = BeautifulSoup(html, "html.parser")
+    _count_long_paragraphs(soup)
+    # All three sections must still be present after the function runs
+    assert soup.find("nav") is not None, "nav was decomposed — mutates soup"
+    assert soup.find("main") is not None, "main was decomposed"
+    assert soup.find("footer") is not None, "footer was decomposed"
+
+
 def test_parser_query_coverage_weak_fires_on_misaligned_page():
     """_check_query_coverage_weak() returns True when H1 tokens absent from intro."""
     from bs4 import BeautifulSoup
