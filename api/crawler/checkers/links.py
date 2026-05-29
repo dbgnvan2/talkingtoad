@@ -68,9 +68,33 @@ def issues_for_redirect(
     """
     result: list[Issue] = []
 
+    # Count "real" intermediates by filtering out any chain entry that is
+    # equal to the final URL. This collapses two conventions that exist
+    # in the test suite and the wild (chain == [final_url] for a single
+    # direct redirect vs. chain == [real_intermediates...] for true
+    # multi-hop) into a single notion: how many hops happened beyond the
+    # direct A → final redirect?
+    #
+    # The original `<= 1` gate on the forgiveness branch was too permissive:
+    # it admitted both 0-intermediate (direct A → A/) and 1-real-intermediate
+    # (A → B → A/) chains. The latter is a genuine multi-hop redirect that
+    # should NOT be classified as a harmless trailing-slash fix.
+    #
+    # The original REDIRECT_CHAIN gate (`len(redirect_chain) > 1`) had the
+    # mirror image of the same bug — it missed real 2-hop chains where the
+    # chain happens to have only one intermediate entry (because the
+    # convention varies). Using `real_intermediates >= 1` aligns both gates
+    # to the same definition of "real chain".
+    #
+    # (QA Cycle R V1.)
+    real_intermediates = [h for h in redirect_chain if h != final_url]
+
     # Detect whether the redirect is one that CMSes and servers handle automatically,
-    # so we can flag it as informational rather than actionable.
-    if final_url and first_status == 301 and len(redirect_chain) <= 1:
+    # so we can flag it as informational rather than actionable. Only applies
+    # when there are NO real intermediate hops — a chain that detours through
+    # another URL on the way to a trailing-slash final URL is NOT a harmless
+    # auto-correction.
+    if final_url and first_status == 301 and len(real_intermediates) == 0:
         if _is_trailing_slash_only(url, final_url):
             result.append(make_issue("REDIRECT_TRAILING_SLASH", url,
                                      extra={"from": url, "to": final_url}))
@@ -92,11 +116,11 @@ def issues_for_redirect(
         issue.extra = {"redirect_to": final_url or (redirect_chain[0] if redirect_chain else None)}
         result.append(issue)
 
-    if len(redirect_chain) > 1:
+    if len(real_intermediates) >= 1:
         issue = make_issue("REDIRECT_CHAIN", url)
         # Build full chain: original → intermediates → final
         full_chain = [url] + redirect_chain + ([final_url] if final_url else [])
-        issue.extra = {"chain": full_chain, "hops": len(redirect_chain)}
+        issue.extra = {"chain": full_chain, "hops": len(real_intermediates)}
         result.append(issue)
 
     return result

@@ -32,7 +32,14 @@ def check_url_structure(url: str) -> list[Issue]:
     if any(c.isupper() for c in path):
         issues.append(make_issue("URL_UPPERCASE", url,
                                  extra={"path": path}))
-    if "%20" in urlparse(url).path:
+    # Catch both URL-encoded (%20) and literal-space (" ") variants.
+    # urlparse preserves literal spaces in the path component, so a raw
+    # HTML href like <a href="/about us"> survives intact. The original
+    # `"%20" in ...` check only matched the encoded form, silently letting
+    # malformed literal-space URLs evade URL_HAS_SPACES. Re-use the `path`
+    # variable computed at the top of the function so we only call urlparse
+    # once. (QA Cycle R V2.)
+    if "%20" in path or " " in path:
         issues.append(make_issue("URL_HAS_SPACES", url,
                                  extra={"path": path}))
     if "_" in path:

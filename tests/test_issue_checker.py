@@ -2229,3 +2229,61 @@ class TestMetadataAdversarial:
         _check_canonical(page, issues)
         codes = [i.code for i in issues]
         assert "CANONICAL_EXTERNAL" not in codes
+
+
+# ---------------------------------------------------------------------------
+# Adversarial Boundaries — Links Domain (QA Audit / Cycle R)
+# ---------------------------------------------------------------------------
+# Per docs/pending/2026-05-28_adversarial-audit-links-security.md.
+
+class TestLinksAdversarial:
+    def test_two_hop_trailing_slash_redirect_emits_chain(self):
+        """V1: len(redirect_chain) <= 1 allows a real 2-hop chain
+        (A → B → A/) to masquerade as a harmless trailing-slash fix.
+        A genuine intermediate hop (chain entry that isn't the final
+        URL) must defeat the forgiveness branch and surface
+        REDIRECT_CHAIN."""
+        issues = issues_for_redirect(
+            url="https://example.com/a",
+            first_status=301,
+            redirect_chain=["https://example.com/b"],  # 1 real intermediate
+            final_url="https://example.com/a/",
+        )
+        codes = [i.code for i in issues]
+        assert "REDIRECT_CHAIN" in codes
+        assert "REDIRECT_TRAILING_SLASH" not in codes
+
+
+# ---------------------------------------------------------------------------
+# Adversarial Boundaries — URL Structure Domain (QA Audit / Cycle R)
+# ---------------------------------------------------------------------------
+
+class TestUrlStructureAdversarial:
+    def test_literal_space_in_url_emits_has_spaces(self):
+        """V2: strict '%20' check ignores literal ' ' characters that
+        survive parsing of <a href="/about us"> in raw HTML. urlparse
+        preserves the literal space; the existing check only matched
+        the URL-encoded form."""
+        from api.crawler.checkers.url_structure import check_url_structure
+        issues = check_url_structure("https://example.com/about us")
+        codes = [i.code for i in issues]
+        assert "URL_HAS_SPACES" in codes
+
+
+# ---------------------------------------------------------------------------
+# Adversarial Boundaries — Security Domain (QA Audit / Cycle R)
+# ---------------------------------------------------------------------------
+
+class TestSecurityAdversarial:
+    def test_uppercase_http_scheme_flagged_as_http_page(self):
+        """V3: RFC 3986 says URL schemes are case-insensitive and
+        httpx will happily fetch HTTP://. The strict
+        startswith('http://') misses 'HTTP://example.com/...' and
+        falsely treats it as an HTTPS page (then complains about
+        MISSING_HSTS on an unencrypted URL — embarrassing)."""
+        from api.crawler.checkers.security import _check_security
+        page = _page(url="HTTP://example.com/page", has_hsts=False)
+        issues: list = []
+        _check_security(page, issues, hsts_checked_hosts=set())
+        codes = [i.code for i in issues]
+        assert "HTTP_PAGE" in codes

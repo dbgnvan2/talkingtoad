@@ -20,8 +20,17 @@ def _check_security(
 ) -> None:
     url = page.url
 
-    # HTTP_PAGE — non-HTTPS final URL
-    if url.startswith("http://"):
+    # HTTP_PAGE — non-HTTPS final URL.
+    # RFC 3986 specifies URL schemes are case-insensitive; httpx will
+    # happily fetch "HTTP://example.com". The original strict
+    # startswith("http://") missed uppercase / title-case schemes, which
+    # then fell through to the HTTPS-only checks below and produced a
+    # MISSING_HSTS false positive on an actually-unencrypted page.
+    # Compare against the lowercased URL; `url[7:]` still slices the
+    # original (the "HTTP://" prefix is exactly 7 chars regardless of
+    # case) so the https_url field stays correctly formed.
+    # (QA Cycle R V3.)
+    if url.lower().startswith("http://"):
         issues.append(make_issue("HTTP_PAGE", url,
                                  extra={"http_url": url,
                                         "https_url": "https://" + url[7:]}))
