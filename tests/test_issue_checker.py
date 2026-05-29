@@ -2054,3 +2054,38 @@ class TestAiReadinessAdversarial:
         ]
         count = _count_external_body_links(links, "https://example.com")
         assert count == 2
+
+
+# ---------------------------------------------------------------------------
+# Adversarial Boundaries — Crawlability Domain (QA Audit / Cycle N)
+# ---------------------------------------------------------------------------
+# Per docs/pending/2026-05-28_adversarial-audit-crawlability.md.
+
+class TestCrawlabilityAdversarial:
+    def test_long_paragraph_count_none_does_not_crash(self):
+        """V1: getattr returns None when the attribute exists with an
+        explicit None value (parser artifact for malformed data).
+        `None > 0` raises TypeError and kills the crawl for that page."""
+        from api.crawler.checkers.crawlability import _check_crawlability
+        page = _page()
+        page.long_paragraph_count = None  # Explicitly None
+        issues: list = []
+        _check_crawlability(page, issues)
+        assert isinstance(issues, list)
+
+    def test_robots_source_case_insensitivity(self):
+        """V2: strict `== "header"` lets uppercase/title-case values fall
+        through to the else branch and emit NOINDEX_META — the wrong
+        diagnosis. Users then look for HTML meta tags when the actual
+        cause is an X-Robots-Tag in the server config."""
+        from api.crawler.checkers.crawlability import _check_crawlability
+        page = _page(is_indexable=False)
+        page.robots_source = "HEADER"  # Uppercase
+        page.robots_directive = "noindex"
+        issues: list = []
+        _check_crawlability(page, issues)
+        codes = [i.code for i in issues]
+
+        # Should be NOINDEX_HEADER. Pre-fix, this falsely emits NOINDEX_META.
+        assert "NOINDEX_HEADER" in codes
+        assert "NOINDEX_META" not in codes

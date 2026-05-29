@@ -13,7 +13,18 @@ from api.crawler.checkers.registry import Issue, make_issue
 def _check_crawlability(page: ParsedPage, issues: list[Issue]) -> None:
     url = page.url
     if not page.is_indexable:
-        if page.robots_source == "header":
+        # Defensive case/whitespace handling: parsers may surface "HEADER",
+        # "Header", or " header " for the same X-Robots-Tag source. A strict
+        # `== "header"` lets every non-lowercase variant fall through to the
+        # NOINDEX_META branch, which is the wrong diagnosis — it sends users
+        # looking at HTML meta tags when the actual cause is in the server's
+        # response headers.
+        robots_source = page.robots_source
+        is_header_source = (
+            robots_source is not None
+            and str(robots_source).strip().lower() == "header"
+        )
+        if is_header_source:
             issues.append(make_issue("NOINDEX_HEADER", url,
                                      extra={"source": "X-Robots-Tag HTTP header",
                                             "directive": page.robots_directive}))
@@ -23,7 +34,12 @@ def _check_crawlability(page: ParsedPage, issues: list[Issue]) -> None:
                                             "directive": page.robots_directive}))
 
     # ── Tier 1 §4.6: Long paragraphs ────────────────────────────────────────
-    long_para = getattr(page, "long_paragraph_count", 0)
+    # Defensive: `getattr(page, "long_paragraph_count", 0)` returns None when
+    # the attribute is present with an explicit None value (parser artifact
+    # for malformed pages where the counter was never populated). `None > 0`
+    # raises TypeError and crashes the crawl for that page. The `or 0`
+    # coalesces both "missing attribute" and "attribute is None" to 0.
+    long_para = getattr(page, "long_paragraph_count", 0) or 0
     if long_para > 0:
         issues.append(make_issue("PARA_TOO_LONG", url, extra={
             "long_paragraph_count": long_para,
