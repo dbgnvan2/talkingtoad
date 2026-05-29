@@ -538,6 +538,40 @@ class TestCrossPageDuplicates:
         dup_issues = [i for i in issues if i.code == "TITLE_DUPLICATE"]
         assert len(dup_issues) == 2
 
+    # ── Adversarial (QA audit V3 / Cycle J) ────────────────────────────────
+    def test_whitespace_only_titles_not_flagged_as_duplicates(self):
+        """V3: '   ' is truthy in Python, so the original `if t:` grouped
+        all whitespace-only titles under one key and flagged TITLE_DUPLICATE.
+        After normalisation (.strip()), the title is treated as empty and
+        the page is excluded from the lookup map entirely."""
+        pages = [
+            _page(url="https://example.com/1", title="   "),
+            _page(url="https://example.com/2", title="   "),
+        ]
+        issues = check_cross_page(pages)
+        assert "TITLE_DUPLICATE" not in _codes(issues)
+
+    def test_whitespace_only_meta_descriptions_not_flagged_as_duplicates(self):
+        """V3 corollary: same vulnerability on the meta-description side."""
+        pages = [
+            _page(url="https://example.com/1", meta_description="   "),
+            _page(url="https://example.com/2", meta_description="   "),
+        ]
+        issues = check_cross_page(pages)
+        assert "META_DESC_DUPLICATE" not in _codes(issues)
+
+    def test_titles_differing_only_in_trailing_whitespace_flagged_as_duplicates(self):
+        """Intentional behaviour change with F3 (.strip() variant):
+        accidental trailing/leading whitespace is a real duplicate and
+        should be surfaced. Previously these were distinct titles in the
+        title_map; after the fix they collapse to the same key."""
+        pages = [
+            _page(url="https://example.com/1", title="My Page Title Is The Same"),
+            _page(url="https://example.com/2", title="My Page Title Is The Same "),  # trailing space
+        ]
+        issues = check_cross_page(pages)
+        assert "TITLE_DUPLICATE" in _codes(issues)
+
 
 # ---------------------------------------------------------------------------
 # Broken link and redirect issue helpers
@@ -995,6 +1029,47 @@ class TestLinkEmptyAnchor:
         page = _page(empty_anchor_count=0)
         codes = _codes(check_page(page))
         assert "LINK_EMPTY_ANCHOR" not in codes
+
+    # ── Adversarial (QA audit V2 / Cycle J) ────────────────────────────────
+    def test_malformed_anchor_dict_does_not_crash(self):
+        """V2: Anchor dict missing the 'href' key (e.g. <a> tag with only
+        name/id). Blind a['href'] in three places would raise KeyError.
+        Must be dropped, not crash."""
+        page = _page(
+            empty_anchor_count=1,
+            empty_anchor_hrefs=[{"aria_label": "donate", "has_children": True}],
+        )
+        issues = check_page(page)
+        assert isinstance(issues, list)
+        # Malformed entry was dropped → no LINK_EMPTY_ANCHOR issue emitted.
+        assert "LINK_EMPTY_ANCHOR" not in _codes(issues)
+
+    def test_mixed_string_and_dict_anchors_normalised(self):
+        """V2 corollary: Mixed legacy strings and new dicts in the same list.
+        Pre-fix code only sniffed isinstance(anchors[0], str); a mixed list
+        skipped coercion and crashed at exempt-filter or description-render."""
+        page = _page(
+            empty_anchor_count=2,
+            empty_anchor_hrefs=[
+                "https://example.com/legacy-string-href",
+                {"href": "https://example.com/dict-href", "aria_label": None, "has_children": False},
+            ],
+        )
+        issues = check_page(page)
+        codes = _codes(issues)
+        assert "LINK_EMPTY_ANCHOR" in codes
+        issue = next(i for i in issues if i.code == "LINK_EMPTY_ANCHOR")
+        assert issue.extra["empty_anchor_count"] == 2
+
+    def test_anchor_dict_with_empty_href_dropped(self):
+        """V2 corollary: dict with href='' is malformed for our purposes —
+        drop it rather than emit a bogus 'link to nowhere' issue."""
+        page = _page(
+            empty_anchor_count=1,
+            empty_anchor_hrefs=[{"href": "", "aria_label": None, "has_children": False}],
+        )
+        issues = check_page(page)
+        assert "LINK_EMPTY_ANCHOR" not in _codes(issues)
 
 
 # ---------------------------------------------------------------------------
@@ -1618,6 +1693,36 @@ class TestBannerH1CssClass:
         )
         codes = _codes(check_page(page, suppress_banner_h1=True))
         assert "H1_MULTIPLE" not in codes
+
+    # ── Adversarial (QA audit V1 / Cycle J) ────────────────────────────────
+    def test_null_css_classes_in_heading_outline_does_not_crash(self):
+        """V1: Outline entry has classes=None (key present, value None).
+        .get('classes', '') returns None, not '', so re.search(None) crashes
+        with TypeError: expected string or bytes-like object."""
+        page = _page(
+            title="Mismatch Title",
+            h1_tags=["Banner Title", "Content Title"],
+            headings_outline=[
+                {"level": 1, "text": "Banner Title", "classes": None},
+                {"level": 1, "text": "Content Title", "classes": ""},
+            ],
+        )
+        issues = check_page(page, suppress_banner_h1=True)
+        assert isinstance(issues, list)  # no TypeError
+
+    def test_missing_classes_key_in_heading_outline_does_not_crash(self):
+        """V1 corollary: Outline entry omits the 'classes' key entirely.
+        Sanity check that the default branch of `.get()` still works."""
+        page = _page(
+            title="Mismatch Title",
+            h1_tags=["Banner Title", "Content Title"],
+            headings_outline=[
+                {"level": 1, "text": "Banner Title"},  # no classes key
+                {"level": 1, "text": "Content Title"},
+            ],
+        )
+        issues = check_page(page, suppress_banner_h1=True)
+        assert isinstance(issues, list)
 
 
 # ---------------------------------------------------------------------------

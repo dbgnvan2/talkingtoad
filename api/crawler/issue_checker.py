@@ -1500,9 +1500,14 @@ def check_page(
             (h for h in effective_outline if h.get("level") == 1),
             None,
         )
+        # Defensive: `.get("classes", "")` returns None when the key is
+        # present with an explicit None value (common parser artifact for
+        # malformed tags). `re.search(None)` raises TypeError and would
+        # crash the entire crawl for the affected domain. The `or ""`
+        # coalesces both "key missing" and "key present with None" to "".
         has_banner_class = bool(
             first_h1_outline
-            and _BANNER_CLASSES.search(first_h1_outline.get("classes", ""))
+            and _BANNER_CLASSES.search(first_h1_outline.get("classes") or "")
         )
         is_mismatch = _titles_mismatch(page.title, first_h1)
 
@@ -1678,10 +1683,25 @@ def check_page(
 
     # ── Empty anchor text ─────────────────────────────────────────────────
     if page.empty_anchor_count > 0:
-        anchors = page.empty_anchor_hrefs or []
-        # Support both old format (list[str]) and new format (list[dict])
-        if anchors and isinstance(anchors[0], str):
-            anchors = [{"href": h, "aria_label": None, "has_children": False} for h in anchors]
+        raw_anchors = page.empty_anchor_hrefs or []
+        # Normalise every entry to a {"href", "aria_label", "has_children"} dict.
+        # Both formats are supported (legacy list[str], current list[dict]) and
+        # malformed entries are dropped silently rather than crashing the crawl
+        # — three sites below blindly read a["href"], so any dict without a
+        # usable href would raise KeyError and kill the entire job.
+        # The previous `isinstance(anchors[0], str)` sniff only inspected the
+        # first element; a mixed list (legacy strings interleaved with new
+        # dicts) skipped coercion and crashed downstream.
+        anchors: list[dict] = []
+        for a in raw_anchors:
+            if isinstance(a, str):
+                if a:
+                    anchors.append({"href": a, "aria_label": None, "has_children": False})
+            elif isinstance(a, dict):
+                href = a.get("href")
+                if isinstance(href, str) and href:
+                    anchors.append(a)
+            # else: malformed entry — drop
         # Filter out URLs the user has explicitly exempted (e.g. social media icon links)
         if exempt_anchor_urls:
             anchors = [a for a in anchors if a["href"] not in exempt_anchor_urls]
@@ -2274,8 +2294,14 @@ def check_cross_page(pages: list[ParsedPage], start_url: str | None = None) -> l
         if page.redirect_url or (300 <= page.status_code < 400):
             continue
 
-        t = page.title
-        d = page.meta_description
+        # Normalise both sides: a whitespace-only title is functionally
+        # empty and must NOT bucket-up with other whitespace-only titles
+        # as TITLE_DUPLICATE (`bool("   ")` is True — the original
+        # `if t:` admitted them and inflated the issue count with garbage).
+        # We also strip outer whitespace so "My Page" and "My Page " group
+        # together — accidental trailing whitespace is a real duplicate.
+        t = (page.title or "").strip()
+        d = (page.meta_description or "").strip()
 
         if t:
             title_map.setdefault(t, []).append(page.url)
