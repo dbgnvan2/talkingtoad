@@ -2004,3 +2004,53 @@ class TestFixabilityTagging:
             assert issue.fixability == "developer_needed", (
                 f"{code} expected developer_needed, got {issue.fixability!r}"
             )
+
+
+# ---------------------------------------------------------------------------
+# Adversarial Boundaries — AI Readiness Domain (QA Audit / Cycle L)
+# ---------------------------------------------------------------------------
+# Per docs/pending/2026-05-28_adversarial-audit-ai-readiness.md.
+# These four cases probe the GEO/ai_readiness helpers extracted in Cycle K
+# for brittle assumptions that the parser may not honour in the wild.
+
+class TestAiReadinessAdversarial:
+    def test_statistics_none_heading_text_does_not_crash(self):
+        """V1: heading-outline entry has text=None. .get('text', '') returns
+        None (key present), and " ".join([None, ...]) crashes with TypeError."""
+        from api.crawler.checkers.ai_readiness import _count_statistics
+        page = _page(headings_outline=[{"level": 2, "text": None}])
+        count = _count_statistics("Some intro text", [], page)
+        assert isinstance(count, int)
+
+    def test_answer_signal_case_insensitivity_bug(self):
+        """V2: _ANSWER_SIGNAL_RE uses re.I, which destroys the [A-Z]
+        capitalisation requirement on the definition sub-pattern. A
+        lowercase 'dog is a good boy' must NOT match; the original
+        sentence-case 'Photosynthesis is a process used by plants' must."""
+        from api.crawler.checkers.ai_readiness import _has_answer_signal
+        text_that_should_fail = "dog is a good boy"
+        assert _has_answer_signal(text_that_should_fail) is False
+        text_that_should_pass = "Photosynthesis is a process used by plants"
+        assert _has_answer_signal(text_that_should_pass) is True
+
+    def test_schema_blocks_list_does_not_crash(self):
+        """V3: JSON-LD allows the root @graph to be a list-of-objects.
+        b.get('@type') on a list raises AttributeError, killing the crawl."""
+        from api.crawler.checkers.ai_readiness import _run_geo_checks
+        page = _page(is_indexable=True)
+        page.schema_blocks = [[{"@type": "Article"}, {"@type": "Organization"}]]
+        issues: list = []
+        _run_geo_checks(page, "https://example.com", issues)
+        assert isinstance(issues, list)
+
+    def test_external_links_with_whitespace_are_counted(self):
+        """V4: parsers sometimes leave leading whitespace on href values
+        ('  https://x.com', '\\nhttp://y.com'). startswith('http') returns
+        False, silently dropping valid external citations."""
+        from api.crawler.checkers.ai_readiness import _count_external_body_links
+        links = [
+            ParsedLink(url="  https://external.com/article", text="Read", is_internal=False),
+            ParsedLink(url="\nhttp://another.com", text="More", is_internal=False),
+        ]
+        count = _count_external_body_links(links, "https://example.com")
+        assert count == 2

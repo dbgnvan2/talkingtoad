@@ -157,7 +157,22 @@ def _run_geo_checks(page: "ParsedPage", url: str, issues: list) -> None:
 
     # ── GEO.5.1: Invalid JSON-LD ────────────────────────────────────────────
     if page.schema_blocks:
-        invalid = [b for b in page.schema_blocks if not (b.get("@type") and b.get("@context"))]
+        # Defensive: JSON-LD allows the root element to be an array of
+        # objects (the @graph pattern), and some parsers surface that as
+        # a list inside schema_blocks. Calling .get() on a list raises
+        # AttributeError and kills the crawl. Flatten one level so a
+        # list-block contributes its inner dicts; drop any non-dict
+        # remnants entirely.
+        flat_blocks: list[dict] = []
+        for b in page.schema_blocks:
+            if isinstance(b, dict):
+                flat_blocks.append(b)
+            elif isinstance(b, list):
+                for inner in b:
+                    if isinstance(inner, dict):
+                        flat_blocks.append(inner)
+            # else: malformed entry — drop
+        invalid = [b for b in flat_blocks if not (b.get("@type") and b.get("@context"))]
         if invalid:
             issues.append(make_issue("JSON_LD_INVALID", url, extra={
                 "invalid_count": len(invalid),
@@ -206,9 +221,13 @@ def _count_statistics(first_words: str, links: list, page: "ParsedPage") -> int:
     """Count statistic-bearing sentences on the page using the full visible text."""
     # Cap heading contribution to first 10 headings to prevent inflation on
     # pages with many headings that contain no statistics in their body text.
-    all_text_sources = [first_words]
+    # Defensive: `.get("text", "")` returns None when the key is present
+    # with an explicit None value (parser artifact for malformed headings).
+    # `" ".join([..., None, ...])` raises TypeError and crashes the crawl.
+    # The `or ""` coalesces both "missing key" and "key with None value".
+    all_text_sources = [first_words or ""]
     for h in (page.headings_outline or [])[:10]:
-        all_text_sources.append(h.get("text", ""))
+        all_text_sources.append(h.get("text") or "")
     combined = " ".join(all_text_sources)
     return len(_STAT_RE.findall(combined))
 
@@ -219,7 +238,12 @@ def _count_external_body_links(links: list, page_url: str) -> int:
     page_netloc = urlparse(page_url).netloc.lstrip("www.")
     count = 0
     for link in links:
-        href = getattr(link, "url", "") or ""
+        # Strip whitespace before scheme check and before parsing.
+        # Parsers sometimes preserve leading whitespace from href
+        # attributes ("  https://x.com", "\nhttp://y.com");
+        # startswith("http") returns False on the raw form, silently
+        # dropping valid external citations.
+        href = (getattr(link, "url", "") or "").strip()
         if not href.startswith("http"):
             continue
         netloc = urlparse(href).netloc.lstrip("www.")
@@ -267,10 +291,15 @@ _ANSWER_SIGNAL_RE = re.compile(
     r"|to\s+summarize"
     r"|bottom\s+line"
     # Sentence-start definition: "Noun/Proper-noun is a/an ..."
-    # Require a capitalised subject; exclude pronouns/demonstratives that are not nouns
-    r"|(?:(?:^|(?<=[.!?])\s+)"
+    # Require a capitalised subject; exclude pronouns/demonstratives that are not nouns.
+    # The (?-i:...) inline flag disables the outer re.I so that [A-Z]
+    # actually requires capitalisation. Without this, re.I makes [A-Z]
+    # match lowercase letters too, destroying the capitalisation
+    # constraint and flooding the system with false positives like
+    # "dog is a good boy".
+    r"|(?-i:(?:(?:^|(?<=[.!?])\s+)"
     r"(?!(?:There|This|That|These|Those|It|He|She|They|We|I|You|Our|The|A|An)\b)"
-    r"[A-Z]\w{2,}(?:\s+[A-Z]?\w+){0,3}\s+(?:is|are)\s+(?:a|an)\s+\w{3,})"
+    r"[A-Z]\w{2,}(?:\s+[A-Z]?\w+){0,3}\s+(?:is|are)\s+(?:a|an)\s+\w{3,}))"
     # Explicit relation markers (safe, rare in non-definition prose)
     r"|\brefers?\s+to\b"
     r"|\bdefined\s+as\b",
