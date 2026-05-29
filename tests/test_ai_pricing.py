@@ -350,8 +350,6 @@ class TestNoMoneyMathInDrivers:
         """Sniff for the common shape of money math: arithmetic on
         small decimal literals like ``* 0.0025`` or ``/ 1000000``. A
         driver that needs these is doing pricing inline."""
-        # The pattern: any of the per-1M-token rates from our table
-        # appearing as a numeric literal in a driver file.
         suspicious_patterns = [
             r"\*\s*0\.0+\d",            # * 0.0025 etc.
             r"/\s*1[_,]?000[_,]?000",   # / 1_000_000
@@ -360,7 +358,6 @@ class TestNoMoneyMathInDrivers:
         for path in driver_files:
             text = path.read_text(encoding="utf-8", errors="ignore")
             for lineno, line in enumerate(text.splitlines(), start=1):
-                # Skip comments
                 if line.lstrip().startswith("#"):
                     continue
                 for pat in suspicious_patterns:
@@ -369,6 +366,120 @@ class TestNoMoneyMathInDrivers:
         assert not offenders, (
             "Provider drivers contain suspicious money-math patterns. "
             "Move pricing to ai_pricing.py:\n  " + "\n  ".join(offenders)
+        )
+
+
+# ---------------------------------------------------------------------------
+# Cycle BB — no direct provider URLs in services/ outside the allow-list
+# ---------------------------------------------------------------------------
+
+class TestNoDirectProviderHTTPInServices:
+    """Per Cycle BB (ai_analyzer.py migration): once a service migrates
+    through AIRouter, it must NOT contain literal provider endpoint URLs.
+    The provider drivers under api/services/providers/ are the only
+    legitimate home for ``openai.com`` / ``generativelanguage.googleapis``
+    / ``anthropic.com`` URLs.
+
+    Allow-list: api/services/advisor.py is grandfathered with 2 known
+    lines (endpoint constants) until its own migration cycle. When
+    advisor.py migrates, ``_ALLOWED_VIOLATIONS_PER_FILE`` becomes 0
+    everywhere and this test catches any new regression.
+
+    Why this is the right scan: api/services/providers/ files
+    legitimately contain provider URLs (that's their job). The
+    architecture-guard target is "service files outside providers/
+    that talk directly to provider APIs" — those are exactly the
+    AIRouter-bypass bugs Cycle Z and Cycle BB existed to remove.
+    """
+
+    PROVIDER_URL_PATTERNS = [
+        "openai.com",
+        "generativelanguage.googleapis",
+        "anthropic.com",
+        "deepseek.com",
+    ]
+
+    # Per-file allowed count of pattern matches. 0 by default.
+    # Update this map when a deferred migration cycle ships.
+    _ALLOWED_VIOLATIONS_PER_FILE = {
+        # advisor.py service is the next migration target after
+        # Cycle BB. It currently has 2 endpoint constants at module
+        # scope. Drop this entry to 0 when the migration ships.
+        "advisor.py": 2,
+    }
+
+    @pytest.fixture
+    def service_files(self) -> list[Path]:
+        """All .py files under api/services/, excluding:
+        - api/services/providers/   (legitimately contains provider URLs)
+        - api/services/ai_router.py (orchestrator — no URLs, but the
+          docstring mentions providers by name)
+        - api/services/ai_pricing.py (pricing table — names providers)
+        - __pycache__ contents
+        - test files
+        """
+        services_dir = Path(__file__).parent.parent / "api" / "services"
+        excluded_dirs = {"providers", "__pycache__"}
+        excluded_files = {"ai_router.py", "ai_pricing.py"}
+        results = []
+        for path in services_dir.rglob("*.py"):
+            if any(part in excluded_dirs for part in path.parts):
+                continue
+            if path.name in excluded_files:
+                continue
+            results.append(path)
+        return results
+
+    def test_no_unexpected_provider_urls_in_service_files(self, service_files):
+        # Count matches per file
+        per_file_counts: dict[str, int] = {}
+        per_file_details: dict[str, list[str]] = {}
+
+        for path in service_files:
+            text = path.read_text(encoding="utf-8", errors="ignore")
+            count = 0
+            details = []
+            for lineno, line in enumerate(text.splitlines(), start=1):
+                # Skip comment lines so a "TODO: migrate openai.com call" doesn't count
+                stripped = line.lstrip()
+                if stripped.startswith("#"):
+                    continue
+                for pat in self.PROVIDER_URL_PATTERNS:
+                    if pat in line:
+                        count += 1
+                        details.append(f"{path.name}:{lineno}: {line.strip()}")
+                        break
+            if count:
+                per_file_counts[path.name] = count
+                per_file_details[path.name] = details
+
+        # Diff against the allow-list. Files with more matches than
+        # allowed fail; files with fewer than allowed also fail (the
+        # allow-list got stale — drop the entry).
+        offenders = []
+        for fname, actual in per_file_counts.items():
+            allowed = self._ALLOWED_VIOLATIONS_PER_FILE.get(fname, 0)
+            if actual > allowed:
+                offenders.append(
+                    f"{fname}: {actual} provider-URL matches (allowed: {allowed})\n  "
+                    + "\n  ".join(per_file_details[fname])
+                )
+        # Also catch the "got cleaner than expected" case so the allow-list
+        # doesn't carry stale exceptions.
+        for fname, allowed in self._ALLOWED_VIOLATIONS_PER_FILE.items():
+            actual = per_file_counts.get(fname, 0)
+            if actual < allowed:
+                offenders.append(
+                    f"{fname}: allow-list says {allowed} provider-URL matches "
+                    f"expected, found {actual} — file got cleaner. "
+                    f"Remove or update the _ALLOWED_VIOLATIONS_PER_FILE entry "
+                    f"for {fname!r}."
+                )
+        assert not offenders, (
+            "Direct provider-URL references found in api/services/ outside "
+            "providers/. Route the call through ai_router.call_text() or "
+            "ai_router.call_vision() instead.\n\n"
+            + "\n\n".join(offenders)
         )
 
 

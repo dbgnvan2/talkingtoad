@@ -1,22 +1,53 @@
 """
 AI Analyzer service for TalkingToad (spec §4).
 
-Detects semantic issues and provides remediation suggestions using LLMs (Gemini/OpenAI).
+Detects semantic issues and provides remediation suggestions using LLMs.
+
+v2.6 Cycle BB: migrated through :class:`api.services.ai_router.AIRouter`.
+All LLM calls now go via the central router — cost tracking, sanitised
+usage logging, and (future M2.3) per-customer credential fallback apply
+uniformly. The previous direct-to-httpx call sites
+(``_call_openai``, ``_call_gemini``, ``_call_openai_vision``,
+``_call_gemini_vision``) and the ``_fetch_image_base64`` helper have
+been removed — provider drivers under ``api/services/providers/``
+handle HTTP, base64 encoding, response parsing, and token extraction.
+
+Public API preserved exactly:
+    - ``analyze_with_ai(prompt_key, context) -> str``
+    - ``analyze_image_with_ai(image_url, current_alt) -> dict``
+    - ``analyze_image_with_geo(image_url, page_h1, surrounding_text, geo_config) -> dict``
+
+When AIRouter raises ``ProviderAuthError`` (no customer key + no env
+key), each public function maps it back to its pre-Cycle-BB
+"AI analysis skipped" shape so callers see identical behaviour.
 """
 
+import json
 import logging
 import os
+import re
 from typing import Any
 
 import httpx
 from dotenv import load_dotenv
 
 from api.crawler.fetcher import is_ssrf_safe
+from api.services.ai_router import (
+    ModelConfig,
+    ProviderAuthError,
+    SYSTEM_CONTEXT_ID,
+    ai_router,
+)
 
-# Ensure environment is loaded
+# Ensure environment is loaded for ai_router's credential resolution.
 load_dotenv()
 
 logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Prompt library (unchanged from pre-Cycle-BB)
+# ---------------------------------------------------------------------------
 
 PROMPT_LIBRARY = {
     "geo_image_analysis": (
@@ -123,76 +154,143 @@ PROMPT_LIBRARY = {
 }
 
 
+# ---------------------------------------------------------------------------
+# Default models per provider (for AIRouter calls)
+# ---------------------------------------------------------------------------
+
+# Mirrors the existing pre-Cycle-BB behaviour. The text path used
+# "gpt-4o" (OpenAI) or "gemini-1.5-flash" (Gemini); vision paths used the
+# same models. All four model strings are in api/services/ai_pricing.py
+# PRICING, so AIRouter post-processing finds prices cleanly.
+_DEFAULT_TEXT_MODEL_BY_PROVIDER = {
+    "openai": "gpt-4o",
+    "gemini": "gemini-1.5-flash",
+}
+_DEFAULT_VISION_MODEL_BY_PROVIDER = {
+    "openai": "gpt-4o",
+    "gemini": "gemini-1.5-flash",
+}
+
+
+def _pick_model(model_table: dict[str, str]) -> tuple[str, ModelConfig]:
+    """Pre-flight credential resolution so we know which model string to
+    pass. AIRouter picks the provider based on key availability; we pick
+    the right model for that provider.
+
+    Falls back to the OpenAI default if resolution fails — AIRouter will
+    raise ProviderAuthError on the actual call and the public-API
+    wrappers below convert that to the appropriate "skipped" shape.
+    """
+    try:
+        provider, _ = ai_router._resolve_credentials(SYSTEM_CONTEXT_ID)
+    except ProviderAuthError:
+        provider = "openai"
+    model = model_table.get(provider, model_table["openai"])
+    return provider, ModelConfig(model=model, max_tokens=500)
+
+
+# ---------------------------------------------------------------------------
+# Image fetching (kept local to ai_analyzer)
+# ---------------------------------------------------------------------------
+#
+# AIRouter.call_vision takes raw bytes + mime type. We fetch once at the
+# caller layer (here) and pass bytes to AIRouter. Provider drivers
+# under api/services/providers/ handle base64 encoding internally.
+#
+# This replaces the previous _fetch_image_base64 — same SSRF-safe path,
+# returns bytes instead of base64 string.
+
+_IMAGE_FETCH_TIMEOUT_SECONDS = 10.0
+
+
+async def _fetch_image_bytes(image_url: str) -> tuple[bytes, str]:
+    """Fetch an image as raw bytes + mime type, with SSRF protection.
+
+    Returns:
+        (bytes, mime_type) — mime defaults to "image/jpeg" if the server
+        omits Content-Type (common for old CDNs).
+
+    Raises:
+        ValueError: if SSRF guard blocks the URL, or if the fetch fails.
+    """
+    if not is_ssrf_safe(image_url):
+        logger.warning("image_fetch_ssrf_blocked", extra={"image_url": image_url})
+        raise ValueError(
+            "SSRF_BLOCKED: image URL resolves to a private/internal address"
+        )
+
+    try:
+        async with httpx.AsyncClient(timeout=_IMAGE_FETCH_TIMEOUT_SECONDS) as client:
+            res = await client.get(image_url)
+            if res.status_code != 200:
+                raise ValueError(f"Failed to fetch image: HTTP {res.status_code}")
+            mime = res.headers.get("content-type", "image/jpeg").split(";")[0].strip()
+            if not mime.startswith("image/"):
+                # Some servers return wrong content-type; default and log.
+                logger.debug(
+                    "image_fetch_unexpected_mime",
+                    extra={"image_url": image_url, "mime": mime},
+                )
+                mime = "image/jpeg"
+            return res.content, mime
+    except httpx.HTTPError as exc:
+        logger.error(
+            "image_fetch_failed",
+            extra={"error": str(exc), "url": image_url},
+        )
+        raise ValueError(f"Image fetch error: {exc!s}") from exc
+
+
+# ---------------------------------------------------------------------------
+# Public API — text analysis
+# ---------------------------------------------------------------------------
+
 async def analyze_with_ai(prompt_key: str, context: dict[str, Any]) -> str:
-    """Send a request to the configured LLM using a prompt from the library."""
-    # RE-FETCH every time to ensure we aren't stuck with None if imported early
-    gemini_key = os.getenv("GEMINI_API_KEY")
-    openai_key = os.getenv("OPENAI_API_KEY")
+    """Send a request to the configured LLM using a prompt from the library.
 
-    if not gemini_key and not openai_key:
-        # One more attempt at loading if they are missing
-        load_dotenv()
-        gemini_key = os.getenv("GEMINI_API_KEY")
-        openai_key = os.getenv("OPENAI_API_KEY")
-
+    Returns the LLM's response text. When no AI provider is configured,
+    returns a "skipped" string (preserves pre-Cycle-BB behaviour so that
+    callers expecting a string never see an exception).
+    """
     if prompt_key not in PROMPT_LIBRARY:
         raise ValueError(f"Unknown prompt key: {prompt_key}")
 
     prompt_template = PROMPT_LIBRARY[prompt_key]
     prompt = prompt_template.format(**context)
 
-    if openai_key:
-        return await _call_openai(prompt, openai_key)
-    elif gemini_key:
-        return await _call_gemini(prompt, gemini_key)
-    else:
+    _provider, cfg = _pick_model(_DEFAULT_TEXT_MODEL_BY_PROVIDER)
+
+    try:
+        # The ai_analyzer prompts are designed as full user instructions
+        # — they include their own role definition and output format
+        # rules. Pass them as the user_prompt; leave system_prompt
+        # empty so the provider doesn't get confused by a second
+        # instruction layer.
+        response = await ai_router.call_text(
+            customer_id=SYSTEM_CONTEXT_ID,
+            system_prompt="",
+            user_prompt=prompt,
+            model_config=cfg,
+        )
+        return response.content
+    except ProviderAuthError:
         logger.warning("ai_analysis_skipped_no_key")
-        return "AI analysis skipped: No API key configured (GEMINI_API_KEY or OPENAI_API_KEY)."
-
-
-async def _call_gemini(prompt: str, api_key: str) -> str:
-    """Call Google Gemini API."""
-    # Using v1 stable endpoint
-    url = f"https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key={api_key}"
-    payload = {
-        "contents": [{"parts": [{"text": prompt}]}]
-    }
-    try:
-        async with httpx.AsyncClient() as client:
-            res = await client.post(url, json=payload, timeout=20.0)
-            if res.status_code != 200:
-                return f"Error calling Gemini: HTTP {res.status_code} - {res.text}"
-            data = res.json()
-            return data["candidates"][0]["content"]["parts"][0]["text"].strip()
+        return (
+            "AI analysis skipped: No API key configured "
+            "(GEMINI_API_KEY or OPENAI_API_KEY)."
+        )
     except Exception as exc:
-        logger.error("gemini_call_failed", extra={"error": str(exc)})
-        return f"Error calling Gemini: {str(exc)}"
+        logger.error("ai_analysis_failed", extra={"error": str(exc)})
+        return f"Error calling AI: {str(exc)}"
 
 
-async def _call_openai(prompt: str, api_key: str) -> str:
-    """Call OpenAI API."""
-    url = "https://api.openai.com/v1/chat/completions"
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json"
-    }
-    payload = {
-        "model": "gpt-4o",
-        "messages": [{"role": "user", "content": prompt}]
-    }
-    try:
-        async with httpx.AsyncClient() as client:
-            res = await client.post(url, headers=headers, json=payload, timeout=20.0)
-            if res.status_code != 200:
-                return f"Error calling OpenAI: HTTP {res.status_code} - {res.text}"
-            data = res.json()
-            return data["choices"][0]["message"]["content"].strip()
-    except Exception as exc:
-        logger.error("openai_call_failed", extra={"error": str(exc)})
-        return f"Error calling OpenAI: {str(exc)}"
+# ---------------------------------------------------------------------------
+# Public API — image analysis (general)
+# ---------------------------------------------------------------------------
 
-
-async def analyze_image_with_ai(image_url: str, current_alt: str = "") -> dict[str, Any]:
+async def analyze_image_with_ai(
+    image_url: str, current_alt: str = ""
+) -> dict[str, Any]:
     """
     Analyze an image using AI vision models.
 
@@ -206,10 +304,9 @@ async def analyze_image_with_ai(image_url: str, current_alt: str = "") -> dict[s
             "semantic_score": 0-100
         }
     """
-    # v2.3 (M0.6.6) SSRF guard at entry — covers both code paths:
-    #   - Gemini path: we fetch image_url locally (see _fetch_image_base64)
-    #   - OpenAI path: image_url is passed to OpenAI which then fetches it
-    # Both paths leak that an internal URL exists. Reject early.
+    # v2.3 (M0.6.6) SSRF guard at entry. Both the GEO and the general
+    # paths fetch image_url locally via _fetch_image_bytes, but checking
+    # here gives the user a clear error before any work happens.
     if not is_ssrf_safe(image_url):
         logger.warning("image_ai_analyze_ssrf_blocked", extra={"image_url": image_url})
         return {
@@ -218,26 +315,7 @@ async def analyze_image_with_ai(image_url: str, current_alt: str = "") -> dict[s
             "accuracy_score": 0,
             "quality_score": 0,
             "issues": ["SSRF_BLOCKED"],
-            "semantic_score": 0
-        }
-
-    gemini_key = os.getenv("GEMINI_API_KEY")
-    openai_key = os.getenv("OPENAI_API_KEY")
-
-    if not gemini_key and not openai_key:
-        load_dotenv()
-        gemini_key = os.getenv("GEMINI_API_KEY")
-        openai_key = os.getenv("OPENAI_API_KEY")
-
-    if not gemini_key and not openai_key:
-        logger.warning("image_ai_analysis_skipped_no_key")
-        return {
-            "description": "AI analysis unavailable: No API key configured",
-            "suggested_alt": current_alt,
-            "accuracy_score": 0,
-            "quality_score": 0,
-            "issues": ["NO_API_KEY"],
-            "semantic_score": 0
+            "semantic_score": 0,
         }
 
     prompt = (
@@ -260,46 +338,40 @@ async def analyze_image_with_ai(image_url: str, current_alt: str = "") -> dict[s
         f"}}"
     )
 
+    _provider, cfg = _pick_model(_DEFAULT_VISION_MODEL_BY_PROVIDER)
+
     try:
-        if openai_key:
-            result = await _call_openai_vision(image_url, prompt, openai_key)
-        elif gemini_key:
-            result = await _call_gemini_vision(image_url, prompt, gemini_key)
-        else:
-            return {
-                "description": "No vision API available",
-                "suggested_alt": current_alt,
-                "accuracy_score": 0,
-                "quality_score": 0,
-                "issues": ["NO_VISION_API"],
-                "semantic_score": 0
-            }
+        image_bytes, image_mime = await _fetch_image_bytes(image_url)
+    except ValueError as exc:
+        # SSRF or fetch failure — already logged inside _fetch_image_bytes.
+        return {
+            "description": f"Error: {str(exc)}",
+            "suggested_alt": current_alt,
+            "accuracy_score": 0,
+            "quality_score": 0,
+            "issues": ["IMAGE_FETCH_FAILED"],
+            "semantic_score": 0,
+        }
 
-        # Parse JSON response - strip markdown code blocks if present
-        import json
-        import re
-
-        # Remove markdown code blocks (```json ... ``` or ``` ... ```)
-        cleaned_result = re.sub(r'```(?:json)?\s*\n?(.*?)\n?```', r'\1', result, flags=re.DOTALL)
-        cleaned_result = cleaned_result.strip()
-
-        try:
-            data = json.loads(cleaned_result)
-            # Calculate semantic score (average of accuracy and quality)
-            semantic_score = (data.get("accuracy_score", 0) + data.get("quality_score", 0)) // 2
-            data["semantic_score"] = semantic_score
-            return data
-        except json.JSONDecodeError as e:
-            logger.error("json_parse_error", extra={"error": str(e), "result": result})
-            # Fallback if AI doesn't return valid JSON
-            return {
-                "description": result,
-                "suggested_alt": current_alt,
-                "accuracy_score": 50,
-                "quality_score": 50,
-                "issues": ["AI_RESPONSE_PARSE_ERROR"],
-                "semantic_score": 50
-            }
+    try:
+        response = await ai_router.call_vision(
+            customer_id=SYSTEM_CONTEXT_ID,
+            system_prompt="",
+            image_bytes=image_bytes,
+            image_mime=image_mime,
+            model_config=cfg,
+        )
+        result_text = response.content
+    except ProviderAuthError:
+        logger.warning("image_ai_analysis_skipped_no_key")
+        return {
+            "description": "AI analysis unavailable: No API key configured",
+            "suggested_alt": current_alt,
+            "accuracy_score": 0,
+            "quality_score": 0,
+            "issues": ["NO_API_KEY"],
+            "semantic_score": 0,
+        }
     except Exception as exc:
         logger.error("image_ai_analysis_failed", extra={"error": str(exc)})
         return {
@@ -308,96 +380,42 @@ async def analyze_image_with_ai(image_url: str, current_alt: str = "") -> dict[s
             "accuracy_score": 0,
             "quality_score": 0,
             "issues": ["AI_ANALYSIS_ERROR"],
-            "semantic_score": 0
+            "semantic_score": 0,
+        }
+
+    # Parse JSON response — strip markdown code blocks if present.
+    cleaned_result = re.sub(
+        r'```(?:json)?\s*\n?(.*?)\n?```', r'\1', result_text, flags=re.DOTALL
+    )
+    cleaned_result = cleaned_result.strip()
+
+    try:
+        data = json.loads(cleaned_result)
+        # Calculate semantic score (average of accuracy and quality).
+        semantic_score = (
+            data.get("accuracy_score", 0) + data.get("quality_score", 0)
+        ) // 2
+        data["semantic_score"] = semantic_score
+        return data
+    except json.JSONDecodeError as exc:
+        logger.error(
+            "json_parse_error",
+            extra={"error": str(exc), "result": result_text},
+        )
+        # Fallback if AI doesn't return valid JSON.
+        return {
+            "description": result_text,
+            "suggested_alt": current_alt,
+            "accuracy_score": 50,
+            "quality_score": 50,
+            "issues": ["AI_RESPONSE_PARSE_ERROR"],
+            "semantic_score": 50,
         }
 
 
-async def _call_gemini_vision(image_url: str, prompt: str, api_key: str) -> str:
-    """Call Google Gemini Vision API."""
-    url = f"https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key={api_key}"
-
-    payload = {
-        "contents": [{
-            "parts": [
-                {"text": prompt},
-                {
-                    "inlineData": {
-                        "mimeType": "image/jpeg",
-                        "data": await _fetch_image_base64(image_url)
-                    }
-                }
-            ]
-        }]
-    }
-
-    try:
-        async with httpx.AsyncClient() as client:
-            res = await client.post(url, json=payload, timeout=30.0)
-            if res.status_code != 200:
-                return f"Error calling Gemini Vision: HTTP {res.status_code} - {res.text}"
-            data = res.json()
-            return data["candidates"][0]["content"]["parts"][0]["text"].strip()
-    except Exception as exc:
-        logger.error("gemini_vision_call_failed", extra={"error": str(exc)})
-        return f"Error calling Gemini Vision: {str(exc)}"
-
-
-async def _call_openai_vision(image_url: str, prompt: str, api_key: str) -> str:
-    """Call OpenAI Vision API (GPT-4V)."""
-    url = "https://api.openai.com/v1/chat/completions"
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json"
-    }
-    payload = {
-        "model": "gpt-4o",
-        "messages": [{
-            "role": "user",
-            "content": [
-                {"type": "text", "text": prompt},
-                {"type": "image_url", "image_url": {"url": image_url}}
-            ]
-        }],
-        "max_tokens": 500
-    }
-
-    try:
-        async with httpx.AsyncClient() as client:
-            res = await client.post(url, headers=headers, json=payload, timeout=30.0)
-            if res.status_code != 200:
-                return f"Error calling OpenAI Vision: HTTP {res.status_code} - {res.text}"
-            data = res.json()
-            return data["choices"][0]["message"]["content"].strip()
-    except Exception as exc:
-        logger.error("openai_vision_call_failed", extra={"error": str(exc)})
-        return f"Error calling OpenAI Vision: {str(exc)}"
-
-
-async def _fetch_image_base64(image_url: str) -> str:
-    """Fetch an image and convert to base64 for Gemini Vision."""
-    import base64
-
-    # v2.3 (M0.6.6) SSRF guard: image_url comes from user/WP content and could
-    # point at private/internal addresses. Defense-in-depth: the public entry
-    # points (analyze_image_with_ai, analyze_image_with_geo) also check, but
-    # gate here in case a future caller bypasses them.
-    if not is_ssrf_safe(image_url):
-        logger.warning("image_fetch_ssrf_blocked", extra={"image_url": image_url})
-        raise ValueError(
-            f"SSRF_BLOCKED: image URL resolves to a private/internal address"
-        )
-
-    try:
-        async with httpx.AsyncClient() as client:
-            res = await client.get(image_url, timeout=10.0)
-            if res.status_code == 200:
-                return base64.b64encode(res.content).decode('utf-8')
-            else:
-                raise ValueError(f"Failed to fetch image: HTTP {res.status_code}")
-    except Exception as exc:
-        logger.error("image_fetch_failed", extra={"error": str(exc), "url": image_url})
-        raise
-
+# ---------------------------------------------------------------------------
+# Public API — GEO-optimized image analysis
+# ---------------------------------------------------------------------------
 
 async def analyze_image_with_geo(
     image_url: str,
@@ -412,12 +430,6 @@ async def analyze_image_with_geo(
     1. Image bytes (high-resolution)
     2. Page context (H1 + surrounding text)
     3. Global settings (org identity + geo matrix)
-
-    Args:
-        image_url: URL of the image to analyze
-        page_h1: H1 heading from the page
-        surrounding_text: Text context around the image (±300 chars)
-        geo_config: GeoConfig dict with org_name, topic_entities, primary_location, location_pool
 
     Returns:
         {
@@ -442,24 +454,7 @@ async def analyze_image_with_geo(
             "error": "Image URL rejected: resolves to a private/internal address",
         }
 
-    gemini_key = os.getenv("GEMINI_API_KEY")
-    openai_key = os.getenv("OPENAI_API_KEY")
-
-    if not gemini_key and not openai_key:
-        load_dotenv()
-        gemini_key = os.getenv("GEMINI_API_KEY")
-        openai_key = os.getenv("OPENAI_API_KEY")
-
-    if not gemini_key and not openai_key:
-        logger.warning("geo_image_analysis_skipped_no_key")
-        return {
-            "alt_text": "",
-            "long_description": "",
-            "success": False,
-            "error": "No API key configured",
-        }
-
-    # Build context for prompt
+    # Build context for prompt.
     context = {
         "ORG_NAME": geo_config.get("org_name", ""),
         "PRIMARY_LOCATION": geo_config.get("primary_location", ""),
@@ -469,54 +464,39 @@ async def analyze_image_with_geo(
         "SURROUNDING_TEXT": surrounding_text or "(none)",
     }
 
-    # Get prompt template and fill in context
-    prompt_template = PROMPT_LIBRARY["geo_image_analysis"]
-    prompt = prompt_template
+    prompt = PROMPT_LIBRARY["geo_image_analysis"]
     for key, value in context.items():
         prompt = prompt.replace("{{" + key + "}}", str(value))
 
+    _provider, cfg = _pick_model(_DEFAULT_VISION_MODEL_BY_PROVIDER)
+
     try:
-        # Use vision API to analyze the image with GEO context
-        if openai_key:
-            result = await _call_openai_vision(image_url, prompt, openai_key)
-        elif gemini_key:
-            result = await _call_gemini_vision(image_url, prompt, gemini_key)
-        else:
-            return {
-                "alt_text": "",
-                "long_description": "",
-                "success": False,
-                "error": "No vision API available",
-            }
+        image_bytes, image_mime = await _fetch_image_bytes(image_url)
+    except ValueError as exc:
+        return {
+            "alt_text": "",
+            "long_description": "",
+            "success": False,
+            "error": str(exc),
+        }
 
-        # Parse JSON response
-        import json
-        import re
-
-        # Remove markdown code blocks if present
-        cleaned_result = re.sub(r'```(?:json)?\s*\n?(.*?)\n?```', r'\1', result, flags=re.DOTALL)
-        cleaned_result = cleaned_result.strip()
-
-        # Try to find JSON object in the response
-        json_match = re.search(r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', cleaned_result, flags=re.DOTALL)
-        if json_match:
-            cleaned_result = json_match.group(0)
-
-        try:
-            data = json.loads(cleaned_result)
-            data["success"] = True
-            return data
-        except json.JSONDecodeError as e:
-            logger.error("geo_json_parse_error", extra={"error": str(e), "result": result[:500]})
-            # Try to extract alt_text from raw response as fallback
-            alt_match = re.search(r'"alt_text"\s*:\s*"([^"]+)"', result)
-            desc_match = re.search(r'"long_description"\s*:\s*"([^"]+)"', result)
-            return {
-                "alt_text": alt_match.group(1) if alt_match else "",
-                "long_description": desc_match.group(1) if desc_match else result[:300],
-                "success": False,
-                "error": "Failed to parse AI response",
-            }
+    try:
+        response = await ai_router.call_vision(
+            customer_id=SYSTEM_CONTEXT_ID,
+            system_prompt="",
+            image_bytes=image_bytes,
+            image_mime=image_mime,
+            model_config=cfg,
+        )
+        result_text = response.content
+    except ProviderAuthError:
+        logger.warning("geo_image_analysis_skipped_no_key")
+        return {
+            "alt_text": "",
+            "long_description": "",
+            "success": False,
+            "error": "No API key configured",
+        }
     except Exception as exc:
         logger.error("geo_image_analysis_failed", extra={"error": str(exc)})
         return {
@@ -524,4 +504,38 @@ async def analyze_image_with_geo(
             "long_description": "",
             "success": False,
             "error": str(exc),
+        }
+
+    # Parse JSON response — strip markdown code blocks if present.
+    cleaned_result = re.sub(
+        r'```(?:json)?\s*\n?(.*?)\n?```', r'\1', result_text, flags=re.DOTALL
+    )
+    cleaned_result = cleaned_result.strip()
+
+    # Try to find JSON object in the response.
+    json_match = re.search(
+        r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', cleaned_result, flags=re.DOTALL
+    )
+    if json_match:
+        cleaned_result = json_match.group(0)
+
+    try:
+        data = json.loads(cleaned_result)
+        data["success"] = True
+        return data
+    except json.JSONDecodeError as exc:
+        logger.error(
+            "geo_json_parse_error",
+            extra={"error": str(exc), "result": result_text[:500]},
+        )
+        # Try to extract alt_text from raw response as fallback.
+        alt_match = re.search(r'"alt_text"\s*:\s*"([^"]+)"', result_text)
+        desc_match = re.search(r'"long_description"\s*:\s*"([^"]+)"', result_text)
+        return {
+            "alt_text": alt_match.group(1) if alt_match else "",
+            "long_description": (
+                desc_match.group(1) if desc_match else result_text[:300]
+            ),
+            "success": False,
+            "error": "Failed to parse AI response",
         }
