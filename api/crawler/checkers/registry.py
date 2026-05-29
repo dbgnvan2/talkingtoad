@@ -1,12 +1,20 @@
 """Issue data structures, catalogue, scoring, confidence labels, and the
 ``make_issue`` factory — split out of ``api/crawler/issue_checker.py`` in
-v2.6 M9.1 (Cycle K). See docs/pending/2026-05-28_issue-checker-split.md.
+v2.6 M9.1 (Cycle K).
+
+BASELINE: v2.6 M9.1 / Cycle U (tag ``v2.6-stabilized``).
+This module's contents are frozen as the canonical end-of-v2.6 baseline.
+Subsequent code or threshold changes should be tracked through a new
+pending spec and tied to a fresh release (v2.7 or v3.0). The structural
+integrity of this file is enforced by five CI parity invariants — see
+``tests/test_class1_invariants.py::TestCatalogueScoringParity`` and
+``tests/test_architecture_constraints.py::TestAIReadinessConfidenceLabels``.
 
 Single source of truth for:
     - ``Issue`` dataclass and ``_IssueSpec`` dataclass
-    - ``_ISSUE_SCORING`` (impact, effort) by code
-    - ``_CATALOGUE`` (every issue spec)
-    - ``_AI_READINESS_CONFIDENCE`` (confidence labels for ai_readiness codes)
+    - ``_ISSUE_SCORING`` (impact, effort) by code — 131 codes
+    - ``_CATALOGUE`` (every issue spec) — 131 codes
+    - ``_AI_READINESS_CONFIDENCE`` (confidence labels) — 49 codes
     - ``_STOP_WORDS`` and ``_GENERIC_ANCHOR_TEXTS`` (shared helpers)
     - Size-limit constants
     - ``make_issue()`` factory, ``_sig_words()``, ``_titles_mismatch()``

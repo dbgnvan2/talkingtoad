@@ -771,6 +771,67 @@ openpyxl-generated tabbed workbook:
   volume for production.
 - Health check endpoint `/api/health` returns `{"status": "ok", "version": "2.3"}`.
 
+### 8.6 Stabilization & adversarial hardening (Cycles J-U, v2.6 M9.1)
+
+The v2.6 stabilization phase consolidated 19 distinct vulnerabilities
+across the audit engine, found by a multi-round external adversarial
+QA. Every vulnerability now has a regression-guard test in
+`tests/test_issue_checker.py` (per-domain `Test*Adversarial` classes)
+or `tests/test_architecture_constraints.py`.
+
+**Cycles and their scope:**
+
+| Cycle | Module(s) | Vulnerabilities patched |
+|---|---|---|
+| J | `issue_checker.py` (pre-split) | 3 — banner-H1 None classes; anchor dict missing href; whitespace-only duplicate titles (with `.strip()` semantic upgrade) |
+| K | full split into `api/crawler/checkers/` | structural — zero logic change, 11-module split, facade preserved back-compat |
+| L | `checkers/ai_readiness.py` | 4 — `_count_statistics` None text; `_ANSWER_SIGNAL_RE` case-insensitivity defeating `[A-Z]`; list-valued `schema_blocks`; whitespace-prefixed external links |
+| N | `checkers/crawlability.py` | 2 — None `long_paragraph_count` crash; case-sensitive `robots_source` misdiagnosing NOINDEX_HEADER as NOINDEX_META |
+| O | `checkers/cross_page.py` | 2 — self-link evasion of ORPHAN_PAGE; case-sensitive title/desc bucketing evading TITLE_DUPLICATE/META_DESC_DUPLICATE |
+| P | `checkers/headings.py` | 2 — `None.strip()` in HEADING_EMPTY; `KeyError: 'text'` in H1_MISSING / HEADING_SKIP diagnostic formatters |
+| Q | `checkers/images.py`, `checkers/metadata.py` | 3 — None `content_type` crash; empty `href=""` misclassified as CANONICAL_EXTERNAL; defensive whitespace strip on canonical URL (V3 was not actually exploitable under cpython urlparse but the fix landed as a regression guard) |
+| R | `checkers/links.py`, `checkers/url_structure.py`, `checkers/security.py` | 3 — 2-hop redirect chain hiding as trailing-slash fix; literal-space URL paths evading URL_HAS_SPACES; case-sensitive `http://` scheme check missing `HTTP://` |
+| S | `tests/test_architecture_constraints.py` | belt-and-braces parity guards (invariants 4 & 5 — orphan confidence labels, confidence labels on wrong-category codes) |
+| M | `tests/test_geo_apply_end_to_end.py` | quarantined live-WP integration test to restore deterministic green baseline |
+| T | `docs/functional-specification.md`, `docs/thresholds.md` | doc namespace cleanup — stripped stale line numbers, re-routed references to post-split module locations, added §4.0 architecture description |
+| U | this section | final compilation sync |
+
+**Defensive patterns now standard across the codebase:**
+
+- **None-tolerant dict reads.** Every `dict.get(key, default)` followed
+  by a string operation now uses `(d.get(key) or fallback)` to handle
+  the case where the key is present with an explicit `None` value
+  (parser artifact for malformed input). The default kwarg only fires
+  for missing keys, not None values — easy to miss.
+- **Case-insensitive equality where semantics demand it.** Title
+  duplicate detection casefolds; HTTP/HTTPS scheme detection
+  lowercases; X-Robots-Tag source matching normalises case+whitespace.
+- **Whitespace-tolerant parsing.** Empty-string and whitespace-only
+  inputs are treated equivalently to missing inputs (title, meta
+  description, canonical URL). External-link `href` values are
+  stripped before `startswith()` scheme checks.
+- **Single-pass list normalisation.** Mixed-type collections (legacy
+  strings vs. new dicts in `empty_anchor_hrefs`, list-vs-dict in
+  `schema_blocks`) are normalised in one explicit loop that drops
+  malformed entries silently rather than crashing the crawl.
+- **Self-link filtering in cross-page graphs.** A page linking to
+  itself does not contribute to its own discoverability.
+
+**Five CI parity invariants enforced** (see `tests/test_class1_invariants.py::TestCatalogueScoringParity`,
+`tests/test_architecture_constraints.py::TestAIReadinessConfidenceLabels`):
+
+1. Every code in `_ISSUE_SCORING` has a `_CATALOGUE` entry.
+2. Every `_CATALOGUE` code has an `_ISSUE_SCORING` entry.
+3. Every `_CATALOGUE` code with `category=="ai_readiness"` has an
+   `_AI_READINESS_CONFIDENCE` entry.
+4. Every `_AI_READINESS_CONFIDENCE` code exists in `_CATALOGUE`.
+5. Every `_AI_READINESS_CONFIDENCE` code has
+   `_CATALOGUE[code].category == "ai_readiness"`.
+
+**Baseline snapshot at end of stabilization:** 1,276 tests passing,
+12 skipped, 0 failed. 131 issue codes across 11 categories. 49
+ai_readiness codes with confidence labels. Tagged `v2.6-stabilized`.
+
 ---
 
 ## 9. Verification matrix
@@ -895,4 +956,4 @@ See `PLAN-V3.0.md` for the full plan; high points:
 - **Related docs:** see `docs/README.md` for the full documentation
   index.
 
-*Last updated: 2026-05-28. Reflects `main` at commit `a8c2561` (post-Cycle-S).*
+*Last updated: 2026-05-28. Reflects `main` at tag `v2.6-stabilized` (post-Cycle-U). The 19 vulnerability fixes and structural split landed in Cycles J-U; see §8.6 for the consolidated summary and `git log` for per-cycle detail.*
