@@ -31,7 +31,7 @@ from __future__ import annotations
 
 import logging
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -140,8 +140,12 @@ class AIResponse:
     usage data."""
 
     cost_estimate_usd: float
-    """USD cost estimate, computed from the pricing table.
-    TODO(M2.2): always 0.0 today; pricing table lands in M2.2."""
+    """USD cost estimate. Drivers emit ``0.0`` as a placeholder; AIRouter
+    overwrites it via ``dataclasses.replace`` post-call with the value
+    returned by ``api.services.ai_pricing.price_lookup.calculate_cost``.
+    Computed as ``Decimal`` internally (no float-rounding error in the
+    math) and cast to ``float`` at this field boundary for clean JSON
+    serialisation. (M2.2 / Cycle AA.)"""
 
     truncated: bool
     """``True`` iff the response stopped because of ``max_tokens``. The
@@ -181,6 +185,17 @@ class ProviderAPIError(AIRouterError):
     router's try/except in ``call_text`` / ``call_vision`` wraps the
     driver call to ensure this happens even when the underlying
     HTTP error preempts the success-path logging."""
+
+
+class UnknownModelError(AIRouterError):
+    """Raised when a `(provider, model)` pair has no entry in the
+    pricing table (``api/services/ai_pricing.py``). Per the M2.2 spec's
+    'no null costs' negative constraint, AIRouter must surface this
+    explicitly rather than silently returning ``cost_estimate_usd=0.0``
+    — a missing pricing entry usually means either (a) a typo in the
+    caller's `ModelConfig.model` string, or (b) the pricing table is
+    stale and needs an update. Both deserve a loud failure, not a
+    silent zero in the billing data."""
 
 
 # ---------------------------------------------------------------------------
@@ -395,6 +410,31 @@ class AIRouter:
             })
             # Re-raise so the calling router can map this to 5xx / 402.
             raise
+
+        # ── M2.2 (Cycle AA) cost-estimate post-processing ────────────
+        # Drivers emit `cost_estimate_usd=0.0` as a placeholder — they
+        # don't compute money (the architecture test in
+        # tests/test_ai_pricing.py enforces this). AIRouter looks up
+        # the real cost via PriceLookup and patches it in via
+        # `dataclasses.replace` (AIResponse is frozen=True, so direct
+        # field assignment would TypeError).
+        #
+        # Import is function-scoped to avoid a circular dependency:
+        # ai_pricing imports UnknownModelError from ai_router. Lazy
+        # import resolves the cycle and matches the pattern used for
+        # the driver registry below.
+        from api.services.ai_pricing import price_lookup
+        cost_decimal = price_lookup.calculate_cost(
+            provider_id,
+            model_config.model,
+            response.input_token_count,
+            response.output_token_count,
+        )
+        # Convert Decimal → float at the AIResponse field boundary per
+        # the M2.2 spec scoping decision #1 (option a). Precision-correct
+        # math happened in PriceLookup; the float cast loses sub-cent
+        # precision only at this single assignment.
+        response = replace(response, cost_estimate_usd=float(cost_decimal))
 
         _log_usage({
             "customer_id": customer_id,

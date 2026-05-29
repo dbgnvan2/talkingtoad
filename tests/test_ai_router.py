@@ -204,9 +204,12 @@ class TestUnifiedResponseContract:
     provider answered by inspecting the response structure."""
 
     @pytest.mark.asyncio
-    @pytest.mark.parametrize("provider_id", ["openai", "gemini"])
+    @pytest.mark.parametrize("provider_id,model", [
+        ("openai", "gpt-4o"),
+        ("gemini", "gemini-2.0-flash"),
+    ])
     async def test_response_shape_uniform_across_providers(
-        self, monkeypatch, provider_id
+        self, monkeypatch, provider_id, model
     ):
         # Set env var so credential resolution picks the right provider.
         env_var_for_provider = {"openai": "OPENAI_API_KEY", "gemini": "GEMINI_API_KEY"}
@@ -221,19 +224,38 @@ class TestUnifiedResponseContract:
         mock_driver.provider_id = provider_id
 
         async def fake_call_text(**kwargs):
-            return _fake_response(provider_id)
+            # Echo the model from the ModelConfig so AIRouter's
+            # post-PriceLookup overwrite (M2.2 / Cycle AA) hits a
+            # valid pricing entry for whichever provider this
+            # parametrisation is testing.
+            return AIResponse(
+                content="ok",
+                provider_id=provider_id,
+                model=kwargs["model_config"].model,
+                input_token_count=42,
+                output_token_count=7,
+                cost_estimate_usd=0.0,
+                truncated=False,
+            )
 
         mock_driver.call_text = fake_call_text
         # Only register the driver we're testing — forces credential
         # resolution to actually find a key for this provider.
         router._drivers = {provider_id: mock_driver}
 
+        # Use the provider-appropriate model so PriceLookup finds an
+        # entry. (Pre-M2.2 / Cycle AA this didn't matter because cost
+        # was hardcoded 0.0; now the router post-processes via
+        # PriceLookup which raises UnknownModelError on a mismatched
+        # provider+model pair.)
+        cfg_for_provider = ModelConfig(model=model, max_tokens=100, temperature=0.2)
+
         with patch("api.services.ai_router._log_usage"):
             response = await router.call_text(
                 customer_id=SYSTEM_CONTEXT_ID,
                 system_prompt="sys",
                 user_prompt="hello",
-                model_config=_CFG,
+                model_config=cfg_for_provider,
             )
 
         # Same shape regardless of provider.
