@@ -436,3 +436,57 @@ class TestAIReadinessConfidenceLabels:
         # A non-ai-readiness code (TITLE_MISSING) gets no label.
         issue = make_issue("TITLE_MISSING", page_url="https://example.com/")
         assert issue.confidence_label is None
+
+    # ── Cycle S: belt-and-braces guards (invariants 4 & 5) ─────────────
+    # These two assertions catch the reverse-direction drift that the
+    # existing tests above don't directly enforce: orphan confidence
+    # entries for codes that no longer exist in the catalogue, and
+    # confidence entries attached to codes whose category drifted away
+    # from "ai_readiness". Both are currently clean (0 violations as of
+    # the structural-integrity audit) — these tests guard against future
+    # regression.
+
+    def test_no_orphan_confidence_entries(self):
+        """Adversarial: an entry in _AI_READINESS_CONFIDENCE for a code
+        that no longer exists in _CATALOGUE. The label has no effect
+        (nothing emits the code) but it's dead config that misleads
+        readers and inflates the count."""
+        from api.crawler.issue_checker import (
+            _AI_READINESS_CONFIDENCE,
+            _CATALOGUE,
+        )
+
+        confidence_codes = set(_AI_READINESS_CONFIDENCE.keys())
+        catalogue_codes = set(_CATALOGUE.keys())
+
+        orphans = confidence_codes - catalogue_codes
+        assert not orphans, (
+            f"_AI_READINESS_CONFIDENCE contains entries for codes not in "
+            f"_CATALOGUE:\n  {sorted(orphans)}\n"
+            f"Remove the orphan entries from _AI_READINESS_CONFIDENCE — "
+            f"they cannot fire."
+        )
+
+    def test_confidence_entries_only_for_ai_readiness_category(self):
+        """Adversarial: a confidence label attached to a code whose
+        category is not 'ai_readiness'. Confidence labels are
+        domain-specific to the AI-readiness taxonomy per spec §2 — a
+        label on a SEO/security/heading code is a category-drift bug."""
+        from api.crawler.issue_checker import (
+            _AI_READINESS_CONFIDENCE,
+            _CATALOGUE,
+        )
+
+        mismatched = {
+            code: _CATALOGUE[code].category
+            for code in _AI_READINESS_CONFIDENCE
+            if code in _CATALOGUE
+            and _CATALOGUE[code].category != "ai_readiness"
+        }
+        assert not mismatched, (
+            f"_AI_READINESS_CONFIDENCE contains labels for codes whose "
+            f"_CATALOGUE category is not 'ai_readiness':\n"
+            f"  {mismatched}\n"
+            f"Either move the catalogue entry to category='ai_readiness' "
+            f"or remove the confidence label."
+        )
