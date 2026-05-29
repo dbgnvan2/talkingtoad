@@ -131,6 +131,13 @@ def _engine_issue_to_model(issue: EngIssue, job_id: str) -> Issue:
         human_description=issue.human_description,
         extra=issue.extra,
         fixability=issue.fixability,
+        # v2.6 M0.2 — propagate the v2.0 confidence label (Established /
+        # Reasonable proxy / Heuristic) from the engine catalogue into
+        # the API Issue model. Without this the field was silently
+        # dropped at the bridge and never reached frontend consumers,
+        # even though every other layer (registry, _IssueSpec, make_issue,
+        # Pydantic model) supported it.
+        confidence_label=issue.confidence_label,
     )
 
 
@@ -1315,6 +1322,10 @@ def _issue_dict(issue: Issue) -> dict:
         "human_description": issue.human_description,
         "extra": issue.extra,
         "fixability": issue.fixability,
+        # v2.6 M0.2 — see _engine_issue_to_model for the rationale.
+        # Frontends that render ai_readiness issues depend on this
+        # confidence_label to surface the evidence-strength badge.
+        "confidence_label": issue.confidence_label,
     }
 
 

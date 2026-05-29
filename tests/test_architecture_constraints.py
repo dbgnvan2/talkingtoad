@@ -490,3 +490,45 @@ class TestAIReadinessConfidenceLabels:
             f"Either move the catalogue entry to category='ai_readiness' "
             f"or remove the confidence label."
         )
+
+    # ── v2.6 M0.2 / Cycle V — API bridge propagation tests ──────────────
+    # The bridges in api/routers/crawl.py (_engine_issue_to_model and
+    # _issue_dict) used to silently drop confidence_label. Without these
+    # tests the field could be lost again on any router refactor and
+    # nobody would notice until a frontend user complained that the
+    # badge had disappeared from ai_readiness issues.
+
+    def test_engine_issue_to_model_propagates_confidence_label(self):
+        """Bridge contract: the EngIssue → Pydantic Issue bridge in
+        api/routers/crawl.py must propagate confidence_label."""
+        from api.crawler.issue_checker import make_issue
+        from api.routers.crawl import _engine_issue_to_model
+
+        engine_issue = make_issue("LLMS_TXT_MISSING", page_url="https://example.com/")
+        assert engine_issue.confidence_label == "Heuristic"
+
+        model = _engine_issue_to_model(engine_issue, job_id="test-job")
+        assert model.confidence_label == "Heuristic", (
+            "_engine_issue_to_model dropped confidence_label. Frontend "
+            "consumers of /api/crawl/{id}/results will no longer see the "
+            "evidence-strength badge for ai_readiness issues."
+        )
+
+    def test_issue_dict_includes_confidence_label(self):
+        """Bridge contract: the Pydantic Issue → dict bridge in
+        api/routers/crawl.py must include confidence_label in the JSON
+        payload."""
+        from api.crawler.issue_checker import make_issue
+        from api.routers.crawl import _engine_issue_to_model, _issue_dict
+
+        model = _engine_issue_to_model(
+            make_issue("AI_BOT_SEARCH_BLOCKED", page_url="https://example.com/"),
+            job_id="test-job",
+        )
+        payload = _issue_dict(model)
+        assert "confidence_label" in payload, (
+            "_issue_dict omitted confidence_label from the JSON payload. "
+            "API responses will not expose the evidence-strength label "
+            "even though every other layer carries it."
+        )
+        assert payload["confidence_label"] == "Established"

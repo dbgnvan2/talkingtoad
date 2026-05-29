@@ -146,7 +146,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="TalkingToad",
     description="Nonprofit SEO Crawler API",
-    version="2.3",
+    version="2.6.0",
     lifespan=lifespan,
     docs_url="/docs",
     redoc_url="/redoc",

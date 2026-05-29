@@ -15,7 +15,7 @@ Lightweight web-based SEO crawler for nonprofit organisations — Screaming-Frog
 
 - **GitHub:** https://github.com/dbgnvan2/talkingtoad
 - **Specs index:** `docs/specs/README.md`
-- **Current version:** 2.3 (v3.0 in progress — see `PLAN-V3.0.md`)
+- **Current version:** 2.6.0 (tag `v2.6-stabilized`). v2.6 stabilization phase is **complete**; v3.0 feature implementation is now active — see `PLAN-V3.0.md`.
 - **Issue catalogue:** 131 codes in `_CATALOGUE` / `_ISSUE_SCORING` / `_AI_READINESS_CONFIDENCE` (see `docs/issue-codes.md`)
 
 ---

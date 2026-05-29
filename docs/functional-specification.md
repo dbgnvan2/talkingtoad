@@ -335,7 +335,7 @@ The `checkers/` package contains eleven modules:
 
 | Module | Responsibility |
 |---|---|
-| `registry.py` | Issue dataclasses, `_CATALOGUE`, `_ISSUE_SCORING`, `_AI_READINESS_CONFIDENCE`, `_STOP_WORDS`, size constants, `make_issue()` factory, `_sig_words` / `_titles_mismatch` helpers — single source of truth, ~1,425 lines (mostly the catalogue itself). |
+| `registry.py` | Issue dataclasses, `_CATALOGUE`, `_ISSUE_SCORING`, `_AI_READINESS_CONFIDENCE`, `_STOP_WORDS`, size constants, `make_issue()` factory, `_sig_words` / `_titles_mismatch` helpers — single source of truth, ~1,430 lines (mostly the catalogue itself). |
 | `metadata.py` | Canonical tag validation (`CANONICAL_*`). |
 | `headings.py` | H1 presence, multiple H1s, empty headings, level skips. |
 | `links.py` | Broken-link status mapping (`BROKEN_LINK_*`), redirect classification (`REDIRECT_*`), auto-redirect heuristics (trailing-slash, case-normalise). |

@@ -61,7 +61,7 @@ Several implementation-plan markdown files live in this directory for in-progres
 
 ---
 
-**Project Version:** 2.3 (v3.0 in progress)
+**Project Version:** 2.6.0 (tag `v2.6-stabilized`, v3.0 feature work active)
 **Last Updated:** 2026-05-27
 **GitHub:** https://github.com/dbgnvan2/talkingtoad
 
