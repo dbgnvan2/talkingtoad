@@ -2089,3 +2089,42 @@ class TestCrawlabilityAdversarial:
         # Should be NOINDEX_HEADER. Pre-fix, this falsely emits NOINDEX_META.
         assert "NOINDEX_HEADER" in codes
         assert "NOINDEX_META" not in codes
+
+
+# ---------------------------------------------------------------------------
+# Adversarial Boundaries — Cross-Page Domain (QA Audit / Cycle O)
+# ---------------------------------------------------------------------------
+# Per docs/pending/2026-05-28_adversarial-audit-cross-page.md.
+
+class TestCrossPageAdversarial:
+    def test_orphan_page_self_link_evasion(self):
+        """V1: A genuinely orphan page that happens to link to itself
+        (e.g., a 'Back to top' anchor or a logo link to the current URL)
+        adds its own URL to the discovered-links bucket and silently
+        evades ORPHAN_PAGE detection. A page linking to itself does NOT
+        make it discoverable — only links from OTHER pages do."""
+        home = _page(url="https://example.com/", links=[
+            ParsedLink(url="https://example.com/about", text="About", is_internal=True),
+        ])
+        about = _page(url="https://example.com/about", links=[])
+
+        # The orphan page only has a link to itself
+        orphan = _page(url="https://example.com/orphan", links=[
+            ParsedLink(url="https://example.com/orphan", text="Back to top", is_internal=True),
+        ])
+
+        issues = check_cross_page([home, about, orphan], start_url="https://example.com/")
+        codes = [i.code for i in issues if i.page_url == "https://example.com/orphan"]
+        assert "ORPHAN_PAGE" in codes
+
+    def test_duplicate_titles_case_insensitivity(self):
+        """V2: 'About Us' and 'ABOUT US' are semantically identical for
+        search engines but pre-fix bucketed separately by exact string
+        equality, evading TITLE_DUPLICATE detection."""
+        pages = [
+            _page(url="https://example.com/a", title="About Us"),
+            _page(url="https://example.com/b", title="ABOUT US"),
+        ]
+        issues = check_cross_page(pages)
+        codes = [i.code for i in issues]
+        assert "TITLE_DUPLICATE" in codes
