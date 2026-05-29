@@ -3,207 +3,148 @@ Tests for rewriter.py (Tool B — Content Rewriting).
 
 Spec: /Users/davemini2/.claude/plans/moonlit-beaming-thacker.md
 
-Tests verify LLM call structure and response parsing.
-Uses mocking to avoid actual API calls.
+v2.6 M2.1 (Cycle Z): tests refactored to mock at the AIRouter boundary
+instead of the (now-removed) private `_call_openai_rewriter` /
+`_call_gemini_rewriter` functions. Provider-level mechanics (HTTP shape,
+token extraction, finish-reason handling) live in the provider drivers
+under `api/services/providers/` and are exercised by `test_ai_router.py`
+plus their own driver tests. This file's job is narrower: verify that
+`rewrite_page` adapts an AIResponse into a RewriterResult correctly and
+preserves the contract the advisor router depends on.
 """
 
-import json
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
 from api.models.advisor import RewriterRequest, RewriterResult
-from api.services.rewriter import _call_gemini_rewriter, _call_openai_rewriter, rewrite_page
+from api.services.ai_router import AIResponse, ModelConfig, SYSTEM_CONTEXT_ID
+from api.services.rewriter import rewrite_page
 
 
-class TestOpenAIRewriter:
-    """Test OpenAI rewriter API calls."""
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
 
-    def test_openai_rewriter_success(self):
-        """OpenAI rewriter returns rewritten content."""
-        mock_response = MagicMock()
-        mock_response.json.return_value = {
-            "choices": [
-                {
-                    "message": {"content": "This is a rewritten page."},
-                    "finish_reason": "stop",
-                }
-            ]
-        }
-        mock_response.raise_for_status = MagicMock()
-
-        with patch("api.services.rewriter.httpx.Client") as mock_client:
-            mock_client.return_value.__enter__.return_value.post.return_value = mock_response
-
-            result, stopped = _call_openai_rewriter(
-                "Rewrite this content professionally.",
-                "Original content here.",
-            )
-
-            assert result == "This is a rewritten page."
-            assert stopped is False
-
-    def test_openai_rewriter_token_limit(self):
-        """OpenAI rewriter detects token limit."""
-        mock_response = MagicMock()
-        mock_response.json.return_value = {
-            "choices": [
-                {
-                    "message": {"content": "Incomplete rewrite..."},
-                    "finish_reason": "length",
-                }
-            ]
-        }
-        mock_response.raise_for_status = MagicMock()
-
-        with patch("api.services.rewriter.httpx.Client") as mock_client:
-            mock_client.return_value.__enter__.return_value.post.return_value = mock_response
-
-            result, stopped = _call_openai_rewriter(
-                "Rewrite this.",
-                "Content",
-            )
-
-            assert stopped is True
+def _fake_ai_response(text: str, *, truncated: bool = False) -> AIResponse:
+    return AIResponse(
+        content=text,
+        provider_id="openai",
+        model="gpt-4o",
+        input_token_count=10,
+        output_token_count=20,
+        cost_estimate_usd=0.0,
+        truncated=truncated,
+    )
 
 
-class TestGeminiRewriter:
-    """Test Gemini rewriter API calls."""
-
-    def test_gemini_rewriter_success(self):
-        """Gemini rewriter returns rewritten content."""
-        mock_response = MagicMock()
-        mock_response.json.return_value = {
-            "candidates": [
-                {
-                    "content": {
-                        "parts": [{"text": "This is a rewritten page."}]
-                    },
-                    "finishReason": "STOP",
-                }
-            ]
-        }
-        mock_response.raise_for_status = MagicMock()
-
-        with patch("api.services.rewriter.httpx.Client") as mock_client:
-            mock_client.return_value.__enter__.return_value.post.return_value = mock_response
-
-            result, stopped = _call_gemini_rewriter(
-                "Rewrite this content professionally.",
-                "Original content here.",
-            )
-
-            assert result == "This is a rewritten page."
-            assert stopped is False
-
-    def test_gemini_rewriter_token_limit(self):
-        """Gemini rewriter detects token limit."""
-        mock_response = MagicMock()
-        mock_response.json.return_value = {
-            "candidates": [
-                {
-                    "content": {
-                        "parts": [{"text": "Incomplete rewrite..."}]
-                    },
-                    "finishReason": "MAX_TOKENS",
-                }
-            ]
-        }
-        mock_response.raise_for_status = MagicMock()
-
-        with patch("api.services.rewriter.httpx.Client") as mock_client:
-            mock_client.return_value.__enter__.return_value.post.return_value = mock_response
-
-            result, stopped = _call_gemini_rewriter(
-                "Rewrite this.",
-                "Content",
-            )
-
-            assert stopped is True
-
+# ---------------------------------------------------------------------------
+# Model contract tests (unchanged from pre-Cycle-Z)
+# ---------------------------------------------------------------------------
 
 class TestRewriterRequest:
-    """Test RewriterRequest model."""
-
     def test_request_requires_content(self):
-        """RewriterRequest requires content."""
-        request = RewriterRequest(
-            content="Some content",
-            prompt="Rewrite this.",
-        )
+        request = RewriterRequest(content="Some content", prompt="Rewrite this.")
         assert request.content == "Some content"
         assert request.prompt == "Rewrite this."
 
     def test_request_empty_content_allowed(self):
-        """RewriterRequest allows empty content (edge case)."""
-        request = RewriterRequest(
-            content="",
-            prompt="Rewrite this.",
-        )
+        request = RewriterRequest(content="", prompt="Rewrite this.")
         assert request.content == ""
 
 
 class TestRewriterResult:
-    """Test RewriterResult model."""
-
     def test_result_success(self):
-        """RewriterResult indicates successful rewrite."""
-        result = RewriterResult(
-            rewrite="Rewritten content",
-            stopped_by_limit=False,
-        )
+        result = RewriterResult(rewrite="Rewritten content", stopped_by_limit=False)
         assert result.rewrite == "Rewritten content"
         assert result.stopped_by_limit is False
 
     def test_result_stopped(self):
-        """RewriterResult indicates if token limit hit."""
-        result = RewriterResult(
-            rewrite="Incomplete...",
-            stopped_by_limit=True,
-        )
+        result = RewriterResult(rewrite="Incomplete...", stopped_by_limit=True)
         assert result.stopped_by_limit is True
 
 
-@pytest.mark.asyncio
-async def test_rewrite_page_uses_openai_when_key_present():
-    """rewrite_page calls OpenAI when API key is present."""
-    mock_response = MagicMock()
-    mock_response.json.return_value = {
-        "choices": [
-            {
-                "message": {"content": "Rewritten."},
-                "finish_reason": "stop",
-            }
-        ]
-    }
-    mock_response.raise_for_status = MagicMock()
+# ---------------------------------------------------------------------------
+# rewrite_page tests — mock at the AIRouter boundary
+# ---------------------------------------------------------------------------
 
-    request = RewriterRequest(
-        content="Original",
-        prompt="Rewrite professionally.",
-    )
+class TestRewritePageHappyPath:
+    """rewrite_page must return a RewriterResult that mirrors the
+    underlying AIResponse (text → rewrite, truncated → stopped_by_limit)."""
 
-    with patch("api.services.rewriter._OPENAI_API_KEY", "test-key"):
-        with patch("api.services.rewriter.httpx.Client") as mock_client:
-            mock_client.return_value.__enter__.return_value.post.return_value = mock_response
+    @pytest.mark.asyncio
+    async def test_rewrite_page_returns_ai_response_content(self):
+        async def fake_call_text(**kwargs):
+            return _fake_ai_response("Rewritten.")
 
+        request = RewriterRequest(
+            content="Original",
+            prompt="Rewrite professionally.",
+        )
+
+        with patch("api.services.rewriter.ai_router.call_text", side_effect=fake_call_text):
             result = await rewrite_page(request)
 
-            assert result.rewrite == "Rewritten."
-            assert result.stopped_by_limit is False
+        assert isinstance(result, RewriterResult)
+        assert result.rewrite == "Rewritten."
+        assert result.stopped_by_limit is False
+
+    @pytest.mark.asyncio
+    async def test_rewrite_page_surfaces_truncation_flag(self):
+        """The truncated flag on AIResponse must propagate to
+        stopped_by_limit on RewriterResult. Frontend UX depends on this
+        to decide whether to show a 'response truncated' warning."""
+        async def fake_call_text(**kwargs):
+            return _fake_ai_response("Partial rewrite...", truncated=True)
+
+        request = RewriterRequest(content="Original", prompt="Rewrite.")
+
+        with patch("api.services.rewriter.ai_router.call_text", side_effect=fake_call_text):
+            result = await rewrite_page(request)
+
+        assert result.stopped_by_limit is True
+
+    @pytest.mark.asyncio
+    async def test_rewrite_page_passes_system_context_id(self):
+        """rewrite_page must call AIRouter with customer_id=SYSTEM_CONTEXT_ID
+        until per-customer identity flows in (M2.3). Without this, usage
+        attribution rolls up to the wrong bucket."""
+        captured = {}
+
+        async def fake_call_text(**kwargs):
+            captured.update(kwargs)
+            return _fake_ai_response("ok")
+
+        request = RewriterRequest(content="Original", prompt="Rewrite.")
+
+        with patch("api.services.rewriter.ai_router.call_text", side_effect=fake_call_text):
+            await rewrite_page(request)
+
+        assert captured["customer_id"] == SYSTEM_CONTEXT_ID
+        # The user_prompt must contain the canonical lead-in phrase so
+        # behaviour matches the pre-refactor rewriter.
+        assert "Please rewrite the following content:" in captured["user_prompt"]
+        # The system_prompt is the caller's prompt verbatim.
+        assert captured["system_prompt"] == "Rewrite."
+        # ModelConfig is passed (sparse 3-field shape).
+        assert isinstance(captured["model_config"], ModelConfig)
+        assert captured["model_config"].temperature == 0.2
 
 
-@pytest.mark.asyncio
-async def test_rewrite_page_handles_error():
-    """rewrite_page raises on API error."""
-    request = RewriterRequest(
-        content="Original",
-        prompt="Rewrite.",
-    )
+class TestRewritePageErrorPath:
+    """Errors raised inside AIRouter propagate out of rewrite_page
+    unchanged — the calling router (advisor.py) catches them and maps
+    to HTTP responses (402 for auth, 500 for hard provider errors)."""
 
-    with patch("api.services.rewriter._OPENAI_API_KEY", "test-key"):
-        with patch("api.services.rewriter.httpx.Client") as mock_client:
-            mock_client.return_value.__enter__.return_value.post.side_effect = RuntimeError("API error")
+    @pytest.mark.asyncio
+    async def test_rewrite_page_propagates_provider_errors(self):
+        from api.services.ai_router import ProviderAPIError
 
-            with pytest.raises(RuntimeError):
+        async def boom(**kwargs):
+            raise ProviderAPIError("openai HTTP 503: upstream timeout")
+
+        request = RewriterRequest(content="Original", prompt="Rewrite.")
+
+        with patch("api.services.rewriter.ai_router.call_text", side_effect=boom):
+            with pytest.raises(ProviderAPIError):
                 await rewrite_page(request)

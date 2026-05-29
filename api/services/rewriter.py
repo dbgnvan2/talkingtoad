@@ -1,122 +1,94 @@
 """
 Rewriter service (Tool B) — Apply rewrite prompt to content.
 
-Takes page content + rewrite prompt, produces one rewrite.
-No iteration, no scoring, no variants. Simple and straightforward.
+Takes page content + rewrite prompt, produces one rewrite. No iteration,
+no scoring, no variants. Simple and straightforward.
 
-Spec: /Users/davemini2/.claude/plans/moonlit-beaming-thacker.md
+v2.6 M2.1 (Cycle Z): refactored to route every LLM call through
+:class:`api.services.ai_router.AIRouter`. No direct provider HTTP calls
+remain in this file. Per-customer credentials, usage tracking, and
+provider selection are now centralised — see
+``docs/pending/2026-05-29_m2_airouter.md``.
+
+Behaviour preserved exactly:
+    - Same prompt structure (system instruction + "Please rewrite the
+      following content:\\n\\n{content}" user message).
+    - Same temperature (0.2) for faithful rewriting.
+    - Same return shape (:class:`RewriterResult` with ``rewrite`` and
+      ``stopped_by_limit`` fields).
+    - Same provider preference (OpenAI first, Gemini fallback) — now
+      delegated to ``AIRouter._resolve_credentials``.
 """
 
-import json
 import logging
-import os
-
-import httpx
-from dotenv import load_dotenv
 
 from api.models.advisor import RewriterRequest, RewriterResult
-
-load_dotenv()
-load_dotenv(".env-ttoad", override=True)
+from api.services.ai_router import (
+    ModelConfig,
+    SYSTEM_CONTEXT_ID,
+    ai_router,
+)
 
 logger = logging.getLogger(__name__)
 
-_OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-_GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-_OPENAI_ENDPOINT = "https://api.openai.com/v1/chat/completions"
-_GEMINI_ENDPOINT = "https://generativelanguage.googleapis.com/v1/models/{model}:generateContent?key={key}"
-_TIMEOUT = 60.0  # Rewrites can be slow
 
+# Per-provider default models. AIRouter picks the provider via credential
+# fallback; we pick the model. Matches the model strings the pre-refactor
+# `_call_openai_rewriter` / `_call_gemini_rewriter` used.
+_DEFAULT_MODELS_BY_PROVIDER = {
+    "openai": "gpt-4o",
+    "gemini": "gemini-2.0-flash",
+}
 
-def _get_model() -> tuple[str, str]:
-    """Resolve LLM model (prefers OpenAI, falls back to Gemini)."""
-    if _OPENAI_API_KEY:
-        return "openai", "gpt-4o"
-    if _GEMINI_API_KEY:
-        return "gemini", "gemini-2.0-flash"
-    raise RuntimeError("No OPENAI_API_KEY or GEMINI_API_KEY configured")
-
-
-def _call_openai_rewriter(prompt: str, content: str) -> str:
-    """Call OpenAI API to rewrite content."""
-    try:
-        with httpx.Client(timeout=_TIMEOUT) as client:
-            response = client.post(
-                _OPENAI_ENDPOINT,
-                headers={"Authorization": f"Bearer {_OPENAI_API_KEY}"},
-                json={
-                    "model": "gpt-4o",
-                    "messages": [
-                        {"role": "system", "content": prompt},
-                        {"role": "user", "content": f"Please rewrite the following content:\n\n{content}"},
-                    ],
-                    "temperature": 0.2,
-                },
-            )
-            response.raise_for_status()
-            data = response.json()
-            rewrite = data["choices"][0]["message"]["content"]
-
-            # Check if response was truncated
-            stopped_by_limit = data["choices"][0].get("finish_reason") == "length"
-
-            return rewrite, stopped_by_limit
-    except Exception as e:
-        logger.error(f"OpenAI rewriter call failed: {e}")
-        raise
-
-
-def _call_gemini_rewriter(prompt: str, content: str) -> str:
-    """Call Gemini API to rewrite content."""
-    try:
-        with httpx.Client(timeout=_TIMEOUT) as client:
-            response = client.post(
-                _GEMINI_ENDPOINT.format(model="gemini-2.0-flash", key=_GEMINI_API_KEY),
-                json={
-                    "system_instruction": {"parts": [{"text": prompt}]},
-                    "contents": [
-                        {
-                            "parts": [
-                                {
-                                    "text": f"Please rewrite the following content:\n\n{content}"
-                                }
-                            ]
-                        }
-                    ],
-                    "generationConfig": {"temperature": 0.2},
-                },
-            )
-            response.raise_for_status()
-            data = response.json()
-            rewrite = data["candidates"][0]["content"]["parts"][0]["text"]
-
-            # Check if response was truncated
-            stopped_by_limit = data["candidates"][0].get("finishReason") == "MAX_TOKENS"
-
-            return rewrite, stopped_by_limit
-    except Exception as e:
-        logger.error(f"Gemini rewriter call failed: {e}")
-        raise
+# Temperature for rewrites — low to preserve source content fidelity.
+_REWRITER_TEMPERATURE = 0.2
 
 
 async def rewrite_page(request: RewriterRequest) -> RewriterResult:
-    """
-    Rewrite page content using LLM.
+    """Rewrite page content using an LLM via AIRouter.
 
     Args:
-        request: RewriterRequest with content and prompt
+        request: RewriterRequest with content and prompt.
 
     Returns:
-        RewriterResult with rewritten content
-    """
-    provider, model = _get_model()
+        RewriterResult with rewritten content and a stopped_by_limit
+        flag for when the model hit max_tokens.
 
-    if provider == "openai":
-        rewrite, stopped_by_limit = _call_openai_rewriter(request.prompt, request.content)
-    else:
-        rewrite, stopped_by_limit = _call_gemini_rewriter(request.prompt, request.content)
+    Note on model selection: AIRouter picks the provider based on
+    credential availability. We then look up the appropriate model
+    string for that provider. This is intentionally a two-step process
+    so that when M2.4 (per-task-type model routing) lands, the model
+    lookup becomes a router call instead of a local dict, with the
+    provider selection unchanged.
+    """
+    # First call uses an OpenAI default. AIRouter's credential resolution
+    # decides which provider actually runs — we discover the real
+    # provider from the response and (TODO M2.4) re-select the model
+    # if it mismatches. For now the small model-mismatch case is harmless
+    # (Gemini ignores model="gpt-4o" and uses whatever the URL specifies).
+    #
+    # The cleaner path is: ask AIRouter "which provider would you pick?"
+    # before making the call so we can pick the right model upfront.
+    # That refinement is M2.4 work — for now, pre-flight the selection
+    # by attempting cheap resolution.
+    try:
+        provider, _key = ai_router._resolve_credentials(SYSTEM_CONTEXT_ID)
+    except Exception:
+        # If resolution would fail, let AIRouter raise the real
+        # ProviderAuthError when we actually call below.
+        provider = "openai"
+
+    model = _DEFAULT_MODELS_BY_PROVIDER.get(provider, "gpt-4o")
+    cfg = ModelConfig(model=model, temperature=_REWRITER_TEMPERATURE)
+
+    response = await ai_router.call_text(
+        customer_id=SYSTEM_CONTEXT_ID,
+        system_prompt=request.prompt,
+        user_prompt=f"Please rewrite the following content:\n\n{request.content}",
+        model_config=cfg,
+    )
 
     return RewriterResult(
-        rewrite=rewrite,
-        stopped_by_limit=stopped_by_limit,
+        rewrite=response.content,
+        stopped_by_limit=response.truncated,
     )
