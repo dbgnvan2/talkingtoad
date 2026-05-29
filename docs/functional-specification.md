@@ -309,17 +309,56 @@ High-level inventory. Each row maps to detailed sections later.
 
 ## 4. Audit capabilities
 
-The crawler emits **133 distinct issue codes** organised into 10
+The crawler emits **131 distinct issue codes** organised into 11
 categories. Each code has: severity (`critical` / `warning` / `info`),
 impact (0–10), effort (0–5), priority rank `(impact × 10) − (effort × 2)`,
 fixability (`wp_fixable` / `content_edit` / `developer_needed`), and —
 for ai_readiness codes — a confidence label.
 
-The canonical list lives in `api/crawler/issue_checker.py` under
-`_CATALOGUE`, with scoring in `_ISSUE_SCORING` and confidence labels in
-`_AI_READINESS_CONFIDENCE`. A future `scripts/generate_issue_codes_doc.py`
-will emit `docs/issue-codes.md` from these constants (per docs-review
-recommendation 7.1).
+### 4.0 Audit engine architecture (Cycle K, v2.6 M9.1)
+
+The single canonical list lives in
+`api/crawler/checkers/registry.py` under `_CATALOGUE`, with scoring in
+`_ISSUE_SCORING` and confidence labels in `_AI_READINESS_CONFIDENCE`. The
+top-level module `api/crawler/issue_checker.py` is now a **thin facade**
+that re-exports every historically importable name and orchestrates the
+per-page checks across a `checkers/` package — every caller
+(`engine.py`, the routers, the docs generator, every test) continues to
+`from api.crawler.issue_checker import …` unchanged.
+
+`docs/issue-codes.md` is **auto-generated** from `_CATALOGUE` by
+`scripts/generate_issue_codes_doc.py`; the CI parity test
+`test_issue_codes_doc_matches_catalogue` fails if the generated file
+drifts from the registry.
+
+The `checkers/` package contains eleven modules:
+
+| Module | Responsibility |
+|---|---|
+| `registry.py` | Issue dataclasses, `_CATALOGUE`, `_ISSUE_SCORING`, `_AI_READINESS_CONFIDENCE`, `_STOP_WORDS`, size constants, `make_issue()` factory, `_sig_words` / `_titles_mismatch` helpers — single source of truth, ~1,425 lines (mostly the catalogue itself). |
+| `metadata.py` | Canonical tag validation (`CANONICAL_*`). |
+| `headings.py` | H1 presence, multiple H1s, empty headings, level skips. |
+| `links.py` | Broken-link status mapping (`BROKEN_LINK_*`), redirect classification (`REDIRECT_*`), auto-redirect heuristics (trailing-slash, case-normalise). |
+| `images.py` | Per-asset file-size limits (`IMG_OVERSIZED`, `PDF_TOO_LARGE`). |
+| `security.py` | HTTP-page, mixed content, HSTS, unsafe cross-origin. |
+| `crawlability.py` | `NOINDEX_*`, long-paragraph signal, post-crawl AMP HEAD result mapping. |
+| `url_structure.py` | URL hygiene — length, casing, embedded spaces, underscores. |
+| `ai_readiness.py` | `_run_geo_checks` + every GEO regex/counter helper (statistics, citations, quotations, orphan claims, answer signal, numbered steps). |
+| `cross_page.py` | Post-crawl `TITLE_DUPLICATE`, `META_DESC_DUPLICATE`, `TITLE_META_DUPLICATE_PAIR`, `CANONICAL_MISSING` (near-duplicate), `ORPHAN_PAGE`. |
+| `__init__.py` | Package docstring. |
+
+The per-page orchestrator (`check_page`) stays in the facade. Future
+extraction of its inline blocks into per-domain helpers is tracked
+follow-up work; the current shape preserves the existing emission
+order, which several tests are coupled to.
+
+**Structural integrity** is locked down by five CI invariants
+(`tests/test_class1_invariants.py::TestCatalogueScoringParity`,
+`tests/test_architecture_constraints.py::TestAIReadinessConfidenceLabels`):
+every scored code has a catalogue entry, every catalogue code has a
+score, every `ai_readiness` code has a confidence label, no orphan
+confidence label exists for a non-catalogue code, and no confidence
+label is attached to a non-`ai_readiness` code.
 
 ### 4.1 Metadata category
 
@@ -834,9 +873,10 @@ See `PLAN-V3.0.md` for the full plan; high points:
   stat detection, page-type-aware recommendations)
 - **Schema-visible-content alignment check** (Google-stated
   requirement)
-- **Refactor work** — `issue_checker.py` (2,448 lines), `Results.jsx`
-  (1,831), `crawl.py` (1,859) all flagged as known refactor candidates;
-  code works as-is.
+- **Refactor work** — `issue_checker.py` was split into the
+  `api/crawler/checkers/` package in v2.6 M9.1 (Cycle K); the top-level
+  module is now a 518-line facade. `Results.jsx` (1,831) and `crawl.py`
+  (1,859) remain known refactor candidates; code works as-is.
 - **Frontend infrastructure**: toast notification system to replace
   ~54 `alert()` calls; accessibility baseline; code-splitting for
   heavy modals.
@@ -855,4 +895,4 @@ See `PLAN-V3.0.md` for the full plan; high points:
 - **Related docs:** see `docs/README.md` for the full documentation
   index.
 
-*Last updated: 2026-05-27. Reflects `main` at commit `ce78dd4`.*
+*Last updated: 2026-05-28. Reflects `main` at commit `a8c2561` (post-Cycle-S).*

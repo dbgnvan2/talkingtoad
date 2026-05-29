@@ -1,6 +1,6 @@
 ---
 status: current
-last_reviewed: 2026-05-27
+last_reviewed: 2026-05-28
 ---
 
 # TalkingToad — Canonical Thresholds Table
@@ -50,7 +50,7 @@ impossible.
 | Threshold | Value | Source | Notes |
 |---|---|---|---|
 | Max HTML response size | 5 MB | `api/crawler/fetcher.py:106` `_MAX_HTML_BYTES` | Larger responses are not parsed |
-| Page-too-large warning | 300 KB | `api/crawler/issue_checker.py:1436` `_DEFAULT_PAGE_SIZE_LIMIT_KB` | Per-job-configurable via `CrawlSettings.page_size_limit_kb` |
+| Page-too-large warning | 300 KB | `api/crawler/checkers/registry.py` `_DEFAULT_PAGE_SIZE_LIMIT_KB` | Per-job-configurable via `CrawlSettings.page_size_limit_kb` |
 
 ## Image size
 
@@ -70,18 +70,18 @@ impossible.
 
 | Threshold | Value | Source |
 |---|---|---|
-| `TITLE_TOO_SHORT` (under N chars) | < 30 | `api/crawler/issue_checker.py:262` |
-| `TITLE_TOO_LONG` (over N chars) | > 60 | `api/crawler/issue_checker.py:269` |
-| `META_DESC_TOO_SHORT` | < 70 | `api/crawler/issue_checker.py:293` |
-| `META_DESC_TOO_LONG` | > 160 | `api/crawler/issue_checker.py:300` |
-| `URL_TOO_LONG` | > 200 chars | `api/crawler/issue_checker.py:670` |
+| `TITLE_TOO_SHORT` (under N chars) | < 30 | `api/crawler/issue_checker.py` `check_page` (title block) |
+| `TITLE_TOO_LONG` (over N chars) | > 60 | `api/crawler/issue_checker.py` `check_page` (title block) |
+| `META_DESC_TOO_SHORT` | < 70 | `api/crawler/issue_checker.py` `check_page` (meta-desc block) |
+| `META_DESC_TOO_LONG` | > 160 | `api/crawler/issue_checker.py` `check_page` (meta-desc block) |
+| `URL_TOO_LONG` | > 200 chars | `api/crawler/checkers/url_structure.py` `check_url_structure` |
 
 ## Image alt-text thresholds
 
 | Threshold | Value | Source |
 |---|---|---|
-| `IMG_ALT_TOO_SHORT` | < 5 chars | `api/crawler/issue_checker.py:713` |
-| `IMG_ALT_TOO_LONG` | > 125 chars | `api/crawler/issue_checker.py:721` |
+| `IMG_ALT_TOO_SHORT` | < 5 chars | `api/crawler/image_analyzer.py` (per-image alt-quality scoring) |
+| `IMG_ALT_TOO_LONG` | > 125 chars | `api/crawler/image_analyzer.py` (per-image alt-quality scoring) |
 | GEO alt-text target range | 80–125 chars | `api/services/ai_analyzer.py` GEO prompt |
 | GEO long-description target | 150–300 words | `api/services/ai_analyzer.py` GEO prompt |
 
@@ -89,12 +89,12 @@ impossible.
 
 | Threshold | Value | Source |
 |---|---|---|
-| `THIN_CONTENT` (word count) | < 300 | `api/crawler/issue_checker.py:1630` |
-| `HIGH_CRAWL_DEPTH` | > 4 clicks from homepage | `api/crawler/issue_checker.py` |
-| `STRUCTURED_ELEMENTS_LOW` activates at word count | ≥ 500 | `api/crawler/issue_checker.py:1777` |
-| `FIRST_VIEWPORT_NO_ANSWER` activates at word count | > 200 | `api/crawler/issue_checker.py:1828` |
+| `THIN_CONTENT` (word count) | < 300 | `api/crawler/issue_checker.py` `check_page` (thin-content block) |
+| `HIGH_CRAWL_DEPTH` | > 4 clicks from homepage | `api/crawler/issue_checker.py` `check_page` (crawl-depth block) |
+| `STRUCTURED_ELEMENTS_LOW` activates at word count | ≥ 500 | `api/crawler/checkers/ai_readiness.py` `_run_geo_checks` |
+| `FIRST_VIEWPORT_NO_ANSWER` activates at word count | > 200 | `api/crawler/checkers/ai_readiness.py` `_run_geo_checks` |
 | Long-paragraph detection | > 150 words | `api/crawler/parser.py:1113` `_count_long_paragraphs` |
-| GEO Conversational H2 minimum | word_count ≥ 300 | `api/crawler/issue_checker.py:1766` |
+| GEO Conversational H2 minimum | word_count ≥ 300 | `api/crawler/issue_checker.py` `check_page` (conversational-H2 block) |
 
 ## Content extraction windows (ParsedPage)
 
@@ -111,21 +111,21 @@ Single extraction path = no buffer-agreement bugs.
 
 | Threshold | Value | Source |
 |---|---|---|
-| `SEMANTIC_DENSITY_LOW` | text-to-HTML ratio < 10% | `api/crawler/issue_checker.py` |
+| `SEMANTIC_DENSITY_LOW` | text-to-HTML ratio < 10% | `api/crawler/issue_checker.py` `check_page` (AI-readiness block) |
 | `JS_RENDERED_CONTENT_DIFFERS` | rendered adds > 20% new tokens | `api/services/js_renderer.py:39` `_DIFF_THRESHOLD` |
 | `CONTENT_CLOAKING_DETECTED` | rendered vs raw Jaccard < 0.30 | `api/services/js_renderer.py:40` `_JACCARD_THRESHOLD` |
 | `UA_CONTENT_DIFFERS` | AI bot UA gets > 20% fewer tokens than rendered | `api/services/js_renderer.py:39` |
 | JS render timeout | 5 seconds | `api/services/js_renderer.py:38` `_PLAYWRIGHT_TIMEOUT_MS` |
 | Top-N keyword window for Jaccard | 10 keywords | `api/services/js_renderer.py:41` `_TOP_N_KEYWORDS` |
 | AI bot reference table max age before "stale" warning | 365 days | `api/services/ai_bots.py` `MAX_AGE_DAYS` (v2.0 spec §3.2) |
-| llms.txt URL count limit | > 20 URLs → INVALID | `api/crawler/issue_checker.py` |
+| llms.txt URL count limit | > 20 URLs → INVALID | `api/crawler/engine.py` (post-fetch validation) |
 
 ## Health score formula
 
 | Formula | Where |
 |---|---|
 | Health score | `max(0, 100 − Σ impact)` across all issues | `api/services/sqlite_store.py` `get_summary` |
-| Priority rank | `(impact × 10) − (effort × 2)` | `api/crawler/issue_checker.py` `make_issue` |
+| Priority rank | `(impact × 10) − (effort × 2)` | `api/crawler/checkers/registry.py` `make_issue` |
 | Impact range | 0–10 | enforced by `tests/test_class1_invariants.py::test_scoring_values_are_in_valid_ranges` |
 | Effort range | 0–5 | same test |
 
