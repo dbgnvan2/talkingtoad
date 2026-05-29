@@ -2166,3 +2166,66 @@ class TestHeadingsAdversarial:
         issues: list = []
         _check_headings(page, issues)
         assert isinstance(issues, list)
+
+
+# ---------------------------------------------------------------------------
+# Adversarial Boundaries — Images Domain (QA Audit / Cycle Q)
+# ---------------------------------------------------------------------------
+# Per docs/pending/2026-05-28_adversarial-audit-images-metadata.md.
+
+class TestImagesAdversarial:
+    def test_missing_content_type_does_not_crash(self):
+        """V1: poorly-configured static asset servers sometimes omit the
+        Content-Type header entirely. If the fetcher surfaces that as
+        content_type=None, `"pdf" in None` raises TypeError and crashes
+        the asset checker. The default is "" but nothing in the type
+        system stops None from sneaking through."""
+        from api.crawler.checkers.images import check_asset
+        from api.crawler.fetcher import FetchResult
+        result = FetchResult(
+            url="https://example.com/asset",
+            final_url="https://example.com/asset",
+            status_code=200,
+            content_type=None,  # Missing header
+            headers={"content-length": "500000"},
+        )
+        issues = check_asset(result)
+        assert isinstance(issues, list)
+
+
+# ---------------------------------------------------------------------------
+# Adversarial Boundaries — Metadata Domain (QA Audit / Cycle Q)
+# ---------------------------------------------------------------------------
+# Per docs/pending/2026-05-28_adversarial-audit-images-metadata.md.
+
+class TestMetadataAdversarial:
+    def test_empty_string_canonical_not_flagged_as_external(self):
+        """V2: <link rel="canonical" href=""> yields canonical_url="".
+        Pre-fix this passes the `is not None` guard and falls into
+        is_same_domain("", url), which returns False, falsely emitting
+        CANONICAL_EXTERNAL. The empty-string case is functionally
+        equivalent to a missing tag and should hit the missing-canonical
+        branch (which fires when the URL has query string params)."""
+        from api.crawler.checkers.metadata import _check_canonical
+        page = _page(url="https://example.com/page?query=1", canonical_url="")
+        issues: list = []
+        _check_canonical(page, issues)
+        codes = [i.code for i in issues]
+        assert "CANONICAL_EXTERNAL" not in codes
+        assert "CANONICAL_MISSING" in codes
+
+    def test_whitespace_padded_canonical_not_flagged_as_external(self):
+        """V3: '  https://example.com/page  ' (leading/trailing
+        whitespace from a sloppy CMS or templater) confuses URL parsing
+        in is_same_domain, which then returns False and falsely flags a
+        perfectly valid self-referencing canonical as
+        CANONICAL_EXTERNAL."""
+        from api.crawler.checkers.metadata import _check_canonical
+        page = _page(
+            url="https://example.com/page",
+            canonical_url="  https://example.com/page  "
+        )
+        issues: list = []
+        _check_canonical(page, issues)
+        codes = [i.code for i in issues]
+        assert "CANONICAL_EXTERNAL" not in codes

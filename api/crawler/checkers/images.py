@@ -30,7 +30,13 @@ def check_asset(result: FetchResult, *, img_size_limit_kb: int = _IMAGE_SIZE_LIM
         img_size_limit_kb: Flag images larger than this many KB as IMG_OVERSIZED.
     """
     issues: list[Issue] = []
-    ct = result.content_type
+    # Defensive: FetchResult.content_type is typed `str` and defaults to
+    # "", but the fetcher can still pass None when the server omits the
+    # Content-Type header (common for poorly-configured static-asset
+    # servers). `"pdf" in None` raises TypeError and crashes the checker.
+    # Coalesce to "" so the downstream `in` and .startswith() calls see
+    # a string in every case.
+    ct = result.content_type or ""
     try:
         size = int(result.headers.get("content-length", 0) or 0)
     except (ValueError, TypeError):
