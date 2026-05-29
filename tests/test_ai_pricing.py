@@ -401,11 +401,17 @@ class TestNoDirectProviderHTTPInServices:
 
     # Per-file allowed count of pattern matches. 0 by default.
     # Update this map when a deferred migration cycle ships.
-    _ALLOWED_VIOLATIONS_PER_FILE = {
-        # advisor.py service is the next migration target after
-        # Cycle BB. It currently has 2 endpoint constants at module
-        # scope. Drop this entry to 0 when the migration ships.
-        "advisor.py": 2,
+    #
+    # Cycle CC: advisor.py migration shipped — its previous allowance of
+    # 2 (the two provider endpoint constants) is removed and the file
+    # must now have 0 provider URL references like every other migrated
+    # service. The "got cleaner than expected" branch of the assertion
+    # below catches any attempt to re-add the allowance without removing
+    # the actual URLs.
+    _ALLOWED_VIOLATIONS_PER_FILE: dict[str, int] = {
+        # No grandfathered services remain. Every direct-to-provider
+        # call in api/services/ outside providers/ now routes via
+        # AIRouter (Cycles Z / BB / CC).
     }
 
     @pytest.fixture

@@ -5,11 +5,27 @@ Evaluates page across 6 properties with findings traceable to specific text.
 No scoring. Optional: generates rewrite prompt or diagnosis.
 
 Spec: /Users/davemini2/.claude/plans/moonlit-beaming-thacker.md
+
+v2.6 Cycle CC: migrated through :class:`api.services.ai_router.AIRouter`.
+The previous direct-to-httpx call sites (``_call_openai_critic``,
+``_call_gemini_critic``) and module-level provider state (``_OPENAI_API_KEY``,
+``_GEMINI_API_KEY``, ``_OPENAI_ENDPOINT``, ``_GEMINI_ENDPOINT``, ``_TIMEOUT``)
+have been removed. AIRouter now handles credential resolution, provider
+selection, cost tracking, and usage logging uniformly.
+
+``_fetch_page`` continues to use ``httpx.Client`` — it fetches target page
+HTML (SSRF-guarded), not LLM endpoints, so it's outside the migration
+scope per the approved spec.
+
+Per the user's approved JSON-mode decision (option A): the OpenAI
+``response_format`` hint is removed. The prompt already mandates "Return
+valid JSON only" and OpenAI / Gemini comply reliably on gpt-4o /
+gemini-2.0-flash. Parse failures get graceful degradation rather than
+propagating as 5xx — see ``_run_critic`` below.
 """
 
 import json
 import logging
-import os
 from typing import Any
 
 import httpx
@@ -31,26 +47,52 @@ from api.models.advisor import (
     StructuralFitness,
     StructuralMismatch,
 )
+from api.services.ai_router import (
+    ModelConfig,
+    ProviderAuthError,
+    SYSTEM_CONTEXT_ID,
+    ai_router,
+)
 
 load_dotenv()
 load_dotenv(".env-ttoad", override=True)
 
 logger = logging.getLogger(__name__)
 
-_OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-_GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-_OPENAI_ENDPOINT = "https://api.openai.com/v1/chat/completions"
-_GEMINI_ENDPOINT = "https://generativelanguage.googleapis.com/v1/models/{model}:generateContent?key={key}"
-_TIMEOUT = 30.0
+
+# ── Page-fetch timeout — local to _fetch_page only ──────────────────────
+# The LLM-call timeout was 30s pre-migration; AIRouter's drivers manage
+# their own (60s for text). The page-fetch timeout below applies to
+# `_fetch_page` exclusively — it fetches arbitrary target page HTML, not
+# provider APIs.
+_PAGE_FETCH_TIMEOUT_SECONDS = 30.0
 
 
-def _get_model() -> tuple[str, str]:
-    """Resolve LLM model (prefers OpenAI, falls back to Gemini)."""
-    if _OPENAI_API_KEY:
-        return "openai", "gpt-4o"
-    if _GEMINI_API_KEY:
-        return "gemini", "gemini-2.0-flash"
-    raise RuntimeError("No OPENAI_API_KEY or GEMINI_API_KEY configured")
+# ── Default models per provider (for AIRouter calls) ────────────────────
+# Same model strings used by the pre-migration code. Both in PRICING.
+_DEFAULT_CRITIC_MODEL_BY_PROVIDER = {
+    "openai": "gpt-4o",
+    "gemini": "gemini-2.0-flash",
+}
+
+
+def _pick_critic_model() -> ModelConfig:
+    """Pre-flight credential resolution so we pass the right model
+    string to AIRouter. Same pattern as rewriter.py / ai_analyzer.py.
+    Falls back to the OpenAI default if resolution fails — AIRouter
+    will raise ProviderAuthError on the actual call and ``evaluate_page``
+    converts that to the appropriate degraded response.
+    """
+    try:
+        provider, _ = ai_router._resolve_credentials(SYSTEM_CONTEXT_ID)
+    except ProviderAuthError:
+        provider = "openai"
+    model = _DEFAULT_CRITIC_MODEL_BY_PROVIDER.get(
+        provider, _DEFAULT_CRITIC_MODEL_BY_PROVIDER["openai"]
+    )
+    # Critic responses are JSON, can be substantial — give them room.
+    # Same temperature (0.2) as pre-migration for deterministic critic output.
+    return ModelConfig(model=model, max_tokens=4000, temperature=0.2)
 
 
 def _fetch_page(url: str) -> str:
@@ -77,7 +119,7 @@ def _fetch_page(url: str) -> str:
             "Sec-Fetch-Mode": "navigate",
             "Sec-Fetch-Site": "none",
         }
-        with httpx.Client(timeout=_TIMEOUT, headers=headers) as client:
+        with httpx.Client(timeout=_PAGE_FETCH_TIMEOUT_SECONDS, headers=headers) as client:
             response = client.get(url, follow_redirects=True)
             response.raise_for_status()
             return response.text
@@ -92,8 +134,44 @@ def _html_to_markdown(html: str) -> str:
     return html
 
 
-def _call_openai_critic(content: str, original: str | None) -> dict:
-    """Call OpenAI API with critic prompt."""
+async def _run_critic(content: str, original: str | None) -> dict:
+    """Send the critic prompt through AIRouter and return parsed JSON.
+
+    Single entry point replacing the pre-Cycle-CC pair of
+    ``_call_openai_critic`` / ``_call_gemini_critic``. AIRouter selects
+    the provider via credential resolution; this function only builds
+    the prompts, dispatches, and parses.
+
+    Behaviour preserved:
+        - Same system + user prompts as the OpenAI critic
+          (the Gemini critic had a slimmer user prompt; we unify on the
+          richer OpenAI prompt since Gemini handles the longer instruction
+          fine and the explicit schema reduces parse failures).
+        - Same temperature (0.2) and JSON-only output rule.
+        - Same response-shape contract (parsed dict matching
+          ``_parse_critic_response``'s expectations).
+
+    Behaviour changed (intentional per the approved spec):
+        - No more ``response_format`` hint (OpenAI-specific —
+          ModelConfig is provider-neutral per Cycle Z). Prompt + parse
+          handle JSON discipline.
+        - Async — pre-migration ``httpx.Client`` was sync inside an async
+          ``evaluate_page``, blocking the event loop. AIRouter is async,
+          so this call no longer blocks.
+        - Errors raise ``api.services.ai_router.AIRouterError`` subclasses
+          rather than the old generic ``Exception``. ``evaluate_page``
+          catches both classes — ``ProviderAuthError`` for "no key" and
+          generic Exception for parse / API failures — and degrades
+          gracefully (see ``evaluate_page`` docstring).
+
+    Raises:
+        ProviderAuthError: no customer key and no system env key.
+        ProviderAPIError: provider HTTP failure (5xx, network, etc.).
+        ValueError: the LLM returned content that didn't parse as JSON
+            after the standard cleanup. Distinct from the AIRouter
+            exceptions so the caller's graceful-degrade path can
+            distinguish billing-relevant from parse-failure scenarios.
+    """
     comparison_note = ""
     if original:
         comparison_note = (
@@ -108,7 +186,7 @@ Flag findings as critical or informational based on severity.
 
 DO NOT score, rank, or compute metrics. Findings are qualitative with evidence.
 
-Return valid JSON only. No markdown wrapping."""
+Return valid JSON only. No markdown wrapping. Do not include explanatory text before or after the JSON object."""
 
     user_prompt = f"""Content to evaluate:
 
@@ -141,77 +219,80 @@ Return JSON with these keys:
 - strengths (list of strings, mandatory, at least 2)
 - confidence_notes (list of objects with 'finding' and 'reason')"""
 
+    cfg = _pick_critic_model()
+    response = await ai_router.call_text(
+        customer_id=SYSTEM_CONTEXT_ID,
+        system_prompt=system_prompt,
+        user_prompt=user_prompt,
+        model_config=cfg,
+    )
+
+    # AIRouter has already logged usage with success=True (per its
+    # _call() success-path). The actual response text now needs to parse
+    # as JSON. Per the approved spec (option A), there's no provider-
+    # level JSON-mode hint — we rely on the prompt above + the parse
+    # block below. If parsing fails we raise ValueError so the caller
+    # can produce a graceful-degrade markdown report rather than 500.
+    raw = response.content.strip()
+    # Strip markdown code-block fences if the model added them despite
+    # the instruction. Mirrors the same cleanup ai_analyzer.py uses.
+    if raw.startswith("```"):
+        # Drop the first line (opening fence + optional lang) and any
+        # closing fence at end.
+        lines = raw.splitlines()
+        if lines and lines[0].startswith("```"):
+            lines = lines[1:]
+        if lines and lines[-1].startswith("```"):
+            lines = lines[:-1]
+        raw = "\n".join(lines).strip()
+
     try:
-        with httpx.Client(timeout=_TIMEOUT) as client:
-            response = client.post(
-                _OPENAI_ENDPOINT,
-                headers={"Authorization": f"Bearer {_OPENAI_API_KEY}"},
-                json={
-                    "model": "gpt-4o",
-                    "messages": [
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": user_prompt},
-                    ],
-                    "temperature": 0.2,
-                    "response_format": {"type": "json_object"},
-                },
-            )
-            response.raise_for_status()
-            data = response.json()
-            content = data["choices"][0]["message"]["content"]
-            parsed = json.loads(content)
-            logger.info(f"Critic response keys: {list(parsed.keys())}")
-            logger.info(f"Factual grounding: {parsed.get('factual_grounding', {}).get('verdict', 'N/A')}")
-            logger.info(f"Findings count: specific_facts={len(parsed.get('factual_grounding', {}).get('specific_facts', []))}, generalities={len(parsed.get('factual_grounding', {}).get('generalities', []))}")
-            return parsed
-    except Exception as e:
-        logger.error(f"OpenAI critic call failed: {e}")
-        raise
+        parsed = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        # TODO(M2.5): once the ai_usage table exists, record this as
+        # success=False with a "parse_failure" category. Today we
+        # surface it via the standard logger only — the AIRouter usage
+        # log already has success=True for this call because the HTTP
+        # exchange itself succeeded; parse failure is a downstream
+        # application-layer concern, not a billing event.
+        logger.warning(
+            "advisor_critic_json_parse_failed",
+            extra={
+                "provider": response.provider_id,
+                "model": response.model,
+                "input_tokens": response.input_token_count,
+                "output_tokens": response.output_token_count,
+                "raw_excerpt": raw[:200],
+                "error": str(exc),
+            },
+        )
+        raise ValueError(
+            f"Critic response did not parse as JSON: {exc!s}"
+        ) from exc
 
-
-def _call_gemini_critic(content: str, original: str | None) -> dict:
-    """Call Gemini API with critic prompt."""
-    comparison_note = ""
-    if original:
-        comparison_note = (
-            "\n\nALSO provide a 'source_fidelity' assessment comparing the provided "
-            "page to the original. Check for fabrications, losses, degradations, and preserved strengths."
+    if not isinstance(parsed, dict):
+        # Some models return JSON arrays / nulls under stress. The
+        # downstream parser expects a dict; surface this as the same
+        # kind of failure as a JSONDecodeError.
+        logger.warning(
+            "advisor_critic_json_wrong_type",
+            extra={
+                "provider": response.provider_id,
+                "model": response.model,
+                "got_type": type(parsed).__name__,
+            },
+        )
+        raise ValueError(
+            f"Critic response parsed but not as a JSON object "
+            f"(got {type(parsed).__name__})"
         )
 
-    system_prompt = """You are a content quality reviewer for Generative Engine Optimization (GEO).
-
-Evaluate the provided page across 6 properties. For EACH finding, cite specific page text.
-Flag findings as critical or informational based on severity.
-
-DO NOT score, rank, or compute metrics. Findings are qualitative with evidence.
-
-Return valid JSON only."""
-
-    user_prompt = f"""Content to evaluate:
-
-{content}{comparison_note}
-
-Return JSON with these keys (see OpenAI endpoint for schema).
-
-Return JSON only."""
-
-    try:
-        with httpx.Client(timeout=_TIMEOUT) as client:
-            response = client.post(
-                _GEMINI_ENDPOINT.format(model="gemini-2.0-flash", key=_GEMINI_API_KEY),
-                json={
-                    "system_instruction": {"parts": [{"text": system_prompt}]},
-                    "contents": [{"parts": [{"text": user_prompt}]}],
-                    "generationConfig": {"temperature": 0.2},
-                },
-            )
-            response.raise_for_status()
-            data = response.json()
-            content = data["candidates"][0]["content"]["parts"][0]["text"]
-            return json.loads(content)
-    except Exception as e:
-        logger.error(f"Gemini critic call failed: {e}")
-        raise
+    logger.info(f"Critic response keys: {list(parsed.keys())}")
+    logger.info(
+        f"Factual grounding: "
+        f"{parsed.get('factual_grounding', {}).get('verdict', 'N/A')}"
+    )
+    return parsed
 
 
 def _parse_critic_response(data: dict, original: str | None) -> AdvisorReport:
@@ -498,60 +579,94 @@ async def evaluate_page(request: AdvisorRequest) -> tuple[str, bool]:
 
     Returns:
         (markdown_report, should_generate_prompt)
+
+    Graceful-degrade contract (Cycle CC):
+        - Page fetch failure → returns a "Page could not be analyzed"
+          markdown stub with should_generate_prompt=False. Same as
+          pre-migration.
+        - ``ProviderAuthError`` from AIRouter (no customer key + no env
+          key) → returns "AI advisor unavailable: no API key configured"
+          markdown stub, should_generate_prompt=False. Replaces the
+          pre-migration RuntimeError-bubble-to-5xx behaviour.
+        - ``ValueError`` from ``_run_critic`` (LLM returned non-JSON) →
+          returns a "Critic response could not be parsed" markdown
+          stub. AIRouter has already logged the underlying HTTP call as
+          success=True; the application-level parse failure is logged
+          via the standard logger inside ``_run_critic``.
+          (TODO(M2.5): once ai_usage table exists, escalate parse
+          failures to a success=False billing event.)
+        - Any other AIRouter exception (``ProviderAPIError``, etc.) →
+          re-raised. The advisor router maps these to 5xx with an
+          error envelope — AIRouter's _log_usage success=False entry
+          already captured the failure for observability.
     """
     logger.info(f"evaluate_page START: url={request.url}, has_content={bool(request.content)}")
 
-    try:
-        # Fetch or use provided content
-        content = request.content
-        if request.url and not request.content:
-            logger.info(f"Fetching page from {request.url}")
-            try:
-                html = _fetch_page(request.url)
-                content = _html_to_markdown(html)
-                logger.info(f"Fetched content length: {len(content)} chars")
-            except Exception as fetch_error:
-                logger.info(f"Skipping advisor analysis — page could not be fetched: {fetch_error}")
-                skip_markdown = (
-                    f"# Page could not be analyzed\n\n"
-                    f"The advisor was unable to fetch this page (`{request.url}`):\n\n"
-                    f"> {fetch_error}\n\n"
-                    f"Refer to the Broken Links / Crawlability sections of your SEO report "
-                    f"for diagnosis of this page."
-                )
-                return skip_markdown, False
-
-        # Call critic
-        logger.info("Getting LLM provider...")
-        provider, model = _get_model()
-        logger.info(f"Using provider: {provider} ({model})")
-
-        if provider == "openai":
-            logger.info("Calling OpenAI critic...")
-            response_data = _call_openai_critic(content, request.original_content)
-        else:
-            logger.info("Calling Gemini critic...")
-            response_data = _call_gemini_critic(content, request.original_content)
-        logger.info(f"Critic response received, keys: {list(response_data.keys())}")
-
-        # Parse response
-        logger.info("Parsing critic response...")
-        report = _parse_critic_response(response_data, request.original_content)
-        logger.info(f"Report parsed: verdict={report.factual_grounding.verdict}")
-
-        # Update assessment based on verdict
-        if report.factual_grounding.verdict == "minimal":
-            report.what_cannot_be_fixed = (
-                "This page's substance is too thin at the source level. Rewriting won't add facts that aren't there. "
-                "The author should expand the content with specific facts, citations, and examples."
+    # Fetch or use provided content
+    content = request.content
+    if request.url and not request.content:
+        logger.info(f"Fetching page from {request.url}")
+        try:
+            html = _fetch_page(request.url)
+            content = _html_to_markdown(html)
+            logger.info(f"Fetched content length: {len(content)} chars")
+        except Exception as fetch_error:
+            logger.info(f"Skipping advisor analysis — page could not be fetched: {fetch_error}")
+            skip_markdown = (
+                f"# Page could not be analyzed\n\n"
+                f"The advisor was unable to fetch this page (`{request.url}`):\n\n"
+                f"> {fetch_error}\n\n"
+                f"Refer to the Broken Links / Crawlability sections of your SEO report "
+                f"for diagnosis of this page."
             )
+            return skip_markdown, False
 
-        # Render to markdown
-        logger.info("Rendering report to markdown...")
-        markdown = _render_report_to_markdown(report)
-        logger.info(f"Markdown rendered: {len(markdown)} chars")
+    # Call critic via AIRouter.
+    logger.info("Calling critic via AIRouter...")
+    try:
+        response_data = await _run_critic(content, request.original_content)
+    except ProviderAuthError:
+        logger.warning("advisor_skipped_no_key")
+        skip_markdown = (
+            "# AI advisor unavailable\n\n"
+            "The Content Advisor needs an AI provider key to evaluate this page. "
+            "Configure `OPENAI_API_KEY` or `GEMINI_API_KEY` in your environment, "
+            "or set a per-customer key in Settings (when available)."
+        )
+        return skip_markdown, False
+    except ValueError as parse_error:
+        # JSON parse failure inside _run_critic. Already logged with
+        # full context there; here we produce the user-facing graceful
+        # degradation. Per Cycle CC strategic advisory: do not let the
+        # raw error bubble to the client.
+        logger.info(f"Advisor parse failure → graceful degrade: {parse_error}")
+        skip_markdown = (
+            "# Critic response could not be parsed\n\n"
+            "The AI critic returned a response that did not parse as expected. "
+            "This typically resolves on retry — please run the analysis again.\n\n"
+            "If the issue persists, the source content may be unusual enough "
+            "(very long, heavily encoded, etc.) that the critic model is "
+            "struggling to produce structured output."
+        )
+        return skip_markdown, False
 
-        return markdown, report.should_generate_prompt
-    except Exception as e:
-        logger.error(f"ERROR in evaluate_page: {e}", exc_info=True)
-        raise
+    logger.info(f"Critic response received, keys: {list(response_data.keys())}")
+
+    # Parse response
+    logger.info("Parsing critic response...")
+    report = _parse_critic_response(response_data, request.original_content)
+    logger.info(f"Report parsed: verdict={report.factual_grounding.verdict}")
+
+    # Update assessment based on verdict
+    if report.factual_grounding.verdict == "minimal":
+        report.what_cannot_be_fixed = (
+            "This page's substance is too thin at the source level. Rewriting won't add facts that aren't there. "
+            "The author should expand the content with specific facts, citations, and examples."
+        )
+
+    # Render to markdown
+    logger.info("Rendering report to markdown...")
+    markdown = _render_report_to_markdown(report)
+    logger.info(f"Markdown rendered: {len(markdown)} chars")
+
+    return markdown, report.should_generate_prompt
