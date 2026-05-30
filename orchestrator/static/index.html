@@ -113,15 +113,6 @@
             font-size: 11px;
         }
 
-        .role-info-item {
-            margin-bottom: 5px;
-            display: flex;
-            justify-content: space-between;
-        }
-
-        .role-info-item strong { color: #555; }
-        .role-info-item span { color: #2e7d32; font-family: monospace; font-weight: bold; }
-
         #input-area {
             padding: 20px;
             background-color: var(--panel-bg);
@@ -177,6 +168,15 @@
         #reset-btn { margin-top: auto; background-color: #f44336; font-size: 12px; flex-shrink: 0; }
         #rerun-btn { background-color: var(--accent-color); margin-bottom: 10px; font-size: 12px; flex-shrink: 0; }
         
+        .provider-row {
+            margin-bottom: 8px;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+        .provider-row label { font-weight: bold; color: #555; }
+        .provider-row select { width: 100%; padding: 4px; font-size: 11px; }
+
         #active-goal {
             cursor: pointer;
             transition: background 0.2s;
@@ -198,28 +198,48 @@
 <body>
     <div id="sidebar">
         <h2>Orchestrator</h2>
-        <div class="meta">Multi-Role SDLC Spooler</div>
+        <div class="meta">Multi-Role SDLC Factory</div>
         
         <div class="role-info-card">
-            <div style="font-weight: bold; margin-bottom: 8px; border-bottom: 1px solid #ddd; padding-bottom: 4px; color: #333;">ROLES & MODELS</div>
-            <div class="role-info-item"><strong>Architect:</strong> <span id="model-architect">---</span></div>
-            <div class="role-info-item"><strong>Snr Developer:</strong> <span id="model-snrdev">---</span></div>
-            <div class="role-info-item"><strong>QA Sentinel:</strong> <span id="model-qa">---</span></div>
-            <div class="role-info-item"><strong>Developer:</strong> <span>Claude Code</span></div>
+            <div style="font-weight: bold; margin-bottom: 8px; border-bottom: 1px solid #ddd; padding-bottom: 4px; color: #333;">ROLE CONFIGURATION</div>
+            
+            <div class="provider-row">
+                <label>Architect:</label>
+                <select id="prov-architect">
+                    <option value="gemini">Gemini (3.0 Pro)</option>
+                    <option value="openai">OpenAI (GPT-4o)</option>
+                    <option value="deepseek">DeepSeek (Chat)</option>
+                    <option value="local">Local (Ollama)</option>
+                </select>
+            </div>
+
+            <div class="provider-row">
+                <label>Snr Developer:</label>
+                <select id="prov-snr_dev">
+                    <option value="gemini">Gemini (3.0 Pro)</option>
+                    <option value="openai">OpenAI (GPT-4o)</option>
+                    <option value="deepseek" selected>DeepSeek (Chat)</option>
+                    <option value="local">Local (Ollama)</option>
+                </select>
+            </div>
+
+            <div class="provider-row">
+                <label>QA Sentinel:</label>
+                <select id="prov-qa">
+                    <option value="gemini">Gemini (3.0 Pro)</option>
+                    <option value="openai">OpenAI (GPT-4o)</option>
+                    <option value="deepseek" selected>DeepSeek (Chat)</option>
+                    <option value="local">Local (Ollama)</option>
+                </select>
+            </div>
+
+            <div style="font-size: 10px; margin-top: 5px; color: #777;">
+                <strong>Developer:</strong> Claude Code
+            </div>
         </div>
 
         <div style="margin-bottom: 15px;">
-            <strong>Provider:</strong><br>
-            <select id="provider-select" style="width: 100%; padding: 6px; margin-top: 5px; border-radius: 4px; border: 1px solid #ddd; font-size: 12px;">
-                <option value="gemini">Gemini (3.0 Pro)</option>
-                <option value="openai">OpenAI (GPT-4o)</option>
-                <option value="deepseek">DeepSeek (Chat)</option>
-                <option value="local">Local (Ollama)</option>
-            </select>
-        </div>
-
-        <div style="margin-bottom: 15px;">
-            <strong>Status:</strong><br>
+            <strong>System Status:</strong><br>
             <span id="phase-badge" class="status-badge phase-IDLE">IDLE</span>
         </div>
 
@@ -256,11 +276,10 @@
         const resetBtn = document.getElementById('reset-btn');
         const rerunBtn = document.getElementById('rerun-btn');
         const progressLog = document.getElementById('progress-log');
-        const providerSelect = document.getElementById('provider-select');
         
-        const modelArchitect = document.getElementById('model-architect');
-        const modelSnrDev = document.getElementById('model-snrdev');
-        const modelQA = document.getElementById('model-qa');
+        const provArchitect = document.getElementById('prov-architect');
+        const provSnrDev = document.getElementById('prov-snr_dev');
+        const provQA = document.getElementById('prov-qa');
 
         const sidebar = document.getElementById('sidebar');
         const resizer = document.getElementById('resizer');
@@ -268,13 +287,6 @@
         let lastHistoryLength = 0;
         let lastEventCount = 0;
         let isFirstLoad = true;
-
-        const providerModels = {
-            'gemini': 'Gemini 3.0 Pro',
-            'openai': 'GPT-4o',
-            'deepseek': 'DeepSeek Chat',
-            'local': 'Ollama Local'
-        };
 
         let isResizing = false;
         resizer.addEventListener('mousedown', (e) => {
@@ -313,15 +325,12 @@
                 phaseBadge.className = `status-badge phase-${state.phase}`;
                 activeGoal.textContent = state.goal || 'None';
 
-                if (isFirstLoad && state.provider) {
-                    providerSelect.value = state.provider;
+                if (isFirstLoad && state.providers) {
+                    provArchitect.value = state.providers.architect;
+                    provSnrDev.value = state.providers.snr_dev;
+                    provQA.value = state.providers.qa;
                     isFirstLoad = false;
                 }
-
-                const currentModel = providerModels[providerSelect.value] || '---';
-                modelArchitect.textContent = currentModel;
-                modelSnrDev.textContent = currentModel;
-                modelQA.textContent = currentModel;
 
                 if (state.chat_history.length !== lastHistoryLength) {
                     renderHistory(state.chat_history);
@@ -393,13 +402,19 @@
         async function sendMessage() {
             const msg = chatInput.value.trim();
             if (!msg) return;
-            const provider = providerSelect.value;
+            
+            const providers = {
+                architect: provArchitect.value,
+                snr_dev: provSnrDev.value,
+                qa: provQA.value
+            };
+
             chatInput.value = '';
             try {
                 await fetch('/api/chat', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ message: msg, provider: provider })
+                    body: JSON.stringify({ message: msg, providers: providers })
                 });
                 fetchState();
             } catch (err) {
@@ -414,15 +429,11 @@
             if (activeGoal.textContent === 'None') return;
             rerunBtn.textContent = 'Resetting Cycle...';
             rerunBtn.disabled = true;
-            
-            // Clear UI history immediately for better UX
             lastHistoryLength = 0;
             lastEventCount = 0;
             chatWindow.innerHTML = '';
             progressLog.innerHTML = '';
-            
             await fetch('/api/rerun', { method: 'POST' });
-            
             setTimeout(() => {
                 rerunBtn.textContent = 'Refresh & Re-run';
                 rerunBtn.disabled = false;

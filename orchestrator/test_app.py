@@ -1,5 +1,6 @@
 import json
 import os
+import shutil
 import time
 import pytest
 import asyncio
@@ -10,7 +11,7 @@ from fastapi.testclient import TestClient
 # Import the app but we'll mock the state file path
 from orchestrator.app import (
     app, STATE_FILE, CYCLES_DIR, get_directory_size, format_size,
-    format_uptime, is_spec_file,
+    format_uptime, is_spec_file, archive_spec_files, ARCHIVE_DIR,
 )
 
 client = TestClient(app)
@@ -243,3 +244,67 @@ class TestIsSpecFile:
         assert not is_spec_file(Path("main.py"))
         assert not is_spec_file(Path("config.json"))
         assert not is_spec_file(Path("index.html"))
+
+
+class TestArchiveSpecFiles:
+    def test_moves_spec_files_to_archive(self, tmp_path):
+        """Test that spec files are moved from cycles dir to archive."""
+        cycles_dir = tmp_path / "cycles"
+        cycles_dir.mkdir(exist_ok=True)
+        archive_dir = cycles_dir / "archive"
+        spec1 = cycles_dir / "spec_20260530_120000.md"
+        spec2 = cycles_dir / "spec_20260530_130000.md"
+        spec1.write_text("# Spec 1")
+        spec2.write_text("# Spec 2")
+
+        with patch("orchestrator.app.DOCS_CYCLES_DIR", cycles_dir), \
+             patch("orchestrator.app.ARCHIVE_DIR", archive_dir):
+            archive_spec_files()
+
+        assert not spec1.exists()
+        assert not spec2.exists()
+        assert (archive_dir / "spec_20260530_120000.md").exists()
+        assert (archive_dir / "spec_20260530_130000.md").exists()
+        assert (archive_dir / "spec_20260530_120000.md").read_text() == "# Spec 1"
+
+    def test_no_spec_files_is_noop(self, tmp_path):
+        """Test that archival with no spec files does nothing."""
+        cycles_dir = tmp_path / "cycles"
+        cycles_dir.mkdir(exist_ok=True)
+        archive_dir = cycles_dir / "archive"
+
+        with patch("orchestrator.app.DOCS_CYCLES_DIR", cycles_dir), \
+             patch("orchestrator.app.ARCHIVE_DIR", archive_dir):
+            archive_spec_files()
+
+        assert archive_dir.exists()  # dir created but empty
+        assert list(archive_dir.iterdir()) == []
+
+    def test_non_spec_files_untouched(self, tmp_path):
+        """Test that non-spec files in cycles dir are not archived."""
+        cycles_dir = tmp_path / "cycles"
+        cycles_dir.mkdir(exist_ok=True)
+        archive_dir = cycles_dir / "archive"
+        state_file = cycles_dir / "state.json"
+        state_file.write_text("{}")
+        spec_file = cycles_dir / "spec_test.md"
+        spec_file.write_text("# Spec")
+
+        with patch("orchestrator.app.DOCS_CYCLES_DIR", cycles_dir), \
+             patch("orchestrator.app.ARCHIVE_DIR", archive_dir):
+            archive_spec_files()
+
+        assert state_file.exists()  # not moved
+        assert not spec_file.exists()  # moved
+        assert (archive_dir / "spec_test.md").exists()
+
+
+class TestDiagnosticsArchived:
+    def test_includes_archived_fields(self):
+        """Test that diagnostics response includes archived spec fields."""
+        data = client.get("/api/diagnostics").json()
+        assert "archived_specs" in data
+        assert "total_archived" in data
+        assert isinstance(data["archived_specs"], list)
+        assert isinstance(data["total_archived"], int)
+        assert data["total_archived"] == len(data["archived_specs"])
