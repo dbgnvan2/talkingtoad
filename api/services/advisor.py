@@ -95,6 +95,88 @@ def _pick_critic_model() -> ModelConfig:
     return ModelConfig(model=model, max_tokens=4000, temperature=0.2)
 
 
+# ── v2.6 Cycle FF — GeoConfig entity-context injection ──────────────────
+#
+# When AdvisorRequest.geo_config is provided, this prefix is prepended to
+# the system_prompt to focus the critic on entity-specific evaluation.
+# Findings flow through the EXISTING JSON schema — specifically
+# AuthoritySignals (citations_present / citations_missing) and
+# FactualGrounding (specific_facts / generalities). No new output keys,
+# no breaking changes for `_parse_critic_response`.
+#
+# Per Cycle FF locked decision #3 (field whitelist): only four GeoConfig
+# fields enter the prompt. Internal metadata, model-config, and report-
+# rendering fields stay out — see _build_geo_context for the explicit
+# extraction.
+
+_GEO_CONTEXT_PREFIX = """ENTITY VALIDATION CONTEXT:
+The page under evaluation should authoritatively represent the following entities:
+- Organization: {org_name}
+- Primary location: {primary_location}
+- Service locations: {location_pool_csv}
+- Topic entities: {topic_entities_csv}
+
+When evaluating, surface entity-related findings WITHIN the existing six properties:
+- factual_grounding.generalities: flag missing or mismatched mentions of the
+  entities above (use issue='entity not present' or 'entity mismatch').
+- factual_grounding.specific_facts: include any concrete entity mentions found
+  with is_specific=true.
+- authority_signals.citations_present: list specific entity mentions found on
+  the page.
+- authority_signals.citations_missing: list expected entity mentions that are
+  absent (use claim='[entity name]' and why_needed='domain authority').
+
+DO NOT add new JSON keys. Use only the existing schema below.
+
+---
+
+"""
+
+
+def _build_geo_context(geo_config: "GeoConfig | None") -> str:
+    """Build the entity-validation context block for the critic prompt.
+
+    Returns the interpolated :data:`_GEO_CONTEXT_PREFIX` when geo_config
+    is provided, or an empty string when None — which guarantees the
+    legacy generic prompt is emitted unchanged (Cycle FF locked
+    decision: fallback parity).
+
+    Per the Cycle FF locked field whitelist (decision #3), only four
+    fields enter the prompt. All other GeoConfig fields (domain, model,
+    temperature, max_tokens, client_name, prepared_by, created_at,
+    updated_at) are deliberately ignored — they are either internal
+    metadata or report-rendering hints, not entity-validation context.
+    Leaking them to the LLM would be wasted tokens at best and a
+    privacy/correctness boundary breach at worst (client_name in
+    particular is consultant-facing identifying info).
+    """
+    if geo_config is None:
+        return ""
+
+    # Defensive: GeoConfig fields are strings/lists; coalesce to safe
+    # defaults if any are empty so the interpolated prompt doesn't have
+    # blank gaps like "Organization: ".
+    org_name = geo_config.org_name or "(not specified)"
+    primary_location = geo_config.primary_location or "(not specified)"
+    location_pool_csv = (
+        ", ".join(geo_config.location_pool)
+        if geo_config.location_pool
+        else "(none specified)"
+    )
+    topic_entities_csv = (
+        ", ".join(geo_config.topic_entities)
+        if geo_config.topic_entities
+        else "(none specified)"
+    )
+
+    return _GEO_CONTEXT_PREFIX.format(
+        org_name=org_name,
+        primary_location=primary_location,
+        location_pool_csv=location_pool_csv,
+        topic_entities_csv=topic_entities_csv,
+    )
+
+
 def _fetch_page(url: str) -> str:
     """Fetch page HTML from URL."""
     # v2.3 (M0.6.3) SSRF guard: refuse to fetch URLs that resolve to
@@ -134,13 +216,24 @@ def _html_to_markdown(html: str) -> str:
     return html
 
 
-async def _run_critic(content: str, original: str | None) -> dict:
+async def _run_critic(
+    content: str,
+    original: str | None,
+    geo_config: "GeoConfig | None" = None,
+) -> dict:
     """Send the critic prompt through AIRouter and return parsed JSON.
 
     Single entry point replacing the pre-Cycle-CC pair of
     ``_call_openai_critic`` / ``_call_gemini_critic``. AIRouter selects
     the provider via credential resolution; this function only builds
     the prompts, dispatches, and parses.
+
+    Cycle FF: when ``geo_config`` is provided, prepends
+    :data:`_GEO_CONTEXT_PREFIX` (interpolated with the configured
+    entities) to ``system_prompt`` so the critic evaluates the page
+    against entity-specific expectations. When ``geo_config`` is None,
+    the legacy generic prompt is emitted unchanged — backward compat
+    with every pre-Cycle-FF caller and test.
 
     Behaviour preserved:
         - Same system + user prompts as the OpenAI critic
@@ -179,7 +272,12 @@ async def _run_critic(content: str, original: str | None) -> dict:
             "page to the original. Check for fabrications, losses, degradations, and preserved strengths."
         )
 
-    system_prompt = """You are a content quality reviewer for Generative Engine Optimization (GEO).
+    # Cycle FF: prepend entity-validation context when geo_config is
+    # provided. Empty string when None — guarantees fallback parity
+    # with the legacy generic prompt.
+    geo_context = _build_geo_context(geo_config)
+
+    system_prompt = geo_context + """You are a content quality reviewer for Generative Engine Optimization (GEO).
 
 Evaluate the provided page across 6 properties. For EACH finding, cite specific page text.
 Flag findings as critical or informational based on severity.
@@ -642,7 +740,7 @@ async def evaluate_page(request: AdvisorRequest) -> tuple[str, bool]:
     # Call critic via AIRouter.
     logger.info("Calling critic via AIRouter...")
     try:
-        response_data = await _run_critic(content, request.original_content)
+        response_data = await _run_critic(content, request.original_content, geo_config=request.geo_config)
     except ProviderAuthError:
         logger.warning("advisor_skipped_no_key")
         skip_markdown = (

@@ -6,6 +6,8 @@ Spec: /Users/davemini2/.claude/plans/moonlit-beaming-thacker.md
 
 from dataclasses import dataclass, field
 
+from api.models.geo_config import GeoConfig
+
 
 @dataclass
 class AdvisorRequest:
@@ -14,6 +16,21 @@ class AdvisorRequest:
     content: str | None = None
     original_content: str | None = None
     job_id: str | None = None  # Optional: for cached content fallback
+
+    # v2.6 Cycle FF — optional GeoConfig for entity-aware evaluation.
+    # When provided, _run_critic prepends a GEO_CONTEXT_PREFIX block to
+    # the LLM system_prompt asking it to evaluate whether the page mentions
+    # the configured organisation, primary location, location pool, and
+    # topic entities. Findings flow through existing AuthoritySignals /
+    # FactualGrounding objects — no JSON schema change. When None, the
+    # advisor falls back to the legacy generic critic prompt (backward
+    # compat with every pre-Cycle-FF caller).
+    #
+    # Client-side delivery (Cycle FF locked decision #1): the client
+    # fetches GeoConfig via GET /api/geo/settings and passes it in the
+    # request body. No server-side auto-lookup this cycle — that's a
+    # follow-up if needed.
+    geo_config: GeoConfig | None = None
 
     def __post_init__(self):
         if not self.url and not self.content:
