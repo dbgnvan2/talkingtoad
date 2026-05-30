@@ -249,12 +249,13 @@ Return JSON with these keys:
     try:
         parsed = json.loads(raw)
     except json.JSONDecodeError as exc:
-        # TODO(M2.5): once the ai_usage table exists, record this as
-        # success=False with a "parse_failure" category. Today we
-        # surface it via the standard logger only — the AIRouter usage
-        # log already has success=True for this call because the HTTP
-        # exchange itself succeeded; parse failure is a downstream
-        # application-layer concern, not a billing event.
+        # Cycle DD (M2.5): record this as a success=False ai_usage event
+        # so billing rollups and parse-failure rate metrics can see it.
+        # The AIRouter call itself succeeded at the HTTP layer (we got
+        # bytes back), so AIRouter's own _log_usage emitted success=True
+        # for that exchange. This extra event captures the application-
+        # layer failure distinctly. Standard logger entry still fires
+        # too — it's the observability fallback if persistence is down.
         logger.warning(
             "advisor_critic_json_parse_failed",
             extra={
@@ -266,6 +267,13 @@ Return JSON with these keys:
                 "error": str(exc),
             },
         )
+        from api.services.usage_logger import usage_logger
+        await usage_logger.record_parse_failure(
+            customer_id=SYSTEM_CONTEXT_ID,
+            provider=response.provider_id,
+            model=response.model,
+            error_message=f"JSONDecodeError: {exc!s}",
+        )
         raise ValueError(
             f"Critic response did not parse as JSON: {exc!s}"
         ) from exc
@@ -273,7 +281,9 @@ Return JSON with these keys:
     if not isinstance(parsed, dict):
         # Some models return JSON arrays / nulls under stress. The
         # downstream parser expects a dict; surface this as the same
-        # kind of failure as a JSONDecodeError.
+        # kind of failure as a JSONDecodeError. Record as a parse
+        # failure in ai_usage too — see the JSONDecodeError branch
+        # above for the rationale.
         logger.warning(
             "advisor_critic_json_wrong_type",
             extra={
@@ -281,6 +291,13 @@ Return JSON with these keys:
                 "model": response.model,
                 "got_type": type(parsed).__name__,
             },
+        )
+        from api.services.usage_logger import usage_logger
+        await usage_logger.record_parse_failure(
+            customer_id=SYSTEM_CONTEXT_ID,
+            provider=response.provider_id,
+            model=response.model,
+            error_message=f"json_wrong_type: {type(parsed).__name__}",
         )
         raise ValueError(
             f"Critic response parsed but not as a JSON object "
@@ -591,10 +608,11 @@ async def evaluate_page(request: AdvisorRequest) -> tuple[str, bool]:
         - ``ValueError`` from ``_run_critic`` (LLM returned non-JSON) →
           returns a "Critic response could not be parsed" markdown
           stub. AIRouter has already logged the underlying HTTP call as
-          success=True; the application-level parse failure is logged
-          via the standard logger inside ``_run_critic``.
-          (TODO(M2.5): once ai_usage table exists, escalate parse
-          failures to a success=False billing event.)
+          success=True (the HTTP exchange itself succeeded); the
+          application-level parse failure is logged via the standard
+          logger inside ``_run_critic`` AND recorded in ai_usage as a
+          success=False event via ``usage_logger.record_parse_failure``
+          (closes the Cycle CC TODO via M2.5 / Cycle DD).
         - Any other AIRouter exception (``ProviderAPIError``, etc.) →
           re-raised. The advisor router maps these to 5xx with an
           error envelope — AIRouter's _log_usage success=False entry

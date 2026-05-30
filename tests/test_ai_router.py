@@ -335,19 +335,31 @@ class TestLogUsageSanitisation:
     or response text. Keys outside _SAFE_METADATA_KEYS are silently
     dropped. These tests lock that in."""
 
-    def test_unsafe_keys_silently_dropped(self, caplog):
+    @pytest.mark.asyncio
+    async def test_unsafe_keys_silently_dropped(self, caplog):
+        """Cycle DD: _log_usage became async (it now awaits
+        usage_logger.record). This test was sync pre-Cycle-DD; updated
+        to await. The sanitisation contract is unchanged."""
         import logging
         caplog.set_level(logging.INFO)
 
-        _log_usage({
-            "customer_id": "test",
-            "provider": "openai",
-            "model": "gpt-4o",
-            # Forbidden keys below — privacy / PII risk
-            "prompt": "this is a customer prompt with PII",
-            "response": "this is the model response",
-            "user_email": "alice@example.com",
-        })
+        # Patch usage_logger.record to a no-op so this test doesn't
+        # try to open a real SQLite store. We only care about the
+        # caplog assertion here, not persistence.
+        from unittest.mock import AsyncMock
+        with patch(
+            "api.services.usage_logger.usage_logger.record",
+            new_callable=AsyncMock,
+        ):
+            await _log_usage({
+                "customer_id": "test",
+                "provider": "openai",
+                "model": "gpt-4o",
+                # Forbidden keys below — privacy / PII risk
+                "prompt": "this is a customer prompt with PII",
+                "response": "this is the model response",
+                "user_email": "alice@example.com",
+            })
 
         # The structured log entry should have the safe keys, not the
         # unsafe ones. We check the record's extra dict directly.

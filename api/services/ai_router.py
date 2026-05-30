@@ -29,6 +29,7 @@ Negative constraints (enforced):
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 from dataclasses import dataclass, replace
@@ -217,12 +218,8 @@ def _lookup_customer_credentials(
     return None
 
 
-def _log_usage(metadata: dict) -> None:
+async def _log_usage(metadata: dict) -> None:
     """Record an ai_usage event.
-
-    TODO(M2.5): persist to ``ai_usage`` table for billing rollups.
-    Until M2.5 lands, this emits a structured INFO log entry — good
-    enough for observability while we ship M2.1.
 
     Privacy contract: ``metadata`` keys outside ``_SAFE_METADATA_KEYS``
     are silently dropped. This is the firewall that keeps prompt /
@@ -230,9 +227,27 @@ def _log_usage(metadata: dict) -> None:
     deliberately silently (not as an assertion) because a missed
     sanitisation upstream should never crash a paid AI call — it
     should just leave less detail in the audit trail.
+
+    Persistence (M2.5 / Cycle DD):
+        - INFO-logs the event via the standard logger (always — this
+          is the observability fallback when SQLite is unavailable).
+        - Awaits ``usage_logger.record(...)`` which itself schedules
+          the actual DB write via ``asyncio.create_task``. By the
+          time this function returns, the persist task is registered
+          in ``usage_logger._pending`` (so ``await_pending()`` will
+          drain it on shutdown), but the write itself has NOT
+          necessarily completed — that's the fire-and-forget contract.
+        - Net latency contract: this function returns in the time it
+          takes to filter the metadata dict + schedule one asyncio
+          task. No DB I/O happens in the critical path.
     """
     safe = {k: v for k, v in metadata.items() if k in _SAFE_METADATA_KEYS}
     logger.info("ai_usage", extra=safe)
+
+    # Import is function-scoped to avoid a circular dependency at
+    # module load (usage_logger imports _SAFE_METADATA_KEYS from us).
+    from api.services.usage_logger import usage_logger
+    await usage_logger.record(safe)
 
 
 # ---------------------------------------------------------------------------
@@ -398,7 +413,7 @@ class AIRouter:
                     model_config=model_config,
                 )
         except Exception as exc:
-            _log_usage({
+            await _log_usage({
                 "customer_id": customer_id,
                 "provider": provider_id,
                 "model": model_config.model,
@@ -436,7 +451,7 @@ class AIRouter:
         # precision only at this single assignment.
         response = replace(response, cost_estimate_usd=float(cost_decimal))
 
-        _log_usage({
+        await _log_usage({
             "customer_id": customer_id,
             "provider": provider_id,
             "model": model_config.model,

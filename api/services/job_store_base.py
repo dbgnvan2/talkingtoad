@@ -408,6 +408,33 @@ CREATE INDEX IF NOT EXISTS idx_links_job_id ON links(job_id);
 CREATE INDEX IF NOT EXISTS idx_fixes_job_id ON fixes(job_id);
 CREATE INDEX IF NOT EXISTS idx_images_job_id ON images(job_id);
 CREATE INDEX IF NOT EXISTS idx_images_hash ON images(content_hash);
+
+-- v2.6 M2.5 / Cycle DD: ai_usage event log for token-usage billing rollups.
+-- Written by api/services/usage_logger.py via async fire-and-forget tasks
+-- scheduled from AIRouter._log_usage. Read by api/services/sqlite_store.py
+-- get_ai_usage(...) — the seam M2.6 (aggregation API) will plug into.
+--
+-- Column shape matches PLAN-V3.0.md M2.5 + AIRouter _SAFE_METADATA_KEYS.
+-- timestamp is ISO 8601 UTC (matches every other timestamp column in this
+-- schema); success is 0/1 because aiosqlite returns ints for booleans.
+CREATE TABLE IF NOT EXISTS ai_usage (
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    customer_id       TEXT NOT NULL,
+    job_id            TEXT,            -- nullable; not every call is tied to a crawl
+    session_id        TEXT,            -- correlation ID for multi-call workflows
+    task_type         TEXT,            -- "advisor" / "rewriter" / etc (per M2.4)
+    provider          TEXT NOT NULL,
+    model             TEXT NOT NULL,
+    input_tokens      INTEGER NOT NULL DEFAULT 0,
+    output_tokens     INTEGER NOT NULL DEFAULT 0,
+    cost_estimate_usd REAL NOT NULL DEFAULT 0.0,
+    timestamp         TEXT NOT NULL,   -- ISO 8601 UTC
+    success           INTEGER NOT NULL DEFAULT 1,
+    error_message     TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_ai_usage_customer_ts ON ai_usage(customer_id, timestamp);
+CREATE INDEX IF NOT EXISTS idx_ai_usage_job ON ai_usage(job_id);
+CREATE INDEX IF NOT EXISTS idx_ai_usage_provider ON ai_usage(provider);
 """
 
 SEVERITY_ORDER   = "CASE severity WHEN 'critical' THEN 1 WHEN 'warning' THEN 2 ELSE 3 END"

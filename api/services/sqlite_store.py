@@ -1196,6 +1196,141 @@ class SQLiteJobStore:
             logger.info("geo_config_deleted", extra={"domain": domain})
         return deleted
 
+    # ── v2.6 M2.5 / Cycle DD — AI usage persistence ─────────────────────
+    # Write path: `usage_logger.UsageLogger._persist` schedules these
+    # writes via asyncio.create_task; this method is therefore called
+    # outside any request lifecycle. Any exception here propagates back
+    # to UsageLogger._persist, which catches + logs (does NOT re-raise)
+    # so a transient DB failure can't crash a fire-and-forget task.
+    #
+    # Read path: `get_ai_usage` is the seam M2.6 (usage aggregation API)
+    # will plug into. Indexed on (customer_id, timestamp) so a typical
+    # billing-period query is index-only.
+
+    async def record_ai_usage(self, record: dict) -> None:
+        """Insert one ai_usage row.
+
+        Args:
+            record: metadata dict from AIRouter / usage_logger. Caller is
+                responsible for safe-key filtering (UsageLogger.record
+                applies the _SAFE_METADATA_KEYS whitelist before calling
+                this method). All recognised keys are optional except
+                customer_id, provider, model — those are NOT NULL.
+
+        Behaviour:
+            - Missing optional keys are stored as NULL or schema defaults.
+            - timestamp defaults to ``datetime.now(timezone.utc).isoformat()``
+              if not supplied (UsageLogger always supplies it).
+            - success defaults to 1 (truthy) if not supplied.
+        """
+        db = self._db
+        assert db is not None
+
+        # Required fields — fail loudly if missing so a malformed call
+        # site is caught in dev. (UsageLogger validates upstream.)
+        customer_id = record.get("customer_id")
+        provider = record.get("provider")
+        model = record.get("model")
+        if not customer_id or not provider or not model:
+            raise ValueError(
+                f"ai_usage requires customer_id, provider, model — got "
+                f"{customer_id=}, {provider=}, {model=}"
+            )
+
+        # Coerce success → 0/1 for SQLite. Accept Python bools or ints.
+        success_raw = record.get("success", True)
+        success = 1 if success_raw else 0
+
+        # Coerce timestamp: default to now() if not supplied. ISO 8601 UTC
+        # to match every other timestamp column in this schema.
+        timestamp = record.get("timestamp") or datetime.now(timezone.utc).isoformat()
+
+        await db.execute(
+            """
+            INSERT INTO ai_usage (
+                customer_id, job_id, session_id, task_type,
+                provider, model,
+                input_tokens, output_tokens, cost_estimate_usd,
+                timestamp, success, error_message
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                customer_id,
+                record.get("job_id"),
+                record.get("session_id"),
+                record.get("task_type"),
+                provider,
+                model,
+                int(record.get("input_token_count", 0) or 0),
+                int(record.get("output_token_count", 0) or 0),
+                float(record.get("cost_estimate_usd", 0.0) or 0.0),
+                timestamp,
+                success,
+                record.get("error_message"),
+            ),
+        )
+        await db.commit()
+
+    async def get_ai_usage(
+        self,
+        customer_id: str | None = None,
+        from_ts: str | None = None,
+        to_ts: str | None = None,
+        provider: str | None = None,
+        job_id: str | None = None,
+        limit: int = 1000,
+    ) -> list[dict]:
+        """Query ai_usage rows with optional filters.
+
+        Public read API the M2.6 aggregation endpoints will use. All
+        filters are optional — passing none returns the most recent
+        ``limit`` rows across all tenants. Always sorted by timestamp
+        descending so the newest events are first.
+
+        Returns:
+            List of dicts shaped like the row (id, customer_id, ...).
+            Empty list if no rows match. Never raises on empty result.
+        """
+        db = self._db
+        assert db is not None
+
+        clauses = []
+        params: list[Any] = []
+        if customer_id is not None:
+            clauses.append("customer_id = ?")
+            params.append(customer_id)
+        if from_ts is not None:
+            clauses.append("timestamp >= ?")
+            params.append(from_ts)
+        if to_ts is not None:
+            clauses.append("timestamp <= ?")
+            params.append(to_ts)
+        if provider is not None:
+            clauses.append("provider = ?")
+            params.append(provider)
+        if job_id is not None:
+            clauses.append("job_id = ?")
+            params.append(job_id)
+
+        where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
+        params.append(int(limit))
+
+        cursor = await db.execute(
+            f"""
+            SELECT id, customer_id, job_id, session_id, task_type,
+                   provider, model,
+                   input_tokens, output_tokens, cost_estimate_usd,
+                   timestamp, success, error_message
+            FROM ai_usage
+            {where}
+            ORDER BY timestamp DESC
+            LIMIT ?
+            """,
+            tuple(params),
+        )
+        rows = await cursor.fetchall()
+        return [dict(row) for row in rows]
+
 
 # ---------------------------------------------------------------------------
 # Row ↔ Model conversion helpers

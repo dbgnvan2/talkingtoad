@@ -136,6 +136,13 @@ async def lifespan(app: FastAPI):
     await _store.init()
     logger.info("app_startup", extra={"db_path": _store._db_path})
     yield
+    # v2.6 M2.5 / Cycle DD: drain in-flight ai_usage writes before close.
+    # Without this, fire-and-forget tasks scheduled by AIRouter._log_usage
+    # would be cancelled mid-write on shutdown and their billing data
+    # would be lost. Done BEFORE store.close() so the underlying SQLite
+    # connection is still open when the writes complete.
+    from api.services.usage_logger import usage_logger
+    await usage_logger.await_pending()
     if _store:
         await _store.close()
     logger.info("app_shutdown")
