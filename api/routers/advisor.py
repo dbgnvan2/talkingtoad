@@ -16,6 +16,7 @@ from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 
 from api.models.advisor import AdvisorRequest
+from api.models.geo_config import GeoConfig
 from api.routers.crawl import get_store  # v2.3 (M0.5): shared helper; was a duplicate definition
 from api.services.advisor import evaluate_page
 from api.services.auth import require_auth
@@ -38,10 +39,22 @@ router = APIRouter(prefix="/api/ai", tags=["advisor"], dependencies=[Depends(req
 
 
 class AdvisorRequestPayload(BaseModel):
-    """Request to evaluate a page."""
+    """Request to evaluate a page.
+
+    Cycle FF.1: ``geo_config`` is an optional dict that the client sends
+    when it wants the critic to evaluate the page against specific
+    entities (organization, primary location, location pool, topic
+    entities). Wire format is dict — matches the image-AI HTTP pattern
+    (``api/routers/ai.py`` already passes dicts to ``analyze_image_with_geo``)
+    and keeps the boundary serialization-friendly. ``evaluate_content``
+    converts to a typed ``GeoConfig`` via ``GeoConfig.from_dict`` before
+    passing into the service layer. When omitted/None, the advisor falls
+    back to the legacy generic prompt (Cycle FF locked decision #1).
+    """
     url: Optional[str] = None
     content: Optional[str] = None
     original_content: Optional[str] = None
+    geo_config: Optional[dict] = None
 
 
 class AdvisorResponsePayload(BaseModel):
@@ -90,10 +103,17 @@ async def evaluate_content(payload: AdvisorRequestPayload) -> AdvisorResponsePay
     Returns markdown report and flag for whether to generate rewrite prompt.
     """
     try:
+        # Cycle FF.1: convert the wire-format dict to a typed GeoConfig
+        # before crossing into the service layer. None passthrough when
+        # the client doesn't send it — preserves Cycle FF fallback parity.
+        geo_config = (
+            GeoConfig.from_dict(payload.geo_config) if payload.geo_config else None
+        )
         request = AdvisorRequest(
             url=payload.url,
             content=payload.content,
             original_content=payload.original_content,
+            geo_config=geo_config,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))

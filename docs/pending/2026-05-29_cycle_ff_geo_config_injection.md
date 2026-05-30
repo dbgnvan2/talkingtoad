@@ -23,6 +23,18 @@ source: User pivot away from deferred-Identity-Model Cycle FF
 > 4. `tests/test_advisor_geo_injection.py`: 5 tests covering interpolation,
 >    fallback parity (semantic contract, not exact-string), end-to-end
 >    threading, all-four-fields, and the no-leak privacy boundary.
+>
+> **Cycle FF.1 follow-up (shipped 2026-05-30 same day).** Per developer
+> directive after Cycle FF landed: the HTTP boundary `POST /api/ai/advisor`
+> now exposes `geo_config` via `AdvisorRequestPayload`. Wire format is
+> `Optional[dict]` (matches the existing image-AI HTTP pattern in
+> `api/routers/ai.py`); the router converts to typed `GeoConfig` via
+> `GeoConfig.from_dict()` before crossing into the service layer.
+> Two HTTP integration tests added to `tests/test_advisor_geo_injection.py`:
+> one proves the entity strings flow from JSON body → LLM system_prompt
+> end-to-end; one locks the fallback parity at the router boundary
+> (body without `geo_config` produces no ENTITY VALIDATION CONTEXT block).
+> Full suite: 1,382 passed / 12 skipped / 0 failed.
 
 # Cycle FF (revised): GeoConfig injection into advisor.py
 

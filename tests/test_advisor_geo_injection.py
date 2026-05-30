@@ -245,6 +245,92 @@ class TestGeoConfigPromptInjection:
 
     # -- Test 5 (supporting) — non-whitelisted fields do not leak ---------
 
+    # -- Cycle FF.1 supporting — HTTP boundary threading ------------------
+
+    @pytest.mark.asyncio
+    async def test_http_advisor_endpoint_threads_geo_config_dict_to_prompt(
+        self, api_client, auth_headers
+    ):
+        """Cycle FF.1: POSTing geo_config (as a dict, the wire format)
+        to /api/ai/advisor must reach the LLM prompt with the entity
+        strings interpolated. This is the end-to-end UI Action
+        Verification per CLAUDE.md — the router-payload field is not
+        considered live until a real HTTP call is shown to flow through
+        to the AIRouter system_prompt."""
+        captured: dict = {}
+
+        async def fake_call_text(**kwargs):
+            captured.update(kwargs)
+            return _ai_response(_minimal_critic_json())
+
+        body = {
+            "content": "page body",
+            "geo_config": {
+                "domain": "http-test.example",
+                "org_name": "HTTPRoutedOrg",
+                "primary_location": "HTTPRoutedCity",
+                "topic_entities": ["HTTPTopic"],
+                "location_pool": ["HTTPLoc"],
+            },
+        }
+
+        with patch(
+            "api.services.advisor.ai_router.call_text",
+            side_effect=fake_call_text,
+        ):
+            response = await api_client.post(
+                "/api/ai/advisor", json=body, headers=auth_headers
+            )
+
+        assert response.status_code == 200, response.text
+        # AIRouter was actually called (proves request reached the service).
+        assert "system_prompt" in captured, (
+            "AIRouter.call_text was not invoked — request did not reach "
+            "the advisor service layer."
+        )
+        system_prompt = captured["system_prompt"]
+        # The HTTP-supplied entity strings must have flowed through.
+        assert "HTTPRoutedOrg" in system_prompt, (
+            "org_name from HTTP geo_config did not reach the LLM prompt — "
+            "router-payload threading broken."
+        )
+        assert "HTTPRoutedCity" in system_prompt
+        assert "HTTPTopic" in system_prompt
+        assert "HTTPLoc" in system_prompt
+
+    @pytest.mark.asyncio
+    async def test_http_advisor_endpoint_without_geo_config_uses_legacy_prompt(
+        self, api_client, auth_headers
+    ):
+        """Cycle FF.1 fallback parity at the HTTP boundary: a request
+        with no ``geo_config`` field (or null) must produce the legacy
+        generic prompt — no ENTITY VALIDATION CONTEXT block. Locks the
+        contract that omitting the field is the documented opt-out."""
+        captured: dict = {}
+
+        async def fake_call_text(**kwargs):
+            captured.update(kwargs)
+            return _ai_response(_minimal_critic_json())
+
+        # geo_config absent from the body entirely — most common shape
+        # for callers that don't opt in.
+        body = {"content": "page body"}
+
+        with patch(
+            "api.services.advisor.ai_router.call_text",
+            side_effect=fake_call_text,
+        ):
+            response = await api_client.post(
+                "/api/ai/advisor", json=body, headers=auth_headers
+            )
+
+        assert response.status_code == 200, response.text
+        system_prompt = captured["system_prompt"]
+        assert "ENTITY VALIDATION CONTEXT" not in system_prompt, (
+            "HTTP request without geo_config still produced the entity "
+            "block — fallback parity broken at the router boundary."
+        )
+
     @pytest.mark.asyncio
     async def test_non_whitelisted_geoconfig_fields_do_not_leak(self):
         """Privacy / correctness boundary: client_name and model are
