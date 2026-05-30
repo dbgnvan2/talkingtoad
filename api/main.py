@@ -37,6 +37,7 @@ from api.routers import verified as verified_router
 from api.routers import ai as ai_router
 from api.routers import geo as geo_router
 from api.routers import advisor as advisor_router
+from api.routers import usage as usage_router
 from api.services.job_store import SQLiteJobStore, RedisJobStore, get_job_store
 from api.services.rate_limiter import limiter
 
@@ -203,3 +204,4 @@ app.include_router(utility_router.public_router)
 app.include_router(ai_router.router)
 app.include_router(geo_router.router)
 app.include_router(advisor_router.router)
+app.include_router(usage_router.router)  # v2.6 M2.6 / Cycle EE

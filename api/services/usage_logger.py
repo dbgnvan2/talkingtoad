@@ -208,3 +208,141 @@ class UsageLogger:
 # mean multiple _pending sets and await_pending() would only drain its
 # own.
 usage_logger = UsageLogger()
+
+
+# ===========================================================================
+# Read path (v2.6 M2.6 / Cycle EE)
+# ===========================================================================
+#
+# UsageReader is an INDEPENDENT class — no shared base or state with
+# UsageLogger above. Co-located in this file for discoverability only.
+# Per the Cycle EE locked decision (#2) and the user's critique on
+# avoiding the "God Service" pattern.
+#
+# Two enforcement points live here:
+#   1. 90-day date-range cap → raises ValueError on violation; the
+#      router catches and returns HTTP 400 PERIOD_TOO_LARGE.
+#   2. customer_id is REQUIRED — passing None / "" raises ValueError.
+#      This is the privacy boundary at the service layer; the store
+#      layer also enforces it, defence-in-depth.
+
+
+from datetime import timedelta
+
+from api.schemas.usage import (
+    ModelBreakdown,
+    ProviderBreakdown,
+    UsageReport,
+)
+
+
+_MAX_PERIOD_DAYS = 90
+"""Hard cap on usage-report date ranges. Beyond 90 days, requests are
+rejected with HTTP 400. Rationale: prevents accidental full-table
+scans on a growing ai_usage table; the typical billing query is
+month-scoped anyway."""
+
+
+class PeriodTooLargeError(ValueError):
+    """Raised when a usage-report query exceeds the 90-day window.
+    The usage router catches this and maps to HTTP 400 with error code
+    ``PERIOD_TOO_LARGE``."""
+
+
+class UsageReader:
+    """Read-path service for ai_usage aggregation.
+
+    Singleton — use the module-level :data:`usage_reader` instance.
+    Stateless; methods can be called concurrently.
+
+    Strict customer_id requirement: there is no method on this class
+    that returns aggregated data without specifying customer_id. The
+    "system admin sees all" pattern is deliberately absent — every
+    query is scoped to one customer. Today every authenticated request
+    derives customer_id = SYSTEM_CONTEXT_ID at the router layer
+    (TODO M2.3 wires real per-customer identity).
+    """
+
+    async def get_usage_report(
+        self,
+        *,
+        start_date: str,
+        end_date: str,
+        customer_id: str,
+        provider: str | None = None,
+    ) -> UsageReport:
+        """Build a UsageReport DTO from aggregated ai_usage rows.
+
+        Args:
+            start_date: ISO 8601 UTC inclusive lower bound.
+            end_date:   ISO 8601 UTC inclusive upper bound.
+            customer_id: REQUIRED. Empty / None raises ValueError.
+            provider: optional filter to one provider.
+
+        Raises:
+            ValueError: customer_id is empty / None.
+            PeriodTooLargeError: ``end_date - start_date > 90 days``.
+            ValueError: date strings don't parse as ISO 8601.
+
+        Returns:
+            UsageReport DTO ready for JSON serialisation.
+        """
+        if not customer_id:
+            raise ValueError(
+                "customer_id is required — UsageReader does not support "
+                "global aggregation queries."
+            )
+
+        # Validate dates parse + range is within the cap. Use fromisoformat
+        # which accepts both naive and offset-aware ISO 8601. We don't
+        # care about TZ for the duration calculation as long as both
+        # endpoints are in the same TZ (caller's responsibility — the
+        # router enforces UTC).
+        try:
+            start_dt = datetime.fromisoformat(start_date.replace("Z", "+00:00"))
+            end_dt = datetime.fromisoformat(end_date.replace("Z", "+00:00"))
+        except (TypeError, ValueError) as exc:
+            raise ValueError(
+                f"start_date / end_date must be ISO 8601 strings: {exc!s}"
+            ) from exc
+
+        if end_dt < start_dt:
+            raise ValueError("end_date must be >= start_date")
+
+        if (end_dt - start_dt) > timedelta(days=_MAX_PERIOD_DAYS):
+            raise PeriodTooLargeError(
+                f"Date range exceeds {_MAX_PERIOD_DAYS}-day cap "
+                f"({(end_dt - start_dt).days} days requested)"
+            )
+
+        from api.routers.crawl import get_store
+        store = await get_store()
+        raw = await store.aggregate_ai_usage(
+            start_ts=start_date,
+            end_ts=end_date,
+            customer_id=customer_id,
+            provider=provider,
+        )
+
+        return UsageReport(
+            period_start=start_date,
+            period_end=end_date,
+            customer_id=customer_id,
+            total_calls=raw["total_calls"],
+            successful_calls=raw["successful_calls"],
+            failed_calls=raw["failed_calls"],
+            total_input_tokens=raw["total_input_tokens"],
+            total_output_tokens=raw["total_output_tokens"],
+            total_cost_usd=raw["total_cost_usd"],
+            by_provider=[
+                ProviderBreakdown(**row) for row in raw["by_provider"]
+            ],
+            by_model=[ModelBreakdown(**row) for row in raw["by_model"]],
+        )
+
+
+usage_reader = UsageReader()
+"""Module-level singleton. Import as
+``from api.services.usage_logger import usage_reader``. Do NOT
+instantiate UsageReader() elsewhere — keeping a single instance makes
+the seam easy to mock in tests and ensures architectural consistency."""

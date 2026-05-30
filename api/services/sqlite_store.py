@@ -1271,6 +1271,137 @@ class SQLiteJobStore:
         )
         await db.commit()
 
+    async def aggregate_ai_usage(
+        self,
+        start_ts: str,
+        end_ts: str,
+        customer_id: str,
+        provider: str | None = None,
+    ) -> dict:
+        """Aggregate ai_usage rows for one customer over a date range.
+
+        Cycle EE (M2.6). All summation happens in SQL — no rows ever
+        leave the DB layer into Python memory. Cost is summed in
+        integer cents (``ROUND(cost_estimate_usd * 100)`` cast to
+        INTEGER) before the final divide-by-100, so the returned float
+        is cent-precise regardless of input float jitter (per the
+        Cycle DD storage-as-REAL → Cycle EE reconciliation chain).
+
+        Required:
+            start_ts: ISO 8601 inclusive lower bound.
+            end_ts:   ISO 8601 inclusive upper bound.
+            customer_id: REQUIRED — there is no "see all customers" path
+                through this method. Privacy boundary enforced here too,
+                not just at the service / router layer.
+
+        Optional:
+            provider: filter to one provider only.
+
+        Returns:
+            dict shaped like :class:`api.schemas.usage.UsageReport`'s
+            fields, ready to be unpacked into the Pydantic model:
+                {
+                    "total_calls": int,
+                    "successful_calls": int,
+                    "failed_calls": int,
+                    "total_input_tokens": int,
+                    "total_output_tokens": int,
+                    "total_cost_usd": float,
+                    "by_provider": list[dict],
+                    "by_model": list[dict],
+                }
+        """
+        db = self._db
+        assert db is not None
+        if not customer_id:
+            raise ValueError(
+                "aggregate_ai_usage requires a non-empty customer_id — "
+                "there is no global-aggregate path through this method."
+            )
+
+        # Build the WHERE clause + parameter list once; reused by the
+        # top-line and the two GROUP BY queries.
+        clauses = ["customer_id = ?", "timestamp >= ?", "timestamp <= ?"]
+        params: list[Any] = [customer_id, start_ts, end_ts]
+        if provider is not None:
+            clauses.append("provider = ?")
+            params.append(provider)
+        where = " AND ".join(clauses)
+
+        # ── Top-line ────────────────────────────────────────────────────
+        # Integer-cents aggregation:
+        #   ROUND(cost * 100) → snap each row to nearest cent
+        #   CAST(... AS INTEGER) → exact integer sum (no float jitter)
+        #   SUM(...) / 100.0 → convert back to dollars
+        #   ROUND(..., 2) → final guard against any sub-cent residue
+        # The result is exact to 2 decimal places.
+        top_sql = f"""
+            SELECT
+                COUNT(*)                                            AS total_calls,
+                SUM(CASE WHEN success = 1 THEN 1 ELSE 0 END)        AS successful_calls,
+                SUM(CASE WHEN success = 0 THEN 1 ELSE 0 END)        AS failed_calls,
+                COALESCE(SUM(input_tokens), 0)                      AS total_input_tokens,
+                COALESCE(SUM(output_tokens), 0)                     AS total_output_tokens,
+                ROUND(
+                    COALESCE(SUM(CAST(ROUND(cost_estimate_usd * 100) AS INTEGER)), 0) / 100.0,
+                    2
+                )                                                   AS total_cost_usd
+            FROM ai_usage
+            WHERE {where}
+        """
+        cursor = await db.execute(top_sql, tuple(params))
+        row = await cursor.fetchone()
+        top = dict(row) if row else {}
+
+        # ── Per-provider breakdown ─────────────────────────────────────
+        provider_sql = f"""
+            SELECT
+                provider,
+                COUNT(*)                                            AS call_count,
+                COALESCE(SUM(input_tokens), 0)                      AS total_input_tokens,
+                COALESCE(SUM(output_tokens), 0)                     AS total_output_tokens,
+                ROUND(
+                    COALESCE(SUM(CAST(ROUND(cost_estimate_usd * 100) AS INTEGER)), 0) / 100.0,
+                    2
+                )                                                   AS total_cost_usd,
+                SUM(CASE WHEN success = 0 THEN 1 ELSE 0 END)        AS failed_count
+            FROM ai_usage
+            WHERE {where}
+            GROUP BY provider
+            ORDER BY total_cost_usd DESC
+        """
+        cursor = await db.execute(provider_sql, tuple(params))
+        provider_rows = [dict(r) for r in await cursor.fetchall()]
+
+        # ── Per-(provider, model) breakdown ────────────────────────────
+        model_sql = f"""
+            SELECT
+                provider,
+                model,
+                COUNT(*)                                            AS call_count,
+                ROUND(
+                    COALESCE(SUM(CAST(ROUND(cost_estimate_usd * 100) AS INTEGER)), 0) / 100.0,
+                    2
+                )                                                   AS total_cost_usd
+            FROM ai_usage
+            WHERE {where}
+            GROUP BY provider, model
+            ORDER BY total_cost_usd DESC
+        """
+        cursor = await db.execute(model_sql, tuple(params))
+        model_rows = [dict(r) for r in await cursor.fetchall()]
+
+        return {
+            "total_calls": int(top.get("total_calls") or 0),
+            "successful_calls": int(top.get("successful_calls") or 0),
+            "failed_calls": int(top.get("failed_calls") or 0),
+            "total_input_tokens": int(top.get("total_input_tokens") or 0),
+            "total_output_tokens": int(top.get("total_output_tokens") or 0),
+            "total_cost_usd": float(top.get("total_cost_usd") or 0.0),
+            "by_provider": provider_rows,
+            "by_model": model_rows,
+        }
+
     async def get_ai_usage(
         self,
         customer_id: str | None = None,
