@@ -227,6 +227,12 @@ _ISSUE_SCORING: dict[str, tuple[int, int]] = {
     "COMPARISON_TABLE_MISSING":   (3,  2),
     "CHUNKS_NOT_SELF_CONTAINED":  (5,  4),
     "CENTRAL_CLAIM_BURIED":       (5,  3),
+    # Cycle GG: higher impact than its peers — a buried answer under
+    # an H2 is a stronger AI-extraction failure mode than the cousin
+    # word-position / signal-presence checks. Per continuation-prompt
+    # Q5's "stronger penalty" intent (penalty=20 didn't translate to
+    # this codebase's (impact, effort) tuple; (7, 3) is the closest).
+    "GEO_SUMMARY_BURIED":         (7,  3),
     "LINK_PROFILE_PROMOTIONAL":   (4,  2),
     "STRUCTURED_ELEMENTS_LOW":    (3,  2),
     # v2.1 GEO Analyzer: Conventional checks
@@ -1188,6 +1194,19 @@ _CATALOGUE: dict[str, _IssueSpec] = {
         human_description="Main Point Buried",
         fixability="content_edit",
     ),
+    # Cycle GG (2026-05-30): DOM-depth-based companion to
+    # CENTRAL_CLAIM_BURIED. That one is word-position based; this one
+    # looks at content-node depth under each <h2> heading. Together
+    # they triangulate "the answer is hard to find" from two angles.
+    "GEO_SUMMARY_BURIED": _IssueSpec(
+        category="ai_readiness", severity="warning",
+        description="Core summary is buried under content nodes under an H2 heading",
+        recommendation="Reorder each H2 section so the core answer leads in 1–2 sentences, "
+                       "with supporting content following. AI retrievers and skimming humans "
+                       "both miss answers that aren't immediately under the heading.",
+        human_description="Answer Buried Under H2",
+        fixability="content_edit",
+    ),
     "LINK_PROFILE_PROMOTIONAL": _IssueSpec(
         category="ai_readiness", severity="info",
         description="Over 80% of outbound body-text links point to the same organisation's own domains",
@@ -1359,6 +1378,7 @@ _AI_READINESS_CONFIDENCE: dict[str, str] = {
     "AI_BOT_TABLE_STALE":           "Heuristic",
     "SEMANTIC_DENSITY_LOW":         "Heuristic",
     "CENTRAL_CLAIM_BURIED":         "Heuristic",
+    "GEO_SUMMARY_BURIED":           "Heuristic",  # Cycle GG — DOM-depth heuristic
     "CHUNKS_NOT_SELF_CONTAINED":    "Heuristic",
     "CITATIONS_ORPHANED":           "Heuristic",
     "CITATIONS_SOURCES_INACCESSIBLE": "Heuristic",

@@ -476,6 +476,28 @@ def check_page(
         except Exception as e:
             logger.warning("schema_typing_error", extra={"url": url, "error": str(e)})
 
+    # ── Answerability (Cycle GG): GEO_SUMMARY_BURIED ──────────────────────────
+    # Inserted BEFORE the existing extractability/quality block per the
+    # Cycle GG continuation-prompt Q6: structural issues caught early
+    # can inform downstream quality scoring. Pure CPU; the auditor reads
+    # the pre-computed `page.is_h2_answer_buried` flag that the parser
+    # populated while soup was in scope (no re-parsing here).
+    #
+    # The literal-string emission below (rather than dispatching on the
+    # auditor's return value) satisfies the catalogue-liveness test in
+    # tests/test_class1_invariants.py — it greps for
+    # make_issue("CODE", ...) literals to surface dead-code entries.
+    # The auditor still returns a string (uniform with
+    # diagnose_extractability) so future codes can be added without
+    # widening the API.
+    if page.is_indexable:
+        try:
+            from api.services.extractability import audit_answerability
+            if audit_answerability(page) == "GEO_SUMMARY_BURIED":
+                issues.append(make_issue("GEO_SUMMARY_BURIED", url))
+        except Exception as e:
+            logger.warning("answerability_error", extra={"url": url, "error": str(e)})
+
     # ── Content Extractability (v2.0) ─────────────────────────────────────────
     if page.is_indexable:
         try:

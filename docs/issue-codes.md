@@ -8,7 +8,7 @@ generator: scripts/generate_issue_codes_doc.py
 
 > **This file is auto-generated.** Do not edit by hand — your changes will be overwritten the next time the generator runs. To update an issue code, edit `api/crawler/issue_checker.py` (`_CATALOGUE`, `_ISSUE_SCORING`, `_AI_READINESS_CONFIDENCE`) and re-run `python scripts/generate_issue_codes_doc.py`.
 
-**131 issue codes** across 11 categories.
+**132 issue codes** across 11 categories.
 
 ## Table of contents
 
@@ -22,7 +22,7 @@ generator: scripts/generate_issue_codes_doc.py
 - [SECURITY](#security) (6)
 - [URL_STRUCTURE](#url_structure) (4)
 - [IMAGE](#image) (14)
-- [AI_READINESS](#ai_readiness) (49)
+- [AI_READINESS](#ai_readiness) (50)
 
 ---
 
@@ -1013,7 +1013,7 @@ Image takes too long to load (over 1 second)
 
 Site readiness for AI search engines (Google AI Overviews, ChatGPT, Perplexity, etc.). Every code in this category carries a confidence label per the v2.0 spec: **Established** (vendor-confirmed effect), **Reasonable proxy** (industry consensus + Google's published best practices), **Heuristic** (industry consensus only, no vendor confirmation).
 
-_49 codes in this category._
+_50 codes in this category._
 
 ### AI_BOT_BLANKET_DISALLOW
 **Severity:** 🔴 critical | **Confidence:** Established | **Impact:** 9 | **Effort:** 1
@@ -1331,6 +1331,17 @@ First 200 words contain no direct answer signal (definition, TL;DR, summary phra
 **Recommendation:** Lead with a concise definition or summary ('X is...', 'In short...', 'Key takeaway:'). AI systems read top-to-bottom; putting the answer in the first 200 words maximises the chance it is retrieved and cited.
 
 **Plain-English:** No Lead Answer
+
+---
+
+### GEO_SUMMARY_BURIED
+**Severity:** 🟡 warning | **Confidence:** Heuristic | **Impact:** 7 | **Effort:** 3 | **Fixability:** content_edit
+
+Core summary is buried under content nodes under an H2 heading
+
+**Recommendation:** Reorder each H2 section so the core answer leads in 1–2 sentences, with supporting content following. AI retrievers and skimming humans both miss answers that aren't immediately under the heading.
+
+**Plain-English:** Answer Buried Under H2
 
 ---
 
