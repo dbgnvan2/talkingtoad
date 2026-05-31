@@ -91,6 +91,64 @@ with supporting detail following. Avoid front-loading sections with hero images 
 
 ---
 
+## Additional worked examples (shipped 2026-05-31)
+
+These are the explainers actually shipped with the GEO Authority cycles (GA3, GA4) and
+the first M3 audit code (M3.1). They prove the V4 standard is **already being applied
+per-cycle** — every new feature now ships its explainer. Two shapes are represented:
+*tools* (GA3/GA4 — a card the user operates) and *audit codes* (M3.1 — a diagnostic
+`issueHelp.js` entry). Use whichever shape matches the thing being explained.
+
+### GA3 — FAQ Schema Generator (a *tool*)
+- **What it is:** generates ready-to-paste FAQ schema (JSON-LD) built from your
+  organisation's topics and locations.
+- **Why it's useful:** long-tail FAQ questions are exactly what AI engines and search
+  match against; structured FAQ markup makes your answers eligible for rich results and
+  AI citation.
+- **Good vs bad:** a 6+-word specific question ("What should I expect from grief
+  counselling in Vancouver?") vs a short head term ("counselling") everyone competes for
+  and AI can't anchor to.
+- **How it can mislead:** the tool generates *anchors*, not verified answers — you must
+  write accurate answers; schema for content you can't honestly answer can hurt trust.
+- **How to use:** paste the JSON-LD into the page, then replace the draft answers with real ones.
+
+### GA4 — Authoritative Entity Schema Factory (a *tool*)
+- **What it is:** builds JSON-LD that tells search and AI engines who your organisation
+  is, what services it offers, and which authoritative entity (Wikipedia/Wikidata page)
+  it corresponds to.
+- **Why it's useful:** a `sameAs` link to an authoritative entity is a strong
+  disambiguation signal — it helps AI engines confidently identify and cite your org.
+- **Good vs bad:** linking to your real Wikipedia/Wikidata entity vs leaving it blank
+  (no disambiguation) or pointing at an unrelated page (actively misleading).
+- **How it can mislead:** schema must match what's visibly on your page and be truthful;
+  claiming services or an identity you can't back up can hurt trust and eligibility.
+- **How to use:** set your entity URL in GEO settings, generate, paste the JSON-LD into the page.
+
+### M3.1 — `SCHEMA_VISIBLE_MISMATCH` (an *audit code* — the issueHelp.js shape)
+This is the **first `issueHelp.js` entry shipped with the new `good_vs_bad` and
+`how_it_can_mislead` fields** — i.e. the concrete template for the eventual content pass
+over all ~132 codes. Verbatim:
+- **What it is (`definition`):** one or more values declared in this page's JSON-LD
+  (headline, name, FAQ answer, address) do not appear anywhere in the visible text.
+  Google explicitly requires markup content to also be visible.
+- **Why it matters (`impact`):** *Evidence tier: Established.* Mismatched structured data
+  risks losing rich-result eligibility and may be viewed as deceptive by AI search
+  systems — directly affecting whether the page is cited.
+- **Good vs bad (`good_vs_bad`):** Good — JSON-LD headline "Grief Counselling Services"
+  and the H1 reads the same. Bad — JSON-LD says "Best Therapy in Vancouver" but no such
+  text appears: invisible keyword stuffing in markup.
+- **How it can mislead (`how_it_can_mislead`):** a page can have valid JSON-LD that passes
+  syntax validators yet declares content the user never sees; this catches that specific
+  gap. It does *not* flag missing fields — only present fields whose values are absent.
+- **How to fix (`fix`):** add the declared value to the visible content, or update the
+  structured data to match what's shown (check your SEO plugin's schema settings).
+
+> **Implication for the content pass:** the `issueHelp.js` schema already tolerates the
+> richer `good_vs_bad` / `how_it_can_mislead` fields (parity tests pass). So the v4 content
+> pass can adopt M3.1's entry as the literal field template and extend codes incrementally.
+
+---
+
 ## Scope (when scheduled)
 
 ### In scope
