@@ -86,8 +86,8 @@ track; PLAN-V3.0 M3 is an *audit* track. They are complementary and both ship in
 |---|---|---|---|
 | 3.1 Structural Tree-Walking Auditor | **GA1** | ✅ **Fixed + verified (2026-05-31)** | Was *count-based* (flagged verbose sections, missed `<h3>`). Rewritten to **positional depth (threshold 3) + `<h2>`/`<h3>` + wrapper-transparent walk**; `<ol>`/`<table>` count as content; field renamed `is_h2_answer_buried`→`is_answer_buried` (back-compat retained). 11 positional tests incl. the verbose-section false-positive guard + `<h3>` case. Full suite **1393 passed, 0 fail**. Spec: `docs/pending/2026-05-31_ga1_positional_answerability.md`. |
 | 3.2 Dynamic Entity-Prompt Injection | **GA2** | ✅ **Verified complete (2026-05-31)** | `advisor._build_geo_context()` interpolates 4-field GeoConfig whitelist with legacy fallback when `geo_config is None` (Cycle FF / FF.1). Both Gemini evaluator tests present + passing (7 tests total). No delta. |
-| 3.3 Complexity-Moat FAQ Generator | **GA3** | 🆕 **Net-new** | `api/services/geo_faq.py` absent |
-| 3.4 Authoritative Entity Schema Factory | **GA4** | 🆕 **Net-new** | No schema factory; needs new GeoConfig field `entity_wikipedia_url` |
+| 3.3 Complexity-Moat FAQ Generator | **GA3** | ✅ **Done (2026-05-31, orche)** | `api/services/geo_faq.py` + `POST /api/ai/geo-faq` + FAQ card + V4 explainer; 33 tests; reviewed + polished. Commits `3e18faf`, `ad53884` |
+| 3.4 Authoritative Entity Schema Factory | **GA4** | 🔜 **Spec ready** | `docs/pending/2026-05-31_ga4_entity_schema_factory.md`; adds GeoConfig `entity_wikipedia_url`. Next orche item |
 
 **Cross-cutting decisions for GA3 + GA4 (locked with user 2026-05-31):**
 - **Generate-and-suggest only.** Output is returned for the user to copy/paste or
