@@ -8,7 +8,7 @@ generator: scripts/generate_issue_codes_doc.py
 
 > **This file is auto-generated.** Do not edit by hand — your changes will be overwritten the next time the generator runs. To update an issue code, edit `api/crawler/issue_checker.py` (`_CATALOGUE`, `_ISSUE_SCORING`, `_AI_READINESS_CONFIDENCE`) and re-run `python scripts/generate_issue_codes_doc.py`.
 
-**138 issue codes** across 11 categories.
+**139 issue codes** across 11 categories.
 
 ## Table of contents
 
@@ -22,7 +22,7 @@ generator: scripts/generate_issue_codes_doc.py
 - [SECURITY](#security) (6)
 - [URL_STRUCTURE](#url_structure) (4)
 - [IMAGE](#image) (14)
-- [AI_READINESS](#ai_readiness) (56)
+- [AI_READINESS](#ai_readiness) (57)
 
 ---
 
@@ -1013,7 +1013,7 @@ Image takes too long to load (over 1 second)
 
 Site readiness for AI search engines (Google AI Overviews, ChatGPT, Perplexity, etc.). Every code in this category carries a confidence label per the v2.0 spec: **Established** (vendor-confirmed effect), **Reasonable proxy** (industry consensus + Google's published best practices), **Heuristic** (industry consensus only, no vendor confirmation).
 
-_56 codes in this category._
+_57 codes in this category._
 
 ### AI_BOT_BLANKET_DISALLOW
 **Severity:** 🔴 critical | **Confidence:** Established | **Impact:** 9 | **Effort:** 1
@@ -1265,6 +1265,17 @@ Rendered content appears to shift the page's topic versus raw HTML — possible 
 **Recommendation:** Ensure raw HTML and rendered content describe the same topic. Serving different content to AI crawlers than to users violates search quality guidelines.
 
 **Plain-English:** Possible Content Cloaking
+
+---
+
+### CONTENT_DATE_STALE_VISIBLE
+**Severity:** 🟡 warning | **Confidence:** Reasonable proxy | **Impact:** 4 | **Effort:** 2 | **Fixability:** content_edit
+
+Visible/declared modified date is old enough to read as stale for its page type
+
+**Recommendation:** Review the content for accuracy and update the visible date if the information is still current. For evergreen content, consider removing the date entirely or adding a note that it has been reviewed.
+
+**Plain-English:** Stale Visible Date
 
 ---
 

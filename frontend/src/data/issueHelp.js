@@ -2590,6 +2590,37 @@ const issueHelp = {
     fix:
       "Break long paragraphs into shorter units of 50–100 words each. Each paragraph should express one idea. Use bullet lists or sub-headings where multiple points are being made.",
   },
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // M4.1: CONTENT FRESHNESS
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  CONTENT_DATE_STALE_VISIBLE: {
+    title: "Stale visible date",
+    category: "ai_readiness",
+    severity: "warning",
+    confidence: "Reasonable proxy",
+    definition:
+      "The visible/declared modified date on this page is old enough that it may appear " +
+      "stale to visitors, based on the page type. Articles are expected to be refreshed " +
+      "within 12 months; service, about, home, FAQ, and contact pages within 24 months.",
+    impact:
+      "Evidence tier: Reasonable proxy. Users may perceive the content as outdated, " +
+      "reducing trust and engagement. Search engines may also interpret old dates as a " +
+      "signal of lower freshness, and AI systems may prefer more recently updated sources " +
+      "when selecting content to cite.",
+    fix:
+      "Review the content for accuracy and update the visible date if the information is " +
+      "still current. For evergreen content, consider removing the date entirely or adding " +
+      "a note that it has been reviewed.",
+    good_vs_bad:
+      "Good: An article updated within the last 12 months shows a current date. " +
+      "Bad: A service page last modified 3 years ago still displays that old date.",
+    how_it_can_mislead:
+      "This check uses a heuristic cadence based on page type. Some evergreen pages may " +
+      "legitimately carry old dates (e.g., a 'Contact Us' page unchanged for years). The " +
+      "cadence is a guideline, not a hard rule.",
+  },
   };
 
 

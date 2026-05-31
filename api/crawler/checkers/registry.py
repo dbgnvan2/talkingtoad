@@ -256,6 +256,8 @@ _ISSUE_SCORING: dict[str, tuple[int, int]] = {
     "SECTION_VAGUE_OPENER":       (5,  2),
     "SECTION_CROSS_REFERENCES":   (6,  2),
     "PARA_TOO_LONG":              (4,  2),
+    # M4.1: Visible date stale for page type (Content Freshness)
+    "CONTENT_DATE_STALE_VISIBLE": (4,  2),
 }
 
 
@@ -1371,6 +1373,17 @@ _CATALOGUE: dict[str, _IssueSpec] = {
         human_description="Overly Long Paragraphs",
         fixability="content_edit",
     ),
+    # M4.1: Content Freshness — visible date stale for page type
+    "CONTENT_DATE_STALE_VISIBLE": _IssueSpec(
+        category="ai_readiness", severity="warning",
+        description="Visible/declared modified date is old enough to read as stale for its page type",
+        recommendation="Review the content for accuracy and update the visible date if the information "
+                       "is still current. For evergreen content, consider removing the date entirely "
+                       "or adding a note that it has been reviewed.",
+        human_description="Stale Visible Date",
+        fixability="content_edit",
+        confidence_label="Reasonable proxy",
+    ),
 }
 _STOP_WORDS: frozenset[str] = frozenset({
     "a", "an", "the", "and", "or", "but", "in", "on", "at", "to", "for",
@@ -1479,6 +1492,8 @@ _AI_READINESS_CONFIDENCE: dict[str, str] = {
     "BLOG_SECTIONS_MISSING":        "Heuristic",
     "LINK_PROFILE_PROMOTIONAL":     "Heuristic",
     "CONVERSATIONAL_H2_MISSING":    "Heuristic",  # legacy v1.7 — no vendor confirmation
+    # M4.1: Content Freshness — visible date stale for page type
+    "CONTENT_DATE_STALE_VISIBLE":   "Reasonable proxy",
 }
 def make_issue(
     code: str,

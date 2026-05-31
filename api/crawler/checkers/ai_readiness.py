@@ -8,6 +8,8 @@ the originals.
 
 import logging
 import re
+from datetime import date, datetime
+from typing import Optional, Dict, Any
 from urllib.parse import urlparse
 
 from api.crawler.parser import ParsedPage
@@ -317,3 +319,76 @@ _NUMBERED_STEP_RE = re.compile(r"^\s*\d+[\.\)]\s+\w", re.M)
 def _has_numbered_steps(headings: list, page: "ParsedPage") -> bool:
     text = page.first_200_words or ""
     return bool(_NUMBERED_STEP_RE.search(text))
+
+
+# ---------------------------------------------------------------------------
+# M4.1: CONTENT_DATE_STALE_VISIBLE — page-type-aware freshness check
+# ---------------------------------------------------------------------------
+
+# Cadence in months per page type.  None means "never stale" (exempt).
+_PAGE_TYPE_CADENCE: dict[str, int | None] = {
+    "article": 12,
+    "service": 24,
+    "about": 24,
+    "home": 24,
+    "contact": 24,
+    "faq": 24,
+    "unknown": 24,
+    "team_member": None,  # biographical — never stale
+}
+
+
+def check_content_date_stale_visible(
+    page: ParsedPage,
+    *,
+    today: date,
+) -> Optional[Dict[str, Any]]:
+    """Check if visible modified date is stale for page type.
+
+    DETERMINISM: ``today`` is explicit so tests can pin a fixed date.
+    The caller in ``issue_checker.check_page`` passes
+    ``today=datetime.now(timezone.utc).date()``.
+
+    Returns:
+        dict with issue details or None if no issue.
+    """
+    if not page.date_modified:
+        return None
+
+    # Parse the date robustly
+    try:
+        if isinstance(page.date_modified, str):
+            dt = datetime.fromisoformat(page.date_modified)
+            visible_date = dt.date() if hasattr(dt, "date") else dt
+        elif isinstance(page.date_modified, datetime):
+            visible_date = page.date_modified.date()
+        elif isinstance(page.date_modified, date):
+            visible_date = page.date_modified
+        else:
+            return None
+    except (ValueError, TypeError):
+        return None
+
+    # Calculate age in months (approximate: 30-day months)
+    age_days = (today - visible_date).days
+    age_months = age_days // 30
+
+    # Get page type and cadence — reuse the established classifier
+    from api.services.page_classifier import infer_page_type
+    page_type = infer_page_type(page)
+    cadence = _PAGE_TYPE_CADENCE.get(page_type)
+
+    # team_member: never stale
+    if cadence is None:
+        return None
+
+    # Strict > comparison: exactly at cadence is NOT flagged
+    if age_months <= cadence:
+        return None
+
+    return {
+        "visible_date": visible_date.isoformat(),
+        "age_months": age_months,
+        "page_type": page_type,
+        "recommended_refresh_months": cadence,
+    }

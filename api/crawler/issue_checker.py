@@ -65,6 +65,7 @@ from api.crawler.checkers.security import _check_security  # noqa: F401
 from api.crawler.checkers.metadata import _check_canonical  # noqa: F401
 from api.crawler.checkers.headings import _check_headings  # noqa: F401
 from api.crawler.checkers.ai_readiness import _run_geo_checks  # noqa: F401
+from api.crawler.checkers.ai_readiness import check_content_date_stale_visible  # noqa: F401
 from api.services.page_classifier import infer_page_type
 
 logger = logging.getLogger(__name__)
@@ -610,5 +611,19 @@ def check_page(
 
     # ── v2.1 GEO Analyzer static checks ─────────────────────────────────────
     _run_geo_checks(page, url, issues)
+
+    # ── M4.1: CONTENT_DATE_STALE_VISIBLE ────────────────────────────────────
+    if is_indexable:
+        from datetime import timezone as _tz_m41
+        stale_result = check_content_date_stale_visible(
+            page,
+            today=datetime.now(_tz_m41.utc).date(),
+        )
+        if stale_result:
+            issues.append(make_issue(
+                "CONTENT_DATE_STALE_VISIBLE",
+                url,
+                extra=stale_result,
+            ))
 
     return issues
