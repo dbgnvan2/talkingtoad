@@ -37,6 +37,7 @@ class GeoConfigRequest(BaseModel):
     max_tokens: int = Field(default=500, ge=100, le=4000, description="Max tokens for response")
     client_name: str = Field(default="", description="Client/company name for PDF reports")
     prepared_by: str = Field(default="", description="Consultant/agency name for PDF reports")
+    entity_wikipedia_url: str = Field(default="", description="Authoritative entity URL (Wikipedia/Wikidata) for sameAs")
 
 
 class GeoConfigResponse(BaseModel):
@@ -52,9 +53,16 @@ class GeoConfigResponse(BaseModel):
     max_tokens: int
     client_name: str
     prepared_by: str
+    entity_wikipedia_url: str
     created_at: str
     updated_at: str
     is_configured: bool
+
+
+class EntitySchemaRequest(BaseModel):
+    """Request model for entity schema generation."""
+
+    domain: str = Field(..., description="Domain to load GeoConfig for")
 
 
 # ── Endpoints ──────────────────────────────────────────────────────────────
@@ -101,6 +109,7 @@ async def get_geo_settings(
         max_tokens=config.max_tokens,
         client_name=config.client_name,
         prepared_by=config.prepared_by,
+        entity_wikipedia_url=config.entity_wikipedia_url,
         created_at=config.created_at,
         updated_at=config.updated_at,
         is_configured=config.is_configured(),
@@ -130,6 +139,7 @@ async def save_geo_settings(
         max_tokens=request.max_tokens,
         client_name=request.client_name,
         prepared_by=request.prepared_by,
+        entity_wikipedia_url=request.entity_wikipedia_url,
         created_at=now,
         updated_at=now,
     )
@@ -207,6 +217,51 @@ async def test_geo_config(
         "location_pool_count": len(config.location_pool),
         "errors": errors,
         "message": "Configuration is valid" if is_valid else "Configuration has errors",
+    }
+
+
+# ── GA4: Authoritative Entity Schema Factory ─────────────────────────────
+
+
+@router.post("/entity-schema")
+async def generate_entity_schema(
+    body: EntitySchemaRequest,
+    store=Depends(get_store),
+) -> dict[str, Any]:
+    """Generate a nested Schema.org Organization JSON-LD from GeoConfig.
+
+    Deterministic — no LLM, no network calls. Generate-and-suggest only.
+    """
+    import json
+
+    from api.services.geo_schema_factory import build_entity_schema
+
+    # Load GeoConfig for the domain
+    geo_config = await store.get_geo_config(body.domain)
+    if geo_config is None:
+        raise HTTPException(
+            status_code=422,
+            detail=f"No GEO configuration found for domain: {body.domain}. Configure GEO settings first.",
+        )
+
+    if not geo_config.topic_entities:
+        raise HTTPException(
+            status_code=422,
+            detail="GEO configuration has no topic_entities. Add at least one topic entity in GEO settings.",
+        )
+
+    schema = build_entity_schema(geo_config)
+    jsonld = json.dumps(schema, indent=2)
+
+    warnings = []
+    if not geo_config.entity_wikipedia_url or not geo_config.entity_wikipedia_url.strip():
+        warnings.append("entity_wikipedia_url not set \u2014 sameAs omitted")
+
+    return {
+        "jsonld": jsonld,
+        "schema": schema,
+        "valid": True,
+        "warnings": warnings,
     }
 
 

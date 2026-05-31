@@ -34,6 +34,9 @@ class GeoConfig:
     client_name: str = ""  # Client/company name for PDF reports
     prepared_by: str = ""  # Consultant/agency name for PDF reports
 
+    # ── Authority / Entity Linking ─────────────────────────────────────────
+    entity_wikipedia_url: str = ""  # authoritative-entity URL for sameAs (Wikipedia/Wikidata)
+
     # ── Metadata ────────────────────────────────────────────────────────────
     created_at: str = ""  # ISO timestamp
     updated_at: str = ""  # ISO timestamp

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react'
-import { generateGeoReport, getGeoAiModel, setGeoAiModel, generateGeoRewritePrompt, generateGeoFaq } from '../api.js'
+import { generateGeoReport, getGeoAiModel, setGeoAiModel, generateGeoRewritePrompt, generateGeoFaq, generateEntitySchema } from '../api.js'
 import { authHeaders } from '../api.js'
 import Spinner from './Spinner.jsx'
 
@@ -735,6 +735,141 @@ function FAQSchemaCard({ domain }) {
 }
 
 
+// ---------------------------------------------------------------------------
+// GA4: Entity Schema Factory Card
+// ---------------------------------------------------------------------------
+
+function EntitySchemaCard({ domain }) {
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState(null)
+  const [result, setResult] = useState(null)
+  const [copied, setCopied] = useState(false)
+  const [expanded, setExpanded] = useState(false)
+  const [showHelp, setShowHelp] = useState(false)
+  const textareaRef = useRef(null)
+
+  const handleGenerate = async () => {
+    setLoading(true)
+    setError(null)
+    setResult(null)
+    try {
+      const data = await generateEntitySchema(domain)
+      setResult(data)
+    } catch (e) {
+      setError(e.message || 'Entity schema generation failed')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleCopy = () => {
+    if (!result) return
+    navigator.clipboard.writeText(result.jsonld).then(() => {
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    })
+  }
+
+  return (
+    <div className="border border-violet-200 bg-violet-50 rounded-2xl p-5 space-y-4">
+      {/* Header */}
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className="flex items-center gap-2">
+            <span className="text-lg">&#x1F3DB;</span>
+            <h3 className="font-bold text-violet-900 text-sm">Entity Schema Factory</h3>
+            <span className="px-2 py-0.5 bg-violet-100 text-violet-700 text-xs font-bold rounded-full">
+              JSON-LD
+            </span>
+          </div>
+          <p className="text-xs text-violet-700 mt-1">
+            Generate Schema.org Organization markup linking your entity to Wikipedia/Wikidata.
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowHelp(h => !h)}
+            className="text-violet-400 hover:text-violet-700 text-xs font-bold"
+            title="Learn more"
+          >
+            {showHelp ? 'Hide help' : '?'}
+          </button>
+          <button
+            onClick={() => setExpanded(e => !e)}
+            className="text-violet-400 hover:text-violet-700 text-sm font-bold"
+          >
+            {expanded ? '\u25B2 Hide' : '\u25BC Show'}
+          </button>
+        </div>
+      </div>
+
+      {/* Help / explainer (V4 standard) */}
+      {showHelp && (
+        <div className="bg-white border border-violet-200 rounded-xl p-4 text-xs text-violet-800 space-y-2">
+          <p><strong>What it is:</strong> Builds ready-to-paste JSON-LD that tells search and AI engines who your organisation is, what services it offers, and which authoritative entity (Wikipedia/Wikidata page) it corresponds to.</p>
+          <p><strong>Why it&apos;s useful:</strong> A <code>sameAs</code> link to an authoritative entity is a strong disambiguation signal &mdash; it helps AI engines confidently identify and cite your organisation.</p>
+          <p><strong>Good vs bad:</strong> Linking to your real Wikipedia/Wikidata entity vs leaving it blank (no disambiguation) or pointing at an unrelated page (actively misleading).</p>
+          <p><strong>How it can mislead:</strong> Schema must match what&apos;s visibly on your page and be truthful; claiming services or an identity you can&apos;t back up can hurt trust and eligibility.</p>
+          <p><strong>How to use:</strong> Set your entity URL in GEO settings, generate, paste the JSON-LD into the page <code>{'<head>'}</code>.</p>
+        </div>
+      )}
+
+      {expanded && (
+        <>
+          {/* Generate button */}
+          <button
+            onClick={handleGenerate}
+            disabled={loading}
+            className="px-4 py-2 text-sm font-bold bg-violet-600 text-white rounded-xl hover:bg-violet-700 disabled:opacity-50 transition-colors"
+          >
+            {loading ? 'Generating\u2026' : '\u25B6 Generate Entity Schema'}
+          </button>
+
+          {/* Error */}
+          {error && (
+            <div className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-xl p-3">{error}</div>
+          )}
+
+          {/* Results */}
+          {result && (
+            <div className="space-y-3">
+              {/* Warnings */}
+              {result.warnings?.length > 0 && (
+                <div className="flex flex-wrap items-center gap-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-xl p-3">
+                  {result.warnings.map((w, i) => (
+                    <span key={i}>{w}</span>
+                  ))}
+                </div>
+              )}
+
+              {/* JSON-LD copy box (rendered as TEXT, never dangerouslySetInnerHTML) */}
+              <div className="relative">
+                <label className="text-xs font-bold text-violet-800 block mb-1">
+                  JSON-LD &mdash; paste into your page {'<head>'}
+                </label>
+                <textarea
+                  ref={textareaRef}
+                  readOnly
+                  value={result.jsonld}
+                  rows={Math.min(24, (result.jsonld || '').split('\n').length + 1)}
+                  className="w-full text-xs font-mono border border-violet-200 rounded-xl p-3 bg-white resize-y"
+                />
+                <button
+                  onClick={handleCopy}
+                  className="absolute top-6 right-2 px-2 py-1 text-xs bg-violet-600 text-white rounded-lg hover:bg-violet-700"
+                >
+                  {copied ? '\u2713 Copied' : 'Copy'}
+                </button>
+              </div>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  )
+}
+
+
 export default function GEOReportPanel({ jobId, domain }) {
   const [report, setReport] = useState(null)
   const [loading, setLoading] = useState(false)
@@ -1204,6 +1339,9 @@ export default function GEOReportPanel({ jobId, domain }) {
 
       {/* GA3: FAQ Schema Generator — always available when domain is set */}
       {domain && <FAQSchemaCard domain={domain} />}
+
+      {/* GA4: Entity Schema Factory — always available when domain is set */}
+      {domain && <EntitySchemaCard domain={domain} />}
     </div>
   )
 }

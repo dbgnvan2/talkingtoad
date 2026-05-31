@@ -902,3 +902,14 @@ export async function generateGeoFaq(domain, { mode = 'template', limit = 8 } = 
   })
   return checkResponse(res)
 }
+
+// GA4: Authoritative Entity Schema Factory
+
+export async function generateEntitySchema(domain) {
+  const res = await fetch('/api/geo/entity-schema', {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify({ domain }),
+  })
+  return checkResponse(res)
+}

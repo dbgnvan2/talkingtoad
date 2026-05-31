@@ -18,6 +18,9 @@ export default function GeoSettingsModal({ domain, onClose, onSaved }) {
   const [topicEntities, setTopicEntities] = useState([''])
   const [locationPool, setLocationPool] = useState([''])
 
+  // Entity linking
+  const [entityWikipediaUrl, setEntityWikipediaUrl] = useState('')
+
   // AI model selection
   const [availableModels, setAvailableModels] = useState([])
   const [selectedModel, setSelectedModel] = useState('')
@@ -34,6 +37,7 @@ export default function GeoSettingsModal({ domain, onClose, onSaved }) {
         setPrimaryLocation(config.primary_location || '')
         setTopicEntities(config.topic_entities?.length ? config.topic_entities : [''])
         setLocationPool(config.location_pool?.length ? config.location_pool : [''])
+        setEntityWikipediaUrl(config.entity_wikipedia_url || '')
         setAvailableModels(modelData.available || [])
         setSelectedModel(modelData.selected || '')
       } catch (err) {
@@ -89,6 +93,7 @@ export default function GeoSettingsModal({ domain, onClose, onSaved }) {
         max_tokens: 500,
         client_name: '',
         prepared_by: '',
+        entity_wikipedia_url: entityWikipediaUrl.trim(),
       })
 
       if (onSaved) onSaved()
@@ -271,6 +276,23 @@ export default function GeoSettingsModal({ domain, onClose, onSaved }) {
             </button>
             <p className="text-xs text-gray-500 mt-1">
               Service areas and nearby cities for geographic optimization
+            </p>
+          </div>
+
+          {/* Entity Wikipedia/Wikidata URL (optional) */}
+          <div>
+            <label className="block text-sm font-bold text-gray-700 mb-2">
+              Authoritative Entity URL <span className="text-xs font-normal text-gray-500">(optional)</span>
+            </label>
+            <input
+              type="url"
+              value={entityWikipediaUrl}
+              onChange={(e) => setEntityWikipediaUrl(e.target.value)}
+              placeholder="e.g., https://en.wikipedia.org/wiki/Your_Organization"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+            />
+            <p className="text-xs text-gray-500 mt-1">
+              Your Wikipedia or Wikidata page URL. Used as a &quot;sameAs&quot; link in Schema.org markup to help AI engines identify your organisation.
             </p>
           </div>
 
