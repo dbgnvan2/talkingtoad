@@ -171,11 +171,13 @@ track; PLAN-V3.0 M3 is an *audit* track. They are complementary and both ship in
   - `"template"` (**default**): deterministic. Build questions from `GeoConfig.topic_entities`
     × locations (`primary_location` + `location_pool`) via question templates
     (e.g. `"What is the role of {entity} in {location}-based therapy?"`). Free, no key needed.
-  - `"ai"` (**opt-in**): route through the existing **AIRouter** —
-    `AIRouter.call_text(prompt, ..., task_type="geo_faq")` — inheriting per-customer keys,
-    provider routing, and `ai_usage` token logging automatically.
-  - **`task_type="geo_faq"`** is a new routing key; add its default-model mapping alongside
-    the existing M2 task types.
+  - `"ai"` (**opt-in**): route through the existing **AIRouter**, following the advisor
+    pattern exactly — `ai_router.call_text(customer_id=SYSTEM_CONTEXT_ID, system_prompt=…,
+    user_prompt=…, model_config=cfg)` — inheriting credential resolution, provider routing,
+    and automatic `ai_usage` logging.
+  - **Note (verified):** `call_text` has **no** `task_type` parameter today; per-task
+    labelling (`task_type="geo_faq"`) is **deferred to M2.4**. Do not invent the arg — use a
+    local default-model map like `advisor._pick_critic_model()`.
 - **Shared ≥6-word validator (enforced in BOTH modes):**
   `_passes_longtail(query: str) -> bool` → `len(query.split()) >= 6`. Every generated
   question passes through this filter regardless of mode. **No short-tail keywords.**
@@ -199,8 +201,9 @@ track; PLAN-V3.0 M3 is an *audit* track. They are complementary and both ship in
     `ai_usage` row is written with token counts.
   - *Schema:* each FAQBlock item validates as Schema.org `Question`/`Answer` (`@type`,
     `name`, `acceptedAnswer.text` present).
-  - *Contract:* `POST /api/ai/geo-faq` → 200 schema (`faq_block`, `mode_used`); 401 no auth;
-    422 missing `job_id`/`domain`; 402 surfaced cleanly when `mode=ai` and no key anywhere.
+  - *Contract:* `POST /api/ai/geo-faq` → 200 schema (`faq_block`, `questions`, `mode_used`);
+    401 no auth; 422 unknown `domain` / empty `topic_entities`; `mode=ai` with no key →
+    200 `mode_used:"template"` (graceful fallback, NOT 402 — template is the guaranteed floor).
   - *Adversarial:* empty `topic_entities` → returns `[]` (or 422 with clear message), never crashes.
 - **Security check:** SSRF **no** (no site fetch) · auth **yes** (`/api/ai/*`) ·
   WordPress **no** (generate-and-suggest) · XSS **no** (render in copy box as text).
