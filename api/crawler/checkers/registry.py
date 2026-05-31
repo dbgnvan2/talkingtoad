@@ -202,6 +202,8 @@ _ISSUE_SCORING: dict[str, tuple[int, int]] = {
     "SCHEMA_TYPE_CONFLICT":       (3,  2),
     # M3.1: Schema values not visible on page (Established — Google directive)
     "SCHEMA_VISIBLE_MISMATCH":    (5,  2),
+    # M3.2: Content not in textual form (Reasonable proxy)
+    "AI_CONTENT_NOT_IN_TEXT":     (4,  2),
     # v2.0 AI-Readiness: Content Extractability
     "CONTENT_NOT_EXTRACTABLE_NO_TEXT": (6, 4),
     "CONTENT_THIN":               (4,  3),
@@ -1022,6 +1024,17 @@ _CATALOGUE: dict[str, _IssueSpec] = {
         human_description="Schema Not in Visible Text",
         fixability="content_edit",
     ),
+    # M3.2: Content not in textual form (Reasonable proxy — Google "make content textual")
+    "AI_CONTENT_NOT_IN_TEXT": _IssueSpec(
+        category="ai_readiness", severity="warning",
+        description="Important content on this page is not in textual form — it is carried by "
+                    "images/video or locked inside an embed (iframe/PDF) that AI systems cannot read as text",
+        recommendation="Provide the key information as real on-page text. Add a textual summary "
+                       "or transcript alongside any image, video, or embedded document so AI systems and screen "
+                       "readers can access it.",
+        human_description="Content Not Available as Text",
+        fixability="content_edit",
+    ),
     # v2.0 Content Extractability
     "CONTENT_NOT_EXTRACTABLE_NO_TEXT": _IssueSpec(
         category="ai_readiness", severity="warning",
@@ -1371,6 +1384,7 @@ _AI_READINESS_CONFIDENCE: dict[str, str] = {
     "SCHEMA_DEPRECATED_TYPE":       "Reasonable proxy",
     "SCHEMA_TYPE_CONFLICT":         "Reasonable proxy",
     "SCHEMA_VISIBLE_MISMATCH":      "Established",
+    "AI_CONTENT_NOT_IN_TEXT":       "Reasonable proxy",
     "FAQ_SCHEMA_MISSING":           "Reasonable proxy",
     "DOCUMENT_PROPS_MISSING":       "Reasonable proxy",
     "DATE_PUBLISHED_MISSING":       "Reasonable proxy",

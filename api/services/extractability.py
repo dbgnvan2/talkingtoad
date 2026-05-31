@@ -250,6 +250,36 @@ def audit_answerability(parsed_page: ParsedPage, soup=None) -> str | None:
     return None
 
 
+# ---------------------------------------------------------------------------
+# M3.2: AI_CONTENT_NOT_IN_TEXT — detect non-textual content dominance
+# ---------------------------------------------------------------------------
+
+_MIN_TEXTUAL_WORDS = 50
+_EMBED_TEXT_WORDS = 100
+
+
+def detect_content_not_in_text(soup, word_count: int | None) -> str | None:
+    """Detect if page content is not in textual form.
+
+    Returns:
+        "media_dominated" — word_count < _MIN_TEXTUAL_WORDS and img/video present
+        "answer_in_embed" — word_count < _EMBED_TEXT_WORDS and iframe/embed/object present
+        None — content is sufficiently textual
+    """
+    if soup is None or soup.find("h1") is None:
+        return None
+
+    wc = word_count or 0
+
+    if soup.find(["iframe", "embed", "object"]) is not None and wc < _EMBED_TEXT_WORDS:
+        return "answer_in_embed"
+
+    if wc < _MIN_TEXTUAL_WORDS and soup.find(["img", "video"]) is not None:
+        return "media_dominated"
+
+    return None
+
+
 def diagnose_extractability(parsed_page: ParsedPage) -> str | None:
     """Get a human-readable diagnosis of extractability problems.
 

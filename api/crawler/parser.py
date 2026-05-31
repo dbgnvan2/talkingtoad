@@ -139,6 +139,12 @@ class ParsedPage:
     # [..] → list of field labels whose declared values are absent.
     schema_visible_mismatch_fields: list[str] | None = None
 
+    # M3.2: AI_CONTENT_NOT_IN_TEXT pre-computed field.
+    # None → not flagged (content is sufficiently textual).
+    # "media_dominated" → word_count < 50 and img/video present.
+    # "answer_in_embed" → word_count < 100 and iframe/embed/object present.
+    content_not_in_text_reason: str | None = None
+
 
 def parse_page(
     result: FetchResult,
@@ -253,6 +259,11 @@ def parse_page(
             # Defensive: never let this abort the parse pipeline.
             schema_visible_mismatch_fields = None
 
+    # M3.2: AI_CONTENT_NOT_IN_TEXT — pre-compute at parse time where
+    # soup is in scope. Detects pages whose content is locked in media/embeds.
+    from api.services.extractability import detect_content_not_in_text
+    content_not_in_text_reason = detect_content_not_in_text(soup, _count_words(soup))
+
     return ParsedPage(
         url=result.url,
         final_url=result.final_url,
@@ -319,6 +330,8 @@ def parse_page(
         is_answer_buried=is_answer_buried,
         # M3.1: SCHEMA_VISIBLE_MISMATCH pre-computed field.
         schema_visible_mismatch_fields=schema_visible_mismatch_fields,
+        # M3.2: AI_CONTENT_NOT_IN_TEXT pre-computed field.
+        content_not_in_text_reason=content_not_in_text_reason,
     )
 
 

@@ -482,6 +482,13 @@ def check_page(
         issues.append(make_issue("SCHEMA_VISIBLE_MISMATCH", url,
                                  extra={"mismatched_fields": page.schema_visible_mismatch_fields}))
 
+    # ── Content Not in Text (M3.2) ───────────────────────────────────────────
+    # Pre-computed at parse time — requires soup to inspect media elements.
+    if page.is_indexable and page.content_not_in_text_reason:
+        issues.append(make_issue("AI_CONTENT_NOT_IN_TEXT", url,
+                                 extra={"reason": page.content_not_in_text_reason,
+                                        "word_count": page.word_count}))
+
     # ── Answerability (Cycle GG): GEO_SUMMARY_BURIED ──────────────────────────
     # Inserted BEFORE the existing extractability/quality block per the
     # Cycle GG continuation-prompt Q6: structural issues caught early

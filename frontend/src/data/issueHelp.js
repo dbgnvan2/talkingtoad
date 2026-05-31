@@ -1917,6 +1917,36 @@ const issueHelp = {
   },
 
   // ─────────────────────────────────────────────────────────────────────────────
+  // M3.2: CONTENT NOT IN TEXTUAL FORM
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  AI_CONTENT_NOT_IN_TEXT: {
+    title: "Content not available as text",
+    category: "ai_readiness",
+    severity: "warning",
+    confidence: "Reasonable proxy",
+    definition:
+      "Important content on this page is not in textual form — it is carried by images/video " +
+      "or locked inside an embed (iframe/PDF) that AI systems cannot read as text. " +
+      "AI engines and screen readers cannot extract meaning from pixels or embedded files.",
+    impact:
+      "Evidence tier: Reasonable proxy. Pages whose meaning is locked in non-text content are " +
+      "invisible to AI search engines and inaccessible to screen readers. They will not appear " +
+      "in AI-generated answers or summaries.",
+    fix:
+      "Provide the key information as real on-page text. Add a textual summary or transcript " +
+      "alongside any image, video, or embedded document so AI systems and screen readers " +
+      "can access it.",
+    good_vs_bad:
+      "Good: A product page with 800 words of descriptive text and supporting product images. " +
+      "Bad: A page where the entire product description is a single image with no alt text.",
+    how_it_can_mislead:
+      "A page might look content-rich to a human (lots of images, an embedded video), but to " +
+      "an AI it's essentially blank. The page passes visual inspection but fails machine " +
+      "readability.",
+  },
+
+  // ─────────────────────────────────────────────────────────────────────────────
   // CONTENT EXTRACTABILITY (v2.0)
   // ─────────────────────────────────────────────────────────────────────────────
 
