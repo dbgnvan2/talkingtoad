@@ -2031,6 +2031,33 @@ const issueHelp = {
       "determine if an image is truly necessary for every specific page.",
   },
 
+  AI_MAIN_CONTENT_LOW_RATIO: {
+    title: "Low main content ratio",
+    category: "ai_readiness",
+    severity: "warning",
+    confidence: "Heuristic",
+    definition:
+      "The main content area contains less than 40% of the page's visible text. " +
+      "Navigation, sidebar, and footer content dominates.",
+    impact:
+      "Evidence tier: Heuristic. AI systems and readers struggle to identify the " +
+      "primary content when it is crowded out by chrome elements. This can reduce " +
+      "the effectiveness of AI-powered content analysis and summarization.",
+    fix:
+      "Consider reducing navigation/sidebar/footer content, or expanding the main " +
+      "content area. Aim for main content to be at least 40% of the page's visible text.",
+    good_vs_bad:
+      "Good: A blog post where the article body (inside <main>) contains 80% of " +
+      "the page text, with navigation and footer being minimal. " +
+      "Bad: A page with extensive navigation menus, multiple sidebars, and a large " +
+      "footer, where the actual content in <main> is only 10% of the total text.",
+    how_it_can_mislead:
+      "This is a DOM-region heuristic. A page with a large legitimate footer " +
+      "(e.g., legal disclaimers, partner logos) could be flagged even if the main " +
+      "content is substantial. Review the actual ratio in the results to determine " +
+      "if the flag is actionable.",
+  },
+
   // ─────────────────────────────────────────────────────────────────────────────
   // CONTENT EXTRACTABILITY (v2.0)
   // ─────────────────────────────────────────────────────────────────────────────

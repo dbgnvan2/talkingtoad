@@ -540,6 +540,16 @@ def check_page(
     # ── No Visual Companion (M3.4) ──────────────────────────────────────────
     issues.extend(_check_ai_no_visual_companion(url, page, is_indexable))
 
+    # ── Main Content Low Ratio (M3.5) ────────────────────────────────────────
+    if is_indexable and page.main_content_ratio is not None:
+        from api.crawler.parser import _MAIN_CONTENT_LOW_RATIO
+        if page.main_content_ratio < _MAIN_CONTENT_LOW_RATIO:
+            issues.append(make_issue(
+                "AI_MAIN_CONTENT_LOW_RATIO",
+                url,
+                extra={"ratio": round(page.main_content_ratio, 2)},
+            ))
+
     # ── Answerability (Cycle GG): GEO_SUMMARY_BURIED ──────────────────────────
     # Inserted BEFORE the existing extractability/quality block per the
     # Cycle GG continuation-prompt Q6: structural issues caught early

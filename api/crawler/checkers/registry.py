@@ -209,6 +209,8 @@ _ISSUE_SCORING: dict[str, tuple[int, int]] = {
     "AI_PREVIEW_BLOCKED_AT_BOT": (3,  1),
     # M3.4: No visual companion for text-heavy content (Reasonable proxy)
     "AI_NO_VISUAL_COMPANION":    (1,  1),
+    # M3.5: Main content is a small share of total visible text (Heuristic)
+    "AI_MAIN_CONTENT_LOW_RATIO": (2,  1),
     # v2.0 AI-Readiness: Content Extractability
     "CONTENT_NOT_EXTRACTABLE_NO_TEXT": (6, 4),
     "CONTENT_THIN":               (4,  3),
@@ -1070,6 +1072,18 @@ _CATALOGUE: dict[str, _IssueSpec] = {
         human_description="No Supporting Visual",
         fixability="content_edit",
     ),
+    # M3.5: Main content is a small share of total visible text (Heuristic)
+    "AI_MAIN_CONTENT_LOW_RATIO": _IssueSpec(
+        category="ai_readiness", severity="warning",
+        description="The main content area contains less than 40% of the page's visible text. "
+                    "Navigation, sidebar, and footer content dominates, making it harder for "
+                    "AI systems and readers to identify the primary content.",
+        recommendation="Consider reducing navigation/sidebar/footer content, or expanding the "
+                       "main content area. Ensure the main content is at least 40% of the "
+                       "page's visible text.",
+        human_description="Low Main Content Ratio",
+        fixability="content_edit",
+    ),
     # v2.0 Content Extractability
     "CONTENT_NOT_EXTRACTABLE_NO_TEXT": _IssueSpec(
         category="ai_readiness", severity="warning",
@@ -1423,6 +1437,7 @@ _AI_READINESS_CONFIDENCE: dict[str, str] = {
     "AI_PREVIEW_SUPPRESSED":        "Established",
     "AI_PREVIEW_BLOCKED_AT_BOT":    "Established",
     "AI_NO_VISUAL_COMPANION":       "Reasonable proxy",
+    "AI_MAIN_CONTENT_LOW_RATIO":    "Heuristic",
     "FAQ_SCHEMA_MISSING":           "Reasonable proxy",
     "DOCUMENT_PROPS_MISSING":       "Reasonable proxy",
     "DATE_PUBLISHED_MISSING":       "Reasonable proxy",

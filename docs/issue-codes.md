@@ -8,7 +8,7 @@ generator: scripts/generate_issue_codes_doc.py
 
 > **This file is auto-generated.** Do not edit by hand — your changes will be overwritten the next time the generator runs. To update an issue code, edit `api/crawler/issue_checker.py` (`_CATALOGUE`, `_ISSUE_SCORING`, `_AI_READINESS_CONFIDENCE`) and re-run `python scripts/generate_issue_codes_doc.py`.
 
-**137 issue codes** across 11 categories.
+**138 issue codes** across 11 categories.
 
 ## Table of contents
 
@@ -22,7 +22,7 @@ generator: scripts/generate_issue_codes_doc.py
 - [SECURITY](#security) (6)
 - [URL_STRUCTURE](#url_structure) (4)
 - [IMAGE](#image) (14)
-- [AI_READINESS](#ai_readiness) (55)
+- [AI_READINESS](#ai_readiness) (56)
 
 ---
 
@@ -1013,7 +1013,7 @@ Image takes too long to load (over 1 second)
 
 Site readiness for AI search engines (Google AI Overviews, ChatGPT, Perplexity, etc.). Every code in this category carries a confidence label per the v2.0 spec: **Established** (vendor-confirmed effect), **Reasonable proxy** (industry consensus + Google's published best practices), **Heuristic** (industry consensus only, no vendor confirmation).
 
-_55 codes in this category._
+_56 codes in this category._
 
 ### AI_BOT_BLANKET_DISALLOW
 **Severity:** 🔴 critical | **Confidence:** Established | **Impact:** 9 | **Effort:** 1
@@ -1100,6 +1100,17 @@ Important content on this page is not in textual form — it is carried by image
 **Recommendation:** Provide the key information as real on-page text. Add a textual summary or transcript alongside any image, video, or embedded document so AI systems and screen readers can access it.
 
 **Plain-English:** Content Not Available as Text
+
+---
+
+### AI_MAIN_CONTENT_LOW_RATIO
+**Severity:** 🟡 warning | **Confidence:** Heuristic | **Impact:** 2 | **Effort:** 1 | **Fixability:** content_edit
+
+The main content area contains less than 40% of the page's visible text. Navigation, sidebar, and footer content dominates, making it harder for AI systems and readers to identify the primary content.
+
+**Recommendation:** Consider reducing navigation/sidebar/footer content, or expanding the main content area. Ensure the main content is at least 40% of the page's visible text.
+
+**Plain-English:** Low Main Content Ratio
 
 ---
 

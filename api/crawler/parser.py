@@ -16,6 +16,9 @@ from api.crawler.normaliser import is_same_domain
 
 logger = logging.getLogger(__name__)
 
+# M3.5: Threshold for AI_MAIN_CONTENT_LOW_RATIO
+_MAIN_CONTENT_LOW_RATIO = 0.40
+
 
 @dataclass
 class ParsedLink:
@@ -151,6 +154,9 @@ class ParsedPage:
     ai_preview_directive: str = ""   # original token for extra
     ai_bot_blocked_directive: str = ""  # original token for extra
 
+    # M3.5: Main content ratio (pre-computed at parse time)
+    main_content_ratio: float | None = None
+
 
 _AI_BOT_NAMES = frozenset({
     "gptbot", "google-extended", "claudebot", "anthropic-ai",
@@ -196,6 +202,31 @@ def _parse_x_robots_ai_directives(headers: dict[str, str]) -> tuple[bool, bool, 
                 bot_blocked_directive = directive
 
     return preview_suppressed, ai_bot_blocked, preview_directive, bot_blocked_directive
+
+
+def _main_content_ratio(soup: BeautifulSoup) -> float | None:
+    """Compute ratio of main content text to total visible text.
+
+    Returns None if no main region found or total text is 0.
+    Identifies main region as: <main>, [role=main], <article>.
+    """
+    try:
+        main = soup.find('main') or soup.find(attrs={'role': 'main'}) or soup.find('article')
+        if not main:
+            return None
+
+        main_text = main.get_text(strip=True)
+        body = soup.body
+        if not body:
+            return None
+
+        total_text = body.get_text(strip=True)
+        if not total_text:
+            return None
+
+        return len(main_text) / len(total_text)
+    except Exception:
+        return None
 
 
 def parse_page(
@@ -321,6 +352,12 @@ def parse_page(
         _parse_x_robots_ai_directives(result.headers)
     )
 
+    # M3.5: Main content ratio — pre-compute where soup is in scope
+    try:
+        _main_content_ratio_val = _main_content_ratio(soup)
+    except Exception:
+        _main_content_ratio_val = None
+
     return ParsedPage(
         url=result.url,
         final_url=result.final_url,
@@ -394,6 +431,8 @@ def parse_page(
         ai_bot_blocked=_ai_bot_blocked,
         ai_preview_directive=_ai_preview_dir,
         ai_bot_blocked_directive=_ai_bot_blocked_dir,
+        # M3.5: Main content ratio.
+        main_content_ratio=_main_content_ratio_val,
     )
 
 
