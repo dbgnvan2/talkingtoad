@@ -1337,11 +1337,11 @@ First 200 words contain no direct answer signal (definition, TL;DR, summary phra
 ### GEO_SUMMARY_BURIED
 **Severity:** 🟡 warning | **Confidence:** Heuristic | **Impact:** 7 | **Effort:** 3 | **Fixability:** content_edit
 
-Core summary is buried under content nodes under an H2 heading
+The first paragraph or list does not lead its H2 or H3 section — the core answer is pushed below images, media, or preamble
 
-**Recommendation:** Reorder each H2 section so the core answer leads in 1–2 sentences, with supporting content following. AI retrievers and skimming humans both miss answers that aren't immediately under the heading.
+**Recommendation:** Reorder each H2/H3 section so the core answer leads in 1–2 sentences, with supporting content following. AI retrievers and skimming humans both miss answers that aren't immediately under the heading.
 
-**Plain-English:** Answer Buried Under H2
+**Plain-English:** Answer Buried Under H2/H3
 
 ---
 

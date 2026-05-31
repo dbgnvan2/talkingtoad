@@ -7,6 +7,8 @@ Cycle GG (2026-05-30): adds tests for ``ContentNodeAuditor`` and the
 docs/pending/2026-05-30_cycle_gg_answerability_audit.md.
 """
 
+from types import SimpleNamespace
+
 import pytest
 from bs4 import BeautifulSoup
 
@@ -278,104 +280,213 @@ def _soup(html: str) -> BeautifulSoup:
 
 
 class TestContentNodeAuditor:
-    """DOM-walking auditor that powers GEO_SUMMARY_BURIED (Cycle GG)."""
+    """Positional answerability auditor behind GEO_SUMMARY_BURIED.
 
-    def test_answer_buried_triggers_geo_summary_buried(self):
-        """An H2 section with 5 content nodes (≥ threshold of 4) must
-        register as buried and ``audit_answerability`` must emit
-        ``GEO_SUMMARY_BURIED``.
+    GA1 fix (2026-05-31): the check measures *where* the first content
+    node sits under an <h2>/<h3>, not *how many* content nodes follow.
+    Threshold = 3 (answer must lead in the first two slots).
+    Spec: docs/pending/2026-05-31_ga1_positional_answerability.md
+    """
 
-        Note on semantics: per the auditor's design (and the original
-        prompt's code), ``first_content_depth`` reports the *total*
-        content-node count in the section, and ``is_answer_buried``
-        fires when that count crosses the threshold. The intuition:
-        a section with many prose paragraphs is harder for an AI to
-        extract the lede from, so threshold ≥ 4 is the burial signal.
-        """
-        html = """
+    def test_answer_leads_depth_one_not_buried(self):
+        """First node is the answer → depth 1 → not buried."""
+        soup = _soup("""
         <html><body>
           <h2>What is the answer?</h2>
-          <p>Preamble paragraph one.</p>
-          <p>Preamble paragraph two.</p>
-          <p>Preamble paragraph three.</p>
-          <p>Preamble paragraph four.</p>
-          <p>FINALLY the actual answer is here.</p>
+          <p>The answer leads the section, right under the heading.</p>
         </body></html>
-        """
-        soup = _soup(html)
-        results = ContentNodeAuditor.walk_h2_content_nodes(soup)
-        assert len(results) == 1
-        assert results[0]["first_content_tag"] == "p"
-        # 5 content nodes total → first_content_depth=5 → buried.
-        assert results[0]["first_content_depth"] == 5
-        assert ContentNodeAuditor.is_answer_buried(results) is True
-        # Entry point emits the code when soup is supplied directly.
-        page = _make_page("https://example.com/buried", word_count=200)
-        assert audit_answerability(page, soup=soup) == "GEO_SUMMARY_BURIED"
-
-    def test_decorative_tags_filtered(self):
-        """SVG/script/style/noscript don't count toward the depth — a
-        section with 3 decorative siblings and one <p> reports
-        first_content_depth=1 and is NOT buried."""
-        html = """
-        <html><body>
-          <h2>Quick answer</h2>
-          <svg width="10"></svg>
-          <script>var x=1;</script>
-          <style>.foo{}</style>
-          <noscript>Enable JS</noscript>
-          <p>The answer is right here, just after some icons.</p>
-        </body></html>
-        """
-        soup = _soup(html)
-        results = ContentNodeAuditor.walk_h2_content_nodes(soup)
-        assert len(results) == 1
+        """)
+        results = ContentNodeAuditor.walk_sections(soup)
         assert results[0]["first_content_tag"] == "p"
         assert results[0]["first_content_depth"] == 1
         assert ContentNodeAuditor.is_answer_buried(results) is False
-        assert audit_answerability(_make_page("https://example.com/clean"),
+        assert audit_answerability(_make_page("https://example.com/lead"),
                                    soup=soup) is None
 
-    def test_clean_page_no_false_positive(self):
-        """A well-structured page with one <p> per <h2> must not
-        flag — first_content_depth=1 across the board."""
-        html = """
+    def test_depth_two_not_buried_depth_three_buried(self):
+        """Pin the positional boundary: one push-down block (depth 2) is
+        still acceptable; two push-down blocks (depth 3) is buried."""
+        # img then p → depth 2 → NOT buried.
+        soup2 = _soup("""
         <html><body>
-          <h2>Section A</h2>
-          <p>Answer A leads the section.</p>
-          <h2>Section B</h2>
-          <p>Answer B leads the section.</p>
-          <h2>Section C</h2>
-          <p>Answer C leads the section.</p>
+          <h2>Heading</h2>
+          <img src="hero.jpg">
+          <p>The answer, just below one image.</p>
         </body></html>
+        """)
+        results2 = ContentNodeAuditor.walk_sections(soup2)
+        assert results2[0]["first_content_depth"] == 2
+        assert ContentNodeAuditor.is_answer_buried(results2) is False
+
+        # img + img then p → depth 3 → BURIED (boundary 2↔3).
+        soup3 = _soup("""
+        <html><body>
+          <h2>Heading</h2>
+          <img src="hero.jpg">
+          <img src="second.jpg">
+          <p>The answer, now pushed below two images.</p>
+        </body></html>
+        """)
+        results3 = ContentNodeAuditor.walk_sections(soup3)
+        assert results3[0]["first_content_depth"] == 3
+        assert ContentNodeAuditor.is_answer_buried(results3) is True
+        assert audit_answerability(
+            _make_page("https://example.com/three", word_count=200),
+            soup=soup3,
+        ) == "GEO_SUMMARY_BURIED"
+
+    def test_gemini_depth_four_case_buried(self):
+        """Gemini 3.1 evaluator: answer buried at depth 4 (three media
+        blocks before the first <p>) must trigger GEO_SUMMARY_BURIED."""
+        soup = _soup("""
+        <html><body>
+          <h2>What is the answer?</h2>
+          <img src="a.jpg"><video src="b.mp4"></video><iframe src="c"></iframe>
+          <p>FINALLY the actual answer is here, at depth 4.</p>
+        </body></html>
+        """)
+        results = ContentNodeAuditor.walk_sections(soup)
+        assert results[0]["first_content_depth"] == 4
+        assert ContentNodeAuditor.is_answer_buried(results) is True
+        assert audit_answerability(
+            _make_page("https://example.com/buried", word_count=200),
+            soup=soup,
+        ) == "GEO_SUMMARY_BURIED"
+
+    def test_verbose_section_with_leading_answer_not_buried(self):
+        """ADVERSARIAL — the false positive the old count-based code
+        produced. A section with a leading answer followed by FOUR more
+        paragraphs is GOOD content, not buried. The pre-GA1 code flagged
+        this (count ≥ 4); the positional check must NOT.
+
+        "What would a correct-looking but wrong result look like?" →
+        GEO_SUMMARY_BURIED returned here. Assert it is not.
         """
-        soup = _soup(html)
-        results = ContentNodeAuditor.walk_h2_content_nodes(soup)
-        assert len(results) == 3
-        assert all(r["first_content_depth"] == 1 for r in results)
+        soup = _soup("""
+        <html><body>
+          <h2>What is the answer?</h2>
+          <p>The answer leads in one crisp sentence.</p>
+          <p>Supporting detail one.</p>
+          <p>Supporting detail two.</p>
+          <p>Supporting detail three.</p>
+          <p>Supporting detail four.</p>
+        </body></html>
+        """)
+        results = ContentNodeAuditor.walk_sections(soup)
+        assert results[0]["first_content_depth"] == 1
         assert ContentNodeAuditor.is_answer_buried(results) is False
-        assert audit_answerability(_make_page("https://example.com/clean"),
+        assert audit_answerability(
+            _make_page("https://example.com/verbose", word_count=200),
+            soup=soup,
+        ) is None
+
+    def test_h3_section_buried(self):
+        """ADVERSARIAL — the case the old <h2>-only code missed. A FAQ-style
+        <h3> whose answer is pushed to depth 4 must now flag."""
+        soup = _soup("""
+        <html><body>
+          <h3>How do I reset my password?</h3>
+          <img src="a.jpg"><img src="b.jpg"><figure><img src="c.jpg"></figure>
+          <p>Click the reset link in the email we send you.</p>
+        </body></html>
+        """)
+        results = ContentNodeAuditor.walk_sections(soup)
+        assert results[0]["heading_level"] == "h3"
+        assert results[0]["first_content_depth"] == 4
+        assert ContentNodeAuditor.is_answer_buried(results) is True
+        assert audit_answerability(
+            _make_page("https://example.com/faq", word_count=200),
+            soup=soup,
+        ) == "GEO_SUMMARY_BURIED"
+
+    def test_wrapper_div_is_transparent(self):
+        """A content node wrapped in a <div> directly under the heading is
+        found at depth 1 — the wrapper does not push the answer down. Proves
+        the document-order descent (vs the old direct-siblings-only walk)."""
+        soup = _soup("""
+        <html><body>
+          <h2>Heading</h2>
+          <div class="entry"><p>The answer lives inside a layout wrapper.</p></div>
+        </body></html>
+        """)
+        results = ContentNodeAuditor.walk_sections(soup)
+        assert results[0]["first_content_tag"] == "p"
+        assert results[0]["first_content_depth"] == 1
+        assert ContentNodeAuditor.is_answer_buried(results) is False
+
+    def test_table_and_ordered_list_count_as_content(self):
+        """Decisions B + C: a leading <ol> or <table> is extractable answer
+        content → depth 1 → not buried."""
+        soup_ol = _soup("""
+        <html><body><h2>Steps</h2><ol><li>First.</li><li>Second.</li></ol></body></html>
+        """)
+        r_ol = ContentNodeAuditor.walk_sections(soup_ol)
+        assert r_ol[0]["first_content_tag"] == "ol"
+        assert r_ol[0]["first_content_depth"] == 1
+
+        soup_tbl = _soup("""
+        <html><body><h2>Pricing</h2><table><tr><td>Plan</td></tr></table></body></html>
+        """)
+        r_tbl = ContentNodeAuditor.walk_sections(soup_tbl)
+        assert r_tbl[0]["first_content_tag"] == "table"
+        assert r_tbl[0]["first_content_depth"] == 1
+        assert ContentNodeAuditor.is_answer_buried(r_tbl) is False
+
+    def test_decorative_tags_skipped(self):
+        """SVG/script/style/noscript never count toward depth — answer
+        right after them is still depth 1."""
+        soup = _soup("""
+        <html><body>
+          <h2>Quick answer</h2>
+          <svg width="10"></svg><script>var x=1;</script>
+          <style>.foo{}</style><noscript>Enable JS</noscript>
+          <p>The answer is right here, just after some icons.</p>
+        </body></html>
+        """)
+        results = ContentNodeAuditor.walk_sections(soup)
+        assert results[0]["first_content_depth"] == 1
+        assert ContentNodeAuditor.is_answer_buried(results) is False
+
+    def test_section_with_no_content_node_not_buried(self):
+        """A heading followed only by media (no p/list/table) is an empty
+        section, not a buried answer → not flagged (depth 0)."""
+        soup = _soup("""
+        <html><body>
+          <h2>Gallery</h2><img src="a.jpg"><img src="b.jpg">
+        </body></html>
+        """)
+        results = ContentNodeAuditor.walk_sections(soup)
+        assert results[0]["first_content_tag"] is None
+        assert results[0]["first_content_depth"] == 0
+        assert ContentNodeAuditor.is_answer_buried(results) is False
+
+    def test_no_headings_silent_skip(self):
+        """A page with no <h2>/<h3> → walk returns empty → audit None."""
+        soup = _soup("<html><body><h1>Title</h1><p>Body.</p></body></html>")
+        assert ContentNodeAuditor.walk_sections(soup) == []
+        assert audit_answerability(_make_page("https://example.com/h1only"),
                                    soup=soup) is None
 
-    def test_audit_handles_missing_soup_via_precomputed_flag(self):
-        """Per continuation-prompt Q2, the call-time path (issue_checker
-        has no soup) reads the pre-computed page.is_h2_answer_buried
-        flag. Verifies both polarities and the legacy/no-H2 None default
-        (which the user's Q4 mandates: silent skip)."""
-        # No flag set (legacy ParsedPage or no H2s on the page) → None.
-        page_legacy = _make_page("https://example.com/legacy", word_count=200)
-        assert audit_answerability(page_legacy) is None
+    def test_precomputed_flag_path_and_backcompat(self):
+        """The call-time path (no soup) reads the pre-computed flag. Covers
+        both polarities, the None default, and back-compat with the legacy
+        ``is_h2_answer_buried`` field name (renamed to ``is_answer_buried``
+        in GA1)."""
+        # No flag set / no headings → None.
+        assert audit_answerability(
+            _make_page("https://example.com/none", word_count=200)) is None
 
-        # Flag explicitly False (parser ran, no burial) → None.
-        page_clean = _make_page(
+        # New field explicitly False → None; True → code.
+        assert audit_answerability(_make_page(
             "https://example.com/clean", word_count=200,
-            is_h2_answer_buried=False,
-        )
-        assert audit_answerability(page_clean) is None
-
-        # Flag True (parser detected burial) → code returned.
-        page_buried = _make_page(
+            is_answer_buried=False)) is None
+        assert audit_answerability(_make_page(
             "https://example.com/buried", word_count=200,
-            is_h2_answer_buried=True,
-        )
-        assert audit_answerability(page_buried) == "GEO_SUMMARY_BURIED"
+            is_answer_buried=True)) == "GEO_SUMMARY_BURIED"
+
+        # Back-compat: a pre-GA1 object carrying only the legacy field name
+        # still resolves (must not crash, must honour the legacy True).
+        legacy_buried = SimpleNamespace(is_h2_answer_buried=True)
+        assert audit_answerability(legacy_buried) == "GEO_SUMMARY_BURIED"
+        legacy_none = SimpleNamespace(is_h2_answer_buried=None)
+        assert audit_answerability(legacy_none) is None

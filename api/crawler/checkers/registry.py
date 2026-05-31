@@ -1200,11 +1200,12 @@ _CATALOGUE: dict[str, _IssueSpec] = {
     # they triangulate "the answer is hard to find" from two angles.
     "GEO_SUMMARY_BURIED": _IssueSpec(
         category="ai_readiness", severity="warning",
-        description="Core summary is buried under content nodes under an H2 heading",
-        recommendation="Reorder each H2 section so the core answer leads in 1–2 sentences, "
+        description="The first paragraph or list does not lead its H2 or H3 section — the core "
+                    "answer is pushed below images, media, or preamble",
+        recommendation="Reorder each H2/H3 section so the core answer leads in 1–2 sentences, "
                        "with supporting content following. AI retrievers and skimming humans "
                        "both miss answers that aren't immediately under the heading.",
-        human_description="Answer Buried Under H2",
+        human_description="Answer Buried Under H2/H3",
         fixability="content_edit",
     ),
     "LINK_PROFILE_PROMOTIONAL": _IssueSpec(

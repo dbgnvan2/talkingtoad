@@ -480,7 +480,7 @@ def check_page(
     # Inserted BEFORE the existing extractability/quality block per the
     # Cycle GG continuation-prompt Q6: structural issues caught early
     # can inform downstream quality scoring. Pure CPU; the auditor reads
-    # the pre-computed `page.is_h2_answer_buried` flag that the parser
+    # the pre-computed `page.is_answer_buried` flag that the parser
     # populated while soup was in scope (no re-parsing here).
     #
     # The literal-string emission below (rather than dispatching on the

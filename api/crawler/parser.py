@@ -124,13 +124,14 @@ class ParsedPage:
     long_paragraph_count: int = 0        # <p> tags exceeding 150 words
     query_coverage_weak: bool = False    # H1 tokens under-represented in intro or H2 headings
 
-    # Cycle GG (2026-05-30): GEO_SUMMARY_BURIED pre-computed signal.
-    # True when any <h2> section's first <p>/<ul>/<li> content node
-    # appears at or beyond _BURIED_THRESHOLD (default 4) in
-    # api/services/extractability.py. Computed during parse where soup
-    # is in scope; consumed by audit_answerability() at check time.
-    # None on legacy ParsedPage instances and on pages with no H2s.
-    is_h2_answer_buried: bool | None = None
+    # Cycle GG / GA1 fix (2026-05-31): GEO_SUMMARY_BURIED pre-computed
+    # signal. True when any <h2>/<h3> section's first
+    # <p>/<ul>/<ol>/<li>/<table> content node appears at positional depth
+    # >= _BURIED_THRESHOLD (default 3) in api/services/extractability.py —
+    # i.e. the answer is pushed below other content. Computed during parse
+    # where soup is in scope; consumed by audit_answerability() at check
+    # time. None on pages with no H2/H3 headings.
+    is_answer_buried: bool | None = None
 
 
 def parse_page(
@@ -213,22 +214,22 @@ def parse_page(
     if "pdf" in result.content_type and result.content:
         pdf_metadata = _extract_pdf_metadata(result.content)
 
-    # Cycle GG: pre-compute the "answer buried under H2" signal here, where
-    # soup is still in scope. Avoids storing raw HTML on ParsedPage (per
-    # continuation-prompt Q2). The flag is consumed at check time by
-    # api.services.extractability.audit_answerability via the pre-computed
-    # parsed_page.is_h2_answer_buried field. Localised import keeps the
-    # parser module's import surface stable.
+    # Cycle GG / GA1 fix: pre-compute the "answer buried under H2/H3"
+    # signal here, where soup is still in scope. Avoids storing raw HTML on
+    # ParsedPage (per continuation-prompt Q2). The flag is consumed at check
+    # time by api.services.extractability.audit_answerability via the
+    # pre-computed parsed_page.is_answer_buried field. Localised import
+    # keeps the parser module's import surface stable.
     try:
         from api.services.extractability import ContentNodeAuditor
-        _h2_walk = ContentNodeAuditor.walk_h2_content_nodes(soup)
-        is_h2_answer_buried: bool | None = (
-            ContentNodeAuditor.is_answer_buried(_h2_walk) if _h2_walk else None
+        _section_walk = ContentNodeAuditor.walk_sections(soup)
+        is_answer_buried: bool | None = (
+            ContentNodeAuditor.is_answer_buried(_section_walk) if _section_walk else None
         )
     except Exception:
         # Defensive: never let an audit failure abort the parse pipeline.
-        # is_h2_answer_buried stays None and the check silently skips.
-        is_h2_answer_buried = None
+        # is_answer_buried stays None and the check silently skips.
+        is_answer_buried = None
 
     return ParsedPage(
         url=result.url,
@@ -292,8 +293,8 @@ def parse_page(
         cross_reference_count=_count_cross_references(soup),
         long_paragraph_count=_count_long_paragraphs(soup),
         query_coverage_weak=_check_query_coverage_weak(soup),
-        # Cycle GG: GEO_SUMMARY_BURIED pre-computed signal.
-        is_h2_answer_buried=is_h2_answer_buried,
+        # Cycle GG / GA1 fix: GEO_SUMMARY_BURIED pre-computed signal.
+        is_answer_buried=is_answer_buried,
     )
 
 

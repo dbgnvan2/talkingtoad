@@ -2264,21 +2264,22 @@ const issueHelp = {
 
   // Cycle GG (2026-05-30) — DOM-depth companion to CENTRAL_CLAIM_BURIED.
   GEO_SUMMARY_BURIED: {
-    title: "Answer buried under H2",
+    title: "Answer buried under H2/H3",
     category: "ai_readiness",
     severity: "warning",
     confidence: "Heuristic",
     definition:
-      "Under one or more H2 headings on this page, the first substantive content node " +
-      "(paragraph, list, or list item) appears only after several preceding content nodes — " +
-      "the core answer is not immediately reachable.",
+      "Under one or more H2 or H3 headings on this page, the first substantive content node " +
+      "(paragraph, list, or table) is pushed down — it appears only after images, media, or " +
+      "other non-content blocks — so the core answer does not lead its section.",
     impact:
       "Evidence tier: Heuristic. AI retrievers and skimming humans both miss the answer when " +
-      "it isn't where they expect — right under the heading. Decorative elements (icons, " +
-      "media) are ignored in the depth count; only paragraphs, lists, and list items contribute.",
+      "it isn't where they expect — right under the heading. Position is what matters: a section " +
+      "whose answer leads is fine no matter how long it is; only answers pushed below other " +
+      "content are flagged. Decorative elements (icons, scripts) are ignored.",
     fix:
-      "Reorder each H2 section so the core answer leads in 1–2 sentences, with supporting " +
-      "elaboration and examples following. Avoid front-loading sections with preamble.",
+      "Reorder each H2/H3 section so the core answer leads in 1–2 sentences, with supporting " +
+      "elaboration and examples following. Avoid front-loading sections with hero images or preamble.",
   },
 
   LINK_PROFILE_PROMOTIONAL: {
