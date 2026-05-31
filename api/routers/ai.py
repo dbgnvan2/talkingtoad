@@ -3,10 +3,10 @@ Router for AI-assisted analysis and remediation (spec §4).
 """
 
 import logging
-from typing import Any
+from typing import Any, Literal
 
-from fastapi import APIRouter, Depends, Query, Request
-from pydantic import BaseModel
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from pydantic import BaseModel, Field
 
 from api.routers.crawl import get_store
 from api.services.ai_analyzer import analyze_with_ai, analyze_image_with_geo
@@ -398,3 +398,42 @@ async def apply_geo_metadata(body: ApplyGeoMetadataRequest, store=Depends(get_st
     }
 
 
+# ── GA3: GEO FAQ Schema Generator ────────────────────────────────────────
+
+
+class GeoFaqRequest(BaseModel):
+    """Request model for FAQ schema generation."""
+
+    domain: str = Field(..., description="Domain to load GeoConfig for")
+    mode: Literal["template", "ai"] = Field(
+        default="template",
+        description="Generation mode: 'template' (free, deterministic) or 'ai' (LLM-enriched)",
+    )
+    limit: int = Field(default=8, ge=1, le=20, description="Max questions to generate")
+
+
+@router.post("/geo-faq")
+async def generate_geo_faq(body: GeoFaqRequest, store=Depends(get_store)):
+    """Generate Schema.org FAQPage JSON-LD from a domain's GeoConfig.
+
+    Returns ready-to-paste structured data. Generate-and-suggest only — no
+    WordPress write, no domain mutation.
+    """
+    from api.services.geo_faq import generate_faq_block
+
+    # Load GeoConfig for the domain
+    geo_config = await store.get_geo_config(body.domain)
+    if geo_config is None:
+        raise HTTPException(
+            status_code=422,
+            detail=f"No GEO configuration found for domain: {body.domain}. Configure GEO settings first.",
+        )
+
+    if not geo_config.topic_entities:
+        raise HTTPException(
+            status_code=422,
+            detail="GEO configuration has no topic_entities. Add at least one topic entity in GEO settings.",
+        )
+
+    result = await generate_faq_block(geo_config, mode=body.mode, limit=body.limit)
+    return result

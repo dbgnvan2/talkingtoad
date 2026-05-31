@@ -891,3 +891,14 @@ export async function runGeoRewrite(jobId, { url, pageType, pageContent, tries =
   })
   return checkResponse(res)
 }
+
+// GA3: GEO FAQ Schema Generator
+
+export async function generateGeoFaq(domain, { mode = 'template', limit = 8 } = {}) {
+  const res = await fetch('/api/ai/geo-faq', {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify({ domain, mode, limit }),
+  })
+  return checkResponse(res)
+}

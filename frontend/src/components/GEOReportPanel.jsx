@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react'
-import { generateGeoReport, getGeoAiModel, setGeoAiModel, generateGeoRewritePrompt } from '../api.js'
+import { generateGeoReport, getGeoAiModel, setGeoAiModel, generateGeoRewritePrompt, generateGeoFaq } from '../api.js'
 import { authHeaders } from '../api.js'
 import Spinner from './Spinner.jsx'
 
@@ -546,6 +546,195 @@ function RewriteAssist({ jobId, report }) {
   )
 }
 
+// ---------------------------------------------------------------------------
+// GA3: FAQ Schema Generator Card
+// ---------------------------------------------------------------------------
+
+function FAQSchemaCard({ domain }) {
+  const [mode, setMode] = useState('template')
+  const [limit, setLimit] = useState(8)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState(null)
+  const [result, setResult] = useState(null)
+  const [copied, setCopied] = useState(false)
+  const [expanded, setExpanded] = useState(false)
+  const [showHelp, setShowHelp] = useState(false)
+  const textareaRef = useRef(null)
+
+  const handleGenerate = async () => {
+    setLoading(true)
+    setError(null)
+    setResult(null)
+    try {
+      const data = await generateGeoFaq(domain, { mode, limit })
+      setResult(data)
+    } catch (e) {
+      setError(e.message || 'FAQ generation failed')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleCopy = () => {
+    if (!result) return
+    const jsonLd = JSON.stringify(result.faq_block, null, 2)
+    navigator.clipboard.writeText(jsonLd).then(() => {
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    })
+  }
+
+  const jsonLdText = result ? JSON.stringify(result.faq_block, null, 2) : ''
+
+  return (
+    <div className="border border-emerald-200 bg-emerald-50 rounded-2xl p-5 space-y-4">
+      {/* Header */}
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className="flex items-center gap-2">
+            <span className="text-lg">&#x2753;</span>
+            <h3 className="font-bold text-emerald-900 text-sm">FAQ Schema Generator</h3>
+            <span className="px-2 py-0.5 bg-emerald-100 text-emerald-700 text-xs font-bold rounded-full">
+              JSON-LD
+            </span>
+          </div>
+          <p className="text-xs text-emerald-700 mt-1">
+            Generate Schema.org FAQPage markup from your topics and locations.
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowHelp(h => !h)}
+            className="text-emerald-400 hover:text-emerald-700 text-xs font-bold"
+            title="Learn more"
+          >
+            {showHelp ? 'Hide help' : '?'}
+          </button>
+          <button
+            onClick={() => setExpanded(e => !e)}
+            className="text-emerald-400 hover:text-emerald-700 text-sm font-bold"
+          >
+            {expanded ? '\u25B2 Hide' : '\u25BC Show'}
+          </button>
+        </div>
+      </div>
+
+      {/* Help / explainer (V4 standard) */}
+      {showHelp && (
+        <div className="bg-white border border-emerald-200 rounded-xl p-4 text-xs text-emerald-800 space-y-2">
+          <p><strong>What it is:</strong> Generates ready-to-paste FAQ schema (JSON-LD) built from your organisation&apos;s topics and locations.</p>
+          <p><strong>Why it&apos;s useful:</strong> Long-tail FAQ questions are exactly what AI engines and search match against; structured FAQ markup makes your answers eligible for rich results and AI citation.</p>
+          <p><strong>Good vs bad:</strong> A 6+-word, specific question (&quot;What should I expect from grief counselling in Vancouver?&quot;) vs a short head term (&quot;counselling&quot;) that everyone competes for and AI can&apos;t anchor to.</p>
+          <p><strong>How it can mislead:</strong> The tool generates <em>anchors</em>, not verified answers &mdash; you must write accurate answers; schema for content you can&apos;t honestly answer can hurt trust.</p>
+          <p><strong>How to use:</strong> Paste the JSON-LD into your page&apos;s {'<head>'} or body, then replace the draft answers with real ones.</p>
+        </div>
+      )}
+
+      {expanded && (
+        <>
+          {/* Controls */}
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="flex gap-1 bg-white border border-emerald-200 rounded-xl p-1">
+              {[
+                { id: 'template', label: 'Template (free)' },
+                { id: 'ai', label: 'AI-enriched' },
+              ].map(m => (
+                <button
+                  key={m.id}
+                  onClick={() => setMode(m.id)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${
+                    mode === m.id ? 'bg-emerald-600 text-white shadow-sm' : 'text-emerald-600 hover:bg-emerald-50'
+                  }`}
+                >
+                  {m.label}
+                </button>
+              ))}
+            </div>
+            <label className="flex items-center gap-1 text-xs text-emerald-700">
+              Questions:
+              <select
+                value={limit}
+                onChange={e => setLimit(Number(e.target.value))}
+                className="border border-emerald-200 rounded px-1 py-0.5 bg-white text-xs"
+              >
+                {[4, 6, 8, 10, 12].map(n => (
+                  <option key={n} value={n}>{n}</option>
+                ))}
+              </select>
+            </label>
+            <button
+              onClick={handleGenerate}
+              disabled={loading}
+              className="px-4 py-2 text-sm font-bold bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 disabled:opacity-50 transition-colors"
+            >
+              {loading ? 'Generating\u2026' : '\u25B6 Generate FAQ Schema'}
+            </button>
+          </div>
+
+          {/* Error */}
+          {error && (
+            <div className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-xl p-3">{error}</div>
+          )}
+
+          {/* Results */}
+          {result && (
+            <div className="space-y-3">
+              {/* Metadata bar */}
+              <div className="flex flex-wrap items-center gap-3 text-xs text-emerald-700 bg-white border border-emerald-200 rounded-xl p-3">
+                <span>Mode: <strong>{result.mode_used}</strong></span>
+                <span>&middot;</span>
+                <span>{result.questions.length} question{result.questions.length !== 1 ? 's' : ''}</span>
+                {result.token_usage && (
+                  <>
+                    <span>&middot;</span>
+                    <span>Tokens: {result.token_usage.input}in / {result.token_usage.output}out</span>
+                    <span>&middot;</span>
+                    <span>${result.token_usage.cost_usd?.toFixed(4)}</span>
+                  </>
+                )}
+              </div>
+
+              {/* Questions list */}
+              <div className="bg-white border border-emerald-200 rounded-xl p-3">
+                <p className="text-xs font-bold text-emerald-800 mb-2">Generated Questions:</p>
+                <ul className="space-y-1">
+                  {result.questions.map((q, i) => (
+                    <li key={i} className="text-xs text-gray-700 flex items-start gap-2">
+                      <span className="text-emerald-500 font-bold">{i + 1}.</span>
+                      <span>{q}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+
+              {/* JSON-LD copy box (rendered as TEXT, never dangerouslySetInnerHTML) */}
+              <div className="relative">
+                <label className="text-xs font-bold text-emerald-800 block mb-1">
+                  JSON-LD &mdash; paste into your page
+                </label>
+                <textarea
+                  ref={textareaRef}
+                  readOnly
+                  value={jsonLdText}
+                  rows={Math.min(20, jsonLdText.split('\n').length + 1)}
+                  className="w-full text-xs font-mono border border-emerald-200 rounded-xl p-3 bg-white resize-y"
+                />
+                <button
+                  onClick={handleCopy}
+                  className="absolute top-6 right-2 px-2 py-1 text-xs bg-emerald-600 text-white rounded-lg hover:bg-emerald-700"
+                >
+                  {copied ? '\u2713 Copied' : 'Copy'}
+                </button>
+              </div>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  )
+}
+
+
 export default function GEOReportPanel({ jobId, domain }) {
   const [report, setReport] = useState(null)
   const [loading, setLoading] = useState(false)
@@ -1012,6 +1201,9 @@ export default function GEOReportPanel({ jobId, domain }) {
           </button>
         </div>
       )}
+
+      {/* GA3: FAQ Schema Generator — always available when domain is set */}
+      {domain && <FAQSchemaCard domain={domain} />}
     </div>
   )
 }

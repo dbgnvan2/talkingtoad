@@ -105,6 +105,7 @@ LLM-based content analysis for Generative Engine Optimization. Produces a struct
 | Method | Endpoint | Description |
 |---|---|---|
 | POST | `/api/ai/geo-report` | Generate (or return cached) GEO report for a job's URL. See schema below. |
+| POST | `/api/ai/geo-faq` | Generate Schema.org FAQPage JSON-LD from a domain's GeoConfig. See schema below. |
 | GET | `/api/geo/ai-model` | List available AI models and the currently selected model. |
 | POST | `/api/geo/ai-model` | Set the AI model for GEO analysis. Body: `{"model_id": "gpt-4o"}`. |
 
@@ -183,6 +184,44 @@ LLM-based content analysis for Generative Engine Optimization. Produces a struct
 ```
 
 Only models for which an API key is configured are returned in `available`.
+
+### `POST /api/ai/geo-faq` Request (GA3)
+
+```json
+{
+  "domain": "livingsystems.ca",
+  "mode": "template",
+  "limit": 8
+}
+```
+
+`domain` (required): domain with a saved GeoConfig. `mode`: `"template"` (default, free, deterministic) or `"ai"` (LLM-enriched, falls back to template on failure). `limit`: max questions (1–20, default 8).
+
+### `POST /api/ai/geo-faq` Response
+
+```json
+{
+  "faq_block": {
+    "@context": "https://schema.org",
+    "@type": "FAQPage",
+    "mainEntity": [
+      {
+        "@type": "Question",
+        "name": "What is Bowen Theory and how does it help people in Vancouver?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "[Draft: write a concise 1-2 sentence answer about this topic for your organisation.]"
+        }
+      }
+    ]
+  },
+  "questions": ["What is Bowen Theory and how does it help people in Vancouver?"],
+  "mode_used": "template",
+  "token_usage": null
+}
+```
+
+Errors: `401` no auth, `422` unknown domain or empty `topic_entities`.
 
 ## GEO Image AI (v1.9)
 
