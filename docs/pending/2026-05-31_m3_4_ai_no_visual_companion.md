@@ -16,19 +16,19 @@ images/video. Google: *"support your textual content with high-quality images an
 — [Top ways to succeed in AI search](https://developers.google.com/search/blog/2025/05/succeeding-in-ai-search).
 Informational nudge, tier **Reasonable proxy** (we infer "would benefit from a visual").
 
-## Trigger (exact)
+## Trigger (exact) — VERIFIED symbols
 Emit `AI_NO_VISUAL_COMPANION` when ALL hold (indexable pages only):
-- page type ∈ {`article`, `service_area`, `faq`} via
-  `api.services.page_classifier.classify_page(page, headings_outline=page.headings_outline)`
-  *(use the real return values — `service_area`, not `service`; confirm `faq` is the
-  classifier's label, else map accordingly)*,
+- `infer_page_type(page)` ∈ {`"article"`, `"service"`, `"faq"`} — from
+  `api.services.page_classifier.infer_page_type(parsed_page) -> str` (returns one of
+  `home, article, team_member, service, faq, contact, about, unknown`). **Confirmed: the
+  label is `service` (singular), and `faq` exists.**
 - `word_count` (body) `> 300`,
-- image count `== 0` (count from `page.image_urls`, falling back to `page.image_data`;
-  use the same source the image checks use — confirm which is authoritative).
+- image count `== 0` — count from `page.image_urls` (the list[str] used by the image checks;
+  `image_data` is the richer parallel field). Use `len(page.image_urls or [])`.
 - impact 1, severity **info**.
 
 ## Design
-- Compute in `issue_checker.py` (the classifier takes a `ParsedPage`, no parse-time soup
+- Compute in `issue_checker.py` (`infer_page_type` takes a `ParsedPage`, no parse-time soup
   needed). No new `ParsedPage` field required — derive at check time.
 - Emit `make_issue("AI_NO_VISUAL_COMPANION", url, extra={"page_type": <type>, "word_count": page.word_count})`.
 
@@ -55,9 +55,9 @@ Emit `AI_NO_VISUAL_COMPANION` when ALL hold (indexable pages only):
 
 ## Test plan (`tests/test_ai_no_visual_companion.py`)
 - article, 400 words, 0 images → flagged.
-- service_area, 350 words, 0 images → flagged.
+- service, 350 words, 0 images → flagged.
 - **Adversarial:** article 400 words WITH 1 image → not flagged; article only 120 words,
-  0 images → not flagged (under 300); `about`/`home`/`generic` type, 0 images → not flagged
+  0 images → not flagged (under 300); `about`/`home`/`unknown` type, 0 images → not flagged
   (wrong type); non-indexable page → not emitted.
 - Contract: results endpoint surfaces the code with `extra.page_type`.
 
@@ -74,7 +74,6 @@ bound is the existing `word_count`; the constant lives inline). `PLAN-V3.0-UNIFI
 3. Registered in all 3 registries; issueHelp (V4) + issue-codes.md parity passes.
 4. `extra.page_type` present. Full suite green, 0 regressions.
 
-## NOTE for architect/dev — verify before coding
-Confirm the classifier's exact label strings (`classify_page` returns one of
-`article, service_area, faq, about, home, generic, ...`) and the authoritative image-count
-field. If `faq` isn't the literal label, map to whatever the classifier emits for FAQ pages.
+## Verified (no further lookup needed)
+`infer_page_type` labels confirmed: `home, article, team_member, service, faq, contact,
+about, unknown`. Image count source confirmed: `page.image_urls` (list[str]).

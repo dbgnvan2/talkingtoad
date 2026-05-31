@@ -16,25 +16,31 @@ Two GEO scoring counters only inspect a truncated window of the page, so statist
 quotations appearing later in the body are invisible to the check — producing false
 "low count" issues on pages that actually have plenty further down.
 
-## Defects (verified locations)
-1. **`_count_statistics(intro_text, headings, page=None)`** (≈ line 1944) — counts over
-   `intro_text` (the `first_200_words` window) + heading text only. A page with statistics
-   at word 250/1000 is scored as having none → false `STATISTICS_COUNT_LOW`.
-2. **`_count_inline_quotations`** (≈ line 1980) — measures only `first_600_words`. Quotations
-   later in the body are missed.
+## Current state (VERIFIED in `api/crawler/checkers/ai_readiness.py`)
+- `_count_statistics(first_words, links, page)` is **defined at line 220** and called at
+  **line 43** as `_count_statistics(page.first_600_words or page.first_200_words or "", ...)`.
+  So a prior cycle (Cycle E) already widened it from 200→600. It is **still capped at the
+  first 600 words** — statistics at word ~1000/1500 are missed → false `STATISTICS_COUNT_LOW`.
+- `_count_inline_quotations(page)` is **defined at line 261** and reads
+  `page.first_600_words or page.first_200_words` (line 263). Same 600-word cap → later
+  quotations missed.
+
+So this is **not** "still on first_200" — both are on first_600. The fix widens both to a
+new **`first_1500_words`** window.
 
 ## Fix
-Widen the measurement window for both, without storing full page text:
-- **Preferred:** add a wider pre-extracted window the parser already produces, or extend the
-  existing extraction to a `first_1500_words` window and pass it to these counters. If a
-  `first_1500_words`-style field doesn't exist, add one to `ParsedPage`
-  (`first_1500_words: str | None = None`) computed via the existing `_extract_first_n_words`
-  helper, and feed it to both counters.
-- `_count_statistics`: measure the wider window (first ~600–1500 words) + headings, not just
-  first_200.
-- `_count_inline_quotations`: measure the wider window (first ~1500 words) instead of first_600.
-- Keep the counters pure functions; only the *input window* changes. Do not change the
-  emission thresholds for `STATISTICS_COUNT_LOW` / the quotation code (scope fix only).
+Add a `first_1500_words` window and feed both counters from it (fallback to narrower
+windows so nothing crashes on thin pages):
+- **Add `ParsedPage.first_1500_words: str | None = None`** (parser.py), computed via the
+  existing `_extract_first_n_words(soup, 1500)` alongside the current
+  `first_200_words`/`first_600_words` extraction (lines 373–374).
+- **Call site line 43:** `_count_statistics(page.first_1500_words or page.first_600_words or page.first_200_words or "", links, page)`.
+- **`_count_inline_quotations` (line 263):** read
+  `page.first_1500_words or page.first_600_words or page.first_200_words or ""`.
+- Keep both as pure functions; only the *input window* widens. Do **not** change the emission
+  thresholds for `STATISTICS_COUNT_LOW` / `QUOTATIONS_MISSING` (scope fix only).
+- The 1500-word cap is the documented upper bound (prevents unbounded over-count from
+  appendices/footers); note it for the compiler — `docs/thresholds.md` stays untouched.
 
 ## Files
 | File | Change |
