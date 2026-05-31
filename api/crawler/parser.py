@@ -133,6 +133,12 @@ class ParsedPage:
     # time. None on pages with no H2/H3 headings.
     is_answer_buried: bool | None = None
 
+    # M3.1: SCHEMA_VISIBLE_MISMATCH pre-computed field.
+    # None → no JSON-LD on the page (or not computed / error).
+    # []   → schema present, every checked value is visible.
+    # [..] → list of field labels whose declared values are absent.
+    schema_visible_mismatch_fields: list[str] | None = None
+
 
 def parse_page(
     result: FetchResult,
@@ -231,6 +237,22 @@ def parse_page(
         # is_answer_buried stays None and the check silently skips.
         is_answer_buried = None
 
+    # M3.1: SCHEMA_VISIBLE_MISMATCH — pre-compute at parse time where
+    # soup (and therefore full visible text) is in scope. The result is a
+    # compact list of mismatched field labels stored on ParsedPage.
+    schema_visible_mismatch_fields: list[str] | None = None
+    _schema_blocks = _extract_schema_blocks(soup)
+    if _schema_blocks:
+        try:
+            from api.services.schema_typing import check_schema_visible_mismatch
+            _visible_text = soup.get_text()
+            schema_visible_mismatch_fields = check_schema_visible_mismatch(
+                _schema_blocks, _visible_text
+            )
+        except Exception:
+            # Defensive: never let this abort the parse pipeline.
+            schema_visible_mismatch_fields = None
+
     return ParsedPage(
         url=result.url,
         final_url=result.final_url,
@@ -295,6 +317,8 @@ def parse_page(
         query_coverage_weak=_check_query_coverage_weak(soup),
         # Cycle GG / GA1 fix: GEO_SUMMARY_BURIED pre-computed signal.
         is_answer_buried=is_answer_buried,
+        # M3.1: SCHEMA_VISIBLE_MISMATCH pre-computed field.
+        schema_visible_mismatch_fields=schema_visible_mismatch_fields,
     )
 
 

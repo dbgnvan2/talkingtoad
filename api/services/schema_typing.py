@@ -97,3 +97,146 @@ def _check_schema_conflicts_intrinsic(schema_types: list[str]) -> str | None:
         return "person_org_conflict"
 
     return None
+
+
+# ---------------------------------------------------------------------------
+# M3.1 — SCHEMA_VISIBLE_MISMATCH helper
+# ---------------------------------------------------------------------------
+# Compares JSON-LD declared values against visible page text.
+# Called at parse time (where soup is in scope) and the result is stored
+# as a compact list of mismatched field labels on ParsedPage.
+
+# Fields to check, keyed by lowercase @type → list of (field_path, label_prefix)
+_SCHEMA_FIELDS_TO_CHECK: dict[str, list[tuple[str, str]]] = {
+    "article": [("headline", "Article.headline")],
+    "newsarticle": [("headline", "Article.headline")],
+    "blogposting": [("headline", "Article.headline")],
+    "product": [("name", "Product.name")],
+    "person": [("name", "Person.name")],
+    "organization": [("name", "Organization.name")],
+    "localbusiness": [
+        ("name", "LocalBusiness.name"),
+    ],
+}
+
+
+def _normalize(text: str) -> str:
+    """Lowercase, collapse whitespace, strip — used for substring comparison."""
+    return " ".join(text.lower().split())
+
+
+def _assemble_address(block: dict) -> str | None:
+    """Assemble a PostalAddress block into a single comparable string.
+
+    Returns None if the address field is missing or empty.
+    """
+    addr = block.get("address")
+    if not addr:
+        return None
+    if isinstance(addr, str):
+        return addr.strip() or None
+    if isinstance(addr, dict):
+        parts = [
+            addr.get("streetAddress", ""),
+            addr.get("addressLocality", ""),
+            addr.get("addressRegion", ""),
+            addr.get("postalCode", ""),
+            addr.get("addressCountry", ""),
+        ]
+        assembled = " ".join(p.strip() for p in parts if isinstance(p, str) and p.strip())
+        return assembled or None
+    return None
+
+
+def _check_block_fields(
+    block: dict,
+    normalized_visible: str,
+    mismatched: list[str],
+    *,
+    prefix: str = "",
+) -> None:
+    """Check a single schema block's fields against visible text."""
+    block_type = block.get("@type", "")
+    if isinstance(block_type, list):
+        types_to_check = [t.lower() for t in block_type if isinstance(t, str)]
+    elif isinstance(block_type, str):
+        types_to_check = [block_type.lower()]
+    else:
+        return
+
+    for type_key in types_to_check:
+        # Standard field checks
+        for field_name, label in _SCHEMA_FIELDS_TO_CHECK.get(type_key, []):
+            value = block.get(field_name)
+            if not isinstance(value, str) or not value.strip():
+                continue  # absent or empty → not a mismatch
+            if _normalize(value) not in normalized_visible:
+                mismatched.append(f"{prefix}{label}")
+
+        # LocalBusiness.address — special assembly
+        if type_key == "localbusiness":
+            addr_str = _assemble_address(block)
+            if addr_str:
+                # Check each non-empty part individually; if ANY part is missing,
+                # flag. But for the label, use the whole address.
+                if _normalize(addr_str) not in normalized_visible:
+                    mismatched.append(f"{prefix}LocalBusiness.address")
+
+        # FAQPage.mainEntity — array of Question objects
+        if type_key == "faqpage":
+            main_entity = block.get("mainEntity")
+            if isinstance(main_entity, list):
+                for idx, item in enumerate(main_entity):
+                    if not isinstance(item, dict):
+                        continue
+                    # Question name
+                    name = item.get("name")
+                    if isinstance(name, str) and name.strip():
+                        if _normalize(name) not in normalized_visible:
+                            mismatched.append(f"{prefix}FAQPage.mainEntity[{idx}].name")
+                    # acceptedAnswer.text
+                    accepted = item.get("acceptedAnswer")
+                    if isinstance(accepted, dict):
+                        ans_text = accepted.get("text")
+                        if isinstance(ans_text, str) and ans_text.strip():
+                            if _normalize(ans_text) not in normalized_visible:
+                                mismatched.append(
+                                    f"{prefix}FAQPage.mainEntity[{idx}].acceptedAnswer.text"
+                                )
+
+
+def check_schema_visible_mismatch(
+    schema_blocks: list[dict],
+    visible_text: str,
+) -> list[str]:
+    """Return labels of JSON-LD fields whose values are not in *visible_text*.
+
+    Args:
+        schema_blocks: Flattened list of JSON-LD objects (already unwrapped
+            from ``@graph``). Each is a dict with ``@type`` and field values.
+        visible_text: Full visible text of the page (``soup.get_text()``).
+
+    Returns:
+        List of field labels like ``"Article.headline"``,
+        ``"FAQPage.mainEntity[0].name"``, etc. Empty list means all checked
+        values are visible. Callers should pass the result to ParsedPage's
+        ``schema_visible_mismatch_fields``.
+    """
+    if not schema_blocks or not visible_text:
+        return []
+
+    normalized_visible = _normalize(visible_text)
+    mismatched: list[str] = []
+
+    for block in schema_blocks:
+        if not isinstance(block, dict):
+            continue
+        _check_block_fields(block, normalized_visible, mismatched)
+        # Walk @graph nesting (already flattened by parser, but be safe)
+        graph = block.get("@graph")
+        if isinstance(graph, list):
+            for node in graph:
+                if isinstance(node, dict):
+                    _check_block_fields(node, normalized_visible, mismatched)
+
+    return mismatched

@@ -1865,6 +1865,38 @@ const issueHelp = {
       "developer can make this update.",
   },
 
+  SCHEMA_VISIBLE_MISMATCH: {
+    title: "Schema not in visible text",
+    category: "ai_readiness",
+    severity: "warning",
+    confidence: "Established",
+    definition:
+      "One or more values declared in this page's JSON-LD structured data (headline, name, " +
+      "FAQ answer, address) do not appear anywhere in the page's visible text. Google " +
+      "explicitly requires that all content in structured-data markup must also be visible " +
+      "on the page.",
+    impact:
+      "Evidence tier: Established. Google has publicly stated that markup content must match " +
+      "visible content. Pages with mismatched structured data risk losing rich-result " +
+      "eligibility and may be viewed as deceptive by AI search systems (Gemini, AI Overviews). " +
+      "This directly affects whether your page is cited or surfaced in AI answers.",
+    fix:
+      "For each flagged field, either add the declared value to the visible page content, or " +
+      "update the structured data to match what is actually shown. For example, if your " +
+      "JSON-LD headline says 'Ultimate Guide to Therapy' but the visible H1 says 'Therapy " +
+      "Services', update one to match the other. In WordPress, check your SEO plugin's " +
+      "schema settings and compare them to the actual page text.",
+    good_vs_bad:
+      "Good: JSON-LD headline 'Grief Counselling Services' and the page's H1 reads " +
+      "'Grief Counselling Services'. Bad: JSON-LD headline says 'Best Therapy in Vancouver' " +
+      "but no such text appears on the page — this is invisible keyword stuffing in markup.",
+    how_it_can_mislead:
+      "A page may have valid, well-structured JSON-LD that passes syntax validators, yet the " +
+      "content it declares is not visible to users. This check catches that specific gap. It " +
+      "does not flag missing fields (that's a different check) — only fields that are present " +
+      "but whose values are absent from the page the visitor actually sees.",
+  },
+
   SCHEMA_TYPE_CONFLICT: {
     title: "Multiple conflicting schema types",
     category: "ai_readiness",

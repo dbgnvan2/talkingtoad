@@ -8,7 +8,7 @@ generator: scripts/generate_issue_codes_doc.py
 
 > **This file is auto-generated.** Do not edit by hand — your changes will be overwritten the next time the generator runs. To update an issue code, edit `api/crawler/issue_checker.py` (`_CATALOGUE`, `_ISSUE_SCORING`, `_AI_READINESS_CONFIDENCE`) and re-run `python scripts/generate_issue_codes_doc.py`.
 
-**132 issue codes** across 11 categories.
+**133 issue codes** across 11 categories.
 
 ## Table of contents
 
@@ -22,7 +22,7 @@ generator: scripts/generate_issue_codes_doc.py
 - [SECURITY](#security) (6)
 - [URL_STRUCTURE](#url_structure) (4)
 - [IMAGE](#image) (14)
-- [AI_READINESS](#ai_readiness) (50)
+- [AI_READINESS](#ai_readiness) (51)
 
 ---
 
@@ -1013,7 +1013,7 @@ Image takes too long to load (over 1 second)
 
 Site readiness for AI search engines (Google AI Overviews, ChatGPT, Perplexity, etc.). Every code in this category carries a confidence label per the v2.0 spec: **Established** (vendor-confirmed effect), **Reasonable proxy** (industry consensus + Google's published best practices), **Heuristic** (industry consensus only, no vendor confirmation).
 
-_50 codes in this category._
+_51 codes in this category._
 
 ### AI_BOT_BLANKET_DISALLOW
 **Severity:** 🔴 critical | **Confidence:** Established | **Impact:** 9 | **Effort:** 1
@@ -1496,6 +1496,17 @@ Page schema type does not match inferred page type
 **Recommendation:** Ensure JSON-LD @type matches the page content (Article for blog posts, Person for team bios, Service for service pages).
 
 **Plain-English:** Mismatched Schema Type
+
+---
+
+### SCHEMA_VISIBLE_MISMATCH
+**Severity:** 🟡 warning | **Confidence:** Established | **Impact:** 5 | **Effort:** 2 | **Fixability:** content_edit
+
+A value declared in JSON-LD structured data does not appear in the page's visible text
+
+**Recommendation:** Make sure every value in your structured data (headline, name, FAQ answers, address) is also present in the visible page content — Google requires markup to match what users see.
+
+**Plain-English:** Schema Not in Visible Text
 
 ---
 

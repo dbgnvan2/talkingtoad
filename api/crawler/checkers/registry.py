@@ -200,6 +200,8 @@ _ISSUE_SCORING: dict[str, tuple[int, int]] = {
     "SCHEMA_TYPE_MISMATCH":       (4,  2),
     "SCHEMA_DEPRECATED_TYPE":     (2,  1),
     "SCHEMA_TYPE_CONFLICT":       (3,  2),
+    # M3.1: Schema values not visible on page (Established — Google directive)
+    "SCHEMA_VISIBLE_MISMATCH":    (5,  2),
     # v2.0 AI-Readiness: Content Extractability
     "CONTENT_NOT_EXTRACTABLE_NO_TEXT": (6, 4),
     "CONTENT_THIN":               (4,  3),
@@ -1010,6 +1012,16 @@ _CATALOGUE: dict[str, _IssueSpec] = {
         human_description="Conflicting Schema Types",
         fixability="content_edit",
     ),
+    # M3.1: Schema values not visible on page (Established — direct Google directive)
+    "SCHEMA_VISIBLE_MISMATCH": _IssueSpec(
+        category="ai_readiness", severity="warning",
+        description="A value declared in JSON-LD structured data does not appear in the page's visible text",
+        recommendation="Make sure every value in your structured data (headline, name, FAQ answers, "
+                       "address) is also present in the visible page content — Google requires "
+                       "markup to match what users see.",
+        human_description="Schema Not in Visible Text",
+        fixability="content_edit",
+    ),
     # v2.0 Content Extractability
     "CONTENT_NOT_EXTRACTABLE_NO_TEXT": _IssueSpec(
         category="ai_readiness", severity="warning",
@@ -1358,6 +1370,7 @@ _AI_READINESS_CONFIDENCE: dict[str, str] = {
     "SCHEMA_TYPE_MISMATCH":         "Reasonable proxy",
     "SCHEMA_DEPRECATED_TYPE":       "Reasonable proxy",
     "SCHEMA_TYPE_CONFLICT":         "Reasonable proxy",
+    "SCHEMA_VISIBLE_MISMATCH":      "Established",
     "FAQ_SCHEMA_MISSING":           "Reasonable proxy",
     "DOCUMENT_PROPS_MISSING":       "Reasonable proxy",
     "DATE_PUBLISHED_MISSING":       "Reasonable proxy",

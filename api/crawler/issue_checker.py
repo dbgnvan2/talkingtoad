@@ -476,6 +476,12 @@ def check_page(
         except Exception as e:
             logger.warning("schema_typing_error", extra={"url": url, "error": str(e)})
 
+    # ── Schema Visible Mismatch (M3.1) ──────────────────────────────────────────
+    # Pre-computed at parse time — the field is a list of mismatch labels.
+    if page.schema_visible_mismatch_fields:
+        issues.append(make_issue("SCHEMA_VISIBLE_MISMATCH", url,
+                                 extra={"mismatched_fields": page.schema_visible_mismatch_fields}))
+
     # ── Answerability (Cycle GG): GEO_SUMMARY_BURIED ──────────────────────────
     # Inserted BEFORE the existing extractability/quality block per the
     # Cycle GG continuation-prompt Q6: structural issues caught early
