@@ -392,3 +392,70 @@ def check_content_date_stale_visible(
         "page_type": page_type,
         "recommended_refresh_months": cadence,
     }
+
+
+# ---------------------------------------------------------------------------
+# M4.2: CONTENT_STAT_OUTDATED — outdated year reference detection
+# ---------------------------------------------------------------------------
+
+_YEAR_RE = re.compile(r"\b(20\d{2})\b")
+
+
+def detect_outdated_stat(text: str, *, current_year: int) -> dict | None:
+    """Detect a year >=24mo old without current-year mention in same text window.
+
+    DETERMINISM: ``current_year`` is explicit so tests can pin a fixed year.
+    The caller in ``issue_checker.check_page`` passes ``datetime.now().year``.
+
+    Args:
+        text: Scanned text window (first_1500_words or fallback).
+        current_year: Explicit year for deterministic testing.
+
+    Returns:
+        dict with keys "year" (int) and "sentence" (str, <=160 chars) or None.
+    """
+    if not text or not isinstance(text, str):
+        return None
+
+    # Check if current year is present anywhere in the window — skip if so
+    if re.search(rf"\b{current_year}\b", text):
+        return None
+
+    # Find all 20xx years
+    years = set(int(m.group()) for m in _YEAR_RE.finditer(text))
+
+    # Filter: only years >=24 months old (i.e. <= current_year - 2)
+    threshold = current_year - 2
+    old_years = [y for y in years if y <= threshold]
+
+    if not old_years:
+        return None
+
+    # Find the oldest flagged year and its context
+    target_year = min(old_years)
+
+    # Find first occurrence of that year in the text
+    match = re.search(rf"\b{target_year}\b", text)
+    if not match:
+        return None
+
+    # Exclude copyright lines (© or "copyright" preceding the year)
+    pre_text = text[max(0, match.start() - 20):match.start()]
+    if re.search(r'(?:©|copyright)', pre_text, re.IGNORECASE):
+        return None
+
+    # Exclude date ranges like 20xx-20yy or 20xx–20yy
+    range_pattern = rf"{target_year}[–\-]\d{{4}}"
+    if re.search(range_pattern, text):
+        return None
+
+    # Extract snippet around the match (up to 160 chars)
+    start = max(0, match.start() - 60)
+    end = min(len(text), match.end() + 100)
+    snippet = text[start:end].strip()
+
+    # Truncate snippet to 160 chars at word boundary
+    if len(snippet) > 160:
+        snippet = snippet[:157] + "..."
+
+    return {"year": target_year, "sentence": snippet}

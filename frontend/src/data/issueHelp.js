@@ -2621,6 +2621,28 @@ const issueHelp = {
       "legitimately carry old dates (e.g., a 'Contact Us' page unchanged for years). The " +
       "cadence is a guideline, not a hard rule.",
   },
+
+  CONTENT_STAT_OUTDATED: {
+    title: "Outdated statistic or year reference",
+    category: "ai_readiness",
+    severity: "info",
+    confidence: "Heuristic",
+    definition:
+      "Body text references a year that is ≥24 months old without mentioning the current year.",
+    impact:
+      "Evidence tier: Heuristic. AI systems and readers may treat the page as stale or " +
+      "low-authority, reducing trust and ranking potential.",
+    fix:
+      "Update the statistic or reference to the current year, or add context that " +
+      "acknowledges the original year while explaining continued relevance.",
+    good_vs_bad:
+      "Bad: 'The best options in 2021 are still available today.' " +
+      "Good: 'The best options in 2021 are still available today, and remain competitive in 2026.'",
+    how_it_can_mislead:
+      "This is a noisy heuristic. Historical references, copyright years, and date ranges " +
+      "can trigger false positives. The current-year guard and ≥24-month rule reduce but do " +
+      "not eliminate false flags. Always verify the flagged text before making changes.",
+  },
   };
 
 

@@ -626,4 +626,17 @@ def check_page(
                 extra=stale_result,
             ))
 
+    # ── M4.2: CONTENT_STAT_OUTDATED ─────────────────────────────────────────
+    if is_indexable:
+        _text_window = page.first_1500_words or page.first_600_words or page.first_200_words
+        if _text_window:
+            from api.crawler.checkers.ai_readiness import detect_outdated_stat
+            _stat_result = detect_outdated_stat(_text_window, current_year=datetime.now().year)
+            if _stat_result:
+                issues.append(make_issue(
+                    "CONTENT_STAT_OUTDATED",
+                    url,
+                    extra={"year": _stat_result["year"], "sentence": _stat_result["sentence"]},
+                ))
+
     return issues

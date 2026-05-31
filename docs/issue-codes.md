@@ -8,7 +8,7 @@ generator: scripts/generate_issue_codes_doc.py
 
 > **This file is auto-generated.** Do not edit by hand — your changes will be overwritten the next time the generator runs. To update an issue code, edit `api/crawler/issue_checker.py` (`_CATALOGUE`, `_ISSUE_SCORING`, `_AI_READINESS_CONFIDENCE`) and re-run `python scripts/generate_issue_codes_doc.py`.
 
-**139 issue codes** across 11 categories.
+**140 issue codes** across 11 categories.
 
 ## Table of contents
 
@@ -22,7 +22,7 @@ generator: scripts/generate_issue_codes_doc.py
 - [SECURITY](#security) (6)
 - [URL_STRUCTURE](#url_structure) (4)
 - [IMAGE](#image) (14)
-- [AI_READINESS](#ai_readiness) (57)
+- [AI_READINESS](#ai_readiness) (58)
 
 ---
 
@@ -1013,7 +1013,7 @@ Image takes too long to load (over 1 second)
 
 Site readiness for AI search engines (Google AI Overviews, ChatGPT, Perplexity, etc.). Every code in this category carries a confidence label per the v2.0 spec: **Established** (vendor-confirmed effect), **Reasonable proxy** (industry consensus + Google's published best practices), **Heuristic** (industry consensus only, no vendor confirmation).
 
-_57 codes in this category._
+_58 codes in this category._
 
 ### AI_BOT_BLANKET_DISALLOW
 **Severity:** 🔴 critical | **Confidence:** Established | **Impact:** 9 | **Effort:** 1
@@ -1298,6 +1298,17 @@ Page has no visible text — only images, video, or interactive media
 **Recommendation:** Add descriptive text, captions, or transcripts. AI systems cannot extract information from images or videos without accompanying text.
 
 **Plain-English:** No Text Content
+
+---
+
+### CONTENT_STAT_OUTDATED
+**Severity:** 🔵 info | **Confidence:** Heuristic | **Impact:** 2 | **Effort:** 1 | **Fixability:** content_edit
+
+Body text references a year that is ≥24 months old without mentioning the current year.
+
+**Recommendation:** Update the statistic or reference to the current year, or add context that acknowledges the original year while explaining continued relevance.
+
+**Plain-English:** Outdated Year Reference
 
 ---
 

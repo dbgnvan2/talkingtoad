@@ -258,6 +258,8 @@ _ISSUE_SCORING: dict[str, tuple[int, int]] = {
     "PARA_TOO_LONG":              (4,  2),
     # M4.1: Visible date stale for page type (Content Freshness)
     "CONTENT_DATE_STALE_VISIBLE": (4,  2),
+    # M4.2: Outdated statistic or year reference (Content Freshness)
+    "CONTENT_STAT_OUTDATED": (2,  1),
 }
 
 
@@ -1384,6 +1386,16 @@ _CATALOGUE: dict[str, _IssueSpec] = {
         fixability="content_edit",
         confidence_label="Reasonable proxy",
     ),
+    # M4.2: Content Freshness — outdated statistic or year reference
+    "CONTENT_STAT_OUTDATED": _IssueSpec(
+        category="ai_readiness", severity="info",
+        description="Body text references a year that is ≥24 months old without mentioning the current year.",
+        recommendation="Update the statistic or reference to the current year, or add context that "
+                       "acknowledges the original year while explaining continued relevance.",
+        human_description="Outdated Year Reference",
+        fixability="content_edit",
+        confidence_label="Heuristic",
+    ),
 }
 _STOP_WORDS: frozenset[str] = frozenset({
     "a", "an", "the", "and", "or", "but", "in", "on", "at", "to", "for",
@@ -1494,6 +1506,8 @@ _AI_READINESS_CONFIDENCE: dict[str, str] = {
     "CONVERSATIONAL_H2_MISSING":    "Heuristic",  # legacy v1.7 — no vendor confirmation
     # M4.1: Content Freshness — visible date stale for page type
     "CONTENT_DATE_STALE_VISIBLE":   "Reasonable proxy",
+    # M4.2: Content Freshness — outdated statistic/year reference
+    "CONTENT_STAT_OUTDATED":        "Heuristic",
 }
 def make_issue(
     code: str,
