@@ -40,7 +40,7 @@ def _run_geo_checks(page: "ParsedPage", url: str, issues: list) -> None:
         # per docs-review §2 STATISTICS_COUNT_LOW recommendation. The 200-word
         # window missed statistics that appear later in the introduction; the
         # 600-word scope covers a typical article's first 2-3 paragraphs.
-        stat_count = _count_statistics(page.first_600_words or page.first_200_words or "", links, page)
+        stat_count = _count_statistics(page.first_1500_words or page.first_600_words or page.first_200_words or "", links, page)
         if stat_count == 0:
             issues.append(make_issue("STATISTICS_COUNT_LOW", url, extra={
                 "word_count": word_count,
@@ -260,7 +260,7 @@ _ATTRIBUTION_RE = re.compile(
 
 def _count_inline_quotations(page: "ParsedPage") -> int:
     """Count attribution patterns in first_600_words as proxy for inline quotes."""
-    text = getattr(page, "first_600_words", None) or page.first_200_words or ""
+    text = getattr(page, "first_1500_words", None) or getattr(page, "first_600_words", None) or page.first_200_words or ""
     return len(_ATTRIBUTION_RE.findall(text))
 
 
