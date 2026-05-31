@@ -24,8 +24,6 @@ from api.models.geo_config import GeoConfig
 from api.services.ai_router import (
     AIResponse,
     ModelConfig,
-    ProviderAuthError,
-    ProviderAPIError,
     SYSTEM_CONTEXT_ID,
     ai_router,
 )
@@ -118,17 +116,20 @@ def _build_template_questions(geo_config: GeoConfig, limit: int) -> list[str]:
     return questions[:limit]
 
 
-def _build_faq_block(questions: list[str], geo_config: GeoConfig) -> dict:
-    """Wrap questions into a Schema.org FAQPage dict."""
+def _build_faq_block(questions: list[str]) -> dict:
+    """Wrap questions into a Schema.org FAQPage dict.
+
+    The accepted answer is a clearly-marked draft placeholder — GA3
+    generates question *anchors*; the user writes the real answers.
+    """
     main_entity = []
     for q in questions:
-        # Extract entity/location context for placeholder answer
         main_entity.append({
             "@type": "Question",
             "name": q,
             "acceptedAnswer": {
                 "@type": "Answer",
-                "text": f"[Draft: write a concise 1-2 sentence answer about this topic for your organisation.]",
+                "text": "[Draft: write a concise 1-2 sentence answer about this topic for your organisation.]",
             },
         })
 
@@ -181,7 +182,7 @@ async def generate_faq_block(
         try:
             questions, token_usage = await _ai_generate(geo_config, limit)
             if questions:
-                faq_block = _build_faq_block(questions, geo_config)
+                faq_block = _build_faq_block(questions)
                 return {
                     "faq_block": faq_block,
                     "questions": questions,
@@ -190,12 +191,12 @@ async def generate_faq_block(
                 }
             # Zero valid questions survived filter — fall back
             logger.warning("AI returned no valid >=6-word questions; falling back to template")
-        except (ProviderAuthError, ProviderAPIError, Exception) as exc:
+        except Exception as exc:
             logger.warning("AI FAQ generation failed (%s); falling back to template", exc)
 
     # Template mode (default or fallback)
     questions = _build_template_questions(geo_config, limit)
-    faq_block = _build_faq_block(questions, geo_config)
+    faq_block = _build_faq_block(questions)
     return {
         "faq_block": faq_block,
         "questions": questions,

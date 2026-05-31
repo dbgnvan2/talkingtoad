@@ -158,7 +158,7 @@ class TestSchemaValidation:
     def test_faq_block_has_correct_structure(self, realistic_geo_config):
         """Output validates as a Schema.org FAQPage."""
         questions = _build_template_questions(realistic_geo_config, limit=4)
-        block = _build_faq_block(questions, realistic_geo_config)
+        block = _build_faq_block(questions)
 
         assert block["@context"] == "https://schema.org"
         assert block["@type"] == "FAQPage"
@@ -174,7 +174,7 @@ class TestSchemaValidation:
     def test_faq_block_is_json_serializable(self, realistic_geo_config):
         """The output must serialize to valid JSON."""
         questions = _build_template_questions(realistic_geo_config, limit=4)
-        block = _build_faq_block(questions, realistic_geo_config)
+        block = _build_faq_block(questions)
         serialized = json.dumps(block)
         parsed = json.loads(serialized)
         assert parsed["@type"] == "FAQPage"
