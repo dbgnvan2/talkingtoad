@@ -204,6 +204,9 @@ _ISSUE_SCORING: dict[str, tuple[int, int]] = {
     "SCHEMA_VISIBLE_MISMATCH":    (5,  2),
     # M3.2: Content not in textual form (Reasonable proxy)
     "AI_CONTENT_NOT_IN_TEXT":     (4,  2),
+    # M3.3: X-Robots-Tag AI-preview controls (Established — literal header facts)
+    "AI_PREVIEW_SUPPRESSED":     (3,  1),
+    "AI_PREVIEW_BLOCKED_AT_BOT": (3,  1),
     # v2.0 AI-Readiness: Content Extractability
     "CONTENT_NOT_EXTRACTABLE_NO_TEXT": (6, 4),
     "CONTENT_THIN":               (4,  3),
@@ -1035,6 +1038,26 @@ _CATALOGUE: dict[str, _IssueSpec] = {
         human_description="Content Not Available as Text",
         fixability="content_edit",
     ),
+    # M3.3: X-Robots-Tag AI-preview controls (Established — literal header facts)
+    "AI_PREVIEW_SUPPRESSED": _IssueSpec(
+        category="ai_readiness", severity="info",
+        description="An X-Robots-Tag response header suppresses this page's search/AI preview "
+                    "(nosnippet or max-snippet:0)",
+        recommendation="If you want this page to be eligible for AI Overviews and citations, "
+                       "remove the nosnippet / max-snippet:0 directive from the X-Robots-Tag "
+                       "header (often set in server config or an SEO plugin).",
+        human_description="AI Preview Suppressed",
+        fixability="developer_needed",
+    ),
+    "AI_PREVIEW_BLOCKED_AT_BOT": _IssueSpec(
+        category="ai_readiness", severity="info",
+        description="An X-Robots-Tag directive specifically blocks an AI crawler "
+                    "(e.g. GPTBot, Google-Extended) from indexing this page",
+        recommendation="This is intentional if you don't want AI engines using this page. "
+                       "If you DO want AI citation, remove the AI-bot-specific directive.",
+        human_description="AI Bot Blocked",
+        fixability="developer_needed",
+    ),
     # v2.0 Content Extractability
     "CONTENT_NOT_EXTRACTABLE_NO_TEXT": _IssueSpec(
         category="ai_readiness", severity="warning",
@@ -1385,6 +1408,8 @@ _AI_READINESS_CONFIDENCE: dict[str, str] = {
     "SCHEMA_TYPE_CONFLICT":         "Reasonable proxy",
     "SCHEMA_VISIBLE_MISMATCH":      "Established",
     "AI_CONTENT_NOT_IN_TEXT":       "Reasonable proxy",
+    "AI_PREVIEW_SUPPRESSED":        "Established",
+    "AI_PREVIEW_BLOCKED_AT_BOT":    "Established",
     "FAQ_SCHEMA_MISSING":           "Reasonable proxy",
     "DOCUMENT_PROPS_MISSING":       "Reasonable proxy",
     "DATE_PUBLISHED_MISSING":       "Reasonable proxy",

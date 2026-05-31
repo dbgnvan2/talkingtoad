@@ -1947,6 +1947,57 @@ const issueHelp = {
   },
 
   // ─────────────────────────────────────────────────────────────────────────────
+  // M3.3: X-ROBOTS-TAG AI-PREVIEW CONTROLS
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  AI_PREVIEW_SUPPRESSED: {
+    title: "AI preview suppressed",
+    category: "ai_readiness",
+    severity: "info",
+    confidence: "Established",
+    definition:
+      "The page uses a directive (nosnippet or max-snippet:0) that prevents AI engines " +
+      "from showing previews or citing this page in responses.",
+    impact:
+      "Evidence tier: Established. AI engines like ChatGPT, Gemini, and Perplexity will not " +
+      "be able to generate previews or cite this page as a source, reducing AI visibility.",
+    fix:
+      "Remove the nosnippet or max-snippet:0 directive from the X-Robots-Tag header to allow " +
+      "AI previews. If you need to limit snippet length, use max-snippet with a positive value " +
+      "(e.g., max-snippet:200).",
+    good_vs_bad:
+      "Good: No X-Robots-Tag or a positive max-snippet value allows AI engines to generate " +
+      "previews and cite the page. Bad: nosnippet or max-snippet:0 blocks all AI previews, " +
+      "even if the page is otherwise indexable.",
+    how_it_can_mislead:
+      "A page might appear fully indexable in search results but be invisible to AI engines " +
+      "for citation purposes, creating a false sense of AI readiness.",
+  },
+
+  AI_PREVIEW_BLOCKED_AT_BOT: {
+    title: "AI crawler blocked",
+    category: "ai_readiness",
+    severity: "info",
+    confidence: "Established",
+    definition:
+      "The page blocks specific AI crawlers (e.g., GPTBot, Google-Extended) via X-Robots-Tag, " +
+      "preventing those AI engines from accessing or using the content.",
+    impact:
+      "Evidence tier: Established. AI engines that respect these directives will not index or " +
+      "use this page, reducing the organization's presence in AI-generated responses.",
+    fix:
+      "Remove the AI-crawler-specific directives from the X-Robots-Tag header, or replace " +
+      "them with more permissive directives if AI visibility is desired.",
+    good_vs_bad:
+      "Good: No AI-crawler-specific blocks allow all AI engines to access and use the page " +
+      "content. Bad: Blocking GPTBot, Google-Extended, or other AI crawlers prevents those " +
+      "specific AI engines from using the page, even if general search engines can still index it.",
+    how_it_can_mislead:
+      "A page might rank well in traditional search but be completely absent from AI-powered " +
+      "search experiences, creating a blind spot in AI readiness.",
+  },
+
+  // ─────────────────────────────────────────────────────────────────────────────
   // CONTENT EXTRACTABILITY (v2.0)
   // ─────────────────────────────────────────────────────────────────────────────
 

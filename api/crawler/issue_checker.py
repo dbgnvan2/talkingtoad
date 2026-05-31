@@ -489,6 +489,15 @@ def check_page(
                                  extra={"reason": page.content_not_in_text_reason,
                                         "word_count": page.word_count}))
 
+    # ── X-Robots-Tag AI-preview controls (M3.3) ──────────────────────────────
+    if page.is_indexable and page.ai_preview_suppressed:
+        issues.append(make_issue("AI_PREVIEW_SUPPRESSED", url,
+                                 extra={"directive": page.ai_preview_directive}))
+
+    if page.is_indexable and page.ai_bot_blocked:
+        issues.append(make_issue("AI_PREVIEW_BLOCKED_AT_BOT", url,
+                                 extra={"directive": page.ai_bot_blocked_directive}))
+
     # ── Answerability (Cycle GG): GEO_SUMMARY_BURIED ──────────────────────────
     # Inserted BEFORE the existing extractability/quality block per the
     # Cycle GG continuation-prompt Q6: structural issues caught early

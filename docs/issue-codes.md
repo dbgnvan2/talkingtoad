@@ -8,7 +8,7 @@ generator: scripts/generate_issue_codes_doc.py
 
 > **This file is auto-generated.** Do not edit by hand — your changes will be overwritten the next time the generator runs. To update an issue code, edit `api/crawler/issue_checker.py` (`_CATALOGUE`, `_ISSUE_SCORING`, `_AI_READINESS_CONFIDENCE`) and re-run `python scripts/generate_issue_codes_doc.py`.
 
-**134 issue codes** across 11 categories.
+**136 issue codes** across 11 categories.
 
 ## Table of contents
 
@@ -22,7 +22,7 @@ generator: scripts/generate_issue_codes_doc.py
 - [SECURITY](#security) (6)
 - [URL_STRUCTURE](#url_structure) (4)
 - [IMAGE](#image) (14)
-- [AI_READINESS](#ai_readiness) (52)
+- [AI_READINESS](#ai_readiness) (54)
 
 ---
 
@@ -1013,7 +1013,7 @@ Image takes too long to load (over 1 second)
 
 Site readiness for AI search engines (Google AI Overviews, ChatGPT, Perplexity, etc.). Every code in this category carries a confidence label per the v2.0 spec: **Established** (vendor-confirmed effect), **Reasonable proxy** (industry consensus + Google's published best practices), **Heuristic** (industry consensus only, no vendor confirmation).
 
-_52 codes in this category._
+_54 codes in this category._
 
 ### AI_BOT_BLANKET_DISALLOW
 **Severity:** 🔴 critical | **Confidence:** Established | **Impact:** 9 | **Effort:** 1
@@ -1100,6 +1100,28 @@ Important content on this page is not in textual form — it is carried by image
 **Recommendation:** Provide the key information as real on-page text. Add a textual summary or transcript alongside any image, video, or embedded document so AI systems and screen readers can access it.
 
 **Plain-English:** Content Not Available as Text
+
+---
+
+### AI_PREVIEW_BLOCKED_AT_BOT
+**Severity:** 🔵 info | **Confidence:** Established | **Impact:** 3 | **Effort:** 1
+
+An X-Robots-Tag directive specifically blocks an AI crawler (e.g. GPTBot, Google-Extended) from indexing this page
+
+**Recommendation:** This is intentional if you don't want AI engines using this page. If you DO want AI citation, remove the AI-bot-specific directive.
+
+**Plain-English:** AI Bot Blocked
+
+---
+
+### AI_PREVIEW_SUPPRESSED
+**Severity:** 🔵 info | **Confidence:** Established | **Impact:** 3 | **Effort:** 1
+
+An X-Robots-Tag response header suppresses this page's search/AI preview (nosnippet or max-snippet:0)
+
+**Recommendation:** If you want this page to be eligible for AI Overviews and citations, remove the nosnippet / max-snippet:0 directive from the X-Robots-Tag header (often set in server config or an SEO plugin).
+
+**Plain-English:** AI Preview Suppressed
 
 ---
 

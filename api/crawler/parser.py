@@ -145,6 +145,58 @@ class ParsedPage:
     # "answer_in_embed" → word_count < 100 and iframe/embed/object present.
     content_not_in_text_reason: str | None = None
 
+    # M3.3: X-Robots-Tag AI-preview directives (pre-computed at parse time)
+    ai_preview_suppressed: bool = False
+    ai_bot_blocked: bool = False
+    ai_preview_directive: str = ""   # original token for extra
+    ai_bot_blocked_directive: str = ""  # original token for extra
+
+
+_AI_BOT_NAMES = frozenset({
+    "gptbot", "google-extended", "claudebot", "anthropic-ai",
+    "ccbot", "perplexitybot", "bytespider", "cohere-ai",
+})
+
+
+def _parse_x_robots_ai_directives(headers: dict[str, str]) -> tuple[bool, bool, str, str]:
+    """Parse X-Robots-Tag header for AI-preview directives.
+
+    Returns (preview_suppressed, ai_bot_blocked, preview_directive, bot_blocked_directive).
+    """
+    # Case-insensitive header key lookup (httpx lowercases, but be defensive)
+    x_robots = next((v for k, v in headers.items() if k.lower() == "x-robots-tag"), "")
+    if not x_robots:
+        return False, False, "", ""
+
+    preview_suppressed = False
+    ai_bot_blocked = False
+    preview_directive = ""
+    bot_blocked_directive = ""
+
+    # Handle comma-separated directives
+    directives = [d.strip() for d in x_robots.split(",")]
+
+    for directive in directives:
+        directive_lower = directive.lower()
+
+        # Check for general preview suppression
+        if directive_lower in ("nosnippet", "max-snippet:0"):
+            preview_suppressed = True
+            preview_directive = directive
+            continue
+
+        # Check for AI-bot-specific blocks
+        if ":" in directive_lower:
+            bot_name, bot_directive = directive_lower.split(":", 1)
+            bot_name = bot_name.strip()
+            bot_directive = bot_directive.strip()
+
+            if bot_name in _AI_BOT_NAMES and bot_directive in ("noindex", "nosnippet"):
+                ai_bot_blocked = True
+                bot_blocked_directive = directive
+
+    return preview_suppressed, ai_bot_blocked, preview_directive, bot_blocked_directive
+
 
 def parse_page(
     result: FetchResult,
@@ -264,6 +316,11 @@ def parse_page(
     from api.services.extractability import detect_content_not_in_text
     content_not_in_text_reason = detect_content_not_in_text(soup, _count_words(soup))
 
+    # M3.3: X-Robots-Tag AI-preview directives
+    _ai_preview_suppressed, _ai_bot_blocked, _ai_preview_dir, _ai_bot_blocked_dir = (
+        _parse_x_robots_ai_directives(result.headers)
+    )
+
     return ParsedPage(
         url=result.url,
         final_url=result.final_url,
@@ -332,6 +389,11 @@ def parse_page(
         schema_visible_mismatch_fields=schema_visible_mismatch_fields,
         # M3.2: AI_CONTENT_NOT_IN_TEXT pre-computed field.
         content_not_in_text_reason=content_not_in_text_reason,
+        # M3.3: X-Robots-Tag AI-preview directives.
+        ai_preview_suppressed=_ai_preview_suppressed,
+        ai_bot_blocked=_ai_bot_blocked,
+        ai_preview_directive=_ai_preview_dir,
+        ai_bot_blocked_directive=_ai_bot_blocked_dir,
     )
 
 
