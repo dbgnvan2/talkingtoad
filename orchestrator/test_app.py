@@ -308,3 +308,43 @@ class TestDiagnosticsArchived:
         assert isinstance(data["archived_specs"], list)
         assert isinstance(data["total_archived"], int)
         assert data["total_archived"] == len(data["archived_specs"])
+
+
+class TestConnectionEndpoint:
+    def test_valid_connection(self):
+        """Test /api/test-connection returns valid=True when call_model succeeds."""
+        with patch("orchestrator.app.call_model", new_callable=AsyncMock, return_value="OK"):
+            response = client.post("/api/test-connection", json={"provider": "gemini"})
+            assert response.status_code == 200
+            data = response.json()
+            assert data["valid"] is True
+
+    def test_invalid_api_key(self):
+        """Test /api/test-connection returns valid=False with auth error."""
+        with patch("orchestrator.app.call_model", new_callable=AsyncMock,
+                   side_effect=Exception("401 Unauthorized")):
+            response = client.post("/api/test-connection", json={"provider": "openai"})
+            assert response.status_code == 200
+            data = response.json()
+            assert data["valid"] is False
+            assert data["error"] == "Invalid API key"
+
+    def test_timeout_error(self):
+        """Test /api/test-connection returns valid=False on timeout."""
+        with patch("orchestrator.app.call_model", new_callable=AsyncMock,
+                   side_effect=Exception("Connection timeout exceeded")):
+            response = client.post("/api/test-connection", json={"provider": "deepseek"})
+            assert response.status_code == 200
+            data = response.json()
+            assert data["valid"] is False
+            assert data["error"] == "Connection timeout"
+
+    def test_generic_error(self):
+        """Test /api/test-connection truncates long error messages."""
+        with patch("orchestrator.app.call_model", new_callable=AsyncMock,
+                   side_effect=Exception("x" * 300)):
+            response = client.post("/api/test-connection", json={"provider": "gemini"})
+            assert response.status_code == 200
+            data = response.json()
+            assert data["valid"] is False
+            assert len(data["error"]) <= 200

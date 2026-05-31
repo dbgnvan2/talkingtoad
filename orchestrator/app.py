@@ -109,6 +109,9 @@ class ChatRequest(BaseModel):
     message: str
     providers: Optional[Dict[str, str]] = None
 
+class TestConnectionRequest(BaseModel):
+    provider: str
+
 # ── Grounded Roles ──────────────────────────────────────────────────────────
 
 TRUTH_INSTRUCTIONS = f"""
@@ -155,7 +158,7 @@ async def call_model(provider: str, role_prompt: str, user_content: str) -> str:
     else:
         key = get_api_key("GEMINI_API_KEY")
         genai.configure(api_key=key)
-        model = genai.GenerativeModel("gemini-3.0-pro")
+        model = genai.GenerativeModel("gemini-2.5-pro")
         chat = model.start_chat(history=[])
         response = await asyncio.to_thread(chat.send_message, f"{role_prompt}\n\n{user_content}")
         return response.text
@@ -329,6 +332,25 @@ async def rerun():
     save_state(new_state)
     asyncio.create_task(run_state_machine(new_state)); return {"status": "ok"}
 
+@app.post("/api/test-connection")
+async def test_connection(request: TestConnectionRequest):
+    """Test if the API key for a given provider is valid by pinging call_model."""
+    try:
+        await call_model(
+            provider=request.provider,
+            role_prompt="You are a test assistant.",
+            user_content="Reply with OK."
+        )
+        return {"valid": True}
+    except Exception as e:
+        error_msg = str(e)
+        if "401" in error_msg or "unauthorized" in error_msg.lower():
+            return {"valid": False, "error": "Invalid API key"}
+        elif "timeout" in error_msg.lower():
+            return {"valid": False, "error": "Connection timeout"}
+        else:
+            return {"valid": False, "error": error_msg[:200]}
+
 # ── Health & Diagnostics Helpers ─────────────────────────────────────────────
 
 def get_directory_size(path: str) -> int:
@@ -419,9 +441,10 @@ async def diagnostics():
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
 
-app.mount("/static", StaticFiles(directory="orchestrator/static"), name="static")
+STATIC_DIR = Path(__file__).parent / "static"
+app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 @app.get("/")
-async def read_index(): return FileResponse("orchestrator/static/index.html")
+async def read_index(): return FileResponse(str(STATIC_DIR / "index.html"))
 
 if __name__ == "__main__":
     import uvicorn

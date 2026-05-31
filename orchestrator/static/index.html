@@ -193,6 +193,18 @@
             flex-direction: column;
             gap: 4px;
         }
+
+        .connection-status {
+            display: inline-block;
+            margin-left: 6px;
+            font-size: 12px;
+            cursor: help;
+            vertical-align: middle;
+        }
+        .connection-status.valid { color: #28a745; }
+        .connection-status.invalid { color: #dc3545; }
+        .connection-status.loading { color: #6c757d; animation: pulse 1s infinite; }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
     </style>
 </head>
 <body>
@@ -203,8 +215,8 @@
         <div class="role-info-card">
             <div style="font-weight: bold; margin-bottom: 8px; border-bottom: 1px solid #ddd; padding-bottom: 4px; color: #333;">ROLE CONFIGURATION</div>
             
-            <div class="provider-row">
-                <label>Architect:</label>
+            <div class="provider-row" data-role="architect">
+                <label>Architect: <span class="connection-status" id="status-architect"></span></label>
                 <select id="prov-architect">
                     <option value="gemini">Gemini (3.0 Pro)</option>
                     <option value="openai">OpenAI (GPT-4o)</option>
@@ -213,8 +225,8 @@
                 </select>
             </div>
 
-            <div class="provider-row">
-                <label>Snr Developer:</label>
+            <div class="provider-row" data-role="snr_dev">
+                <label>Snr Developer: <span class="connection-status" id="status-snr_dev"></span></label>
                 <select id="prov-snr_dev">
                     <option value="gemini">Gemini (3.0 Pro)</option>
                     <option value="openai">OpenAI (GPT-4o)</option>
@@ -223,8 +235,8 @@
                 </select>
             </div>
 
-            <div class="provider-row">
-                <label>QA Sentinel:</label>
+            <div class="provider-row" data-role="qa">
+                <label>QA Sentinel: <span class="connection-status" id="status-qa"></span></label>
                 <select id="prov-qa">
                     <option value="gemini">Gemini (3.0 Pro)</option>
                     <option value="openai">OpenAI (GPT-4o)</option>
@@ -451,6 +463,39 @@
                 fetchState();
             }
         };
+
+        async function testProviderConnection(provider, statusId) {
+            const el = document.getElementById(statusId);
+            if (!el) return;
+            el.textContent = '\u23F3';
+            el.className = 'connection-status loading';
+            el.title = 'Testing connection...';
+            try {
+                const resp = await fetch('/api/test-connection', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ provider: provider })
+                });
+                const result = await resp.json();
+                if (result.valid) {
+                    el.textContent = '\u2705';
+                    el.className = 'connection-status valid';
+                    el.title = 'Connection successful';
+                } else {
+                    el.textContent = '\u274C';
+                    el.className = 'connection-status invalid';
+                    el.title = result.error || 'Connection failed';
+                }
+            } catch (err) {
+                el.textContent = '\u274C';
+                el.className = 'connection-status invalid';
+                el.title = 'Network error: ' + err.message;
+            }
+        }
+
+        provArchitect.addEventListener('change', () => testProviderConnection(provArchitect.value, 'status-architect'));
+        provSnrDev.addEventListener('change', () => testProviderConnection(provSnrDev.value, 'status-snr_dev'));
+        provQA.addEventListener('change', () => testProviderConnection(provQA.value, 'status-qa'));
 
         setInterval(fetchState, 1500);
         fetchState();
