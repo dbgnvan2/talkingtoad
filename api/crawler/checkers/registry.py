@@ -207,6 +207,8 @@ _ISSUE_SCORING: dict[str, tuple[int, int]] = {
     # M3.3: X-Robots-Tag AI-preview controls (Established — literal header facts)
     "AI_PREVIEW_SUPPRESSED":     (3,  1),
     "AI_PREVIEW_BLOCKED_AT_BOT": (3,  1),
+    # M3.4: No visual companion for text-heavy content (Reasonable proxy)
+    "AI_NO_VISUAL_COMPANION":    (1,  1),
     # v2.0 AI-Readiness: Content Extractability
     "CONTENT_NOT_EXTRACTABLE_NO_TEXT": (6, 4),
     "CONTENT_THIN":               (4,  3),
@@ -1058,6 +1060,16 @@ _CATALOGUE: dict[str, _IssueSpec] = {
         human_description="AI Bot Blocked",
         fixability="developer_needed",
     ),
+    # M3.4: No visual companion for text-heavy content (Reasonable proxy — Google best practice)
+    "AI_NO_VISUAL_COMPANION": _IssueSpec(
+        category="ai_readiness", severity="info",
+        description="A substantial text page (article/service/FAQ) has no images or video to "
+                    "support its content",
+        recommendation="Add at least one relevant, high-quality image or video. Visuals help "
+                       "both readers and AI systems understand and surface your content.",
+        human_description="No Supporting Visual",
+        fixability="content_edit",
+    ),
     # v2.0 Content Extractability
     "CONTENT_NOT_EXTRACTABLE_NO_TEXT": _IssueSpec(
         category="ai_readiness", severity="warning",
@@ -1410,6 +1422,7 @@ _AI_READINESS_CONFIDENCE: dict[str, str] = {
     "AI_CONTENT_NOT_IN_TEXT":       "Reasonable proxy",
     "AI_PREVIEW_SUPPRESSED":        "Established",
     "AI_PREVIEW_BLOCKED_AT_BOT":    "Established",
+    "AI_NO_VISUAL_COMPANION":       "Reasonable proxy",
     "FAQ_SCHEMA_MISSING":           "Reasonable proxy",
     "DOCUMENT_PROPS_MISSING":       "Reasonable proxy",
     "DATE_PUBLISHED_MISSING":       "Reasonable proxy",

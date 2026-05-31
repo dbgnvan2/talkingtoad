@@ -1998,6 +1998,40 @@ const issueHelp = {
   },
 
   // ─────────────────────────────────────────────────────────────────────────────
+  // M3.4: NO VISUAL COMPANION
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  AI_NO_VISUAL_COMPANION: {
+    title: "No supporting visual",
+    category: "ai_readiness",
+    severity: "info",
+    confidence: "Reasonable proxy",
+    definition:
+      "This page has substantial text (over 300 words) but no images or video. " +
+      "Adding relevant visuals helps both human readers and AI systems better " +
+      "understand and surface your content.",
+    impact:
+      "Evidence tier: Reasonable proxy. Pages without visual companions may be " +
+      "harder for users to engage with and for AI systems to fully understand the " +
+      "content context. Google recommends supporting textual content with " +
+      "high-quality images and videos.",
+    fix:
+      "Add at least one high-quality, relevant image that supports the main topic " +
+      "of the page. Ensure images have descriptive alt text and are properly " +
+      "optimized for web use.",
+    good_vs_bad:
+      "Good: A service page describing landscaping services with photos of " +
+      "completed projects, before/after comparisons, and team members at work. " +
+      "Bad: A 500-word article about garden maintenance with no images, diagrams, " +
+      "or visual elements whatsoever.",
+    how_it_can_mislead:
+      "This is a confidence-based heuristic. Some text-heavy pages genuinely " +
+      "don't need images (e.g., a detailed legal FAQ). The check flags pages " +
+      "where adding a visual would likely improve the experience, but it cannot " +
+      "determine if an image is truly necessary for every specific page.",
+  },
+
+  // ─────────────────────────────────────────────────────────────────────────────
   // CONTENT EXTRACTABILITY (v2.0)
   // ─────────────────────────────────────────────────────────────────────────────
 

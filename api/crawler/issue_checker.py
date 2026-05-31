@@ -65,8 +65,47 @@ from api.crawler.checkers.security import _check_security  # noqa: F401
 from api.crawler.checkers.metadata import _check_canonical  # noqa: F401
 from api.crawler.checkers.headings import _check_headings  # noqa: F401
 from api.crawler.checkers.ai_readiness import _run_geo_checks  # noqa: F401
+from api.services.page_classifier import infer_page_type
 
 logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# M3.4: AI_NO_VISUAL_COMPANION
+# ---------------------------------------------------------------------------
+
+_VISUAL_COMPANION_PAGE_TYPES = frozenset({"article", "service", "faq"})
+
+
+def _check_ai_no_visual_companion(
+    url: str,
+    page: ParsedPage,
+    is_indexable: bool,
+) -> list[Issue]:
+    """Flag text-heavy content pages that lack any visual companion."""
+    if not is_indexable:
+        return []
+
+    page_type = infer_page_type(page)
+    if page_type not in _VISUAL_COMPANION_PAGE_TYPES:
+        return []
+
+    word_count = page.word_count or 0
+    if word_count <= 300:
+        return []
+
+    image_count = len(page.image_urls or [])
+    if image_count > 0:
+        return []
+
+    return [make_issue(
+        "AI_NO_VISUAL_COMPANION",
+        url,
+        extra={
+            "page_type": page_type,
+            "word_count": page.word_count,
+        },
+    )]
 
 
 # ---------------------------------------------------------------------------
@@ -497,6 +536,9 @@ def check_page(
     if page.is_indexable and page.ai_bot_blocked:
         issues.append(make_issue("AI_PREVIEW_BLOCKED_AT_BOT", url,
                                  extra={"directive": page.ai_bot_blocked_directive}))
+
+    # ── No Visual Companion (M3.4) ──────────────────────────────────────────
+    issues.extend(_check_ai_no_visual_companion(url, page, is_indexable))
 
     # ── Answerability (Cycle GG): GEO_SUMMARY_BURIED ──────────────────────────
     # Inserted BEFORE the existing extractability/quality block per the
