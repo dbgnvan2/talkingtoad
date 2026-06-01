@@ -8,7 +8,7 @@ generator: scripts/generate_issue_codes_doc.py
 
 > **This file is auto-generated.** Do not edit by hand — your changes will be overwritten the next time the generator runs. To update an issue code, edit `api/crawler/issue_checker.py` (`_CATALOGUE`, `_ISSUE_SCORING`, `_AI_READINESS_CONFIDENCE`) and re-run `python scripts/generate_issue_codes_doc.py`.
 
-**140 issue codes** across 11 categories.
+**142 issue codes** across 11 categories.
 
 ## Table of contents
 
@@ -22,7 +22,7 @@ generator: scripts/generate_issue_codes_doc.py
 - [SECURITY](#security) (6)
 - [URL_STRUCTURE](#url_structure) (4)
 - [IMAGE](#image) (14)
-- [AI_READINESS](#ai_readiness) (58)
+- [AI_READINESS](#ai_readiness) (60)
 
 ---
 
@@ -1013,7 +1013,7 @@ Image takes too long to load (over 1 second)
 
 Site readiness for AI search engines (Google AI Overviews, ChatGPT, Perplexity, etc.). Every code in this category carries a confidence label per the v2.0 spec: **Established** (vendor-confirmed effect), **Reasonable proxy** (industry consensus + Google's published best practices), **Heuristic** (industry consensus only, no vendor confirmation).
 
-_58 codes in this category._
+_60 codes in this category._
 
 ### AI_BOT_BLANKET_DISALLOW
 **Severity:** 🔴 critical | **Confidence:** Established | **Impact:** 9 | **Effort:** 1
@@ -1092,6 +1092,17 @@ An AI user-fetch bot is disallowed in robots.txt — this block has no effect
 
 ---
 
+### AI_CITED_PAGE
+**Severity:** 🔵 info | **Confidence:** Established | **Impact:** 0 | **Effort:** 0 | **Fixability:** content_edit
+
+This page has been cited by AI engines in the last 30 days, indicating established AI visibility.
+
+**Recommendation:** Maintain content quality and freshness to sustain AI citation status.
+
+**Plain-English:** AI-Cited Page
+
+---
+
 ### AI_CONTENT_NOT_IN_TEXT
 **Severity:** 🟡 warning | **Confidence:** Reasonable proxy | **Impact:** 4 | **Effort:** 2 | **Fixability:** content_edit
 
@@ -1100,6 +1111,17 @@ Important content on this page is not in textual form — it is carried by image
 **Recommendation:** Provide the key information as real on-page text. Add a textual summary or transcript alongside any image, video, or embedded document so AI systems and screen readers can access it.
 
 **Plain-English:** Content Not Available as Text
+
+---
+
+### AI_HIGH_VALUE_UNCITED
+**Severity:** 🟡 warning | **Confidence:** Reasonable proxy | **Impact:** 4 | **Effort:** 2 | **Fixability:** content_edit
+
+This healthy, content-rich page has zero AI citations despite recent data, suggesting an AI visibility gap.
+
+**Recommendation:** Improve content structure, add schema markup, and build backlinks to increase AI discoverability.
+
+**Plain-English:** High-Value Page Not AI-Cited
 
 ---
 

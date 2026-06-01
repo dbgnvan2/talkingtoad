@@ -724,6 +724,9 @@ async def get_page_issues(
         "meta_refresh_url": crawled_page.meta_refresh_url,
         "response_size_bytes": crawled_page.response_size_bytes,
         "word_count":       crawled_page.word_count,
+        # M5: AI citation fields
+        "ai_citation_count_30d": crawled_page.ai_citation_count_30d,
+        "ai_citation_engines":   crawled_page.ai_citation_engines,
     }
 
     return {

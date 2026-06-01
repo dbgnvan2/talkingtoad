@@ -2643,6 +2643,59 @@ const issueHelp = {
       "can trigger false positives. The current-year guard and ≥24-month rule reduce but do " +
       "not eliminate false flags. Always verify the flagged text before making changes.",
   },
+
+  // ── M5: AI Citation Ingestion ─────────────────────────────────────────────
+
+  AI_CITED_PAGE: {
+    title: "Page has AI citations",
+    category: "ai_readiness",
+    severity: "info",
+    confidence: "Established",
+    definition:
+      "This page has been cited by AI engines in the last 30 days, indicating " +
+      "established AI visibility.",
+    impact:
+      "Evidence tier: Established. AI citations confirm that generative engines " +
+      "(ChatGPT, Gemini, Perplexity) are actively sourcing and quoting this page " +
+      "in their responses. This is the strongest signal of AI discoverability.",
+    fix:
+      "Maintain content quality and freshness to sustain AI citation status. " +
+      "Continue updating the page, adding new data, and keeping schema markup current.",
+    good_vs_bad:
+      "Good: Page cited by 3+ AI engines with recent timestamps. " +
+      "Bad: No AI citations despite quality content and good SEO scores.",
+    how_it_can_mislead:
+      "A single citation from a low-authority source may not indicate true AI visibility. " +
+      "Citation counts reflect the monitoring window (30 days) and may miss longer-term " +
+      "trends. A page losing citations over time is not flagged here — only presence vs absence.",
+  },
+
+  AI_HIGH_VALUE_UNCITED: {
+    title: "High-value page not cited by AI",
+    category: "ai_readiness",
+    severity: "warning",
+    confidence: "Reasonable proxy",
+    definition:
+      "This healthy, content-rich page has zero AI citations despite recent monitoring data, " +
+      "suggesting an AI visibility gap.",
+    impact:
+      "Evidence tier: Reasonable proxy. A page with a high health score (≥80) and " +
+      "substantial content (300+ words) that has zero AI citations is missing potential " +
+      "visibility in AI-generated answers. Users asking questions that this page could " +
+      "answer are not seeing it in AI responses.",
+    fix:
+      "Improve content structure by adding clear question-answer pairs in H2 headings. " +
+      "Add or enhance JSON-LD schema markup. Build quality backlinks from authoritative " +
+      "sources. Ensure the page is accessible to AI crawlers in robots.txt.",
+    good_vs_bad:
+      "Good: Page is cited by at least one AI engine within the monitoring window. " +
+      "Bad: Quality page with strong SEO scores has zero AI citations after 30 days of monitoring.",
+    how_it_can_mislead:
+      "Recent monitoring data may not reflect long-term citation trends. A page may have been " +
+      "cited before the current 30-day window. Re-check after another ingestion cycle. Also, " +
+      "some page types (privacy policies, terms of service) are unlikely to be cited by AI " +
+      "regardless of quality — this check does not distinguish page intent.",
+  },
   };
 
 

@@ -98,6 +98,20 @@ same doc's §9 verification matrix.
 | POST | `/api/ai/page-advisor` | Get AI-generated SEO recommendations for a specific page. |
 | POST | `/api/ai/site-advisor` | Get AI-generated site-wide SEO recommendations. |
 
+## AI Citation Ingestion (M5)
+
+| Method | Endpoint | Description |
+|---|---|---|
+| POST | `/api/jobs/{job_id}/ai-citations` | Ingest per-URL AI citation data from the sibling phrase tool. |
+
+### POST /api/jobs/{job_id}/ai-citations
+**Auth:** Bearer token required  
+**Rate limit:** 10/minute per IP  
+**Body:** `CitationIngestionRequest` with `citations: [{url, engines: [{engine, count_30d, last_seen?}]}]`  
+**Response:** `{matched_count, unmatched_count, unmatched_urls}`  
+**Errors:** 401 (no auth), 404 (job not found), 422 (malformed body or job_id)  
+**SSRF:** URLs are matched as strings only, never fetched
+
 ## GEO Analyzer (v2.1)
 
 LLM-based content analysis for Generative Engine Optimization. Produces a structured `GEOReport` covering query matching, chunk self-containedness, central claim detection, JS rendering checks, and Aggarwal et al. evidence-tiered scoring.

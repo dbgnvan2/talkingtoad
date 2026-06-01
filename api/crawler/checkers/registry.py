@@ -260,6 +260,9 @@ _ISSUE_SCORING: dict[str, tuple[int, int]] = {
     "CONTENT_DATE_STALE_VISIBLE": (4,  2),
     # M4.2: Outdated statistic or year reference (Content Freshness)
     "CONTENT_STAT_OUTDATED": (2,  1),
+    # M5: AI Citation Ingestion
+    "AI_CITED_PAGE": (0, 0),
+    "AI_HIGH_VALUE_UNCITED": (4, 2),
 }
 
 
@@ -1396,6 +1399,23 @@ _CATALOGUE: dict[str, _IssueSpec] = {
         fixability="content_edit",
         confidence_label="Heuristic",
     ),
+    # M5: AI Citation Ingestion
+    "AI_CITED_PAGE": _IssueSpec(
+        category="ai_readiness", severity="info",
+        description="This page has been cited by AI engines in the last 30 days, indicating established AI visibility.",
+        recommendation="Maintain content quality and freshness to sustain AI citation status.",
+        human_description="AI-Cited Page",
+        fixability="content_edit",
+        confidence_label="Established",
+    ),
+    "AI_HIGH_VALUE_UNCITED": _IssueSpec(
+        category="ai_readiness", severity="warning",
+        description="This healthy, content-rich page has zero AI citations despite recent data, suggesting an AI visibility gap.",
+        recommendation="Improve content structure, add schema markup, and build backlinks to increase AI discoverability.",
+        human_description="High-Value Page Not AI-Cited",
+        fixability="content_edit",
+        confidence_label="Reasonable proxy",
+    ),
 }
 _STOP_WORDS: frozenset[str] = frozenset({
     "a", "an", "the", "and", "or", "but", "in", "on", "at", "to", "for",
@@ -1508,6 +1528,9 @@ _AI_READINESS_CONFIDENCE: dict[str, str] = {
     "CONTENT_DATE_STALE_VISIBLE":   "Reasonable proxy",
     # M4.2: Content Freshness — outdated statistic/year reference
     "CONTENT_STAT_OUTDATED":        "Heuristic",
+    # M5: AI Citation Ingestion
+    "AI_CITED_PAGE":                "Established",
+    "AI_HIGH_VALUE_UNCITED":        "Reasonable proxy",
 }
 def make_issue(
     code: str,

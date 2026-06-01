@@ -67,3 +67,9 @@ class CrawledPage(BaseModel):
 
     # v1.7.1 media audit
     image_urls: list[str] = Field(default_factory=list)
+
+    # M5: AI citation ingestion (from sibling phrase tool)
+    # NULL != 0: None means "no data ingested", 0 means "ingested but uncited"
+    ai_citation_count_30d: int | None = None
+    ai_citation_engines: list[str] | None = None
+    ai_citation_last_updated: str | None = None

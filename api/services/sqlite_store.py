@@ -61,6 +61,10 @@ class SQLiteJobStore:
             ("has_json_ld",               "INTEGER NOT NULL DEFAULT 0"),
             ("pdf_metadata_json",         "TEXT"),
             ("image_urls_json",           "TEXT"),
+            # M5: AI citation ingestion fields
+            ("ai_citation_count_30d",     "INTEGER"),
+            ("ai_citation_engines_json",  "TEXT"),
+            ("ai_citation_last_updated",  "TEXT"),
         ]
         for col, col_type in page_columns:
             try:
@@ -243,7 +247,7 @@ class SQLiteJobStore:
         await self._db.executemany(
             """
             INSERT OR REPLACE INTO crawled_pages VALUES
-              (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+              (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             rows,
         )
@@ -1524,6 +1528,9 @@ def _page_to_row(p: CrawledPage) -> tuple:
         int(p.has_json_ld),
         json.dumps(p.pdf_metadata) if p.pdf_metadata else None,
         json.dumps(p.image_urls),
+        p.ai_citation_count_30d,
+        json.dumps(p.ai_citation_engines) if p.ai_citation_engines is not None else None,
+        p.ai_citation_last_updated,
     )
 
 
@@ -1566,6 +1573,9 @@ def _row_to_page(row: dict) -> CrawledPage:
         has_json_ld=bool(row.get("has_json_ld", 0)),
         pdf_metadata=json.loads(row.get("pdf_metadata_json")) if row.get("pdf_metadata_json") else None,
         image_urls=json.loads(row.get("image_urls_json") or "[]"),
+        ai_citation_count_30d=row.get("ai_citation_count_30d"),
+        ai_citation_engines=json.loads(row["ai_citation_engines_json"]) if row.get("ai_citation_engines_json") else None,
+        ai_citation_last_updated=row.get("ai_citation_last_updated"),
     )
 
 
