@@ -52,3 +52,10 @@ scratch/
 # Google OAuth client-secret files — NEVER commit
 client_secret*.json
 *-secret*.json
+
+# Tooling / orchestrator artifacts
+.claude/
+.orche/
+.bridge_snapshot_marker
+run-bridge.sh
+repo_map.md
