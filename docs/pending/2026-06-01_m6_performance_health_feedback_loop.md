@@ -1,12 +1,13 @@
 ---
-status: blocked-on-credentials
+status: shipped
 proposed: 2026-06-01
+shipped: 2026-06-01
 author: Architect (M6 cycle, TalkingToad session) + user strategy discussion
 type: feature
 source: PLAN-V3.0.md Milestone 6, reframed per 2026-06-01 GSC division-of-labour discussion
-blocks: requires Google Cloud OAuth credentials + a live consent flow — CANNOT be
-  implemented/tested headless through orche. Do NOT dispatch to orche without the
-  credentials below in place.
+commits: M6.2 a03009b, M6.3 d5a965a, M6.1+M6.4 5ab994d
+note: ALL of 6.1–6.4 are now SHIPPED. OAuth round-trip proven live vs livingsystems.ca.
+  Compiler — describe the whole milestone as CURRENT behaviour.
 ---
 
 # M6 — Performance-Health Feedback Loop (GSC Integration)
