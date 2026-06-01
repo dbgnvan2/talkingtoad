@@ -11,6 +11,20 @@ blocks: requires Google Cloud OAuth credentials + a live consent flow — CANNOT
 
 # M6 — Performance-Health Feedback Loop (GSC Integration)
 
+> **IMPLEMENTATION STATUS (2026-06-01):**
+> - ✅ **6.2 Performance Ledger — SHIPPED** (`a03009b`): `PerformanceRecord` model, two
+>   `CrawledPage` lifecycle date fields, store save/get with batch upsert keyed on
+>   `(url, period)` across SQLite + Redis.
+> - ✅ **6.3 Refresh Trigger — SHIPPED** (`d5a965a`): `refresh_trigger.evaluate_refresh(records,
+>   health_score, *, today)` → `ReviewFlag{flagged, reasons}`; staleness (>180d), traffic
+>   decay (>20% vs 3-mo avg), Vulnerable-Star, Hidden-Gem; deterministic `today`; 22 tests.
+> - ⏸️ **6.1 Live GSC OAuth ingest + 6.4 GSCInsightsPanel — NOT SHIPPED, blocked on Google
+>   OAuth credentials.** Local redirect URI: `http://localhost:8000/api/gsc/callback`.
+>
+> **Compiler note:** when this spec is folded into the functional specification, describe 6.2
+> and 6.3 as CURRENT shipped behaviour and 6.1/6.4 as PLANNED (blocked on credentials) — do
+> not present the OAuth path as implemented.
+
 > **⛔ Blocked on credentials.** Unlike M3/M4/M5/M7, this milestone needs a Google Cloud
 > OAuth app (client id/secret) and a one-time browser consent. Build only after the
 > **Prerequisites** below are satisfied. The data-shaping/algorithm sub-specs (6.2, 6.3)
