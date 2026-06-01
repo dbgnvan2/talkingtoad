@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react'
+import { useToast } from '../contexts/ToastContext.jsx'
 import { generateGeoReport, getGeoAiModel, setGeoAiModel, generateGeoRewritePrompt, generateGeoFaq, generateEntitySchema } from '../api.js'
 import { authHeaders } from '../api.js'
 import Spinner from './Spinner.jsx'
@@ -871,6 +872,7 @@ function EntitySchemaCard({ domain }) {
 
 
 export default function GEOReportPanel({ jobId, domain }) {
+  const toast = useToast()
   const [report, setReport] = useState(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
@@ -1149,7 +1151,7 @@ export default function GEOReportPanel({ jobId, domain }) {
                       <button
                         onClick={() => {
                           navigator.clipboard.writeText(generatedPrompt)
-                          alert('Prompt copied!')
+                          toast.success('Prompt copied!')
                         }}
                         className="flex-1 bg-gray-200 text-gray-800 font-semibold py-2 px-4 rounded-lg hover:bg-gray-300"
                       >
@@ -1178,7 +1180,7 @@ export default function GEOReportPanel({ jobId, domain }) {
                     <button
                       onClick={() => {
                         navigator.clipboard.writeText(rewriteContent)
-                        alert('Rewritten content copied to clipboard!')
+                        toast.success('Rewritten content copied to clipboard!')
                       }}
                       className="flex-1 bg-green-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-green-700"
                     >
@@ -1196,7 +1198,7 @@ export default function GEOReportPanel({ jobId, domain }) {
                             const writable = await handle.createWritable()
                             await writable.write(rewriteContent)
                             await writable.close()
-                            alert('File saved successfully!')
+                            toast.success('File saved successfully!')
                           }
                         } catch (e) {
                           console.error('Save failed:', e)

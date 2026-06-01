@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
+import { useToast } from '../contexts/ToastContext.jsx'
 import { startBatchOptimize, getBatchStatus, pauseBatch, resumeBatch, cancelBatch } from '../api'
 
 /**
@@ -7,6 +8,7 @@ import { startBatchOptimize, getBatchStatus, pauseBatch, resumeBatch, cancelBatc
  * Shows progress, controls (pause/resume/cancel), and results.
  */
 export default function BatchOptimizePanel({ jobId, selectedImages, onClose, onComplete }) {
+  const toast = useToast()
   const [status, setStatus] = useState(null)
   const [batchId, setBatchId] = useState(null)
   const [error, setError] = useState(null)
@@ -96,7 +98,7 @@ export default function BatchOptimizePanel({ jobId, selectedImages, onClose, onC
   }
 
   const handleCancel = async () => {
-    if (!confirm('Are you sure you want to cancel this batch?')) return
+    if (!await toast.confirm('Are you sure you want to cancel this batch?')) return
     try {
       const data = await cancelBatch(batchId)
       setStatus(data)

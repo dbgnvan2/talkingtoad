@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { useToast } from '../contexts/ToastContext.jsx'
 import { getGeoSettings, saveGeoSettings, getGeoAiModel, setGeoAiModel } from '../api.js'
 
 /**
@@ -8,6 +9,7 @@ import { getGeoSettings, saveGeoSettings, getGeoAiModel, setGeoAiModel } from '.
  * AI-powered image metadata generation.
  */
 export default function GeoSettingsModal({ domain, onClose, onSaved }) {
+  const toast = useToast()
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
@@ -58,11 +60,11 @@ export default function GeoSettingsModal({ domain, onClose, onSaved }) {
   const handleSave = async () => {
     // Validate required fields
     if (!orgName.trim()) {
-      alert('Organization name is required')
+      toast.info('Organization name is required')
       return
     }
     if (!primaryLocation.trim()) {
-      alert('Primary location is required')
+      toast.info('Primary location is required')
       return
     }
 
@@ -70,11 +72,11 @@ export default function GeoSettingsModal({ domain, onClose, onSaved }) {
     const validLocations = locationPool.filter(l => l.trim())
 
     if (validTopics.length === 0) {
-      alert('At least one topic entity is required')
+      toast.info('At least one topic entity is required')
       return
     }
     if (validLocations.length === 0) {
-      alert('At least one location in the pool is required')
+      toast.info('At least one location in the pool is required')
       return
     }
 

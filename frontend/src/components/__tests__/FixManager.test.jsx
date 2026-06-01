@@ -146,9 +146,6 @@ describe('FixManager', () => {
   })
 
   it('allows clearing all fixes', async () => {
-    // Mock window.confirm to auto-approve
-    vi.spyOn(window, 'confirm').mockReturnValue(true)
-
     renderWithProviders(<FixManager jobId={mockJobId} />)
 
     await waitFor(() => {
@@ -159,13 +156,17 @@ describe('FixManager', () => {
     const clearButton = screen.getByRole('button', { name: /Clear/i })
     fireEvent.click(clearButton)
 
+    // Toast confirm dialog appears — click OK to confirm
+    await waitFor(() => {
+      expect(screen.getByRole('dialog')).toBeInTheDocument()
+    })
+    fireEvent.click(screen.getByText('OK'))
+
     await waitFor(() => {
       expect(global.fetch).toHaveBeenCalledWith(
         expect.stringContaining('/api/fixes/'),
         expect.objectContaining({ method: 'DELETE' })
       )
     })
-
-    window.confirm.mockRestore()
   })
 })

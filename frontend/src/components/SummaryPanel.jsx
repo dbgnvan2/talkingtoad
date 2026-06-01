@@ -1,4 +1,5 @@
 import React, { useState } from 'react'
+import { useToast } from '../contexts/ToastContext.jsx'
 import { useTheme } from '../contexts/ThemeContext.jsx'
 import { getSiteAdvisor, testAI } from '../api.js'
 import SiteRecommendationsPanel from './SiteRecommendationsPanel.jsx'
@@ -27,6 +28,7 @@ const TAB_ORPHAN_IMAGES = CATEGORIES.length + 2
 const TAB_ORPHAN_PAGES = CATEGORIES.length + 3
 
 export default function SummaryPanel({ summary, domain, jobId, onCategoryClick, onSeverityClick, onPageClick, onShowPdfModal, onShowCategoryHelp, onShowGeoSettings }) {
+  const toast = useToast()
   const { getFontClass } = useTheme()
   const [aiTesting, setAiTesting] = useState(false)
   const [aiStatus, setAiStatus] = useState(null)
@@ -52,7 +54,7 @@ export default function SummaryPanel({ summary, domain, jobId, onCategoryClick, 
       const result = await getSiteAdvisor(jobId)
       setSiteRecommendations(result.recommendations)
     } catch (err) {
-      alert('Failed to get site recommendations: ' + err.message)
+      toast.error('Failed to get site recommendations: ' + err.message)
     } finally {
       setLoadingSiteAI(false)
     }

@@ -5,6 +5,7 @@
  * enter a replacement URL and apply it to one source page at a time.
  */
 import { useState, useEffect, useRef } from 'react'
+import { useToast } from '../contexts/ToastContext.jsx'
 import { authHeaders } from '../api'
 
 export const FIXABLE_LINK_CODES = new Set([
@@ -23,6 +24,7 @@ function shortenUrl(url) {
 }
 
 export default function FixBrokenLinkPanel({ jobId, brokenUrl, onClose }) {
+  const toast = useToast()
   const [loading,      setLoading]      = useState(true)
   const [fetchError,   setFetchError]   = useState(null)
   const [sources,      setSources]      = useState([])
@@ -103,7 +105,7 @@ export default function FixBrokenLinkPanel({ jobId, brokenUrl, onClose }) {
       }
       setRescannedSrcs(prev => new Set([...prev, sourceUrl]))
     } catch (err) {
-      alert('Rescan failed: ' + err.message)
+      toast.error('Rescan failed: ' + err.message)
     } finally {
       setRescanning(null)
     }

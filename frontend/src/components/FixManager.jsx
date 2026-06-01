@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
+import { useToast } from '../contexts/ToastContext.jsx'
 import { authHeaders } from '../api'
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:8000'
@@ -196,6 +197,7 @@ function PageGroup({ pageUrl, fixes, onUpdate }) {
 const BATCH_SIZE = 20
 
 export default function FixManager({ jobId, domain }) {
+  const toast = useToast()
   const [fixes, setFixes] = useState([])
   const [seoPlugin, setSeoPlugin] = useState(null)
   const [generating, setGenerating] = useState(false)
@@ -265,7 +267,7 @@ export default function FixManager({ jobId, domain }) {
   }
 
   async function handleApply() {
-    if (!window.confirm(`Apply ${approvedCount} approved fix${approvedCount !== 1 ? 'es' : ''} to WordPress? This will update live content.`)) return
+    if (!await toast.confirm(`Apply ${approvedCount} approved fix${approvedCount !== 1 ? 'es' : ''} to WordPress? This will update live content.`)) return
     setApplying(true)
     setApplyResult(null)
     setError(null)
@@ -288,7 +290,7 @@ export default function FixManager({ jobId, domain }) {
   }
 
   async function handleClear() {
-    if (!window.confirm('Clear all fixes and start over? This cannot be undone.')) return
+    if (!await toast.confirm('Clear all fixes and start over? This cannot be undone.')) return
     await apiFetch(`/api/fixes/${jobId}`, { method: 'DELETE' })
     setFixes([])
     setGenerated(false)

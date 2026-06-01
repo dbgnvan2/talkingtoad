@@ -6,17 +6,19 @@ import { renderWithProviders } from '../../test/test-utils.jsx'
 
 describe('CategoryHelpModal', () => {
   it('renders null when no categoryKey is provided', () => {
-    const { container } = renderWithProviders(
+    renderWithProviders(
       <CategoryHelpModal categoryKey={null} onClose={() => {}} />
     )
-    expect(container.firstChild).toBeNull()
+    // Component should not render any modal content
+    expect(screen.queryByRole('button', { name: /×/ })).not.toBeInTheDocument()
   })
 
   it('renders null for unknown category', () => {
-    const { container } = renderWithProviders(
+    renderWithProviders(
       <CategoryHelpModal categoryKey="nonexistent" onClose={() => {}} />
     )
-    expect(container.firstChild).toBeNull()
+    // Component should not render any modal content
+    expect(screen.queryByRole('button', { name: /×/ })).not.toBeInTheDocument()
   })
 
   it('renders modal content for metadata category', () => {

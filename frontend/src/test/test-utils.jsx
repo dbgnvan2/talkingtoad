@@ -2,6 +2,7 @@ import React from 'react'
 import { render } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { ThemeProvider } from '../contexts/ThemeContext.jsx'
+import { ToastProvider } from '../contexts/ToastContext.jsx'
 
 /**
  * Custom render that wraps components in required providers.
@@ -12,7 +13,9 @@ export function renderWithProviders(ui, { route = '/', ...options } = {}) {
     return (
       <MemoryRouter initialEntries={[route]}>
         <ThemeProvider>
-          {children}
+          <ToastProvider>
+            {children}
+          </ToastProvider>
         </ThemeProvider>
       </MemoryRouter>
     )

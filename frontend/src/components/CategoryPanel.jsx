@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react'
+import { useToast } from '../contexts/ToastContext.jsx'
 import { getResultsByCategory, verifyBrokenLinks, markBrokenLinkFixed, getOrphanedMedia, authHeaders } from '../api.js'
 import { FIXABLE_LINK_CODES } from './FixBrokenLinkPanel.jsx'
 import SeverityBadge from './SeverityBadge.jsx'
@@ -6,6 +7,7 @@ import IssueHelpPanel from './IssueHelpPanel.jsx'
 import Spinner from './Spinner.jsx'
 
 export default function CategoryPanel({ jobId, category, domain, onPageClick, onShowHelp, onSummaryRefresh }) {
+  const toast = useToast()
   const [data, setData] = useState(null)
   const [expandedCode, setExpandedCode] = useState(null)
   const [verifying, setVerifying] = useState(false)
@@ -65,7 +67,7 @@ export default function CategoryPanel({ jobId, category, domain, onPageClick, on
       getResultsByCategory(jobId, category.key).then(setData).catch(() => {})
       onSummaryRefresh?.()
     } catch (err) {
-      alert('Failed to mark as fixed: ' + err.message)
+      toast.error('Failed to mark as fixed: ' + err.message)
     }
   }
 
@@ -383,6 +385,7 @@ export default function CategoryPanel({ jobId, category, domain, onPageClick, on
 }
 
 function BrokenLinkItem({ jobId, brokenUrl, onMarkedFixed }) {
+  const toast = useToast()
   const [expanded, setExpanded] = useState(false)
   const [loading, setLoading] = useState(false)
   const [sources, setSources] = useState(null)
@@ -400,7 +403,7 @@ function BrokenLinkItem({ jobId, brokenUrl, onMarkedFixed }) {
       setIsMarkedFixed(true)
       if (onMarkedFixed) onMarkedFixed(brokenUrl)
     } catch (err) {
-      alert('Failed to mark as fixed: ' + err.message)
+      toast.error('Failed to mark as fixed: ' + err.message)
     } finally {
       setMarkingFixed(false)
     }
@@ -438,7 +441,7 @@ function BrokenLinkItem({ jobId, brokenUrl, onMarkedFixed }) {
       if (!res.ok) throw new Error('Rescan failed')
       setRescanned(prev => new Set([...prev, sourceUrl]))
     } catch (err) {
-      alert('Rescan failed: ' + err.message)
+      toast.error('Rescan failed: ' + err.message)
     } finally {
       setRescanning(null)
     }
