@@ -31,17 +31,19 @@ the pattern used by ai.py/geo.py).
   - `EngineCitation { engine: str, count_30d: int, last_seen: str | None = None }`
   - `CitationEntry { url: str, engines: list[EngineCitation] }`
   - `CitationIngestionRequest { citations: list[CitationEntry] }`
-- For each entry: normalize the URL via `from api.crawler.normaliser import normalize_url`
-  and match against the job's pages (`store.get_pages(job_id)`, compare normalized URLs).
-  On match, `store.update_page(job_id, <matched url>, ai_citation_count_30d=sum(counts),
-  ai_citation_engines=[e.engine...], ai_citation_last_updated=<now iso>)`.
+- For each entry: normalise the URL via `normalise_url` (note British spelling)
+  and match against the job's pages (`await store.get_pages(job_id)`, compare normalised URLs).
+  On match, mutate the matched `CrawledPage` (set `ai_citation_count_30d=sum(counts)`,
+  `ai_citation_engines=[e.engine...]`, `ai_citation_last_updated=<now iso>`) and persist via
+  `await store.save_pages([...])`. **There is no `update_page`** — the store API is async:
+  `await store.get_pages(job_id)` then `await store.save_pages(pages)`.
 - Response: `{ "matched_count": int, "unmatched_count": int, "unmatched_urls": list[str] }`.
 - **404** if `job_id` unknown; **422** on malformed body; **401** without auth.
 - **SSRF note:** citation URLs are matched as strings, **never fetched**. Document that if a
   future version fetches them it MUST go through `is_ssrf_safe()` first.
-- **Rate limit:** if the app has a limiter, apply a per-IP limit; if not wired, note it as
-  a follow-up (do NOT block the cycle on adding slowapi infra). Add a `429` test only if a
-  limiter exists.
+- **Rate limit:** the app HAS slowapi wired (`from api.services.rate_limiter import limiter`).
+  Apply `@limiter.limit(...)` with a sensible per-IP limit (mirror `AI_ANALYSIS_LIMIT` usage
+  in crawl.py). A `429` test is optional.
 
 ## Issue codes (all 3 registries in `checkers/registry.py`)
 - `AI_CITED_PAGE` — **info, positive signal, impact 0** — emitted when
@@ -108,7 +110,7 @@ the pattern used by ai.py/geo.py).
 5. `thresholds.md` untouched. Full suite green, 0 regressions.
 
 ## Note for architect/dev — verify before coding
-Confirm `store.update_page(job_id, url, **kwargs)` persists arbitrary kwargs (it takes
-`**kwargs`); confirm the per-page issue-assembly site has access to `page.score` and
+Store API is async with NO `update_page`: use `await store.get_pages(job_id)`, mutate the
+matched CrawledPage, `await store.save_pages(pages)`. Confirm the per-page issue-assembly site has access to `page.score` and
 `word_count` at emit time (score may be computed late — if so, emit these two codes in the
 same place scores are finalized, not in `check_page` which runs pre-score).
