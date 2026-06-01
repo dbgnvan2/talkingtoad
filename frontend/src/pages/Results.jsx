@@ -20,6 +20,7 @@ import { useTheme } from '../contexts/ThemeContext.jsx'
 import { useToast } from '../contexts/ToastContext.jsx'
 
 const GSCInsightsPanel = React.lazy(() => import('../components/GSCInsightsPanel'))
+const PagePriorityPanel = React.lazy(() => import('../components/PagePriorityPanel'))
 import { getIssueHelp } from '../data/issueHelp.js'
 import {
   getResults, getResultsByCategory, getPages, getPageIssues,
@@ -191,6 +192,13 @@ export default function Results() {
           <OrphanedPagesPanel jobId={jobId} domain={domain} onPageClick={setFocusedPageUrl} />
         )}
         {!activeSeverity && activeTab === TAB_FIX_MGR && <FixManager jobId={jobId} domain={domain} />}
+      </div>
+
+      {/* Page Priority Work Queue — opt-in, lazy-loaded */}
+      <div className="mt-6">
+        <Suspense fallback={<div className="bg-white rounded-lg shadow p-6 animate-pulse"><div className="h-4 bg-gray-200 rounded w-1/3"></div></div>}>
+          <PagePriorityPanel jobId={jobId} />
+        </Suspense>
       </div>
 
       {/* GSC Insights — opt-in, lazy-loaded */}

@@ -93,3 +93,60 @@ def evaluate_refresh(
         reasons.append("Hidden Gem")
 
     return ReviewFlag(flagged=bool(reasons), reasons=reasons)
+
+
+# ── Page Priority Work Queue ranking (Authority Matrix) ──────────────────
+# Lower priority_rank = work on it sooner. Buckets order the queue; within a
+# bucket, worse health sorts first. Pure function — caller supplies today +
+# the per-page data so it stays deterministic and testable.
+
+# Bucket weights (lower = higher priority)
+_BUCKET_VULNERABLE_STAR = 0   # earns traffic but structurally weak — fix first
+_BUCKET_DECAY = 1             # traffic decaying
+_BUCKET_STALE = 2            # overdue for a refresh
+_BUCKET_LOW_HEALTH = 3       # poor health, no GSC signal to prioritise it higher
+_BUCKET_HIDDEN_GEM = 4       # healthy but not found — opportunity, not urgent
+_BUCKET_OK = 5               # nothing flagged, healthy
+
+
+def classify_page_bucket(health_score: int, flag: ReviewFlag) -> tuple[int, str]:
+    """Map a page's health + ReviewFlag to a (bucket_weight, bucket_label).
+
+    Precedence matches the Authority Matrix: a Vulnerable Star outranks decay,
+    which outranks staleness. Pages with no flag are ranked by health alone
+    (so the queue is useful even when GSC is not connected).
+    """
+    reasons = set(flag.reasons)
+    if "Vulnerable Star" in reasons:
+        return _BUCKET_VULNERABLE_STAR, "Vulnerable Star"
+    if "Traffic Decay" in reasons:
+        return _BUCKET_DECAY, "Traffic Decay"
+    if "Staleness" in reasons:
+        return _BUCKET_STALE, "Stale"
+    if "Hidden Gem" in reasons:
+        return _BUCKET_HIDDEN_GEM, "Hidden Gem"
+    if health_score < VULNERABLE_STAR_HEALTH:
+        return _BUCKET_LOW_HEALTH, "Low Health"
+    return _BUCKET_OK, "OK"
+
+
+def rank_pages(pages: list[dict]) -> list[dict]:
+    """Sort page dicts into the work-queue order and stamp priority_rank/bucket.
+
+    Each input dict must have ``health_score`` (int) and ``review_flag``
+    (a :class:`ReviewFlag`). Returns the same dicts, sorted, with
+    ``bucket`` (label) and ``priority_rank`` (1-based) added. Stable: ties
+    broken by ascending health (worst first), then url for determinism.
+    """
+    for p in pages:
+        weight, label = classify_page_bucket(p["health_score"], p["review_flag"])
+        p["_bucket_weight"] = weight
+        p["bucket"] = label
+    ordered = sorted(
+        pages,
+        key=lambda p: (p["_bucket_weight"], p["health_score"], p.get("url", "")),
+    )
+    for i, p in enumerate(ordered, start=1):
+        p["priority_rank"] = i
+        p.pop("_bucket_weight", None)
+    return ordered

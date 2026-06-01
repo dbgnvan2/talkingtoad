@@ -1140,6 +1140,63 @@ async def get_executive_summary(
         return _err("AI_UNAVAILABLE", f"Could not generate summary: {str(exc)}", 503)
 
 
+@router.get("/{job_id}/page-priority", response_model=None)
+async def get_page_priority(
+    job_id: str,
+    store: SQLiteJobStore | RedisJobStore = Depends(get_store),
+) -> dict | JSONResponse:
+    """Page Priority Work Queue.
+
+    Ranks the job's crawled pages by the Authority Matrix (M6.3): Vulnerable
+    Stars first, then Traffic Decay / Staleness, then worst-health, with Hidden
+    Gems surfaced as opportunities. Works with OR without GSC data — when no
+    Performance Ledger records exist for a page, it's ranked by health alone.
+    """
+    from api.services.refresh_trigger import evaluate_refresh, rank_pages
+
+    job = await store.get_job(job_id)
+    if not job:
+        return _err("JOB_NOT_FOUND", f"No job with id {job_id}", 404)
+
+    pages = await store.get_pages(job_id)
+    issues = await store.get_all_issues(job_id)
+
+    # Per-page health from summed issue impact (same convention as M5/M6).
+    impact_by_url: dict[str, int] = {}
+    for issue in issues:
+        if issue.page_url:
+            key = issue.page_url.rstrip("/")
+            impact_by_url[key] = impact_by_url.get(key, 0) + (issue.impact or 0)
+
+    today = datetime.now(timezone.utc).date()
+    rows: list[dict] = []
+    for page in pages:
+        key = page.url.rstrip("/")
+        health_score = max(0, 100 - impact_by_url.get(key, 0))
+        records = await store.get_performance_records(url=page.url)
+        flag = evaluate_refresh(records, health_score, today=today)
+        latest = sorted(records, key=lambda r: r.period)[-1] if records else None
+        rows.append({
+            "url": page.url,
+            "health_score": health_score,
+            "gsc": None if latest is None else {
+                "clicks": latest.gsc_clicks_mo,
+                "impressions": latest.gsc_impressions_mo,
+                "ctr": latest.gsc_ctr_mo,
+                "position": latest.gsc_avg_position_mo,
+            },
+            "review_flag": flag,  # replaced with a dict below after ranking
+        })
+
+    ranked = rank_pages(rows)
+    # Serialise ReviewFlag -> dict for JSON.
+    for r in ranked:
+        f = r.pop("review_flag")
+        r["review_flag"] = {"flagged": f.flagged, "reasons": f.reasons}
+
+    return {"pages": ranked, "total": len(ranked)}
+
+
 @router.get("/{job_id}/export/csv", response_model=None)
 async def export_csv_full(
     job_id: str,

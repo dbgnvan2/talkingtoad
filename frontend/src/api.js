@@ -42,6 +42,14 @@ export async function getStatus(jobId) {
   return checkResponse(res)
 }
 
+// Page Priority Work Queue — pages ranked by the Authority Matrix (M6.3).
+export async function getPagePriority(jobId) {
+  const res = await fetch(`/api/crawl/${jobId}/page-priority`, {
+    headers: authHeaders(),
+  })
+  return checkResponse(res)
+}
+
 export async function cancelCrawl(jobId) {
   const res = await fetch(`/api/crawl/${jobId}/cancel`, {
     method: 'POST',
