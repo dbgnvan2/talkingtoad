@@ -105,7 +105,7 @@ async def save_llms_txt(
 @public_router.get("/health")
 async def health() -> dict:
     """Health check endpoint (spec §6.3). No auth required."""
-    return {"status": "ok", "version": "2.6.0"}
+    return {"status": "ok", "version": "3.0.0"}
 
 
 @router.get("/robots")

@@ -15,8 +15,21 @@ Lightweight web-based SEO crawler for nonprofit organisations — Screaming-Frog
 
 - **GitHub:** https://github.com/dbgnvan2/talkingtoad
 - **Specs index:** `docs/specs/README.md`
-- **Current version:** 2.6.0 (tag `v2.6-stabilized`). v2.6 stabilization phase is **complete**; v3.0 feature implementation is now active — see `PLAN-V3.0.md`.
-- **Issue catalogue:** 131 codes in `_CATALOGUE` / `_ISSUE_SCORING` / `_AI_READINESS_CONFIDENCE` (see `docs/issue-codes.md`)
+- **Current version:** 3.0.0. v3.0 shipped — see `PLAN-V3.0-UNIFIED.md` for the milestone ledger.
+- **Issue catalogue:** 142 codes in `_CATALOGUE` / `_ISSUE_SCORING` / `_AI_READINESS_CONFIDENCE` (see `docs/issue-codes.md`)
+
+### v3.0 shipped features
+- Google-validated GEO audit codes (M3): SCHEMA_VISIBLE_MISMATCH, AI_CONTENT_NOT_IN_TEXT, AI_PREVIEW_SUPPRESSED, AI_PREVIEW_BLOCKED_AT_BOT, AI_NO_VISUAL_COMPANION, AI_MAIN_CONTENT_LOW_RATIO
+- Content Freshness (M4): CONTENT_DATE_STALE_VISIBLE, CONTENT_STAT_OUTDATED
+- Citation ingestion endpoint POST /api/jobs/{id}/ai-citations (M5): AI_CITED_PAGE, AI_HIGH_VALUE_UNCITED
+- GSC Performance-Health loop with OAuth (M6): /api/gsc/* endpoints, Performance Ledger, Refresh Trigger
+- Confidence-tier reporting in PDF/Excel (M7)
+- GEO Authority generators (GA3/GA4): FAQ schema /api/ai/geo-faq, entity schema /api/geo/entity-schema
+- Frontend infra (M10): toast system, a11y baseline, code-splitting
+
+### Still parked / not shipped
+- Multi-tenant / per-customer AI keys / Identity Model (M2.3/2.4/2.7 — see docs/TODO-MULTITENANT.md)
+- SERP-Discovery (separate repo)
 
 ---
 
