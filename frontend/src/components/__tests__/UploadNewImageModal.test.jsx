@@ -9,25 +9,49 @@ describe('UploadNewImageModal', () => {
 
   beforeEach(() => {
     global.fetch.mockReset()
+    // Mock URL.createObjectURL for file preview
+    if (!global.URL.createObjectURL) {
+      global.URL.createObjectURL = vi.fn(() => 'blob:mock-url')
+    }
+    if (!global.URL.revokeObjectURL) {
+      global.URL.revokeObjectURL = vi.fn()
+    }
+
     global.fetch.mockImplementation((url) => {
-      if (url.includes('/upload-image')) {
+      if (typeof url === 'string' && url.includes('/optimize-upload-preview')) {
         return mockFetchResponse({
-          success: true,
+          original_size_kb: 500,
+          estimated_size_kb: 85,
+          savings_percent: 83,
+          original_dimensions: [1920, 1080],
+          geo_location: 'San Francisco',
+          suggested_filename: 'test-image-small.webp',
+        })
+      }
+      if (typeof url === 'string' && url.includes('/optimize-upload')) {
+        return mockFetchResponse({
           new_url: 'https://example.com/uploads/optimized-img.webp',
           file_size_kb: 42.5,
           message: 'Image uploaded successfully',
         })
       }
-      if (url.includes('/validate-upload')) {
-        return mockFetchResponse({
-          valid: true,
-          error: null,
-          file_size_kb: 500,
-        })
-      }
       return mockFetchResponse({})
     })
   })
+
+  /** Helper: simulate selecting a file, which triggers preview loading */
+  async function selectFile(container) {
+    const file = new File(['test-image-data'], 'test.jpg', { type: 'image/jpeg' })
+    Object.defineProperty(file, 'size', { value: 1024 * 100 }) // 100KB
+
+    const fileInput = container.querySelector('input[type="file"]')
+    fireEvent.change(fileInput, { target: { files: [file] } })
+
+    // Wait for preview to load
+    await waitFor(() => {
+      expect(screen.getByText('Optimize & Upload')).toBeInTheDocument()
+    })
+  }
 
   it('renders upload modal with title', () => {
     renderWithProviders(
@@ -38,11 +62,11 @@ describe('UploadNewImageModal', () => {
       />
     )
 
-    expect(screen.getByText(/Upload|upload/)).toBeInTheDocument()
+    expect(screen.getByText(/Upload/)).toBeInTheDocument()
   })
 
-  it('displays file input for selecting image', () => {
-    renderWithProviders(
+  it('displays file input area for selecting image', () => {
+    const { container } = renderWithProviders(
       <UploadNewImageModal
         jobId={mockJobId}
         onClose={vi.fn()}
@@ -50,8 +74,9 @@ describe('UploadNewImageModal', () => {
       />
     )
 
-    const fileInput = screen.getByRole('button', { name: /choose|select|upload/i })
-    expect(fileInput).toBeInTheDocument()
+    // The component has a "Browse Files" button and a hidden file input
+    expect(screen.getByText('Browse Files')).toBeInTheDocument()
+    expect(container.querySelector('input[type="file"]')).toBeInTheDocument()
   })
 
   it('displays format requirements', () => {
@@ -63,7 +88,7 @@ describe('UploadNewImageModal', () => {
       />
     )
 
-    expect(screen.getByText(/JPG|JPEG|PNG|WebP/i)).toBeInTheDocument()
+    expect(screen.getByText(/JPEG|PNG|WebP|GIF/i)).toBeInTheDocument()
   })
 
   it('displays file size requirements', () => {
@@ -75,25 +100,27 @@ describe('UploadNewImageModal', () => {
       />
     )
 
-    expect(screen.getByText(/max|maximum|size|MB/i)).toBeInTheDocument()
+    expect(screen.getByText(/max|20MB/i)).toBeInTheDocument()
   })
 
-  it('allows setting target width', () => {
-    renderWithProviders(
+  it('allows setting target width after file selection', async () => {
+    const { container } = renderWithProviders(
       <UploadNewImageModal
         jobId={mockJobId}
         onClose={vi.fn()}
         onSuccess={vi.fn()}
       />
     )
+
+    await selectFile(container)
 
     const widthInput = screen.getByDisplayValue('1200')
     fireEvent.change(widthInput, { target: { value: '800' } })
     expect(widthInput.value).toBe('800')
   })
 
-  it('allows toggling GPS injection', () => {
-    renderWithProviders(
+  it('allows toggling GPS injection after file selection', async () => {
+    const { container } = renderWithProviders(
       <UploadNewImageModal
         jobId={mockJobId}
         onClose={vi.fn()}
@@ -101,7 +128,12 @@ describe('UploadNewImageModal', () => {
       />
     )
 
-    const gpsCheckbox = screen.getByRole('checkbox', { name: /GPS|coordinates/i })
+    await selectFile(container)
+
+    // GPS checkbox is labeled "Inject GPS coordinates (...)"
+    const gpsCheckbox = container.querySelector('input[type="checkbox"]#applyGps')
+    expect(gpsCheckbox).toBeInTheDocument()
+    expect(gpsCheckbox.checked).toBe(true)
     fireEvent.click(gpsCheckbox)
     expect(gpsCheckbox.checked).toBe(false)
   })
@@ -115,7 +147,7 @@ describe('UploadNewImageModal', () => {
       />
     )
 
-    expect(screen.getByText(/Upload|upload/)).toBeInTheDocument()
+    expect(screen.getByText(/Upload/)).toBeInTheDocument()
   })
 
   it('displays cancel button', () => {
@@ -133,8 +165,8 @@ describe('UploadNewImageModal', () => {
     expect(mockOnClose).toHaveBeenCalled()
   })
 
-  it('shows uploading state during upload', async () => {
-    renderWithProviders(
+  it('shows optimizing state during upload', async () => {
+    const { container } = renderWithProviders(
       <UploadNewImageModal
         jobId={mockJobId}
         onClose={vi.fn()}
@@ -142,18 +174,21 @@ describe('UploadNewImageModal', () => {
       />
     )
 
+    await selectFile(container)
+
+    // Make the optimize-upload call hang
     global.fetch.mockImplementation(() => new Promise(() => {}))
 
-    const uploadButton = screen.getAllByText(/Upload/)[0]
-    fireEvent.click(uploadButton)
+    fireEvent.click(screen.getByText('Optimize & Upload'))
 
     await waitFor(() => {
-      expect(screen.getByText(/Uploading|uploading|processing/)).toBeInTheDocument()
+      // Text appears in both header subtitle and body
+      expect(screen.getAllByText(/Optimizing and uploading|uploading/).length).toBeGreaterThan(0)
     })
   })
 
   it('displays success message after upload', async () => {
-    renderWithProviders(
+    const { container } = renderWithProviders(
       <UploadNewImageModal
         jobId={mockJobId}
         onClose={vi.fn()}
@@ -161,16 +196,17 @@ describe('UploadNewImageModal', () => {
       />
     )
 
-    const uploadButton = screen.getAllByText(/Upload/)[0]
-    fireEvent.click(uploadButton)
+    await selectFile(container)
+    fireEvent.click(screen.getByText('Optimize & Upload'))
 
     await waitFor(() => {
-      expect(screen.getByText(/success|successful|complete/i)).toBeInTheDocument()
+      // "Upload complete!" appears in both header and body
+      expect(screen.getAllByText(/Upload Complete/i).length).toBeGreaterThan(0)
     })
   })
 
   it('displays new URL after successful upload', async () => {
-    renderWithProviders(
+    const { container } = renderWithProviders(
       <UploadNewImageModal
         jobId={mockJobId}
         onClose={vi.fn()}
@@ -178,8 +214,8 @@ describe('UploadNewImageModal', () => {
       />
     )
 
-    const uploadButton = screen.getAllByText(/Upload/)[0]
-    fireEvent.click(uploadButton)
+    await selectFile(container)
+    fireEvent.click(screen.getByText('Optimize & Upload'))
 
     await waitFor(() => {
       expect(screen.getByDisplayValue(/optimized-img\.webp/)).toBeInTheDocument()
@@ -187,7 +223,7 @@ describe('UploadNewImageModal', () => {
   })
 
   it('displays file size of uploaded image', async () => {
-    renderWithProviders(
+    const { container } = renderWithProviders(
       <UploadNewImageModal
         jobId={mockJobId}
         onClose={vi.fn()}
@@ -195,16 +231,17 @@ describe('UploadNewImageModal', () => {
       />
     )
 
-    const uploadButton = screen.getAllByText(/Upload/)[0]
-    fireEvent.click(uploadButton)
+    await selectFile(container)
+    fireEvent.click(screen.getByText('Optimize & Upload'))
 
     await waitFor(() => {
-      expect(screen.getByText(/42.5/)).toBeInTheDocument()
+      // formatSize(42.5) = "43 KB"
+      expect(screen.getByText(/43 KB/)).toBeInTheDocument()
     })
   })
 
   it('shows copy button for new URL', async () => {
-    renderWithProviders(
+    const { container } = renderWithProviders(
       <UploadNewImageModal
         jobId={mockJobId}
         onClose={vi.fn()}
@@ -212,8 +249,8 @@ describe('UploadNewImageModal', () => {
       />
     )
 
-    const uploadButton = screen.getAllByText(/Upload/)[0]
-    fireEvent.click(uploadButton)
+    await selectFile(container)
+    fireEvent.click(screen.getByText('Optimize & Upload'))
 
     await waitFor(() => {
       expect(screen.getByText('Copy')).toBeInTheDocument()
@@ -222,7 +259,7 @@ describe('UploadNewImageModal', () => {
 
   it('calls onSuccess callback after upload completes', async () => {
     const mockOnSuccess = vi.fn()
-    renderWithProviders(
+    const { container } = renderWithProviders(
       <UploadNewImageModal
         jobId={mockJobId}
         onClose={vi.fn()}
@@ -230,8 +267,8 @@ describe('UploadNewImageModal', () => {
       />
     )
 
-    const uploadButton = screen.getAllByText(/Upload/)[0]
-    fireEvent.click(uploadButton)
+    await selectFile(container)
+    fireEvent.click(screen.getByText('Optimize & Upload'))
 
     await waitFor(() => {
       expect(mockOnSuccess).toHaveBeenCalled()
@@ -239,17 +276,7 @@ describe('UploadNewImageModal', () => {
   })
 
   it('displays error message on upload failure', async () => {
-    global.fetch.mockImplementation((url) => {
-      if (url.includes('/upload-image')) {
-        return mockFetchResponse({
-          success: false,
-          error: 'File size exceeds maximum',
-        }, { status: 400 })
-      }
-      return mockFetchResponse({})
-    })
-
-    renderWithProviders(
+    const { container } = renderWithProviders(
       <UploadNewImageModal
         jobId={mockJobId}
         onClose={vi.fn()}
@@ -257,35 +284,23 @@ describe('UploadNewImageModal', () => {
       />
     )
 
-    const uploadButton = screen.getAllByText(/Upload/)[0]
-    fireEvent.click(uploadButton)
+    await selectFile(container)
+
+    // Make the optimize-upload call fail
+    global.fetch.mockImplementation(() =>
+      mockFetchResponse({ error: { message: 'File size exceeds maximum' } }, 400)
+    )
+
+    fireEvent.click(screen.getByText('Optimize & Upload'))
 
     await waitFor(() => {
-      expect(screen.getByText(/error|Error/)).toBeInTheDocument()
+      // "Error" appears in both header subtitle and error body
+      expect(screen.getAllByText(/Error/).length).toBeGreaterThan(0)
     })
   })
 
   it('allows retry after error', async () => {
-    let callCount = 0
-    global.fetch.mockImplementation((url) => {
-      if (url.includes('/upload-image')) {
-        if (callCount === 0) {
-          callCount++
-          return mockFetchResponse({
-            success: false,
-            error: 'Network error',
-          }, { status: 500 })
-        }
-        return mockFetchResponse({
-          success: true,
-          new_url: 'https://example.com/uploads/optimized-img.webp',
-          file_size_kb: 42.5,
-        })
-      }
-      return mockFetchResponse({})
-    })
-
-    renderWithProviders(
+    const { container } = renderWithProviders(
       <UploadNewImageModal
         jobId={mockJobId}
         onClose={vi.fn()}
@@ -293,18 +308,26 @@ describe('UploadNewImageModal', () => {
       />
     )
 
-    const uploadButton = screen.getAllByText(/Upload/)[0]
-    fireEvent.click(uploadButton)
+    await selectFile(container)
+
+    // First call fails
+    global.fetch.mockImplementationOnce(() =>
+      mockFetchResponse({ error: { message: 'Server error' } }, 500)
+    )
+
+    fireEvent.click(screen.getByText('Optimize & Upload'))
 
     await waitFor(() => {
-      expect(screen.getByText(/error|Error/)).toBeInTheDocument()
+      expect(screen.getAllByText(/Error/).length).toBeGreaterThan(0)
     })
 
-    const retryButton = screen.getByText(/Try again|Retry/i)
+    // "Try again with different file" resets to select step
+    const retryButton = screen.getByText(/Try again/i)
     fireEvent.click(retryButton)
 
     await waitFor(() => {
-      expect(screen.getByText(/success|successful/i)).toBeInTheDocument()
+      // Back at select step
+      expect(screen.getByText('Browse Files')).toBeInTheDocument()
     })
   })
 })

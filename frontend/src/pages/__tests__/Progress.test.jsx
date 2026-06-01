@@ -13,17 +13,25 @@ vi.mock('react-router-dom', async () => {
   }
 })
 
-vi.mock('../../hooks/usePolling.js', () => ({
-  usePolling: (fetch, onData, isTerminal) => {
-    const mockStatus = {
-      status: 'crawling',
-      pages_crawled: 42,
-      total_pages: 100,
-    }
-    onData(mockStatus)
-  },
-  isTerminal: (status) => ['complete', 'cancelled', 'error'].includes(status),
-}))
+// The real usePolling calls onData inside a useEffect-driven async loop.
+// The mock must also defer onData to avoid infinite re-renders.
+vi.mock('../../hooks/usePolling.js', () => {
+  // Import useEffect inside the factory so we can use it in the mock hook
+  const react = require('react')
+  return {
+    usePolling: (fetchFn, onData, _shouldStop) => {
+      react.useEffect(() => {
+        onData({
+          status: 'running',
+          pages_crawled: 42,
+          pages_total: 100,
+          target_url: 'https://example.com',
+        })
+      }, [])
+    },
+    isTerminal: (status) => ['complete', 'failed', 'cancelled'].includes(status),
+  }
+})
 
 describe('Progress page', () => {
   beforeEach(() => {
@@ -33,9 +41,9 @@ describe('Progress page', () => {
   it('renders the progress page without crashing', () => {
     global.fetch.mockImplementation(() =>
       mockFetchResponse({
-        status: 'crawling',
+        status: 'running',
         pages_crawled: 42,
-        total_pages: 100,
+        pages_total: 100,
       })
     )
     const { container } = renderWithProviders(<Progress />, { route: '/progress/test-job-123' })
@@ -45,9 +53,9 @@ describe('Progress page', () => {
   it('displays progress information', async () => {
     global.fetch.mockImplementation(() =>
       mockFetchResponse({
-        status: 'crawling',
+        status: 'running',
         pages_crawled: 42,
-        total_pages: 100,
+        pages_total: 100,
       })
     )
     renderWithProviders(<Progress />, { route: '/progress/test-job-123' })
@@ -60,25 +68,26 @@ describe('Progress page', () => {
   it('renders the progress bar component', async () => {
     global.fetch.mockImplementation(() =>
       mockFetchResponse({
-        status: 'crawling',
+        status: 'running',
         pages_crawled: 42,
-        total_pages: 100,
+        pages_total: 100,
       })
     )
     renderWithProviders(<Progress />, { route: '/progress/test-job-123' })
     await waitFor(() => {
       const progressContainer = document.querySelector('[role="progressbar"]')
         || document.querySelector('.bg-gradient-to-r')
+        || document.querySelector('.bg-green-500') // ProgressBar inner bar
       expect(progressContainer).toBeTruthy()
     })
   })
 
-  it('renders cancel button when crawling', async () => {
+  it('renders cancel button when status is running', async () => {
     global.fetch.mockImplementation(() =>
       mockFetchResponse({
-        status: 'crawling',
+        status: 'running',
         pages_crawled: 42,
-        total_pages: 100,
+        pages_total: 100,
       })
     )
     renderWithProviders(<Progress />, { route: '/progress/test-job-123' })
@@ -97,9 +106,9 @@ describe('Progress page', () => {
   it('renders status heading', async () => {
     global.fetch.mockImplementation(() =>
       mockFetchResponse({
-        status: 'crawling',
+        status: 'running',
         pages_crawled: 42,
-        total_pages: 100,
+        pages_total: 100,
       })
     )
     renderWithProviders(<Progress />, { route: '/progress/test-job-123' })
@@ -112,9 +121,9 @@ describe('Progress page', () => {
   it('renders the white card container', async () => {
     global.fetch.mockImplementation(() =>
       mockFetchResponse({
-        status: 'crawling',
+        status: 'running',
         pages_crawled: 42,
-        total_pages: 100,
+        pages_total: 100,
       })
     )
     renderWithProviders(<Progress />, { route: '/progress/test-job-123' })

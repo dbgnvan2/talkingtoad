@@ -10,7 +10,7 @@ describe('GeoSettings', () => {
   beforeEach(() => {
     global.fetch.mockReset()
     global.fetch.mockImplementation((url) => {
-      if (url.includes('/geo/settings')) {
+      if (typeof url === 'string' && url.includes('/geo/settings')) {
         return mockFetchResponse({
           org_name: 'Example Corp',
           topic_entities: ['Web Development', 'SEO'],
@@ -19,7 +19,7 @@ describe('GeoSettings', () => {
           model: 'gemini-1.5-pro',
           temperature: 0.4,
           max_tokens: 500,
-          client_name: 'Example Corp',
+          client_name: 'Acme Client',
           prepared_by: 'John Doe',
         })
       }
@@ -87,8 +87,10 @@ describe('GeoSettings', () => {
       expect(screen.getByText('Web Development')).toBeInTheDocument()
     })
 
-    const removeButtons = screen.getAllByText('×')
-    fireEvent.click(removeButtons[0])
+    // Find the remove button (×) within the topic entity tag
+    const webDevTag = screen.getByText('Web Development').closest('div')
+    const removeButton = webDevTag.querySelector('button')
+    fireEvent.click(removeButton)
 
     await waitFor(() => {
       expect(screen.queryByText('Web Development')).not.toBeInTheDocument()
@@ -104,8 +106,10 @@ describe('GeoSettings', () => {
       expect(screen.getByText('Oakland')).toBeInTheDocument()
     })
 
-    const removeButtons = screen.getAllByText('×')
-    fireEvent.click(removeButtons[removeButtons.length - 1])
+    // Find the remove button within the Oakland location tag
+    const oaklandTag = screen.getByText('Oakland').closest('div')
+    const removeButton = oaklandTag.querySelector('button')
+    fireEvent.click(removeButton)
 
     await waitFor(() => {
       expect(screen.queryByText('Oakland')).not.toBeInTheDocument()
@@ -130,7 +134,7 @@ describe('GeoSettings', () => {
     )
 
     await waitFor(() => {
-      const modelSelect = screen.getByDisplayValue('gemini-1.5-pro')
+      const modelSelect = screen.getByDisplayValue('Gemini 1.5 Pro (Recommended)')
       fireEvent.change(modelSelect, { target: { value: 'gpt-4o' } })
       expect(modelSelect.value).toBe('gpt-4o')
     })
@@ -153,10 +157,10 @@ describe('GeoSettings', () => {
     )
 
     await waitFor(() => {
-      expect(screen.getByText('Save Configuration')).toBeInTheDocument()
+      expect(screen.getByText(/Save Configuration/)).toBeInTheDocument()
     })
 
-    const saveButton = screen.getByText('Save Configuration')
+    const saveButton = screen.getByText(/Save Configuration/)
     fireEvent.click(saveButton)
 
     await waitFor(() => {
@@ -174,7 +178,8 @@ describe('GeoSettings', () => {
     )
 
     await waitFor(() => {
-      const closeButton = screen.getByText('×')
+      // The close × button in the header
+      const closeButton = screen.getByLabelText('Close')
       fireEvent.click(closeButton)
       expect(mockOnClose).toHaveBeenCalled()
     })

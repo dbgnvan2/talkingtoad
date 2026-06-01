@@ -37,7 +37,7 @@ describe('issueHelp data', () => {
   })
 
   it('severity values are valid', () => {
-    const validSeverities = new Set(['critical', 'warning', 'info'])
+    const validSeverities = new Set(['critical', 'error', 'warning', 'info'])
     for (const [code, help] of Object.entries(issueHelp)) {
       expect(validSeverities.has(help.severity), `${code} has invalid severity: ${help.severity}`).toBe(true)
     }

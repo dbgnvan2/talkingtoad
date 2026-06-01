@@ -15,7 +15,7 @@ describe('OptimizeExistingModal', () => {
   beforeEach(() => {
     global.fetch.mockReset()
     global.fetch.mockImplementation((url) => {
-      if (url.includes('/preview-optimization')) {
+      if (url.includes('/optimize-existing-preview')) {
         return mockFetchResponse({
           original_size_kb: 450.5,
           estimated_size_kb: 85.2,
@@ -59,7 +59,8 @@ describe('OptimizeExistingModal', () => {
       />
     )
 
-    expect(screen.getByText(/Analyzing/)).toBeInTheDocument()
+    // Component starts in 'loading' step - both header and body show "Analyzing"
+    expect(screen.getAllByText(/Analyzing/).length).toBeGreaterThan(0)
   })
 
   it('displays image preview after loading', async () => {
@@ -89,8 +90,9 @@ describe('OptimizeExistingModal', () => {
 
     await waitFor(() => {
       expect(screen.getByText(/Estimated Savings/)).toBeInTheDocument()
-      expect(screen.getByText(/450.5/)).toBeInTheDocument()
-      expect(screen.getByText(/85.2/)).toBeInTheDocument()
+      // formatSize(450.5) = "451 KB", formatSize(85.2) = "85 KB"
+      expect(screen.getByText(/451 KB/)).toBeInTheDocument()
+      expect(screen.getByText(/85 KB/)).toBeInTheDocument()
     })
   })
 
@@ -185,9 +187,12 @@ describe('OptimizeExistingModal', () => {
     )
 
     await waitFor(() => {
-      const optimizeButton = screen.getByText('Optimize & Upload')
-      fireEvent.click(optimizeButton)
+      expect(screen.getByText('Optimize & Upload')).toBeInTheDocument()
+    })
 
+    fireEvent.click(screen.getByText('Optimize & Upload'))
+
+    await waitFor(() => {
       expect(global.fetch).toHaveBeenCalledWith(
         expect.stringContaining('/optimize-existing'),
         expect.any(Object)
@@ -205,13 +210,24 @@ describe('OptimizeExistingModal', () => {
       />
     )
 
+    // Wait for preview to load
     await waitFor(() => {
-      const optimizeButton = screen.getByText('Optimize & Upload')
-      fireEvent.click(optimizeButton)
+      expect(screen.getByText('Optimize & Upload')).toBeInTheDocument()
     })
 
+    // Make optimize call hang so we can observe the optimizing state
+    global.fetch.mockImplementation((url) => {
+      if (url.includes('/optimize-existing')) {
+        return new Promise(() => {}) // never resolves
+      }
+      return mockFetchResponse({})
+    })
+
+    fireEvent.click(screen.getByText('Optimize & Upload'))
+
     await waitFor(() => {
-      expect(screen.getByText(/optimizing/i)).toBeInTheDocument()
+      // The header and body both show optimizing text
+      expect(screen.getAllByText(/Optimizing and uploading|uploading/).length).toBeGreaterThan(0)
     })
   })
 
@@ -226,9 +242,10 @@ describe('OptimizeExistingModal', () => {
     )
 
     await waitFor(() => {
-      const optimizeButton = screen.getByText('Optimize & Upload')
-      fireEvent.click(optimizeButton)
+      expect(screen.getByText('Optimize & Upload')).toBeInTheDocument()
     })
+
+    fireEvent.click(screen.getByText('Optimize & Upload'))
 
     await waitFor(() => {
       expect(screen.getByText(/Optimization Complete/)).toBeInTheDocument()
@@ -246,9 +263,10 @@ describe('OptimizeExistingModal', () => {
     )
 
     await waitFor(() => {
-      const optimizeButton = screen.getByText('Optimize & Upload')
-      fireEvent.click(optimizeButton)
+      expect(screen.getByText('Optimize & Upload')).toBeInTheDocument()
     })
+
+    fireEvent.click(screen.getByText('Optimize & Upload'))
 
     await waitFor(() => {
       expect(screen.getByDisplayValue(/optimized-img1\.webp/)).toBeInTheDocument()
@@ -266,9 +284,10 @@ describe('OptimizeExistingModal', () => {
     )
 
     await waitFor(() => {
-      const optimizeButton = screen.getByText('Optimize & Upload')
-      fireEvent.click(optimizeButton)
+      expect(screen.getByText('Optimize & Upload')).toBeInTheDocument()
     })
+
+    fireEvent.click(screen.getByText('Optimize & Upload'))
 
     await waitFor(() => {
       expect(screen.getByText('Copy')).toBeInTheDocument()
@@ -286,13 +305,14 @@ describe('OptimizeExistingModal', () => {
     )
 
     await waitFor(() => {
-      const optimizeButton = screen.getByText('Optimize & Upload')
-      fireEvent.click(optimizeButton)
+      expect(screen.getByText('Optimize & Upload')).toBeInTheDocument()
     })
+
+    fireEvent.click(screen.getByText('Optimize & Upload'))
 
     await waitFor(() => {
       expect(screen.getByText(/AI-Generated Metadata/)).toBeInTheDocument()
-      expect(screen.getByText('Example Image Alt')).toBeInTheDocument()
+      expect(screen.getByText(/Example Image Alt/)).toBeInTheDocument()
     })
   })
 
@@ -307,9 +327,10 @@ describe('OptimizeExistingModal', () => {
     )
 
     await waitFor(() => {
-      const optimizeButton = screen.getByText('Optimize & Upload')
-      fireEvent.click(optimizeButton)
+      expect(screen.getByText('Optimize & Upload')).toBeInTheDocument()
     })
+
+    fireEvent.click(screen.getByText('Optimize & Upload'))
 
     await waitFor(() => {
       expect(screen.getByText(/Next Steps/)).toBeInTheDocument()
@@ -329,9 +350,10 @@ describe('OptimizeExistingModal', () => {
     )
 
     await waitFor(() => {
-      const optimizeButton = screen.getByText('Optimize & Upload')
-      fireEvent.click(optimizeButton)
+      expect(screen.getByText('Optimize & Upload')).toBeInTheDocument()
     })
+
+    fireEvent.click(screen.getByText('Optimize & Upload'))
 
     await waitFor(() => {
       expect(mockOnSuccess).toHaveBeenCalled()
@@ -340,7 +362,7 @@ describe('OptimizeExistingModal', () => {
 
   it('displays error message on failure', async () => {
     global.fetch.mockImplementation((url) => {
-      if (url.includes('/preview-optimization')) {
+      if (url.includes('/optimize-existing-preview')) {
         return Promise.reject(new Error('Network error'))
       }
       return mockFetchResponse({})
@@ -356,7 +378,8 @@ describe('OptimizeExistingModal', () => {
     )
 
     await waitFor(() => {
-      expect(screen.getByText(/Error/)).toBeInTheDocument()
+      // Error text appears in both header subtitle and error body
+      expect(screen.getAllByText(/Error/).length).toBeGreaterThan(0)
     })
   })
 })
