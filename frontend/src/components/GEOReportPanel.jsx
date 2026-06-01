@@ -878,11 +878,12 @@ export default function GEOReportPanel({ jobId, domain }) {
   const [error, setError] = useState(null)
   const [models, setModels] = useState(null)
   const [selectedModel, setSelectedModel] = useState(null)
-  const [activeSection, setActiveSection] = useState('findings')
+  const [activeSection, setActiveSection] = useState('report')
   const [generatedPrompt, setGeneratedPrompt] = useState(null)
   const [promptLoading, setPromptLoading] = useState(false)
   const [rewriteLoading, setRewriteLoading] = useState(false)
   const [rewriteContent, setRewriteContent] = useState(null)
+  const [targetUrl, setTargetUrl] = useState(null)
 
   useEffect(() => {
     getGeoAiModel()
@@ -892,6 +893,17 @@ export default function GEOReportPanel({ jobId, domain }) {
       })
       .catch(() => {})
   }, [])
+
+  // Surface WHICH page this report analyses (the crawl's target URL). The
+  // legacy GEO advisor scores a single page — the job's target_url — and the
+  // Rewrite action targets that same page. Showing it removes the ambiguity.
+  useEffect(() => {
+    if (!jobId) return
+    fetch(`/api/crawl/${jobId}`, { headers: authHeaders() })
+      .then(r => (r.ok ? r.json() : null))
+      .then(d => { if (d?.target_url) setTargetUrl(d.target_url) })
+      .catch(() => {})
+  }, [jobId])
 
   const handleRun = async (forceRefresh = false) => {
     setLoading(true)
@@ -989,7 +1001,13 @@ export default function GEOReportPanel({ jobId, domain }) {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-xl font-bold text-gray-800">GEO Analysis Report</h2>
-          {domain && <p className="text-sm text-gray-500">{domain}</p>}
+          {targetUrl ? (
+            <p className="text-sm text-gray-500">
+              Analysing this page: <span className="font-medium text-gray-700 break-all">{targetUrl}</span>
+            </p>
+          ) : (
+            domain && <p className="text-sm text-gray-500">{domain}</p>
+          )}
         </div>
         <div className="flex items-center gap-2">
           {models?.available?.length > 0 && !report && (
@@ -1162,12 +1180,21 @@ export default function GEOReportPanel({ jobId, domain }) {
                         disabled={rewriteLoading}
                         className="flex-1 bg-green-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-green-700 disabled:opacity-50"
                       >
-                        {rewriteLoading ? 'Rewriting...' : 'Rewrite Page'}
+                        {rewriteLoading
+                          ? 'Rewriting...'
+                          : (targetUrl ? `Rewrite this page (${targetUrl})` : 'Rewrite Page')}
                       </button>
                     </div>
                   </>
                 )}
               </div>
+
+              {/* Rewrite error (e.g. provider timeout) — surface it here, by the button */}
+              {error && rewriteLoading === false && !rewriteContent && error.startsWith('Failed to rewrite') && (
+                <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-sm text-red-700">
+                  {error}. A full-page rewrite can take 1–3 minutes — if it timed out, try again or rewrite a shorter page.
+                </div>
+              )}
 
               {/* Rewritten Content */}
               {rewriteContent && (
@@ -1253,7 +1280,9 @@ export default function GEOReportPanel({ jobId, domain }) {
                 </div>
               )}
               {report.findings?.length === 0 && (
-                <p className="text-center text-gray-500 py-8">No findings. Run the analysis to see results.</p>
+                <p className="text-center text-gray-500 py-8">
+                  This analysis produces a narrative report — see the <strong>Quality Report</strong> tab above.
+                </p>
               )}
             </div>
           )}

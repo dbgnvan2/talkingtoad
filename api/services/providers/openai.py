@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import base64
 import logging
+import os
 from typing import Any
 
 import httpx
@@ -29,7 +30,10 @@ logger = logging.getLogger(__name__)
 
 _OPENAI_TEXT_ENDPOINT = "https://api.openai.com/v1/chat/completions"
 _OPENAI_VISION_ENDPOINT = "https://api.openai.com/v1/chat/completions"
-_HTTP_TIMEOUT_SECONDS = 60.0
+# Full-page rewrites (large content + GPT-4o) routinely exceed 60s. Use a
+# generous read timeout so legitimate long generations don't 500 with
+# httpx.ReadTimeout. Override via OPENAI_HTTP_TIMEOUT_SECONDS if needed.
+_HTTP_TIMEOUT_SECONDS = float(os.getenv("OPENAI_HTTP_TIMEOUT_SECONDS", "180"))
 
 
 class OpenAIDriver:
