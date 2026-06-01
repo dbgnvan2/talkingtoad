@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react'
+import React, { useState, useEffect, useCallback, useMemo, Suspense } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import SeverityBadge from '../components/SeverityBadge.jsx'
 import IssueHelpPanel from '../components/IssueHelpPanel.jsx'
@@ -17,6 +17,8 @@ import OrphanedImagesPanel from '../components/OrphanedImagesPanel.jsx'
 import OrphanedPagesPanel from '../components/OrphanedPagesPanel.jsx'
 import CategoryHelpModal from '../components/CategoryHelpModal.jsx'
 import { useTheme } from '../contexts/ThemeContext.jsx'
+
+const GSCInsightsPanel = React.lazy(() => import('../components/GSCInsightsPanel'))
 import { getIssueHelp } from '../data/issueHelp.js'
 import {
   getResults, getResultsByCategory, getPages, getPageIssues,
@@ -188,6 +190,13 @@ export default function Results() {
           <OrphanedPagesPanel jobId={jobId} domain={domain} onPageClick={setFocusedPageUrl} />
         )}
         {!activeSeverity && activeTab === TAB_FIX_MGR && <FixManager jobId={jobId} domain={domain} />}
+      </div>
+
+      {/* GSC Insights — opt-in, lazy-loaded */}
+      <div className="mt-6">
+        <Suspense fallback={<div className="bg-white rounded-lg shadow p-6 animate-pulse"><div className="h-4 bg-gray-200 rounded w-1/3"></div></div>}>
+          <GSCInsightsPanel jobId={jobId} />
+        </Suspense>
       </div>
 
       {/* Slide-over Page Audit Panel (The "Right Side Panel") */}

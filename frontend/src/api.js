@@ -913,3 +913,46 @@ export async function generateEntitySchema(domain) {
   })
   return checkResponse(res)
 }
+
+// ---------------------------------------------------------------------------
+// GSC (Google Search Console) API
+// ---------------------------------------------------------------------------
+
+export async function gscStatus() {
+  const res = await fetch('/api/gsc/status', {
+    headers: authHeaders(),
+  })
+  if (res.status === 503) {
+    return { connected: false, properties: [], configured: false }
+  }
+  return checkResponse(res)
+}
+
+export function gscConnectUrl() {
+  return '/api/gsc/connect'
+}
+
+export async function gscDisconnect() {
+  const res = await fetch('/api/gsc/disconnect', {
+    method: 'POST',
+    headers: authHeaders(),
+  })
+  return checkResponse(res)
+}
+
+export async function gscIngest(siteUrl, jobId) {
+  const params = new URLSearchParams({ site_url: siteUrl, job_id: jobId })
+  const res = await fetch(`/api/gsc/ingest?${params}`, {
+    method: 'POST',
+    headers: authHeaders(),
+  })
+  return checkResponse(res)
+}
+
+export async function gscPerformance(url) {
+  const params = new URLSearchParams({ url })
+  const res = await fetch(`/api/gsc/performance?${params}`, {
+    headers: authHeaders(),
+  })
+  return checkResponse(res)
+}
