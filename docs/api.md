@@ -1,13 +1,13 @@
 ---
 status: current
-last_reviewed: 2026-05-27
-api_version: 2.3
+last_updated: 2025-01-XX
+api_version: 3.0
 ---
 
 # API Reference
 
-> **Project version:** 2.3 (v3.0 in progress — see `../PLAN-V3.0.md`).
-> **Deployment:** v2.3 runs the backend on Railway (long-lived
+> **Project version:** 3.0 — see `../PLAN-V3.0.md` for the full plan.
+> **Deployment:** The backend runs on Railway (long-lived
 > container). The Vercel-Python-serverless deployment is deprecated.
 > See [`deployment-railway.md`](deployment-railway.md).
 
@@ -120,6 +120,7 @@ LLM-based content analysis for Generative Engine Optimization. Produces a struct
 |---|---|---|
 | POST | `/api/ai/geo-report` | Generate (or return cached) GEO report for a job's URL. See schema below. |
 | POST | `/api/ai/geo-faq` | Generate Schema.org FAQPage JSON-LD from a domain's GeoConfig. See schema below. |
+| POST | `/api/geo/entity-schema` | Generate nested Schema.org Organization JSON-LD from a domain's GeoConfig. See schema below. |
 | GET | `/api/geo/ai-model` | List available AI models and the currently selected model. |
 | POST | `/api/geo/ai-model` | Set the AI model for GEO analysis. Body: `{"model_id": "gpt-4o"}`. |
 
@@ -234,6 +235,37 @@ Only models for which an API key is configured are returned in `available`.
   "token_usage": null
 }
 ```
+
+Errors: `401` no auth, `422` unknown domain or empty `topic_entities`.
+
+### `POST /api/geo/entity-schema` Request
+
+```json
+{
+  "domain": "livingsystems.ca"
+}
+```
+
+`domain` (required): domain with a saved GeoConfig.
+
+### `POST /api/geo/entity-schema` Response
+
+```json
+{
+  "jsonld": "{ ... }",
+  "schema": {
+    "@context": "https://schema.org",
+    "@type": "Organization",
+    "name": "Living Systems Counselling",
+    "url": "https://livingsystems.ca",
+    "sameAs": ["https://en.wikipedia.org/wiki/..."]
+  },
+  "valid": true,
+  "warnings": []
+}
+```
+
+Deterministic — no LLM calls. Generates nested Schema.org Organization JSON-LD from the domain's GeoConfig. Returns `warnings` if optional fields (e.g. `entity_wikipedia_url`) are missing.
 
 Errors: `401` no auth, `422` unknown domain or empty `topic_entities`.
 
@@ -630,3 +662,11 @@ Query params: `url` (required), `job_id` (optional), `health_score` (optional, d
   "review_flag": {"flagged": false, "reasons": []}
 }
 ```
+
+---
+
+## Parked / Not Shipped
+
+- **Multi-tenant AI key management**: per-customer API keys, Customer Settings UI, Identity Model — not implemented. See [`TODO-MULTITENANT.md`](TODO-MULTITENANT.md).
+- **GSC frontend panel (React)**: backend complete (M6.1 + M6.4), React UI deferred.
+- **SERP Discovery**: separate repository. See [`PARKED-SERP-DISCOVERY.md`](PARKED-SERP-DISCOVERY.md).

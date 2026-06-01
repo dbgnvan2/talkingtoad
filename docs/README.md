@@ -21,6 +21,9 @@ Complete documentation for TalkingToad — an SEO crawler with WordPress integra
 | [user-guide.md](user-guide.md) | End-user guide to running audits and fixes |
 | [overview.md](overview.md) | High-level project overview |
 | [deployment-railway.md](deployment-railway.md) | Production deployment: Vercel frontend + Railway backend |
+| [ai-readiness.md](ai-readiness.md) | Confidence label scheme and citation ingestion contract |
+| [security-model.md](security-model.md) | OAuth token storage, SSRF protection, auth model |
+| [ai-routing.md](ai-routing.md) | Task-to-model routing, pricing, provider notes |
 
 ## Specifications
 
@@ -58,6 +61,11 @@ Several implementation-plan markdown files live in this directory for in-progres
 | [../PLAN.md](../PLAN.md) | Original implementation plan (pre-v3) |
 | [../TODO.md](../TODO.md) | Project TODO and technical debt |
 | [../REVIEW_SPEC.md](../REVIEW_SPEC.md) | Code review specification |
+
+## Parked Features
+
+- [Multi-Tenant TODO](TODO-MULTITENANT.md) — Planned multi-tenant AI key management
+- [SERP Discovery](PARKED-SERP-DISCOVERY.md) — Separate repository for SERP analysis
 
 ---
 
