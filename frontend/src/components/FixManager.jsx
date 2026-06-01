@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
+import { authHeaders } from '../api'
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:8000'
 
@@ -18,17 +19,12 @@ const FIELD_HINTS = {
   indexable:        { max: null, placeholder: 'Will be set to "index" automatically' },
 }
 
-function authHeader() {
-  const token = import.meta.env.VITE_AUTH_TOKEN
-  return token ? { Authorization: `Bearer ${token}` } : {}
-}
-
 async function apiFetch(path, opts = {}, timeoutMs = 30_000) {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), timeoutMs)
   try {
     const res = await fetch(`${API}${path}`, {
-      headers: { 'Content-Type': 'application/json', ...authHeader(), ...opts.headers },
+      headers: { ...authHeaders(), ...opts.headers },
       signal: controller.signal,
       ...opts,
     })

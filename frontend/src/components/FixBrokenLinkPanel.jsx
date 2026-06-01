@@ -5,20 +5,13 @@
  * enter a replacement URL and apply it to one source page at a time.
  */
 import { useState, useEffect, useRef } from 'react'
+import { authHeaders } from '../api'
 
 export const FIXABLE_LINK_CODES = new Set([
   'BROKEN_LINK_404',
   'BROKEN_LINK_410',
   'BROKEN_LINK_5XX',
 ])
-
-const TOKEN = import.meta.env.VITE_AUTH_TOKEN || ''
-
-function authHeaders(extra = {}) {
-  const h = { 'Content-Type': 'application/json', ...extra }
-  if (TOKEN) h['Authorization'] = `Bearer ${TOKEN}`
-  return h
-}
 
 function shortenUrl(url) {
   try {

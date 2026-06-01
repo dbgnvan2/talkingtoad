@@ -5,6 +5,7 @@
  * with an auto-proposed value, and applies the fix via POST /api/fixes/apply-one.
  */
 import { useState, useEffect, useRef } from 'react'
+import { authHeaders } from '../api'
 
 // Maps issue_code → field name (mirrors _CODE_TO_FIELD in wp_fixer.py)
 const CODE_TO_FIELD = {
@@ -52,14 +53,6 @@ function autoPropose(issueCode, currentValue) {
   if (issueCode === 'TITLE_TOO_LONG')      return currentValue.slice(0, 57).trimEnd() + '…'
   if (issueCode === 'META_DESC_TOO_LONG')  return currentValue.slice(0, 157).trimEnd() + '…'
   return currentValue
-}
-
-const TOKEN = import.meta.env.VITE_AUTH_TOKEN || ''
-
-function authHeaders(extra = {}) {
-  const h = { 'Content-Type': 'application/json', ...extra }
-  if (TOKEN) h['Authorization'] = `Bearer ${TOKEN}`
-  return h
 }
 
 export default function FixInlinePanel({ jobId, pageUrl, issueCode, issueExtra, predefinedValue, onClose }) {
