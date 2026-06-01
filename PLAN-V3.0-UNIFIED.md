@@ -66,7 +66,7 @@ truth-of-record for *where each milestone stands* as of 2026-05-31.
 | **M8** | Endpoint contract backfill | ✅ **Done** | Backfill + CI endpoint-coverage guard shipped in v2.5 |
 | **M9** | Refactor hotspots | ⬜ **Pending / partial** | `issue_checker.py` partially split (`checkers/`); `Results.jsx`, `crawl.py` outstanding |
 | **M10** | Frontend infrastructure | ⬜ **Pending** | Toast system, a11y baseline, code-splitting |
-| **M11** | Docs sync & v3.0 release | ⬜ **Pending** | Final version bump + doc sync |
+| **M11** | Docs sync & v3.0 release | 🟡 **Docs done; release cut pending user go** | ✅ **M11-docs** `0faa678`: `api.md` + new shipped endpoints; new `docs/ai-readiness.md`, `docs/security-model.md`, `docs/ai-routing.md` (status:draft, parked features marked parked); README index. No version bump (still 2.6.0). **⏸️ M11-release (version→3.0 + final smoke) held for explicit user go.** |
 
 **Single biggest open decision (gates M2 completion):** whether to revive the
 **Identity Model** (un-defer multi-tenant) or hold. Until then, M2's multi-tenant
