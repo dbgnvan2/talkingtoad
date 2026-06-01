@@ -12,6 +12,7 @@ from api.models.issue import Issue, PHASE_1_CATEGORIES
 from api.models.job import CrawlJob, CrawlSettings
 from api.models.link import Link
 from api.models.page import CrawledPage
+from api.models.performance import PerformanceRecord
 from datetime import datetime, timezone
 
 from api.services.job_store_base import (
@@ -452,6 +453,58 @@ class RedisJobStore:
     async def delete_geo_config(self, domain: str) -> bool:
         return False  # Not implemented for Redis MVP
 
+    # ── Performance Ledger (M6.2) ─────────────────────────────────────────
+
+    async def save_performance_records(self, records: list[PerformanceRecord]) -> None:
+        """Batch upsert performance records keyed on (url, period)."""
+        if not records:
+            return
+        now = datetime.now(timezone.utc).isoformat()
+        for r in records:
+            key = f"tt:perf:{r.url}:{r.period}"
+            await self._r.hset(key, values={
+                "url": r.url,
+                "period": r.period,
+                "created_at": r.created_at or "",
+                "last_technical_improvement_at": r.last_technical_improvement_at or "",
+                "gsc_clicks_mo": str(r.gsc_clicks_mo),
+                "gsc_impressions_mo": str(r.gsc_impressions_mo),
+                "gsc_ctr_mo": str(r.gsc_ctr_mo),
+                "gsc_avg_position_mo": str(r.gsc_avg_position_mo),
+                "recorded_at": now,
+            })
+
+    async def get_performance_records(
+        self, url: str | None = None, domain: str | None = None
+    ) -> list[PerformanceRecord]:
+        """Retrieve performance records, optionally filtered by url or domain."""
+        if url:
+            pattern = f"tt:perf:{url}:*"
+        elif domain:
+            pattern = f"tt:perf:{domain}*"
+        else:
+            pattern = "tt:perf:*"
+        keys = await self._r.keys(pattern)
+        if not keys:
+            return []
+        records = []
+        for k in keys:
+            data = await self._r.hgetall(k)
+            if not data:
+                continue
+            records.append(PerformanceRecord(
+                url=data.get("url", ""),
+                period=data.get("period", ""),
+                created_at=data.get("created_at") or None,
+                last_technical_improvement_at=data.get("last_technical_improvement_at") or None,
+                gsc_clicks_mo=int(data.get("gsc_clicks_mo", 0)),
+                gsc_impressions_mo=int(data.get("gsc_impressions_mo", 0)),
+                gsc_ctr_mo=float(data.get("gsc_ctr_mo", 0.0)),
+                gsc_avg_position_mo=float(data.get("gsc_avg_position_mo", 0.0)),
+                recorded_at=data.get("recorded_at") or None,
+            ))
+        return records
+
     # ── Private serialisation ──────────────────────────────────────────────
 
     async def _load_issues(self, job_id: str) -> list[Issue]:
@@ -556,6 +609,8 @@ class RedisJobStore:
             "text_to_html_ratio": p.text_to_html_ratio,
             "has_json_ld": p.has_json_ld,
             "pdf_metadata": p.pdf_metadata,
+            "page_created_at": p.page_created_at,
+            "last_technical_improvement_at": p.last_technical_improvement_at,
         }
 
     def _dict_to_page(self, d: dict) -> CrawledPage:
@@ -585,6 +640,8 @@ class RedisJobStore:
             text_to_html_ratio=d.get("text_to_html_ratio"),
             has_json_ld=d.get("has_json_ld", False),
             pdf_metadata=d.get("pdf_metadata"),
+            page_created_at=d.get("page_created_at"),
+            last_technical_improvement_at=d.get("last_technical_improvement_at"),
         )
 
     @staticmethod

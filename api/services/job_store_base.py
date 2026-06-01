@@ -17,6 +17,7 @@ from api.models.issue import Issue, IssueCategory, PHASE_1_CATEGORIES
 from api.models.job import CrawlJob, CrawlSettings, JobStatus
 from api.models.link import Link
 from api.models.page import CrawledPage
+from api.models.performance import PerformanceRecord
 
 logger = logging.getLogger(__name__)
 
@@ -208,6 +209,12 @@ class JobStore(Protocol):
     async def get_geo_config(self, domain: str) -> Any: ...
     async def delete_geo_config(self, domain: str) -> bool: ...
 
+    # Performance ledger (M6.2)
+    async def save_performance_records(self, records: list[PerformanceRecord]) -> None: ...
+    async def get_performance_records(
+        self, url: str | None = None, domain: str | None = None
+    ) -> list[PerformanceRecord]: ...
+
 
 # Database schema and SQL constants
 SCHEMA = """
@@ -398,6 +405,19 @@ CREATE TABLE IF NOT EXISTS config (
     key       TEXT PRIMARY KEY,
     value     TEXT NOT NULL,
     updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS performance_ledger (
+    url                          TEXT NOT NULL,
+    period                       TEXT NOT NULL,
+    created_at                   TEXT,
+    last_technical_improvement_at TEXT,
+    gsc_clicks_mo                INTEGER DEFAULT 0,
+    gsc_impressions_mo           INTEGER DEFAULT 0,
+    gsc_ctr_mo                   REAL DEFAULT 0.0,
+    gsc_avg_position_mo          REAL DEFAULT 0.0,
+    recorded_at                  TEXT,
+    PRIMARY KEY (url, period)
 );
 
 CREATE INDEX IF NOT EXISTS idx_issues_job_id ON issues(job_id);

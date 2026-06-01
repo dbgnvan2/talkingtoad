@@ -14,6 +14,7 @@ from api.models.issue import Issue, PHASE_1_CATEGORIES
 from api.models.job import CrawlJob, CrawlSettings
 from api.models.link import Link
 from api.models.page import CrawledPage
+from api.models.performance import PerformanceRecord
 
 from api.services.job_store_base import (
     JobStore,
@@ -65,6 +66,9 @@ class SQLiteJobStore:
             ("ai_citation_count_30d",     "INTEGER"),
             ("ai_citation_engines_json",  "TEXT"),
             ("ai_citation_last_updated",  "TEXT"),
+            # M6.2: Performance Ledger lifecycle dates
+            ("page_created_at",                "TEXT"),
+            ("last_technical_improvement_at",  "TEXT"),
         ]
         for col, col_type in page_columns:
             try:
@@ -247,7 +251,7 @@ class SQLiteJobStore:
         await self._db.executemany(
             """
             INSERT OR REPLACE INTO crawled_pages VALUES
-              (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+              (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             rows,
         )
@@ -1466,6 +1470,74 @@ class SQLiteJobStore:
         rows = await cursor.fetchall()
         return [dict(row) for row in rows]
 
+    # ── Performance Ledger (M6.2) ─────────────────────────────────────────
+
+    async def save_performance_records(self, records: list[PerformanceRecord]) -> None:
+        """Batch upsert performance records keyed on (url, period)."""
+        if not records:
+            return
+        db = self._db
+        assert db is not None
+        now = datetime.now(timezone.utc).isoformat()
+        await db.executemany(
+            """INSERT INTO performance_ledger
+               (url, period, created_at, last_technical_improvement_at,
+                gsc_clicks_mo, gsc_impressions_mo, gsc_ctr_mo,
+                gsc_avg_position_mo, recorded_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+               ON CONFLICT(url, period) DO UPDATE SET
+                   created_at = COALESCE(excluded.created_at, created_at),
+                   last_technical_improvement_at = COALESCE(excluded.last_technical_improvement_at, last_technical_improvement_at),
+                   gsc_clicks_mo = excluded.gsc_clicks_mo,
+                   gsc_impressions_mo = excluded.gsc_impressions_mo,
+                   gsc_ctr_mo = excluded.gsc_ctr_mo,
+                   gsc_avg_position_mo = excluded.gsc_avg_position_mo,
+                   recorded_at = excluded.recorded_at""",
+            [
+                (
+                    r.url, r.period, r.created_at, r.last_technical_improvement_at,
+                    r.gsc_clicks_mo, r.gsc_impressions_mo, r.gsc_ctr_mo,
+                    r.gsc_avg_position_mo, now,
+                )
+                for r in records
+            ],
+        )
+        await db.commit()
+
+    async def get_performance_records(
+        self, url: str | None = None, domain: str | None = None
+    ) -> list[PerformanceRecord]:
+        """Retrieve performance records, optionally filtered by url or domain."""
+        db = self._db
+        assert db is not None
+        if url:
+            async with db.execute(
+                "SELECT * FROM performance_ledger WHERE url = ? ORDER BY period",
+                (url,),
+            ) as cursor:
+                rows = await cursor.fetchall()
+        elif domain:
+            async with db.execute(
+                "SELECT * FROM performance_ledger WHERE url LIKE ? ORDER BY url, period",
+                (f"{domain}%",),
+            ) as cursor:
+                rows = await cursor.fetchall()
+        else:
+            async with db.execute(
+                "SELECT * FROM performance_ledger ORDER BY url, period"
+            ) as cursor:
+                rows = await cursor.fetchall()
+        return [
+            PerformanceRecord(
+                url=row[0], period=row[1], created_at=row[2],
+                last_technical_improvement_at=row[3],
+                gsc_clicks_mo=row[4], gsc_impressions_mo=row[5],
+                gsc_ctr_mo=row[6], gsc_avg_position_mo=row[7],
+                recorded_at=row[8],
+            )
+            for row in rows
+        ]
+
 
 # ---------------------------------------------------------------------------
 # Row ↔ Model conversion helpers
@@ -1531,6 +1603,8 @@ def _page_to_row(p: CrawledPage) -> tuple:
         p.ai_citation_count_30d,
         json.dumps(p.ai_citation_engines) if p.ai_citation_engines is not None else None,
         p.ai_citation_last_updated,
+        p.page_created_at,
+        p.last_technical_improvement_at,
     )
 
 
@@ -1576,6 +1650,8 @@ def _row_to_page(row: dict) -> CrawledPage:
         ai_citation_count_30d=row.get("ai_citation_count_30d"),
         ai_citation_engines=json.loads(row["ai_citation_engines_json"]) if row.get("ai_citation_engines_json") else None,
         ai_citation_last_updated=row.get("ai_citation_last_updated"),
+        page_created_at=row.get("page_created_at"),
+        last_technical_improvement_at=row.get("last_technical_improvement_at"),
     )
 
 

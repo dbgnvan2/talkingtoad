@@ -73,3 +73,7 @@ class CrawledPage(BaseModel):
     ai_citation_count_30d: int | None = None
     ai_citation_engines: list[str] | None = None
     ai_citation_last_updated: str | None = None
+
+    # M6.2 — Performance Ledger lifecycle dates
+    page_created_at: str | None = None
+    last_technical_improvement_at: str | None = None
