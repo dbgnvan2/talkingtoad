@@ -89,7 +89,7 @@ export default function Home() {
   }
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center px-4">
+    <main className="min-h-screen flex flex-col items-center justify-center px-4">
       <div className="w-full max-w-xl">
         {/* Header */}
         <div className="text-center mb-8">
@@ -155,6 +155,7 @@ export default function Home() {
               <input
                 type="text"
                 required
+                inputMode="url"
                 placeholder="example.org"
                 value={url.replace(/^https?:\/\//i, '')}
                 onChange={e => setUrl(e.target.value)}
@@ -334,6 +335,7 @@ export default function Home() {
             <input
               type="url"
               required
+              inputMode="url"
               placeholder="https://example.org/specific-page"
               value={singleUrl}
               onChange={e => setSingleUrl(e.target.value)}
@@ -362,6 +364,6 @@ export default function Home() {
         </p>
       </div>
 
-    </div>
+    </main>
   )
 }

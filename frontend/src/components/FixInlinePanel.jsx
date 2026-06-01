@@ -421,7 +421,7 @@ function MismatchFixPanel({ jobId, pageUrl, issueExtra, onClose }) {
         <span className="text-xs font-semibold text-amber-800 uppercase tracking-wide">
           Fix — Title & Heading Mismatch
         </span>
-        <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl leading-none">&times;</button>
+        <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl leading-none" aria-label="Close fix panel">&times;</button>
       </div>
 
       {loading && <p className="text-xs text-amber-700 py-2">Loading current values…</p>}

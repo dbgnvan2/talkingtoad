@@ -12,10 +12,10 @@ export default function SettingsPanel({ onClose }) {
 
   return (
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={onClose}>
-      <div className="bg-white rounded-3xl shadow-2xl max-w-md w-full p-8" onClick={e => e.stopPropagation()}>
+      <div role="dialog" aria-modal="true" aria-label="Display settings" className="bg-white rounded-3xl shadow-2xl max-w-md w-full p-8" onClick={e => e.stopPropagation()}>
         <div className="flex justify-between items-center mb-6">
           <h3 className="text-xl font-black text-gray-800">Display Settings</h3>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-2xl">&times;</button>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-2xl" aria-label="Close settings">&times;</button>
         </div>
 
         <div className="space-y-6">

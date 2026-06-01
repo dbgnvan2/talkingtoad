@@ -153,6 +153,7 @@ export default function CategoryPanel({ jobId, category, domain, onPageClick, on
                 <button
                   onClick={() => setVerifyResult(null)}
                   className="text-gray-400 hover:text-gray-600 text-xl ml-auto"
+                  aria-label="Close verification results"
                 >×</button>
               </div>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
@@ -216,7 +217,7 @@ export default function CategoryPanel({ jobId, category, domain, onPageClick, on
           {orphanedMedia.error ? (
             <div className="flex items-center justify-between">
               <p className="text-red-700 font-medium">Error: {orphanedMedia.error}</p>
-              <button onClick={() => setOrphanedMedia(null)} className="text-gray-400 hover:text-gray-600 text-xl">×</button>
+              <button onClick={() => setOrphanedMedia(null)} className="text-gray-400 hover:text-gray-600 text-xl" aria-label="Close orphaned media">×</button>
             </div>
           ) : (
             <>
@@ -224,7 +225,7 @@ export default function CategoryPanel({ jobId, category, domain, onPageClick, on
                 <span className="text-lg font-bold text-gray-800">
                   Orphaned Media: {orphanedMedia.count} image{orphanedMedia.count !== 1 ? 's' : ''} not used on any page
                 </span>
-                <button onClick={() => setOrphanedMedia(null)} className="text-gray-400 hover:text-gray-600 text-xl">×</button>
+                <button onClick={() => setOrphanedMedia(null)} className="text-gray-400 hover:text-gray-600 text-xl" aria-label="Close orphaned media">×</button>
               </div>
               {orphanedMedia.count === 0 ? (
                 <p className="text-sm text-green-700 font-medium">All WordPress media images are referenced on at least one crawled page.</p>

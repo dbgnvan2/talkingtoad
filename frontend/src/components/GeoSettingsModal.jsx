@@ -139,7 +139,7 @@ export default function GeoSettingsModal({ domain, onClose, onSaved }) {
   if (loading) {
     return (
       <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-        <div className="bg-white rounded-xl shadow-2xl p-8 max-w-2xl w-full mx-4">
+        <div role="dialog" aria-modal="true" aria-label="Geo settings" className="bg-white rounded-xl shadow-2xl p-8 max-w-2xl w-full mx-4">
           <p className="text-center text-gray-600">Loading GEO settings...</p>
         </div>
       </div>
@@ -148,7 +148,7 @@ export default function GeoSettingsModal({ domain, onClose, onSaved }) {
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 overflow-y-auto">
-      <div className="bg-white rounded-xl shadow-2xl max-w-2xl w-full my-8">
+      <div role="dialog" aria-modal="true" aria-label="Geo settings" className="bg-white rounded-xl shadow-2xl max-w-2xl w-full my-8">
         {/* Header */}
         <div className="border-b border-gray-200 p-6">
           <div className="flex items-start justify-between">
@@ -159,6 +159,7 @@ export default function GeoSettingsModal({ domain, onClose, onSaved }) {
             <button
               onClick={onClose}
               className="text-gray-400 hover:text-gray-600 text-2xl leading-none"
+              aria-label="Close geo settings"
             >
               ×
             </button>

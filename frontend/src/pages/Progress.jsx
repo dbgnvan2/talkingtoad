@@ -41,7 +41,7 @@ export default function Progress() {
   const eta = etaString(status)
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center px-4">
+    <main className="min-h-screen flex flex-col items-center justify-center px-4">
       <div className="w-full max-w-lg">
         <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-8 space-y-6">
           <div className="text-center">
@@ -133,7 +133,7 @@ export default function Progress() {
           </div>
         </div>
       </div>
-    </div>
+    </main>
   )
 }
 

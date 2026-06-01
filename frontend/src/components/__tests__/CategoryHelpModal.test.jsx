@@ -10,7 +10,7 @@ describe('CategoryHelpModal', () => {
       <CategoryHelpModal categoryKey={null} onClose={() => {}} />
     )
     // Component should not render any modal content
-    expect(screen.queryByRole('button', { name: /×/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /close category help/i })).not.toBeInTheDocument()
   })
 
   it('renders null for unknown category', () => {
@@ -18,7 +18,7 @@ describe('CategoryHelpModal', () => {
       <CategoryHelpModal categoryKey="nonexistent" onClose={() => {}} />
     )
     // Component should not render any modal content
-    expect(screen.queryByRole('button', { name: /×/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /close category help/i })).not.toBeInTheDocument()
   })
 
   it('renders modal content for metadata category', () => {
@@ -26,7 +26,7 @@ describe('CategoryHelpModal', () => {
       <CategoryHelpModal categoryKey="metadata" onClose={() => {}} />
     )
     // Modal should render (not null)
-    expect(screen.getByRole('button', { name: /×/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /close category help/i })).toBeInTheDocument()
   })
 
   it('calls onClose when backdrop is clicked', async () => {

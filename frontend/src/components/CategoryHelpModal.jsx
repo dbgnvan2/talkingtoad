@@ -18,6 +18,9 @@ export default function CategoryHelpModal({ categoryKey, onClose }) {
       onClick={onClose}
     >
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Category help"
         className="bg-white rounded-3xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto"
         onClick={e => e.stopPropagation()}
       >
@@ -30,6 +33,7 @@ export default function CategoryHelpModal({ categoryKey, onClose }) {
           <button
             onClick={onClose}
             className="w-10 h-10 flex items-center justify-center rounded-full bg-white text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-all text-2xl font-black"
+            aria-label="Close category help"
           >
             ×
           </button>

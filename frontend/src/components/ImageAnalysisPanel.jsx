@@ -5,16 +5,23 @@
  * thumbnails, and per-image scoring breakdown with sort/filter options.
  */
 
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback, lazy, Suspense } from 'react'
 import { useToast } from '../contexts/ToastContext.jsx'
 import { getImages, getImagesSummary, fetchImageDetails, analyzeImageWithAI, updateImageMeta, downloadAIImagePDF, analyzeImageWithGeo, applyGeoMetadata, getGeoSettings, getOrphanedMedia } from '../api.js'
 import { getIssueHelp } from '../data/issueHelp.js'
 import SeverityBadge from './SeverityBadge.jsx'
-import GeoAnalysisModal from './GeoAnalysisModal.jsx'
-import GeoSettingsModal from './GeoSettingsModal.jsx'
-import OptimizeExistingModal from './OptimizeExistingModal.jsx'
-import UploadNewImageModal from './UploadNewImageModal.jsx'
-import BatchOptimizePanel from './BatchOptimizePanel.jsx'
+
+const GeoAnalysisModal = lazy(() => import('./GeoAnalysisModal.jsx'))
+const GeoSettingsModal = lazy(() => import('./GeoSettingsModal.jsx'))
+const OptimizeExistingModal = lazy(() => import('./OptimizeExistingModal.jsx'))
+const UploadNewImageModal = lazy(() => import('./UploadNewImageModal.jsx'))
+const BatchOptimizePanel = lazy(() => import('./BatchOptimizePanel.jsx'))
+
+const LazyFallback = () => (
+  <div className="flex justify-center p-4">
+    <div className="animate-spin h-6 w-6 border-2 border-blue-500 rounded-full border-t-transparent" />
+  </div>
+)
 
 export default function ImageAnalysisPanel({ jobId, domain, onPageClick, onShowHelp }) {
   const toast = useToast()
@@ -253,7 +260,7 @@ export default function ImageAnalysisPanel({ jobId, domain, onPageClick, onShowH
           {orphanedMedia.error ? (
             <div className="flex items-center justify-between">
               <p className="text-red-700 font-medium">Error: {orphanedMedia.error}</p>
-              <button onClick={() => setOrphanedMedia(null)} className="text-gray-400 hover:text-gray-600 text-xl">×</button>
+              <button onClick={() => setOrphanedMedia(null)} className="text-gray-400 hover:text-gray-600 text-xl" aria-label="Close orphaned media">×</button>
             </div>
           ) : (
             <>
@@ -261,7 +268,7 @@ export default function ImageAnalysisPanel({ jobId, domain, onPageClick, onShowH
                 <span className="text-lg font-bold text-gray-800">
                   Orphaned Media: {orphanedMedia.count} image{orphanedMedia.count !== 1 ? 's' : ''} not used on any page
                 </span>
-                <button onClick={() => setOrphanedMedia(null)} className="text-gray-400 hover:text-gray-600 text-xl">×</button>
+                <button onClick={() => setOrphanedMedia(null)} className="text-gray-400 hover:text-gray-600 text-xl" aria-label="Close orphaned media">×</button>
               </div>
               {orphanedMedia.count === 0 ? (
                 <p className="text-sm text-green-700 font-medium">All WordPress media images are referenced on at least one crawled page.</p>
@@ -492,28 +499,32 @@ export default function ImageAnalysisPanel({ jobId, domain, onPageClick, onShowH
 
       {/* Batch Optimize Panel */}
       {showBatchOptimize && (
-        <BatchOptimizePanel
-          jobId={jobId}
-          selectedImages={images.filter(img => selectedImages.has(img.url))}
-          onClose={() => setShowBatchOptimize(false)}
-          onComplete={(data) => {
-            // Reload data after batch completes
-            loadData()
-            setSelectedImages(new Set())
-          }}
-        />
+        <Suspense fallback={<LazyFallback />}>
+          <BatchOptimizePanel
+            jobId={jobId}
+            selectedImages={images.filter(img => selectedImages.has(img.url))}
+            onClose={() => setShowBatchOptimize(false)}
+            onComplete={(data) => {
+              // Reload data after batch completes
+              loadData()
+              setSelectedImages(new Set())
+            }}
+          />
+        </Suspense>
       )}
 
       {/* Upload New Image Modal */}
       {showUploadModal && (
-        <UploadNewImageModal
-          jobId={jobId}
-          onClose={() => setShowUploadModal(false)}
-          onSuccess={(data) => {
-            // Optionally reload data after upload
-            loadData()
-          }}
-        />
+        <Suspense fallback={<LazyFallback />}>
+          <UploadNewImageModal
+            jobId={jobId}
+            onClose={() => setShowUploadModal(false)}
+            onSuccess={(data) => {
+              // Optionally reload data after upload
+              loadData()
+            }}
+          />
+        </Suspense>
       )}
     </div>
   )
@@ -1104,44 +1115,50 @@ function ImageCard({ image, jobId, isExpanded, onToggle, onPageClick, isSelected
 
       {/* GEO Analysis Modal */}
       {showGeoModal && geoResult && (
-        <GeoAnalysisModal
-          geoResult={geoResult}
-          image={image}
-          onSave={handleSaveGeo}
-          onClose={() => setShowGeoModal(false)}
-        />
+        <Suspense fallback={<LazyFallback />}>
+          <GeoAnalysisModal
+            geoResult={geoResult}
+            image={image}
+            onSave={handleSaveGeo}
+            onClose={() => setShowGeoModal(false)}
+          />
+        </Suspense>
       )}
 
       {/* GEO Settings Modal */}
       {showGeoSettings && (
-        <GeoSettingsModal
-          domain={(() => {
-            try {
-              const url = new URL(image.page_url)
-              return url.hostname.replace('www.', '')
-            } catch {
-              return ''
-            }
-          })()}
-          onClose={() => setShowGeoSettings(false)}
-          onSaved={() => {
-            setShowGeoSettings(false)
-            setGeoConfigured(true)
-          }}
-        />
+        <Suspense fallback={<LazyFallback />}>
+          <GeoSettingsModal
+            domain={(() => {
+              try {
+                const url = new URL(image.page_url)
+                return url.hostname.replace('www.', '')
+              } catch {
+                return ''
+              }
+            })()}
+            onClose={() => setShowGeoSettings(false)}
+            onSaved={() => {
+              setShowGeoSettings(false)
+              setGeoConfigured(true)
+            }}
+          />
+        </Suspense>
       )}
 
       {/* Optimize Existing Image Modal */}
       {showOptimizeModal && (
-        <OptimizeExistingModal
-          image={image}
-          jobId={jobId}
-          onClose={() => setShowOptimizeModal(false)}
-          onSuccess={(result) => {
-            // Optionally refresh the image list after optimization
-            console.log('Image optimized:', result)
-          }}
-        />
+        <Suspense fallback={<LazyFallback />}>
+          <OptimizeExistingModal
+            image={image}
+            jobId={jobId}
+            onClose={() => setShowOptimizeModal(false)}
+            onSuccess={(result) => {
+              // Optionally refresh the image list after optimization
+              console.log('Image optimized:', result)
+            }}
+          />
+        </Suspense>
       )}
     </div>
   )

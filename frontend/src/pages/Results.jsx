@@ -113,7 +113,7 @@ export default function Results() {
   const imageTabIdx = CATEGORIES.findIndex(c => c.key === 'image') + 1
 
   return (
-    <div className="max-w-6xl mx-auto px-4 py-8">
+    <main className="max-w-6xl mx-auto px-4 py-8">
       {/* Header */}
       <div className="flex justify-between items-end mb-8">
         <div>
@@ -124,7 +124,7 @@ export default function Results() {
         </div>
         <div className="flex gap-2">
           {csvError && <span className="text-red-600 text-xs self-center mr-2">{csvError}</span>}
-          <button onClick={() => setShowSettings(true)} className="px-3 py-1.5 bg-white border border-gray-300 rounded-lg text-xs font-bold shadow-sm" title="Display Settings">⚙</button>
+          <button onClick={() => setShowSettings(true)} className="px-3 py-1.5 bg-white border border-gray-300 rounded-lg text-xs font-bold shadow-sm" title="Display Settings" aria-label="Display settings">⚙</button>
           <button onClick={() => setShowGeoSettings(true)} className="px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-bold shadow-sm" title="GEO Settings">GEO</button>
           <button onClick={() => downloadCsv(jobId).catch(() => setCsvError('CSV failed'))} className="px-3 py-1.5 bg-white border border-gray-300 rounded-lg text-xs font-bold shadow-sm">CSV</button>
           <button onClick={() => downloadExcelReport(jobId).catch(() => setCsvError('Excel failed'))} className="px-3 py-1.5 bg-white border border-gray-300 rounded-lg text-xs font-bold shadow-sm">Excel</button>
@@ -224,7 +224,7 @@ export default function Results() {
       {showCategoryHelp && (
         <CategoryHelpModal categoryKey={showCategoryHelp} onClose={() => setShowCategoryHelp(null)} />
       )}
-    </div>
+    </main>
   )
 }
 
@@ -270,7 +270,7 @@ function PageFocusPanel({ jobId, pageUrl, onClose, onRescan }) {
   return (
     <div className="fixed inset-0 z-50 flex justify-end">
       <div className="absolute inset-0 bg-black/40 backdrop-blur-sm transition-opacity" onClick={onClose}></div>
-      <div className="relative w-full max-w-2xl bg-gray-50 h-full shadow-2xl flex flex-col animate-slide-in">
+      <div role="dialog" aria-modal="true" aria-label="Page audit" className="relative w-full max-w-2xl bg-gray-50 h-full shadow-2xl flex flex-col animate-slide-in">
         <div className="p-6 bg-white border-b shadow-sm">
           <div className="flex justify-between items-center">
             <div className="min-w-0 pr-4 flex-1">
@@ -282,6 +282,7 @@ function PageFocusPanel({ jobId, pageUrl, onClose, onRescan }) {
                 onClick={() => setShowSettings(!showSettings)}
                 className={`w-10 h-10 flex items-center justify-center rounded-full transition-all ${showSettings ? 'bg-indigo-100 text-indigo-600' : 'bg-gray-50 text-gray-400 hover:bg-gray-100'}`}
                 title="Settings & Tools"
+                aria-label="Settings and tools"
               >
                 ⚙
               </button>
@@ -290,6 +291,7 @@ function PageFocusPanel({ jobId, pageUrl, onClose, onRescan }) {
                 disabled={refreshing}
                 className="w-10 h-10 flex items-center justify-center rounded-full bg-green-50 text-green-600 hover:bg-green-100 transition-all disabled:opacity-50"
                 title="Refresh page data"
+                aria-label="Refresh page data"
               >
                 <span className={refreshing ? 'animate-spin' : ''}>↻</span>
               </button>
@@ -299,10 +301,11 @@ function PageFocusPanel({ jobId, pageUrl, onClose, onRescan }) {
                 rel="noopener noreferrer"
                 className="w-10 h-10 flex items-center justify-center rounded-full bg-blue-50 text-blue-600 hover:bg-blue-100 transition-all"
                 title="Open page in new tab"
+                aria-label="Open page in new tab"
               >
                 ↗
               </a>
-              <button onClick={onClose} className="w-10 h-10 flex items-center justify-center rounded-full bg-gray-100 text-gray-400 hover:text-gray-600 hover:bg-gray-200 transition-all text-2xl font-black">&times;</button>
+              <button onClick={onClose} className="w-10 h-10 flex items-center justify-center rounded-full bg-gray-100 text-gray-400 hover:text-gray-600 hover:bg-gray-200 transition-all text-2xl font-black" aria-label="Close page audit">&times;</button>
             </div>
           </div>
           {showSettings && (
@@ -450,7 +453,7 @@ function SettingsToolbar({ jobId, pageUrl, onUpdate }) {
           ) : verifiedLinks.map(link => (
             <div key={link.url} className="flex items-center justify-between p-2 bg-white rounded-lg text-xs">
               <span className="truncate flex-1 text-gray-600 font-mono">{link.url}</span>
-              <button onClick={() => handleRemoveVerified(link.url)} className="text-red-500 hover:text-red-700 ml-2">×</button>
+              <button onClick={() => handleRemoveVerified(link.url)} className="text-red-500 hover:text-red-700 ml-2" aria-label="Remove verified link">×</button>
             </div>
           ))}
         </div>
@@ -463,7 +466,7 @@ function SettingsToolbar({ jobId, pageUrl, onUpdate }) {
           ) : suppressedCodes.map(code => (
             <div key={code} className="flex items-center justify-between p-2 bg-white rounded-lg text-xs">
               <span className="text-gray-700 font-mono">{code}</span>
-              <button onClick={() => handleRemoveSuppressed(code)} className="text-red-500 hover:text-red-700 ml-2">×</button>
+              <button onClick={() => handleRemoveSuppressed(code)} className="text-red-500 hover:text-red-700 ml-2" aria-label="Remove suppressed code">×</button>
             </div>
           ))}
         </div>
@@ -476,7 +479,7 @@ function SettingsToolbar({ jobId, pageUrl, onUpdate }) {
           ) : exemptAnchors.map(item => (
             <div key={item.url} className="flex items-center justify-between p-2 bg-white rounded-lg text-xs">
               <span className="truncate flex-1 text-gray-600 font-mono">{item.url}</span>
-              <button onClick={() => handleRemoveExempt(item.url)} className="text-red-500 hover:text-red-700 ml-2">×</button>
+              <button onClick={() => handleRemoveExempt(item.url)} className="text-red-500 hover:text-red-700 ml-2" aria-label="Remove exempt anchor">×</button>
             </div>
           ))}
         </div>
@@ -508,7 +511,7 @@ function SettingsToolbar({ jobId, pageUrl, onUpdate }) {
             ) : ignoredImages.map(item => (
               <div key={item.pattern} className="flex items-center justify-between p-2 bg-white rounded-lg text-xs">
                 <span className="truncate flex-1 text-gray-600 font-mono">{item.pattern}</span>
-                <button onClick={() => handleRemoveIgnoredImage(item.pattern)} className="text-red-500 hover:text-red-700 ml-2 flex-shrink-0">×</button>
+                <button onClick={() => handleRemoveIgnoredImage(item.pattern)} className="text-red-500 hover:text-red-700 ml-2 flex-shrink-0" aria-label="Remove ignored image pattern">×</button>
               </div>
             ))}
           </div>
@@ -1010,6 +1013,7 @@ function IssueCard({ issue: iss, jobId, pageUrl, isOpen, onToggleFix, onFixCompl
             onClick={() => setShowActions(!showActions)}
             className="text-xl font-black px-3 py-1 rounded-full text-gray-500 hover:text-gray-800 hover:bg-gray-200"
             title="More actions"
+            aria-label="More actions"
           >
             •••
           </button>
@@ -1581,7 +1585,7 @@ function ExportReportModal({ onClose, onDownload }) {
   const [opts, setOpts] = useState({ includeHelp: true, includePages: true, summaryOnly: false })
   return (
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={onClose}>
-      <div className="bg-white rounded-3xl shadow-2xl max-w-sm w-full p-8" onClick={e => e.stopPropagation()}>
+      <div role="dialog" aria-modal="true" aria-label="PDF report options" className="bg-white rounded-3xl shadow-2xl max-w-sm w-full p-8" onClick={e => e.stopPropagation()}>
         <h3 className="text-xl font-black text-gray-800 mb-6">PDF Report Options</h3>
         <div className="space-y-5 mb-8">
           <OptionToggle label="Summary Only" desc="Skip per-page URL listings" checked={opts.summaryOnly} onChange={v => setOpts({...opts, summaryOnly: v})} />
@@ -1621,6 +1625,7 @@ function AIRecommendationsPanel({ recommendations, onClose }) {
           <button
             onClick={onClose}
             className="w-6 h-6 flex items-center justify-center rounded-full bg-purple-100 text-purple-600 hover:bg-purple-200 transition-all text-xl font-black"
+            aria-label="Close recommendations"
           >
             ×
           </button>
