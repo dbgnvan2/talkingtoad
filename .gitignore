@@ -47,3 +47,8 @@ talkingtoad.db
 geo_settings.json
 archive/
 docs/.compiler-backups/
+scratch/
+
+# Google OAuth client-secret files — NEVER commit
+client_secret*.json
+*-secret*.json
