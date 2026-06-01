@@ -17,6 +17,7 @@ import OrphanedImagesPanel from '../components/OrphanedImagesPanel.jsx'
 import OrphanedPagesPanel from '../components/OrphanedPagesPanel.jsx'
 import CategoryHelpModal from '../components/CategoryHelpModal.jsx'
 import { useTheme } from '../contexts/ThemeContext.jsx'
+import { useToast } from '../contexts/ToastContext.jsx'
 
 const GSCInsightsPanel = React.lazy(() => import('../components/GSCInsightsPanel'))
 import { getIssueHelp } from '../data/issueHelp.js'
@@ -317,6 +318,7 @@ function PageFocusPanel({ jobId, pageUrl, onClose, onRescan }) {
 }
 
 function SettingsToolbar({ jobId, pageUrl, onUpdate }) {
+  const toast = useToast()
   const [aiStatus, setAiStatus] = useState(null)
   const [testing, setTesting] = useState(false)
   const [verifiedLinks, setVerifiedLinks] = useState([])
@@ -365,7 +367,7 @@ function SettingsToolbar({ jobId, pageUrl, onUpdate }) {
       setVerifiedLinks(prev => prev.filter(l => l.url !== url))
       onUpdate?.()
     } catch (err) {
-      alert('Failed to remove: ' + err.message)
+      toast.error('Failed to remove: ' + err.message)
     }
   }
 
@@ -375,7 +377,7 @@ function SettingsToolbar({ jobId, pageUrl, onUpdate }) {
       setSuppressedCodes(prev => prev.filter(c => c !== code))
       onUpdate?.()
     } catch (err) {
-      alert('Failed to remove: ' + err.message)
+      toast.error('Failed to remove: ' + err.message)
     }
   }
 
@@ -385,7 +387,7 @@ function SettingsToolbar({ jobId, pageUrl, onUpdate }) {
       setExemptAnchors(prev => prev.filter(e => e.url !== url))
       onUpdate?.()
     } catch (err) {
-      alert('Failed to remove: ' + err.message)
+      toast.error('Failed to remove: ' + err.message)
     }
   }
 
@@ -398,7 +400,7 @@ function SettingsToolbar({ jobId, pageUrl, onUpdate }) {
       setNewPattern('')
       onUpdate?.()
     } catch (err) {
-      alert('Failed to add: ' + err.message)
+      toast.error('Failed to add: ' + err.message)
     }
   }
 
@@ -408,7 +410,7 @@ function SettingsToolbar({ jobId, pageUrl, onUpdate }) {
       setIgnoredImages(prev => prev.filter(i => i.pattern !== pattern))
       onUpdate?.()
     } catch (err) {
-      alert('Failed to remove: ' + err.message)
+      toast.error('Failed to remove: ' + err.message)
     }
   }
 
@@ -517,6 +519,7 @@ function SettingsToolbar({ jobId, pageUrl, onUpdate }) {
 }
 
 function PageDetail({ jobId, pageUrl, onRescan }) {
+  const toast = useToast()
   const [data, setData] = useState(null)
   const [openFixCode, setOpenFixCode] = useState(null)
   const [expandedSections, setExpandedSections] = useState({ metadata: false, headings: true, issues: true })
@@ -550,7 +553,7 @@ function PageDetail({ jobId, pageUrl, onRescan }) {
       const result = await getPageAdvisor(jobId, pageUrl)
       setAiRecommendations(result.recommendations)
     } catch (err) {
-      alert('Failed to get AI recommendations: ' + err.message)
+      toast.error('Failed to get AI recommendations: ' + err.message)
     } finally {
       setLoadingAI(false)
     }
@@ -716,6 +719,7 @@ function MetadataField({ label, value, limit }) {
 }
 
 function HeadingsPanel({ jobId, pageUrl, headings, onUpdate }) {
+  const toast = useToast()
   const [sources, setSources] = useState(null)
   const [loading, setLoading] = useState(false)
   const [editingIdx, setEditingIdx] = useState(null)
@@ -742,13 +746,13 @@ function HeadingsPanel({ jobId, pageUrl, headings, onUpdate }) {
     try {
       const result = await changeHeadingLevel(pageUrl, heading.text, heading.level, newLevel)
       if (!result.success) {
-        alert('Failed to change heading level: ' + (result.error || 'Unknown error'))
+        toast.error('Failed to change heading level: ' + (result.error || 'Unknown error'))
         return
       }
       setEditingIdx(null)
       onUpdate?.()
     } catch (err) {
-      alert('Failed to change heading level: ' + err.message)
+      toast.error('Failed to change heading level: ' + err.message)
     } finally {
       setActionLoading(false)
     }
@@ -759,13 +763,13 @@ function HeadingsPanel({ jobId, pageUrl, headings, onUpdate }) {
     try {
       const result = await convertHeadingToBold(pageUrl, heading.text, heading.level)
       if (!result.success) {
-        alert('Failed to convert to bold: ' + (result.error || 'Unknown error'))
+        toast.error('Failed to convert to bold: ' + (result.error || 'Unknown error'))
         return
       }
       setEditingIdx(null)
       onUpdate?.()
     } catch (err) {
-      alert('Failed to convert to bold: ' + err.message)
+      toast.error('Failed to convert to bold: ' + err.message)
     } finally {
       setActionLoading(false)
     }
@@ -872,6 +876,7 @@ function HeadingsPanel({ jobId, pageUrl, headings, onUpdate }) {
 
 function IssueCard({ issue: iss, jobId, pageUrl, isOpen, onToggleFix, onFixComplete }) {
   const { getFontClass } = useTheme()
+  const toast = useToast()
   const [showActions, setShowActions] = useState(false)
   const [actionLoading, setActionLoading] = useState(null)
   const [showHelp, setShowHelp] = useState(false)
@@ -889,28 +894,28 @@ function IssueCard({ issue: iss, jobId, pageUrl, isOpen, onToggleFix, onFixCompl
 
   async function handleVerifyLink() {
     const linkUrl = iss.extra?.link_url || iss.extra?.href
-    if (!linkUrl) return alert('No link URL found in issue data')
+    if (!linkUrl) { toast.error('No link URL found in issue data'); return }
     setActionLoading('verify')
     try {
       await addVerifiedLink(linkUrl, jobId)
-      alert('Link marked as verified. It will be excluded from future scans.')
+      toast.success('Link marked as verified. It will be excluded from future scans.')
       onFixComplete?.()
     } catch (err) {
-      alert('Failed to verify link: ' + err.message)
+      toast.error('Failed to verify link: ' + err.message)
     } finally {
       setActionLoading(null)
     }
   }
 
   async function handleSuppressCode() {
-    if (!confirm(`Suppress all "${iss.issue_code}" issues across all scans? This is a global setting.`)) return
+    if (!(await toast.confirm(`Suppress all "${iss.issue_code}" issues across all scans? This is a global setting.`))) return
     setActionLoading('suppress')
     try {
       await addSuppressedCode(iss.issue_code)
-      alert(`Issue code "${iss.issue_code}" suppressed globally.`)
+      toast.success(`Issue code "${iss.issue_code}" suppressed globally.`)
       onFixComplete?.()
     } catch (err) {
-      alert('Failed to suppress code: ' + err.message)
+      toast.error('Failed to suppress code: ' + err.message)
     } finally {
       setActionLoading(null)
     }
@@ -918,14 +923,14 @@ function IssueCard({ issue: iss, jobId, pageUrl, isOpen, onToggleFix, onFixCompl
 
   async function handleExemptAnchor() {
     const anchorUrl = iss.extra?.href || iss.extra?.link_url
-    if (!anchorUrl) return alert('No anchor URL found in issue data')
+    if (!anchorUrl) { toast.error('No anchor URL found in issue data'); return }
     setActionLoading('exempt')
     try {
       await addExemptAnchorUrl(anchorUrl, `Exempted from ${pageUrl}`)
-      alert('Anchor URL exempted from empty anchor checks.')
+      toast.success('Anchor URL exempted from empty anchor checks.')
       onFixComplete?.()
     } catch (err) {
-      alert('Failed to exempt anchor: ' + err.message)
+      toast.error('Failed to exempt anchor: ' + err.message)
     } finally {
       setActionLoading(null)
     }
@@ -936,10 +941,10 @@ function IssueCard({ issue: iss, jobId, pageUrl, isOpen, onToggleFix, onFixCompl
     try {
       // Use markIssueFixed to actually delete from database
       await markIssueFixed(jobId, pageUrl, [iss.issue_code])
-      alert('Issue marked as fixed and removed from report.')
+      toast.success('Issue marked as fixed and removed from report.')
       onFixComplete?.()
     } catch (err) {
-      alert('Failed to mark as fixed: ' + err.message)
+      toast.error('Failed to mark as fixed: ' + err.message)
     } finally {
       setActionLoading(null)
     }
@@ -967,7 +972,7 @@ function IssueCard({ issue: iss, jobId, pageUrl, isOpen, onToggleFix, onFixCompl
 
   function copyToClipboard(text) {
     navigator.clipboard.writeText(text)
-    alert('Copied to clipboard!')
+    toast.success('Copied to clipboard!')
   }
 
   async function handleAiAnalyze() {
@@ -1292,6 +1297,7 @@ function IssueCard({ issue: iss, jobId, pageUrl, isOpen, onToggleFix, onFixCompl
 }
 
 function ImageFixPanel({ jobId, pageUrl, imageUrl: initialImageUrl, issueCode, allImageUrls, onClose }) {
+  const toast = useToast()
   const [selectedUrl, setSelectedUrl] = useState(initialImageUrl)
   const [imageInfo, setImageInfo] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -1318,7 +1324,7 @@ function ImageFixPanel({ jobId, pageUrl, imageUrl: initialImageUrl, issueCode, a
       // Auto-close after a short delay
       setTimeout(() => onClose?.(), 1500)
     } catch (err) {
-      alert('Failed to mark as fixed: ' + err.message)
+      toast.error('Failed to mark as fixed: ' + err.message)
     } finally {
       setMarkingFixed(false)
     }
@@ -1362,7 +1368,7 @@ function ImageFixPanel({ jobId, pageUrl, imageUrl: initialImageUrl, issueCode, a
           // Non-critical — the WP update succeeded
         }
       }
-      alert('Image metadata updated successfully!')
+      toast.success('Image metadata updated successfully!')
       onClose?.()
     } catch (err) {
       setError('Failed to update: ' + err.message)
@@ -1377,7 +1383,7 @@ function ImageFixPanel({ jobId, pageUrl, imageUrl: initialImageUrl, issueCode, a
     try {
       const result = await optimizeImage(jobId, imageUrl, targetWidth)
       if (result.success) {
-        alert('Image optimized and replaced successfully!')
+        toast.success('Image optimized and replaced successfully!')
         onClose?.()
       } else {
         setError(result.error || 'Optimization failed')

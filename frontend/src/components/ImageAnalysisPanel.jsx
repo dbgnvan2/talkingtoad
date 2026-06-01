@@ -6,6 +6,7 @@
  */
 
 import React, { useState, useEffect, useCallback } from 'react'
+import { useToast } from '../contexts/ToastContext.jsx'
 import { getImages, getImagesSummary, fetchImageDetails, analyzeImageWithAI, updateImageMeta, downloadAIImagePDF, analyzeImageWithGeo, applyGeoMetadata, getGeoSettings, getOrphanedMedia } from '../api.js'
 import { getIssueHelp } from '../data/issueHelp.js'
 import SeverityBadge from './SeverityBadge.jsx'
@@ -16,6 +17,7 @@ import UploadNewImageModal from './UploadNewImageModal.jsx'
 import BatchOptimizePanel from './BatchOptimizePanel.jsx'
 
 export default function ImageAnalysisPanel({ jobId, domain, onPageClick, onShowHelp }) {
+  const toast = useToast()
   const [summary, setSummary] = useState(null)
   const [images, setImages] = useState([])
   const [loading, setLoading] = useState(true)
@@ -75,7 +77,7 @@ export default function ImageAnalysisPanel({ jobId, domain, onPageClick, onShowH
       }
 
       if (imagesToFetch.length === 0) {
-        alert('All images already have full details!')
+        toast.info('All images already have full details!')
         setFetchingAll(false)
         return
       }
@@ -109,7 +111,7 @@ export default function ImageAnalysisPanel({ jobId, domain, onPageClick, onShowH
 
       // Reload data after all fetches complete
       await loadData()
-      alert(`Successfully fetched details for ${imagesToFetch.length} images!`)
+      toast.success(`Successfully fetched details for ${imagesToFetch.length} images!`)
     } catch (err) {
       setError('Failed to fetch all images: ' + err.message)
     } finally {
@@ -120,7 +122,7 @@ export default function ImageAnalysisPanel({ jobId, domain, onPageClick, onShowH
 
   const handleAnalyzeSelected = async () => {
     if (selectedImages.size === 0) {
-      alert('Please select at least one image to analyze')
+      toast.info('Please select at least one image to analyze')
       return
     }
 
@@ -596,6 +598,7 @@ function IssueBreakdown({ byIssue }) {
 }
 
 function ImageCard({ image, jobId, isExpanded, onToggle, onPageClick, isSelected, onSelect, onImageUpdate }) {
+  const toast = useToast()
   const [fetching, setFetching] = useState(false)
   const [analyzingAI, setAnalyzingAI] = useState(false)
   const [aiResult, setAiResult] = useState(null)
@@ -631,7 +634,7 @@ function ImageCard({ image, jobId, isExpanded, onToggle, onPageClick, isSelected
       }
     } catch (err) {
       console.error('Failed to fetch image:', err)
-      alert('Failed to fetch image data: ' + err.message)
+      toast.error('Failed to fetch image data: ' + err.message)
     } finally {
       setFetching(false)
     }
@@ -647,7 +650,7 @@ function ImageCard({ image, jobId, isExpanded, onToggle, onPageClick, isSelected
       domain = url.hostname.replace('www.', '')
     } catch (err) {
       console.error('Failed to extract domain from page URL:', err)
-      alert('Could not determine domain from page URL')
+      toast.error('Could not determine domain from page URL')
       return
     }
 
@@ -658,7 +661,7 @@ function ImageCard({ image, jobId, isExpanded, onToggle, onPageClick, isSelected
 
       if (!geoConfig.is_configured) {
         setAnalyzingAI(false)
-        const configure = confirm(
+        const configure = await toast.confirm(
           `GEO is not configured for ${domain}.\n\n` +
           'GEO (Generative Engine Optimization) generates AI-powered metadata with geographic and topic context.\n\n' +
           'Would you like to configure it now?'
@@ -689,10 +692,10 @@ function ImageCard({ image, jobId, isExpanded, onToggle, onPageClick, isSelected
       console.error('Failed to analyze image:', err)
       const errorMsg = err.message || 'Unknown error'
       if (errorMsg.includes('No GEO configuration')) {
-        alert('GEO is not configured for this domain. Please configure it first.')
+        toast.info('GEO is not configured for this domain. Please configure it first.')
         setShowGeoSettings(true)
       } else {
-        alert('GEO analysis failed: ' + errorMsg)
+        toast.error('GEO analysis failed: ' + errorMsg)
       }
     } finally {
       setAnalyzingAI(false)
@@ -716,20 +719,20 @@ function ImageCard({ image, jobId, isExpanded, onToggle, onPageClick, isSelected
           }
         }
 
-        alert(`GEO metadata applied!\n\nNew accessibility score: ${result.new_scores.accessibility_score}\nNew overall score: ${result.new_scores.overall_score}`)
+        toast.success(`GEO metadata applied! New accessibility score: ${result.new_scores.accessibility_score}, New overall score: ${result.new_scores.overall_score}`)
       } else {
         throw new Error(result.message || 'Failed to apply GEO metadata')
       }
     } catch (err) {
       console.error('Failed to save GEO metadata:', err)
-      alert('Failed to save GEO metadata: ' + err.message)
+      toast.error('Failed to save GEO metadata: ' + err.message)
     }
   }
 
   const handleApplyAISuggestion = async (e, wpCredentials = null) => {
     e?.stopPropagation()
     if (!aiResult?.suggested_alt) {
-      alert('No AI suggestion available')
+      toast.info('No AI suggestion available')
       return
     }
 
@@ -765,7 +768,7 @@ function ImageCard({ image, jobId, isExpanded, onToggle, onPageClick, isSelected
       if (err.message?.includes('DOMAIN_MISMATCH')) {
         setShowWpLogin(true)
       } else {
-        alert('Failed to update WordPress image: ' + err.message)
+        toast.error('Failed to update WordPress image: ' + err.message)
       }
     } finally {
       setApplyingAI(false)
@@ -1160,6 +1163,7 @@ function ScoreBar({ label, score }) {
 }
 
 function AIResultsModal({ results, jobId, onClose }) {
+  const toast = useToast()
   const [exporting, setExporting] = React.useState(false)
 
   const handleSavePDF = async () => {
@@ -1169,7 +1173,7 @@ function AIResultsModal({ results, jobId, onClose }) {
       // Pass the full AI results to the PDF generator
       await downloadAIImagePDF(jobId, results)
     } catch (err) {
-      alert('Failed to export PDF: ' + err.message)
+      toast.error('Failed to export PDF: ' + err.message)
     } finally {
       setTimeout(() => setExporting(false), 1000)
     }
@@ -1278,6 +1282,7 @@ function AIResultsModal({ results, jobId, onClose }) {
 }
 
 function WordPressLoginModal({ onSubmit, onClose }) {
+  const toast = useToast()
   const [siteUrl, setSiteUrl] = React.useState('')
   const [loginUrl, setLoginUrl] = React.useState('')
   const [username, setUsername] = React.useState('')
@@ -1296,7 +1301,7 @@ function WordPressLoginModal({ onSubmit, onClose }) {
       }
       await onSubmit(credentials)
     } catch (err) {
-      alert('Login failed: ' + err.message)
+      toast.error('Login failed: ' + err.message)
     } finally {
       setSaving(false)
     }
