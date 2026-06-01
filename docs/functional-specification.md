@@ -65,6 +65,7 @@ WordPress sites — applies one-click fixes directly via the WP REST API.
 - AI-assisted analysis and rewrite suggestions
 - PDF, Excel, and CSV reports
 - AI-readiness audit (GEO — Generative Engine Optimization)
+- **GSC performance integration and Authority Matrix**
 
 ### 1.4 Out of scope (today)
 
@@ -182,7 +183,7 @@ them via the app.
 
 **Goal:** User has an oversized image (>200 KB) flagged in the audit.
 
-**Steps (Workflow A — existing WP image):**
+**Steps:**
 1. From the Image Analysis tab, user clicks "Optimize" next to an
    oversized image.
 2. **Observable:** a preview modal shows: original size/dimensions,
@@ -256,6 +257,26 @@ search retrieval.
 - If a `GeoConfig` is injected, the advisor prompt strictly validates findings against the specified authoritative entities.
 - AI token and cost usage is logged to the `ai_usage` table asynchronously.
 
+### Journey G — Connect GSC and analyze performance
+
+**Goal:** User wants to see which high-traffic pages are structurally vulnerable.
+
+**Steps:**
+1. User opens the "Settings" or "Integrations" panel.
+2. User clicks "Connect Google Search Console".
+3. **Observable:** Browser redirects to Google OAuth consent; user approves access.
+4. User returns to TalkingToad; browser shows "Connected" status.
+5. User navigates to the "Results" page for a crawl.
+6. **Observable:** A "GSC Insights" panel is available (or GSC columns appear in the By Page view).
+7. User filters/sorts by "Vulnerable Stars".
+8. **Observable:** The app lists pages with high impressions/clicks but critical structural issues.
+
+**Acceptance criteria:**
+- GSC tokens are stored encrypted and never exposed in logs or UI.
+- Clicks, impressions, CTR, and position data are mapped correctly to the crawled URLs.
+- The "Review for Improvements" badge appears on pages meeting the staleness or decay criteria.
+- Disconnecting GSC successfully removes the encrypted tokens.
+
 ---
 
 ## 3. Feature catalogue
@@ -268,6 +289,10 @@ High-level inventory. Each row maps to detailed sections later.
 | 142 issue codes | 140+ SEO and AI-readiness issue checks | ✅ Shipped | §4 |
 | Cross-page duplicate detection | Title / meta / title+meta duplicates across pages | ✅ Shipped | §4 |
 | Confidence labelling | All 60 AI-readiness codes labelled Established/Reasonable-proxy/Heuristic | ✅ Shipped | §4.6 |
+| GSC OAuth integration | OAuth flow to pull performance metrics (clicks/impressions) | ✅ Shipped | §4.8 |
+| Performance Ledger | Per-page GSC metrics and technical improvement lifecycle tracking | ✅ Shipped | §4.8 |
+| Refresh Trigger | Automated "Review for Improvements" flags (staleness, traffic decay) | ✅ Shipped | §4.8 |
+| Authority Matrix | Correlation of HealthScore with GSC performance metrics | ✅ Shipped | §4.8 |
 | Title fix manager | Generate + apply title/meta fixes via WP REST | ✅ Shipped | §5.1 |
 | Heading fix manager | Find / change-level / change-text / bulk-replace / to-bold | ✅ Shipped | §5.2 |
 | Image metadata fix | Update alt / title / caption / description | ✅ Shipped | §5.3 |
@@ -307,7 +332,7 @@ High-level inventory. Each row maps to detailed sections later.
 | Complexity-Moat FAQ Gen | `POST /api/ai/geo-faq` JSON-LD generator | ✅ Shipped | §5.12 |
 | Entity Schema Factory | `POST /api/geo/entity-schema` JSON-LD generator | ✅ Shipped | §5.12 |
 | Multi-page GEO report | Generate GEO report across selected pages | 🟡 On feature/multi-page-geo branch | §10 |
-| GSC OAuth integration | Pull AI Overview / AI Mode performance data | ❌ Planned | §10 |
+| GSC OAuth integration | Pull AI Overview / AI Mode performance data | ✅ Shipped | §4.8 |
 | Multi-tenant Identity | Multi-tenant customer credentials and logical isolation | ❌ Deferred | §10 |
 
 ---
@@ -433,6 +458,21 @@ All ai_readiness codes carry a confidence label per the spec:
 - **Sitemap** — `SITEMAP_MISSING`, `NOT_IN_SITEMAP`
 - **Image** — oversized (>200 KB), oversized intrinsic (>2× rendered), missing alt text
 - **Performance** — page size limit (default 300 KB), excessive external scripts
+
+### 4.8 Performance & Authority Audit (GSC Integration)
+
+TalkingToad integrates with Google Search Console (GSC) to correlate structural health with real-world search performance. This "reality-check layer" helps prioritise SEO fixes based on impact.
+
+- **GSC Data Ingest:** An OAuth-based service (`GSCClient`) that fetches per-page performance metrics: clicks, impressions, CTR, and average position. Supports exponential backoff and 12-hour caching.
+- **Authority Matrix:** Correlation of per-page HealthScore with GSC performance metrics categorises pages into a 2x2 matrix:
+  - **Vulnerable Stars:** High performance / Low HealthScore. Top priority for structural remediation.
+  - **Hidden Gems:** Low performance / High HealthScore. Structurally sound but potentially mismatched for search intent.
+- **Performance Ledger:** A persistent record (`PerformanceRecord`) of per-page metrics over time, including lifecycle dates:
+  - `page_created_at`: Discovery date.
+  - `last_technical_improvement_at`: Set when a WP fix is applied or page is re-scanned with an improved score.
+- **Refresh Triggers:** Automated "Review for Improvements" flags based on:
+  - **Staleness:** >180 days since the last technical improvement.
+  - **Traffic Decay:** >20% drop in clicks compared to the 3-month average.
 
 ---
 
@@ -566,16 +606,18 @@ openpyxl-generated tabbed workbook:
 
 ### 8.1 Security
 
-- **Bearer token auth** strictly enforced on every single `/api/*` endpoint (including all AI routers).
+- **Bearer token auth** strictly enforced on every single `/api/*` endpoint (including all AI routers and GSC).
 - **Production-environment fail-closed:** app refuses to start if deployed and `AUTH_TOKEN` is empty.
 - **SSRF protection:** `is_ssrf_safe()` blocks RFC1918, loopback, and link-local.
 - **AIRouter Isolation:** Drivers do not contain explicit arithmetic; modules cannot bypass `AIRouter` bounds.
+- **Encrypted Secrets:** OAuth tokens (GSC) and AI credentials are encrypted at rest using Fernet.
 
 ### 8.2 Performance
 
 - Async crawl engine with concurrent fetches.
 - Crawl delay configurable per job.
 - `UsageLogger` utilizes an async task queue and lifespan `await_pending()` hooks so that telemetry database writes never stall critical LLM responses.
+- Batch upserts for the Performance Ledger to ensure high-throughput writes.
 
 ### 8.3 Reliability
 
@@ -624,6 +666,9 @@ For each major feature, the test file(s) that prove it works:
 | Advisor service | `tests/test_advisor.py`, `test_advisor_routing.py`, `test_advisor_geo_injection.py` | Report rendering, GeoConfig LLM prompt injection |
 | AIRouter & Pricing | `tests/test_ai_router.py`, `test_ai_pricing.py` | Singleton fallback, auth mapping, float safety |
 | AI Usage Aggregation | `tests/test_usage_aggregation.py`, `test_usage_logger.py` | Token/cost math, isolation, time boundaries |
+| GSC Integration | `tests/test_gsc_integration.py` | OAuth flow, API ingest, data mapping |
+| Performance Ledger | `tests/test_performance_ledger.py` | Model persistence, batch upsert, lifecycle dates |
+| Refresh Trigger | `tests/test_refresh_trigger.py` | Staleness and traffic decay algorithms |
 | Schema Generators | `tests/test_geo_faq.py`, `test_geo_schema_integration.py` | Deterministic Schema.org builders, AI-enrichment filters |
 | SSRF guards | `tests/test_fetcher.py` | 50 adversarial tests: private IPs, IPv6 mapped |
 | WP fixer | `tests/test_wp_fixer.py` | Gutenberg blocks, post discovery |
@@ -665,8 +710,6 @@ Features either not shipped, partially working, or with documented caveats.
 ### 10.3 Planned for v4.0 & Deferred Infrastructure
 
 - **Multi-tenant Identity Model:** Currently, the system runs safely as a single-tenant deployment for nonprofits using a universal `SYSTEM_CONTEXT_ID`. Per-customer billing, session JWTs, and tenant logical isolation are explicitly **deferred** until a paid-customer launch is imminent.
-- **GSC OAuth integration** (pull AI Overview / AI Mode performance
-  data into reports).
 - **Frontend infrastructure**: toast notification system to replace
   ~54 `alert()` calls; accessibility baseline; code-splitting for
   heavy modals.
