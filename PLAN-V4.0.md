@@ -117,7 +117,7 @@ per-cycle** — every new feature now ships its explainer. Two shapes are repres
 > | M7 | (reporting — surfaces the confidence tiers in PDF/Excel, which is V4's "how it can mislead" made visible) | ✅ |
 > | GA3 | FAQ Schema Generator (tool) | ✅ |
 > | GA4 | Entity Schema Factory (tool) | ✅ |
-> | M6 | GSC Performance-Health loop (tool: Authority Matrix + Review-for-Improvements flag) | needs explainer when surfaced in UI (6.4 panel) |
+> | M6 | GSC Performance-Health loop (tool: Authority Matrix + Review-for-Improvements flag) | ✅ (GSCInsightsPanel 5-part explainer shipped in M6.4) |
 >
 > **Takeaway for the v4 content pass:** newer codes are the proof-of-concept; scope the
 > pass as "bring the ~120 pre-2026-05 codes up to the M3.1 entry shape," not "write all
