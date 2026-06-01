@@ -86,6 +86,27 @@ def generate_excel_report(
     
     ws_ai.column_dimensions['A'].width = 30
     ws_ai.column_dimensions['B'].width = 50
+    ws_ai.column_dimensions['C'].width = 20
+    ws_ai.column_dimensions['D'].width = 60
+    ws_ai.column_dimensions['E'].width = 60
+
+    # AI Readiness issue table with Confidence column
+    ai_readiness_issues = [i for i in issues if i.category == "ai_readiness"]
+    if ai_readiness_issues:
+        start_row = 22  # after merged llms.txt block (A6:E20) + gap row
+        headers = ["Code", "Severity", "Confidence", "Page URL", "Description"]
+        for col_idx, header in enumerate(headers, 1):
+            cell = ws_ai.cell(row=start_row, column=col_idx, value=header)
+            cell.font = Font(bold=True)
+            cell.fill = PatternFill(start_color="E5E7EB", end_color="E5E7EB", fill_type="solid")
+
+        for row_offset, issue in enumerate(ai_readiness_issues, 1):
+            row = start_row + row_offset
+            ws_ai.cell(row=row, column=1, value=issue.issue_code or "")
+            ws_ai.cell(row=row, column=2, value=(issue.severity or "").upper())
+            ws_ai.cell(row=row, column=3, value=issue.confidence_label or "")
+            ws_ai.cell(row=row, column=4, value=issue.page_url or "")
+            ws_ai.cell(row=row, column=5, value=issue.description or "")
 
     # ── Images Sheet ───────────────────────────────────────────────────────
     if image_summary and image_summary.get("total_images", 0) > 0:

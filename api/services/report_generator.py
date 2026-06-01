@@ -19,6 +19,7 @@ COLOR_GRAY_100 = (243, 244, 246)
 COLOR_TOAD_GREEN = (22, 163, 74)
 COLOR_BLUE_BG = (239, 246, 255) # Light blue help box
 COLOR_BLUE_TEXT = (30, 58, 138) # Dark blue help labels
+COLOR_AMBER = (204, 153, 0)  # RGB amber
 
 # Constants for 8.5 x 11 (Letter) in mm
 # Width: 215.9mm
@@ -430,7 +431,22 @@ async def generate_pdf_report(
     for cat_slug in sorted(groups.keys()):
         pdf.add_page()
         pdf.chapter_title(cat_slug.replace('_', ' ').title() + " Details", size=22)
-        
+
+        # Tier-explainer intro for AI Readiness category
+        if cat_slug == "ai_readiness":
+            pdf.set_font('helvetica', 'I', 9)
+            pdf.set_text_color(*COLOR_GRAY_600)
+            intro_text = (
+                "The confidence tier indicates the strength of evidence behind each finding: "
+                "Established (strong evidence), Reasonable proxy (moderate evidence), "
+                "Heuristic (limited evidence)."
+            )
+            pdf.set_x(25.4)
+            pdf.multi_cell(W, 5, pdf.clean_text(intro_text))
+            pdf.ln(3)
+            pdf.set_font('helvetica', '', 9)
+            pdf.set_text_color(*COLOR_GRAY_600)
+
         # Sort issue types by severity (critical first), then by count
         sev_order = {"critical": 0, "warning": 1, "info": 2}
         sorted_codes = sorted(
@@ -479,6 +495,21 @@ async def generate_pdf_report(
                 pdf.set_text_color(*COLOR_GRAY_600)
                 pdf.multi_cell(W, 5, pdf.clean_text(desc))
                 pdf.ln(1)
+
+            # Confidence evidence line (AI Readiness issues)
+            if first.confidence_label:
+                confidence_colors = {
+                    "Established": COLOR_TOAD_GREEN,
+                    "Reasonable proxy": COLOR_AMBER,
+                    "Heuristic": COLOR_GRAY_500,
+                }
+                color = confidence_colors.get(first.confidence_label, COLOR_GRAY_600)
+                pdf.set_x(25.4)
+                pdf.set_text_color(*color)
+                pdf.set_font('helvetica', 'I', 8)
+                pdf.multi_cell(W, 4, pdf.clean_text(f"Evidence: {first.confidence_label}"))
+                pdf.set_font('helvetica', '', 9)
+                pdf.set_text_color(*COLOR_GRAY_600)
 
             # Help text (optional)
             if include_help:
