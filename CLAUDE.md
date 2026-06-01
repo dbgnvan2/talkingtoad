@@ -132,7 +132,13 @@ TalkingToad/
 After approval:
 - Implement the change and write the tests in the same cycle.
 - Update `docs/issue-codes.md` (auto-generator) and `docs/thresholds.md` if scoring or numeric bounds changed.
-- After a logical milestone or version bump, the user runs the Gemini Compiler pipeline: the contents of `docs/functional-specification.md` plus all files in `docs/pending/` are fed into a fresh Gemini context, the compiled output replaces `docs/functional-specification.md`, and `docs/pending/` is cleared.
+
+### Per-item completion workflow (standing rules, user-directed 2026-05-31)
+
+After **each** spec/item is implemented, reviewed, and green, do all of the following before moving on:
+1. **Run the Gemini Compiler** — `./scripts/run_compiler.sh` folds every `docs/pending/*.md` into `docs/functional-specification.md` (the one sanctioned write to that READ-ONLY file) and clears `docs/pending/`. The script backs up the spec and aborts if Gemini output looks truncated. Run it after every spec is done — not only at milestone boundaries.
+2. **Update `PLAN-V4.0.md`** — when an item ships a user-facing feature/code with its V4 explainer, record it in the V4 worked-examples tally so the future education layer stays current.
+3. **Push to GitHub** — `git push origin main` after each item (commits land on `main`; the bridge operates on `main`).
 
 ### WordPress Safety
 

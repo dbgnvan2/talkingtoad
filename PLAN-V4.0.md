@@ -99,6 +99,29 @@ per-cycle** — every new feature now ships its explainer. Two shapes are repres
 *tools* (GA3/GA4 — a card the user operates) and *audit codes* (M3.1 — a diagnostic
 `issueHelp.js` entry). Use whichever shape matches the thing being explained.
 
+> **Running tally — every code/feature shipped this run carries a full V4 explainer**
+> (`confidence` + `definition` + `impact` + `fix` + `good_vs_bad` + `how_it_can_mislead`),
+> verified during review. So the eventual v4 content pass is **already done for these**;
+> the remaining work is backfilling the ~120 OLDER codes that predate the standard.
+>
+> | Cycle | Code(s) / feature | V4 explainer shipped |
+> |---|---|---|
+> | M3.1 | `SCHEMA_VISIBLE_MISMATCH` | ✅ (the field-shape template) |
+> | M3.2 | `AI_CONTENT_NOT_IN_TEXT` | ✅ |
+> | M3.3 | `AI_PREVIEW_SUPPRESSED`, `AI_PREVIEW_BLOCKED_AT_BOT` | ✅ |
+> | M3.4 | `AI_NO_VISUAL_COMPANION` | ✅ |
+> | M3.5 | `AI_MAIN_CONTENT_LOW_RATIO` | ✅ |
+> | M4.1 | `CONTENT_DATE_STALE_VISIBLE` | ✅ |
+> | M4.2 | `CONTENT_STAT_OUTDATED` | ✅ |
+> | M5 | `AI_CITED_PAGE`, `AI_HIGH_VALUE_UNCITED` | ✅ |
+> | M7 | (reporting — surfaces the confidence tiers in PDF/Excel, which is V4's "how it can mislead" made visible) | ✅ |
+> | GA3 | FAQ Schema Generator (tool) | ✅ |
+> | GA4 | Entity Schema Factory (tool) | ✅ |
+>
+> **Takeaway for the v4 content pass:** newer codes are the proof-of-concept; scope the
+> pass as "bring the ~120 pre-2026-05 codes up to the M3.1 entry shape," not "write all
+> from scratch."
+
 ### GA3 — FAQ Schema Generator (a *tool*)
 - **What it is:** generates ready-to-paste FAQ schema (JSON-LD) built from your
   organisation's topics and locations.

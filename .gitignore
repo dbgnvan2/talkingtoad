@@ -46,3 +46,4 @@ talkingtoad.db
 # GEO configuration (domain-specific settings)
 geo_settings.json
 archive/
+docs/.compiler-backups/
