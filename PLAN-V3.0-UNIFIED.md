@@ -62,7 +62,7 @@ truth-of-record for *where each milestone stands* as of 2026-05-31.
 | **M4** | Content Freshness suite | ✅ **Done (2026-05-31, orche)** | M4.1 `CONTENT_DATE_STALE_VISIBLE` + page-type cadence `7015992` · M4.2 `CONTENT_STAT_OUTDATED` `b7f4a6e`. Both deterministic (explicit `today`/`current_year`); no double-flag with `CONTENT_STALE`/`DATE_MODIFIED_MISSING`; reviewed; full suite 1585 passed, 0 fail. |
 | **M5** | Citation ingestion (sibling tool) | ✅ **Done (2026-05-31, orche)** | `POST /api/jobs/{id}/ai-citations` (auth + rate-limit + UUID + normalise-match) → `AI_CITED_PAGE` / `AI_HIGH_VALUE_UNCITED`. Emitted at ingest site (score available), NULL≠0, idempotent re-ingest. 14 tests incl. contract + adversarials. Commit `42f3c87`; full suite 1607 passed, 0 fail. |
 | **M6** | GSC OAuth (opt-in) | ⬜ **Pending** | Strictly opt-in; tool runs identically without it |
-| **M7** | Reporting & confidence surfacing | ⬜ **Pending** | PDF/Excel AI-readiness + freshness + citations sections |
+| **M7** | Reporting & confidence surfacing | ✅ **Done (2026-05-31, orche)** | PDF: colour-coded `Evidence: <tier>` line per AI-readiness issue + 3-tier explainer intro. Excel: AI Readiness sheet `Confidence` column. None-safe; no catalogue change. Commit `3fbd07d`; full suite 1611 passed, 0 fail. |
 | **M8** | Endpoint contract backfill | ✅ **Done** | Backfill + CI endpoint-coverage guard shipped in v2.5 |
 | **M9** | Refactor hotspots | ⬜ **Pending / partial** | `issue_checker.py` partially split (`checkers/`); `Results.jsx`, `crawl.py` outstanding |
 | **M10** | Frontend infrastructure | ⬜ **Pending** | Toast system, a11y baseline, code-splitting |
