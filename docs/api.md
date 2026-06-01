@@ -573,3 +573,60 @@ The `robots_txt` and `sitemap` objects are included in the summary when discover
 `priority_rank` formula: `(impact × 10) − (effort × 2)`. Higher = fix sooner.
 
 See `nonprofit-crawler-spec-v1.4.md` §6 for full request/response schemas.
+
+---
+
+## Google Search Console (M6.1 + M6.4)
+
+**Opt-in:** All endpoints require `GSC_OAUTH_CLIENT_ID`, `GSC_OAUTH_CLIENT_SECRET`,
+and `GSC_OAUTH_REDIRECT_URI` to be set. When unset, every endpoint returns **503**.
+
+All endpoints require `Authorization: Bearer <token>`.
+
+| Method | Endpoint | Description |
+|---|---|---|
+| GET | `/api/gsc/connect` | Initiate OAuth flow — redirects to Google consent. |
+| GET | `/api/gsc/callback?code=...&state=...` | OAuth callback — exchanges code for credentials. |
+| GET | `/api/gsc/status` | Connection status + list of GSC properties. |
+| POST | `/api/gsc/disconnect` | Remove stored GSC credentials. |
+| POST | `/api/gsc/ingest?site_url=...&job_id=...&days=30` | Fetch GSC data and store as PerformanceRecords. |
+| GET | `/api/gsc/performance?url=...&health_score=50` | Get performance ledger rows + ReviewFlag for a URL. |
+
+### GET `/api/gsc/status`
+
+```json
+{
+  "connected": true,
+  "properties": [
+    {"site_url": "https://www.example.com/", "permission_level": "siteOwner"}
+  ]
+}
+```
+
+### POST `/api/gsc/ingest`
+
+Query params: `site_url` (required), `job_id` (required), `days` (optional, default 30).
+
+```json
+{"ingested": 42, "period": "2026-06"}
+```
+
+### GET `/api/gsc/performance`
+
+Query params: `url` (required), `job_id` (optional), `health_score` (optional, default 50).
+
+```json
+{
+  "records": [
+    {
+      "url": "https://example.com/page",
+      "period": "2026-06",
+      "gsc_clicks_mo": 10,
+      "gsc_impressions_mo": 100,
+      "gsc_ctr_mo": 0.1,
+      "gsc_avg_position_mo": 5.0
+    }
+  ],
+  "review_flag": {"flagged": false, "reasons": []}
+}
+```
