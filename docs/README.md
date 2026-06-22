@@ -1,6 +1,6 @@
 # TalkingToad Documentation
 
-Complete documentation for TalkingToad — an SEO crawler with WordPress integration. Currently used by nonprofit organizations; v3.0 plan expands to a paid customer base.
+Complete documentation for TalkingToad — an SEO crawler with WordPress integration. Currently used by nonprofit organizations; v3.0 has shipped.
 
 ## Getting Started
 
@@ -8,7 +8,7 @@ Complete documentation for TalkingToad — an SEO crawler with WordPress integra
 
 **Setting up for deploy?** See [deployment-railway.md](deployment-railway.md) for the v2.3 architecture (Vercel frontend + Railway backend).
 
-**Planning v3.0?** See [../PLAN-V3.0.md](../PLAN-V3.0.md) for the full plan: 11 milestones, release phasing, strategic decisions on AI providers and deployment.
+**Looking for the v3.0 Roadmap?** See [../archive/PLAN-V3.0.md](../archive/PLAN-V3.0.md) for the historical ledger of the v3.0 release.
 
 ## Core Documentation
 
@@ -39,26 +39,25 @@ Complete documentation for TalkingToad — an SEO crawler with WordPress integra
 
 | Document | Purpose |
 |---|---|
-| [REMEDIATION_STATUS.md](REMEDIATION_STATUS.md) | Status report from the pre-v2.0 codebase remediation work |
+| [archive/REMEDIATION_STATUS.md](archive/REMEDIATION_STATUS.md) | Status report from the pre-v2.0 codebase remediation work |
 | [REVIEW.md](REVIEW.md) | Critical-review document for external code-review sessions |
-| [STATUS_GEO_ADVISOR_REWRITER.md](STATUS_GEO_ADVISOR_REWRITER.md) | Status of GEO Advisor + Rewriter shipped in v2.2 |
+| [archive/STATUS_GEO_ADVISOR_REWRITER.md](archive/STATUS_GEO_ADVISOR_REWRITER.md) | Status of GEO Advisor + Rewriter shipped in v2.2 |
 
 ## Implementation Plan Documents
 
-Several implementation-plan markdown files live in this directory for in-progress or completed work. They're useful for understanding why specific changes landed:
+Historical implementation-plan markdown files live in the `archive/docs/` directory. They're useful for understanding why specific changes landed:
 
-- `implementation_plan_geo_*.md` — GEO analyzer/rewriter milestone plans
-- `image-scan-spec.md`, `image-scan-implementation-plan.md` — Image scan architecture
+- `archive/docs/implementation_plan_geo_*.md` — GEO analyzer/rewriter milestone plans
+- `archive/docs/image-scan-spec.md`, `archive/docs/image-scan-implementation-plan.md` — Image scan architecture
 - `image-optimization-spec.md` — v1.9.1 image optimization
 - `fix-agent-spec.md`, `geo-frontend-integration.md`, `ROUTER_IMPLEMENTATION_GUIDE.md` — Implementation guides
-- `geo_image_ai_spec.md`, `geo_image_ai_prompt.md` (under specs/) — Vision AI prompts
 
 ## Project Management
 
 | File | Purpose |
 |---|---|
-| [../PLAN-V3.0.md](../PLAN-V3.0.md) | Full v3.0 plan: 11 milestones, 15-17 weeks, release phasing |
-| [../PLAN.md](../PLAN.md) | Original implementation plan (pre-v3) |
+| [../archive/PLAN-V3.0.md](../archive/PLAN-V3.0.md) | Full v3.0 plan ledger |
+| [../archive/PLAN.md](../archive/PLAN.md) | Original implementation plan (pre-v3) |
 | [../TODO.md](../TODO.md) | Project TODO and technical debt |
 | [../REVIEW_SPEC.md](../REVIEW_SPEC.md) | Code review specification |
 
@@ -69,14 +68,11 @@ Several implementation-plan markdown files live in this directory for in-progres
 
 ---
 
-**Project Version:** 2.6.0 (tag `v2.6-stabilized`, v3.0 feature work active)
-**Last Updated:** 2026-05-27
+Project Version: 3.0.0 (shipped)
+**Last Updated:** 2026-06-14
 **GitHub:** https://github.com/dbgnvan2/talkingtoad
 
-> **Doc structure note (v2.3 M0.10):** Earlier versions of this README
-> linked to subdirectories like `architecture/`, `api/`, `reference/`,
-> `guides/` that never existed. All docs live flat in `docs/` and `docs/specs/`.
-> Broken links are fixed in this rewrite. See PLAN-V3.0.md M0.10.
+> **Status note:** v3.0 has shipped. Historical plans (v1.4, v3.0, etc.) have been moved to the `archive/` directory. For current roadmap ideas, see `PLAN-V4.0.md` in the project root.
 
 > **Workflow note:** The day-to-day proposal → approval → implementation
 > cycle and the per-milestone Gemini Compiler step are documented in

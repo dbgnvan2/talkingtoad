@@ -5,7 +5,7 @@
 > **Historical narrative and feature snapshots** live in [`docs/legacy_changelog.md`](docs/legacy_changelog.md).
 >
 > **Current behaviour** lives in the canonical docs:
-> `docs/functional-specification.md` (read-only master) · `docs/architecture.md` · `docs/api.md` · `docs/issue-codes.md` · `docs/thresholds.md` · `docs/specs/`.
+> `docs/functional-specification.md` (canonical master) · `docs/architecture.md` · `docs/api.md` · `docs/issue-codes.md` · `docs/thresholds.md` · `docs/specs/`.
 
 ---
 
@@ -15,21 +15,9 @@ Lightweight web-based SEO crawler for nonprofit organisations — Screaming-Frog
 
 - **GitHub:** https://github.com/dbgnvan2/talkingtoad
 - **Specs index:** `docs/specs/README.md`
-- **Current version:** 3.0.0. v3.0 shipped — see `PLAN-V3.0-UNIFIED.md` for the milestone ledger.
-- **Issue catalogue:** 142 codes in `_CATALOGUE` / `_ISSUE_SCORING` / `_AI_READINESS_CONFIDENCE` (see `docs/issue-codes.md`)
-
-### v3.0 shipped features
-- Google-validated GEO audit codes (M3): SCHEMA_VISIBLE_MISMATCH, AI_CONTENT_NOT_IN_TEXT, AI_PREVIEW_SUPPRESSED, AI_PREVIEW_BLOCKED_AT_BOT, AI_NO_VISUAL_COMPANION, AI_MAIN_CONTENT_LOW_RATIO
-- Content Freshness (M4): CONTENT_DATE_STALE_VISIBLE, CONTENT_STAT_OUTDATED
-- Citation ingestion endpoint POST /api/jobs/{id}/ai-citations (M5): AI_CITED_PAGE, AI_HIGH_VALUE_UNCITED
-- GSC Performance-Health loop with OAuth (M6): /api/gsc/* endpoints, Performance Ledger, Refresh Trigger
-- Confidence-tier reporting in PDF/Excel (M7)
-- GEO Authority generators (GA3/GA4): FAQ schema /api/ai/geo-faq, entity schema /api/geo/entity-schema
-- Frontend infra (M10): toast system, a11y baseline, code-splitting
-
-### Still parked / not shipped
-- Multi-tenant / per-customer AI keys / Identity Model (M2.3/2.4/2.7 — see docs/TODO-MULTITENANT.md)
-- SERP-Discovery (separate repo)
+- **Current version:** 3.0.0 (shipped — git tag `v3.0`). Milestone ledger: `PLAN-V3.0-UNIFIED.md`. Shipped-feature history lives in `docs/legacy_changelog.md` — not here.
+- **Issue catalogue:** 142 codes — source of truth `api/crawler/checkers/registry.py` (`_CATALOGUE` / `_ISSUE_SCORING` / `_AI_READINESS_CONFIDENCE`), surfaced in `docs/issue-codes.md`.
+- **Parked / not shipped:** multi-tenant / per-customer AI keys / Identity Model (`docs/TODO-MULTITENANT.md`); SERP-Discovery (separate repo).
 
 ---
 
@@ -57,6 +45,7 @@ Lightweight web-based SEO crawler for nonprofit organisations — Screaming-Frog
 - `.env` — main environment variables
 - `.env-ttoad` — custom override environment variables
 - `talkingtoad.db` — local SQLite database
+- `client_secret*.json` / `*-secret*.json` — Google OAuth client secrets (already in `.gitignore`; prefer storing outside the repo tree or via env vars rather than the repo root)
 
 Treat any new credential/secret file as in this class by default; add it to `.gitignore` in the same change that introduces it.
 
@@ -69,7 +58,12 @@ TalkingToad/
 ├── api/                         # FastAPI backend
 │   ├── crawler/                 # Async crawl engine + issue detection
 │   │   ├── engine.py            # Async BFS crawler
-│   │   ├── issue_checker.py     # SEO issue detection (_CATALOGUE source of truth)
+│   │   ├── issue_checker.py     # Thin facade: re-exports legacy names + orchestrates checkers/
+│   │   ├── checkers/            # Per-category issue detection (Cycle K refactor)
+│   │   │   ├── registry.py      # _CATALOGUE / _ISSUE_SCORING / _AI_READINESS_CONFIDENCE — SOURCE OF TRUTH
+│   │   │   ├── metadata.py · headings.py · links.py · images.py · security.py
+│   │   │   ├── crawlability.py · url_structure.py · ai_readiness.py · cross_page.py
+│   │   │   └── __init__.py
 │   │   ├── image_analyzer.py    # Image analysis and scoring
 │   │   ├── parser.py            # BeautifulSoup HTML extraction
 │   │   ├── normaliser.py        # URL normalization + WP noise detection
@@ -119,7 +113,7 @@ TalkingToad/
     ├── api.md                   # API reference
     ├── issue-codes.md           # Auto-generated from _CATALOGUE
     ├── thresholds.md            # Canonical numeric thresholds
-    ├── functional-specification.md  # READ-ONLY master
+    ├── functional-specification.md  # Canonical master (updated only at completion)
     ├── legacy_changelog.md      # Evicted historical content
     ├── pending/                 # Pending micro-spec proposals (see rules below)
     └── specs/                   # Per-feature specs
@@ -137,7 +131,7 @@ TalkingToad/
 
 ### Specification Change Management (load-bearing)
 
-1. **READ-ONLY files:** `docs/functional-specification.md`, `docs/thresholds.md`, and any file with `status: current` frontmatter. You are strictly forbidden from editing these directly.
+1. **Protected files:** `docs/functional-specification.md` and `docs/thresholds.md` are canonical — do **not** edit them ad hoc during implementation. They are updated only at the per-item completion step (below): the approved micro-spec is folded into the functional spec, and any new numeric bounds into thresholds. Other files carrying `status: current` frontmatter are read-only unless updating them is the explicit point of the task.
 2. **Micro-spec first:** Before writing any implementation code or tests for a new feature, enhancement, or bug fix, write a targeted micro-specification snippet.
 3. **Save the proposal:** Place the snippet in `docs/pending/` using the naming convention `YYYY-MM-DD_feature-name.md`.
 4. **Stop and notify:** After saving the pending file, stop immediately and notify the user to review and approve. Do not modify source code until approval is explicitly granted.
@@ -146,10 +140,10 @@ After approval:
 - Implement the change and write the tests in the same cycle.
 - Update `docs/issue-codes.md` (auto-generator) and `docs/thresholds.md` if scoring or numeric bounds changed.
 
-### Per-item completion workflow (standing rules, user-directed 2026-05-31)
+### Per-item completion workflow (standing rules; compiler step removed 2026-06-21)
 
 After **each** spec/item is implemented, reviewed, and green, do all of the following before moving on:
-1. **Run the Gemini Compiler** — `./scripts/run_compiler.sh` folds every `docs/pending/*.md` into `docs/functional-specification.md` (the one sanctioned write to that READ-ONLY file) and clears `docs/pending/`. The script backs up the spec and aborts if Gemini output looks truncated. Run it after every spec is done — not only at milestone boundaries.
+1. **Fold the spec into the master (Claude Code does this directly)** — merge the approved `docs/pending/<feature>.md` into `docs/functional-specification.md`, add any new numeric bounds to `docs/thresholds.md`, then delete the pending file. This is the sanctioned completion-time write to those canonical files. (Replaces the former `run_compiler.sh` Gemini step — no external compiler is used.)
 2. **Update `PLAN-V4.0.md`** — when an item ships a user-facing feature/code with its V4 explainer, record it in the V4 worked-examples tally so the future education layer stays current.
 3. **Push to GitHub** — `git push origin main` after each item (commits land on `main`; the bridge operates on `main`).
 
@@ -250,7 +244,7 @@ A function without at least one adversarial test case is not done.
 - **React:** functional components, Tailwind CSS, explicit loading/error states for every API call. Hooks before any early return.
 - **Linting:** ESLint with `react-hooks/rules-of-hooks: 'error'` is wired into the frontend build — hooks violations block the build. Do not disable.
 - **Reporting:** Letter format, 1-inch margins, Latin-1-safe text cleaning.
-- **Issue codes — source of truth:** `api/crawler/issue_checker.py` (`_CATALOGUE`, `_ISSUE_SCORING`, `_AI_READINESS_CONFIDENCE`). `frontend/src/data/issueHelp.js` and `docs/issue-codes.md` must stay in sync — the parity tests will fail otherwise.
+- **Issue codes — source of truth:** `api/crawler/checkers/registry.py` (`_CATALOGUE`, `_ISSUE_SCORING`, `_AI_READINESS_CONFIDENCE`). `issue_checker.py` is only a facade — do not add codes there. `frontend/src/data/issueHelp.js` and `docs/issue-codes.md` must stay in sync with the registry — the parity tests will fail otherwise.
 - **CI guards:** endpoint-coverage test, issue-codes.md generator-sync test, dead-code allowlist. Do not bypass; fix the underlying drift.
 
 ---
@@ -291,7 +285,7 @@ pytest tests/ -v
 | `docs/api.md` | Full API endpoint reference |
 | `docs/issue-codes.md` | All issue codes — auto-generated from `_CATALOGUE` |
 | `docs/thresholds.md` | Every numeric threshold the app uses |
-| `docs/functional-specification.md` | READ-ONLY master spec |
+| `docs/functional-specification.md` | Canonical master spec (updated at completion) |
 | `docs/legacy_changelog.md` | Historical narrative and superseded feature snapshots |
 
 **Project management:**
