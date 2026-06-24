@@ -128,6 +128,8 @@ Single extraction path = no buffer-agreement bugs.
 | Priority rank | `(impact × 10) − (effort × 2)` | `api/crawler/checkers/registry.py` `make_issue` |
 | Impact range | 0–10 | enforced by `tests/test_class1_invariants.py::test_scoring_values_are_in_valid_ranges` |
 | Effort range | 0–5 | same test |
+| Agent Health score | `max(0, 100 − Σ impact)` over agent-relevant issues, averaged per page | `api/services/job_store_base.py` `_compute_agent_health_score` |
+| Agent-relevant set | categories `ai_readiness` / `rendering` / `semantic_html` ∪ codes `PLACEHOLDER_LINK`, `WRONG_PLACEHOLDER_LINK` | `api/services/job_store_base.py` `_is_agent_issue` |
 
 ## AI provider configuration
 

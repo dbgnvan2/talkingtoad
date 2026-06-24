@@ -140,6 +140,7 @@ async def generate_pdf_report(
     
     stats = [
         ("Health Score", summary.get("health_score", 0), COLOR_TOAD_GREEN),
+        ("Agent Health Score", summary.get("agent_health_score", 0), COLOR_TOAD_GREEN),
         ("Pages Crawled", summary.get("pages_crawled", 0), COLOR_GRAY_800),
         ("Total Issues Found", summary.get("total_issues", 0), COLOR_GRAY_800),
         ("Critical Issues", summary.get("by_severity", {}).get("critical", 0), COLOR_CRITICAL),

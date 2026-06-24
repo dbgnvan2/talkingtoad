@@ -62,13 +62,26 @@ check-off surface for the coding agent.
 
 | ID | Feature | Spec | Tests | Code | Docs | Shipped |
 |---|---|---|---|---|---|---|
-| WP0 | Issue-code reconciliation (reuse vs new) | ☑ | ☐ | ☐ | ☐ | ☐ |
-| WP1 | Named AI-crawler access in robots parsing | ☑ | ☐ | ☐ | ☐ | ☐ |
-| WP2 | JS-dependency / client-side-render detection | ☑ | ☐ | ☐ | ☐ | ☐ |
-| WP3 | Semantic-HTML & interactive-element correctness | ☑ | ☐ | ☐ | ☐ | ☐ |
-| WP4 | Placeholder / dead-link detection | ☑ | ☐ | ☐ | ☐ | ☐ |
-| WP5 | Structured-data presence + FAQPage gap | ☑ | ☐ | ☐ | ☐ | ☐ |
-| WP6 | Agent-Readiness Score + surfacing | ☑ | ☐ | ☐ | ☐ | ☐ |
+| WP0 | Issue-code reconciliation (reuse vs new) | ☑ | ☑ | ☑ | ☑ | ☑ |
+| WP1 | Named AI-crawler access in robots parsing | ☑ | ☑ | ☑ | ☑ | ☑ |
+| WP2 | JS-dependency / client-side-render detection | ☑ | ☑ | ☑ | ☑ | ☑ |
+| WP3 | Semantic-HTML & interactive-element correctness | ☑ | ☑ | ☑ | ☑ | ☑ |
+| WP4 | Placeholder / dead-link detection | ☑ | ☑ | ☑ | ☑ | ☑ |
+| WP5 | Structured-data presence + FAQPage gap | ☑ | ☑ | ☑ | ☑ | ☑ |
+| WP6 | Agent-Readiness Score + surfacing | ☑ | ☑ | ☑ | ☑ | ☑ |
+
+> **WP0–WP6 implemented 2026-06-22.** Reconciliation outcome (see the pending
+> spec's §2): WP1 reuses the shipped `AI_BOT_*` family (`check_ai_bot_access`);
+> WP2 reuses `RAW_HTML_JS_DEPENDENT` and adds new `JS_DEPENDENT_NAVIGATION`;
+> WP5 reuses `FAQ_SCHEMA_MISSING` + `DATE_PUBLISHED_MISSING` and adds new
+> `SCHEMA_ORG_MISSING` (homepage Organization) + `CONTACT_INFO_NOT_IN_HTML`.
+> 9 new codes total; new categories `rendering`, `semantic_html`. The existing
+> `AI_BOT_*` codes are **not** recategorised into `crawler_access` — doing so
+> would strip their confidence labels (an architecture-test invariant); WP1's
+> crawler-access concept stays served by the shipped `ai_readiness` codes.
+> Agent Health score reuses the v1.5 impact-weighted Health-Score model over
+> agent-relevant issues. Tests: `tests/test_agent_readiness_checks.py` +
+> `tests/test_crawl_router_contracts.py::TestAgentReadinessContract`.
 
 ### Phase 2 — Technical-SEO gap checks (each needs its own micro-spec)
 

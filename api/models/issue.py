@@ -26,6 +26,9 @@ IssueCategory = Literal[
     "security",
     "url_structure",
     "ai_readiness",
+    # Agent-readiness Phase 1 (task-side checks)
+    "rendering",
+    "semantic_html",
     # Phase 2
     "image",
     "performance",
@@ -38,6 +41,8 @@ PHASE_1_CATEGORIES: frozenset[str] = frozenset(
         "broken_link", "metadata", "heading", "redirect",
         "crawlability", "duplicate", "sitemap", "security", "url_structure",
         "image", "ai_readiness",
+        # Agent-readiness Phase 1 task-side categories
+        "rendering", "semantic_html",
     ]
 )
 

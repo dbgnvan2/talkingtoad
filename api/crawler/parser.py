@@ -158,6 +158,20 @@ class ParsedPage:
     # M3.5: Main content ratio (pre-computed at parse time)
     main_content_ratio: float | None = None
 
+    # ── Agent-readiness Phase 1 (WP2–WP5), pre-computed at parse time ──────
+    is_homepage: bool = False            # True if this is the crawl's start URL
+    # WP2 — rendering: primary navigation has no usable links in the raw HTML
+    js_dependent_navigation: bool = False
+    # WP3 — semantic HTML
+    has_main_landmark: bool = True       # <main> or role="main" present (default safe)
+    has_nav_landmark: bool = True        # <nav> or role="navigation" present (default safe)
+    non_semantic_buttons: list | None = None   # list[dict] of div/span used as controls
+    unnamed_interactive: list | None = None    # list[dict] of controls with no accessible name
+    # WP4 — placeholder / wrong-domain links
+    placeholder_links: list | None = None      # list[dict] {"href","text","kind"}
+    # WP5 — homepage contact info readable as text
+    contact_info_in_text: bool | None = None   # None unless homepage
+
 
 _AI_BOT_NAMES = frozenset({
     "gptbot", "google-extended", "claudebot", "anthropic-ai",
@@ -359,6 +373,40 @@ def parse_page(
     except Exception:
         _main_content_ratio_val = None
 
+    # ── Agent-readiness Phase 1 signals (computed where soup is in scope) ──
+    # Each is wrapped defensively so a parse quirk never aborts the pipeline.
+    try:
+        _js_dep_nav = _detect_js_dependent_navigation(soup)
+    except Exception:
+        _js_dep_nav = False
+    try:
+        _has_main_landmark = _has_landmark(soup, "main", "main")
+    except Exception:
+        _has_main_landmark = True
+    try:
+        _has_nav_landmark = _has_landmark(soup, "nav", "navigation")
+    except Exception:
+        _has_nav_landmark = True
+    try:
+        _non_semantic_buttons = _find_non_semantic_buttons(soup)
+    except Exception:
+        _non_semantic_buttons = []
+    try:
+        _unnamed_interactive = _find_unnamed_interactive(soup)
+    except Exception:
+        _unnamed_interactive = []
+    try:
+        _placeholder_links = _find_placeholder_links(soup, page_url, base_url)
+    except Exception:
+        _placeholder_links = []
+    # Homepage-only: is contact info present as readable text?
+    _contact_in_text: bool | None = None
+    if is_homepage:
+        try:
+            _contact_in_text = _has_contact_info_in_text(soup)
+        except Exception:
+            _contact_in_text = None
+
     return ParsedPage(
         url=result.url,
         final_url=result.final_url,
@@ -435,6 +483,15 @@ def parse_page(
         ai_bot_blocked_directive=_ai_bot_blocked_dir,
         # M3.5: Main content ratio.
         main_content_ratio=_main_content_ratio_val,
+        # ── Agent-readiness Phase 1 ──
+        is_homepage=is_homepage,
+        js_dependent_navigation=_js_dep_nav,
+        has_main_landmark=_has_main_landmark,
+        has_nav_landmark=_has_nav_landmark,
+        non_semantic_buttons=_non_semantic_buttons,
+        unnamed_interactive=_unnamed_interactive,
+        placeholder_links=_placeholder_links,
+        contact_info_in_text=_contact_in_text,
     )
 
 
@@ -1106,6 +1163,265 @@ def _detect_spa_shell(soup: BeautifulSoup) -> bool:
     for tag_name in _SPA_SHELL_TAGS:
         if soup.find(tag_name):
             return True
+    return False
+
+
+# ---------------------------------------------------------------------------
+# Agent-readiness Phase 1 helpers (WP2–WP5)
+# ---------------------------------------------------------------------------
+
+import re as _re_ar  # local alias; module also imports re as _re lower down
+
+# Navigation container classes that imply a menu region even without <nav>.
+_NAV_CLASS_RE = _re_ar.compile(r"\b(nav|navbar|navigation|menu|main-menu|primary-menu)\b", _re_ar.I)
+# Interactive ARIA roles that make an element a recognised control.
+_INTERACTIVE_ROLES = frozenset({
+    "button", "link", "menuitem", "tab", "checkbox", "radio", "switch", "option",
+})
+# Button-ish class names on a div/span suggesting it is used as a control.
+_BUTTON_CLASS_RE = _re_ar.compile(r"\b(btn|button|cta)\b", _re_ar.I)
+# Bootstrap / framework toggle attributes that mark an in-page control (not nav).
+_TOGGLE_ATTRS = ("data-toggle", "data-bs-toggle", "data-target", "data-bs-target", "aria-controls")
+# Call-to-action words that mark a link as navigational (for placeholder check).
+_CTA_TEXT_RE = _re_ar.compile(
+    r"\b(donate|contact|sign\s?up|sign\s?in|log\s?in|register|subscribe|apply|"
+    r"get\s?started|learn\s?more|read\s?more|buy|shop|book|join|enroll|enrol|"
+    r"download|request|schedule|volunteer|give|support)\b",
+    _re_ar.I,
+)
+# Placeholder / example destination hosts that are almost always template leftovers.
+_PLACEHOLDER_HOSTS = frozenset({
+    "example.com", "www.example.com", "example.org", "www.example.org",
+    "example.net", "www.example.net", "example.edu", "localhost",
+    "127.0.0.1", "yourdomain.com", "www.yourdomain.com", "domain.com",
+})
+# Bare search-engine homepages used as filler (flagged only with empty path).
+_STRAY_HOSTS = frozenset({"google.com", "www.google.com"})
+
+_EMAIL_RE = _re_ar.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
+# Loose phone matcher: 7+ digits with common separators (avoids matching years).
+_PHONE_RE = _re_ar.compile(r"(?:\+?\d[\s().-]?){7,}\d")
+
+
+def _has_landmark(soup: BeautifulSoup, tag_name: str, role: str) -> bool:
+    """Return True if a *tag_name* element or role=*role* landmark is present."""
+    if soup.find(tag_name):
+        return True
+    if soup.find(attrs={"role": lambda r: r and r.strip().lower() == role}):
+        return True
+    return False
+
+
+def _anchor_has_usable_link(region) -> bool:
+    """Return True if *region* contains at least one anchor with a usable href.
+
+    A usable href is any non-empty href that is not a bare ``#`` and not a
+    ``javascript:`` pseudo-URL. In-page fragment anchors (``#section``),
+    relative paths, mailto/tel, and absolute URLs all count as real links
+    present in the raw HTML.
+    """
+    for a in region.find_all("a", href=True):
+        h = (a.get("href") or "").strip()
+        if not h or h == "#" or h.lower().startswith("javascript:"):
+            continue
+        return True
+    return False
+
+
+def _detect_js_dependent_navigation(soup: BeautifulSoup) -> bool:
+    """Return True if navigation regions exist but contain no usable links.
+
+    Conservative WP2 proxy for "the menu is built by JavaScript and is absent
+    from the server HTML". Fires only when a recognisable navigation region
+    (``<nav>``, ``role="navigation"``, or a menu-classed container) is present
+    AND none of those regions contain a single usable anchor. A nav full of
+    real links (or even in-page ``#section`` anchors) never fires.
+    """
+    regions = list(soup.find_all("nav"))
+    regions += [r for r in soup.find_all(attrs={"role": lambda v: v and v.strip().lower() == "navigation"})
+                if r not in regions]
+    regions += [r for r in soup.find_all(class_=_NAV_CLASS_RE) if r not in regions]
+    if not regions:
+        return False
+    # If ANY navigation region has a usable link, the nav is in the raw HTML.
+    if any(_anchor_has_usable_link(r) for r in regions):
+        return False
+    return True
+
+
+def _accessible_name(tag) -> str:
+    """Return a best-effort accessible name for *tag* (empty string if none)."""
+    for attr in ("aria-label", "title"):
+        v = (tag.get(attr) or "").strip()
+        if v:
+            return v
+    if (tag.get("aria-labelledby") or "").strip():
+        return "labelledby"
+    text = tag.get_text(strip=True)
+    if text:
+        return text
+    # <img alt> inside the control provides a name (icon buttons/links)
+    img = tag.find("img")
+    if img and (img.get("alt") or "").strip():
+        return img["alt"].strip()
+    # aria-label on a child (icon span)
+    child_labelled = tag.find(attrs={"aria-label": True})
+    if child_labelled and (child_labelled.get("aria-label") or "").strip():
+        return child_labelled["aria-label"].strip()
+    return ""
+
+
+def _find_non_semantic_buttons(soup: BeautifulSoup, limit: int = 10) -> list[dict]:
+    """Find <div>/<span> used as clickable controls without an interactive role.
+
+    Conservative: an element qualifies only when it carries a strong
+    interactivity signal — an inline ``onclick`` handler, or a button-ish class
+    combined with a ``tabindex`` — AND it lacks an interactive ARIA ``role``.
+    A ``<div role="button">`` (with or without a name) never fires here.
+    """
+    found: list[dict] = []
+    for tag in soup.find_all(["div", "span"]):
+        role = (tag.get("role") or "").strip().lower()
+        if role in _INTERACTIVE_ROLES:
+            continue  # author gave it a proper role — not a "fake" button
+        has_onclick = tag.has_attr("onclick")
+        classes = " ".join(tag.get("class", []) or [])
+        looks_button = bool(_BUTTON_CLASS_RE.search(classes))
+        has_tabindex = tag.has_attr("tabindex")
+        is_clickable = has_onclick or (looks_button and has_tabindex)
+        if not is_clickable:
+            continue
+        found.append({
+            "tag": tag.name,
+            "class": classes[:80],
+            "text": tag.get_text(strip=True)[:60],
+            "has_name": bool(_accessible_name(tag)),
+        })
+        if len(found) >= limit:
+            break
+    return found
+
+
+_NAMELESS_INPUT_TYPES = frozenset({"text", "email", "tel", "url", "search",
+                                   "password", "number", "date"})
+
+
+def _find_unnamed_interactive(soup: BeautifulSoup, limit: int = 10) -> list[dict]:
+    """Find real interactive controls (<button>, form fields) with no accessible name.
+
+    Links are intentionally excluded — empty-anchor links are already covered
+    by LINK_EMPTY_ANCHOR. This focuses on buttons and text-like form fields.
+    """
+    found: list[dict] = []
+
+    for btn in soup.find_all("button"):
+        if _accessible_name(btn):
+            continue
+        # A <button type="submit"> with a value attribute is named by its value.
+        if (btn.get("value") or "").strip():
+            continue
+        found.append({"tag": "button", "class": " ".join(btn.get("class", []) or [])[:80]})
+        if len(found) >= limit:
+            return found
+
+    for field_tag in soup.find_all(["input", "select", "textarea"]):
+        if field_tag.name == "input":
+            itype = (field_tag.get("type") or "text").strip().lower()
+            if itype not in _NAMELESS_INPUT_TYPES:
+                continue  # hidden/submit/checkbox/radio/file handled elsewhere
+        # Named by aria-label / title / placeholder?
+        if (field_tag.get("aria-label") or "").strip() or \
+           (field_tag.get("title") or "").strip() or \
+           (field_tag.get("placeholder") or "").strip() or \
+           (field_tag.get("aria-labelledby") or "").strip():
+            continue
+        # Named by an associated <label for="id"> or a wrapping <label>?
+        fid = (field_tag.get("id") or "").strip()
+        if fid and soup.find("label", attrs={"for": fid}):
+            continue
+        if field_tag.find_parent("label"):
+            continue
+        found.append({"tag": field_tag.name, "name": (field_tag.get("name") or "")[:40]})
+        if len(found) >= limit:
+            break
+    return found
+
+
+def _find_placeholder_links(soup: BeautifulSoup, page_url: str, base_url: str,
+                            limit: int = 10) -> list[dict]:
+    """Find navigational CTAs that go nowhere, or links to placeholder domains.
+
+    Returns dicts with ``kind`` of ``"placeholder"`` (href is ``#`` /
+    ``javascript:void(0)``) or ``"wrong_domain"`` (href points at
+    example.com / localhost / a bare search-engine homepage). In-page anchors,
+    mailto/tel, JS toggles (accordion/tab), and legitimate references are not
+    flagged.
+    """
+    found: list[dict] = []
+    for a in soup.find_all("a", href=True):
+        if len(found) >= limit:
+            break
+        href = (a.get("href") or "").strip()
+        if not href:
+            continue
+        text = a.get_text(strip=True)
+        classes = " ".join(a.get("class", []) or [])
+        href_low = href.lower()
+
+        # ── Placeholder (dead) CTA ──────────────────────────────────────────
+        is_dead = href == "#" or href_low.startswith("javascript:void") or \
+            href_low in ("javascript:;", "javascript:")
+        if is_dead:
+            # Skip genuine in-page controls (accordions, tabs, dropdowns).
+            role = (a.get("role") or "").strip().lower()
+            is_toggle = (
+                role in ("button", "tab", "menuitem")
+                or a.has_attr("aria-expanded")
+                or any(a.has_attr(attr) for attr in _TOGGLE_ATTRS)
+            )
+            if is_toggle:
+                continue
+            # Only flag if it reads as a navigational CTA (button class or CTA text).
+            looks_cta = bool(_BUTTON_CLASS_RE.search(classes)) or bool(_CTA_TEXT_RE.search(text or ""))
+            if looks_cta:
+                found.append({"href": href, "text": (text or "")[:60], "kind": "placeholder"})
+            continue
+
+        # ── Wrong / placeholder destination domain ──────────────────────────
+        if href_low.startswith(("mailto:", "tel:", "#")):
+            continue
+        try:
+            absolute = urljoin(page_url, href)
+            host = (urlparse(absolute).hostname or "").lower()
+            path = urlparse(absolute).path or ""
+        except Exception:
+            continue
+        if not host:
+            continue
+        if host in _PLACEHOLDER_HOSTS:
+            found.append({"href": href, "text": (text or "")[:60], "kind": "wrong_domain"})
+        elif host in _STRAY_HOSTS and path in ("", "/"):
+            # Bare google.com homepage used as filler — but never the target site.
+            if not is_same_domain(absolute, base_url):
+                found.append({"href": href, "text": (text or "")[:60], "kind": "wrong_domain"})
+    return found
+
+
+def _has_contact_info_in_text(soup: BeautifulSoup) -> bool:
+    """Return True if the page exposes machine-readable contact info (homepage).
+
+    Looks for a ``mailto:``/``tel:`` link, an email address in visible text, or
+    a phone-number pattern in visible text. Used as a conservative proxy for
+    "contact details are present as real HTML text" rather than image/JS-only.
+    """
+    if soup.find("a", href=lambda h: h and h.lower().startswith(("mailto:", "tel:"))):
+        return True
+    body = soup.find("body") or soup
+    text = body.get_text(separator=" ", strip=True)
+    if _EMAIL_RE.search(text):
+        return True
+    if _PHONE_RE.search(text):
+        return True
     return False
 
 

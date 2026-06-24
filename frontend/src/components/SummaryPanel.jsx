@@ -22,6 +22,8 @@ const CATEGORIES = [
   { key: 'url_structure', label: 'URL Structure' },
   { key: 'image',         label: 'Images' },
   { key: 'ai_readiness',  label: 'AI Readiness' },
+  { key: 'rendering',     label: 'Rendering' },
+  { key: 'semantic_html', label: 'Semantic HTML' },
 ]
 
 const TAB_ORPHAN_IMAGES = CATEGORIES.length + 2
@@ -112,9 +114,18 @@ export default function SummaryPanel({ summary, domain, jobId, onCategoryClick, 
         </button>
       </div>
 
-      {/* 3x2 High-Level Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      {/* Headline scores: SEO Health + Agent Health (agent-readiness Phase 1) */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <StatCard label="Health Score" value={summary.health_score} color={summary.health_score > 80 ? 'text-green-600' : 'text-amber-500'} />
+        <StatCard
+          label="Agent Health"
+          value={summary.agent_health_score ?? '—'}
+          color={(summary.agent_health_score ?? 0) > 80 ? 'text-green-600' : 'text-amber-500'}
+        />
+      </div>
+
+      {/* High-Level Stats */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <StatCard label="Pages Crawled" value={summary.pages_crawled} />
         <StatCard label="Total Issues" value={summary.total_issues} />
         <SeverityStatCard

@@ -239,6 +239,36 @@ class RedisJobStore:
 
         health_score = self._compute_health_score(by_severity, job.pages_crawled)
 
+        # Agent-readiness Phase 1 (WP6): separate "Agent Health" score, using the
+        # impact-weighted model (Page = 100 − Σ impact; Site = mean) restricted to
+        # agent-relevant issues.
+        from api.services.job_store_base import _is_agent_issue
+        agent_impact_by_url: dict[str, int] = {}
+        agent_breakdown_acc: dict[str, dict[str, int]] = {}
+        for issue in issues:
+            if not _is_agent_issue(issue.category, issue.issue_code):
+                continue
+            acc = agent_breakdown_acc.setdefault(
+                issue.category, {"issues": 0, "impact": 0}
+            )
+            acc["issues"] += 1
+            acc["impact"] += issue.impact or 0
+            if issue.page_url:
+                key = issue.page_url.rstrip("/")
+                agent_impact_by_url[key] = agent_impact_by_url.get(key, 0) + (issue.impact or 0)
+        if pages:
+            agent_page_scores = [
+                max(0, 100 - agent_impact_by_url.get(p.url.rstrip("/"), 0)) for p in pages
+            ]
+            agent_health_score = round(sum(agent_page_scores) / len(agent_page_scores))
+        else:
+            agent_health_score = 100
+        agent_breakdown = sorted(
+            ({"category": cat, "issues": v["issues"], "impact": v["impact"]}
+             for cat, v in agent_breakdown_acc.items()),
+            key=lambda d: d["impact"], reverse=True,
+        )
+
         return {
             "target_url": job.target_url,
             "pages_crawled": job.pages_crawled,
@@ -247,6 +277,11 @@ class RedisJobStore:
             "by_severity": by_severity,
             "by_category": by_category,
             "health_score": health_score,
+            "agent_health_score": agent_health_score,
+            "agent_readiness": {
+                "score": agent_health_score,
+                "breakdown": agent_breakdown,
+            },
         }
 
     async def get_pages_with_issue_counts(

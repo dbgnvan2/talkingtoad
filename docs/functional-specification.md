@@ -339,7 +339,7 @@ High-level inventory. Each row maps to detailed sections later.
 
 ## 4. Audit capabilities
 
-The crawler emits **142 distinct issue codes** organised into 11
+The crawler emits **151 distinct issue codes** organised into 13
 categories. Each code has: severity (`critical` / `warning` / `info`),
 impact (0–10), effort (0–5), priority rank `(impact × 10) − (effort × 2)`,
 fixability (`wp_fixable` / `content_edit` / `developer_needed`), and —
@@ -358,7 +358,7 @@ per-page checks across a `checkers/` package.
 `scripts/generate_issue_codes_doc.py`; the CI parity test fails if the generated file
 drifts from the registry.
 
-The `checkers/` package contains eleven modules:
+The `checkers/` package contains the following modules:
 
 | Module | Responsibility |
 |---|---|
@@ -372,7 +372,13 @@ The `checkers/` package contains eleven modules:
 | `url_structure.py` | URL hygiene — length, casing, embedded spaces, underscores. |
 | `ai_readiness.py` | `_run_geo_checks` + every GEO regex/counter helper (statistics, citations, quotations, orphan claims, answer signal, numbered steps). |
 | `cross_page.py` | Post-crawl `TITLE_DUPLICATE`, `META_DESC_DUPLICATE`, `CANONICAL_MISSING`, `ORPHAN_PAGE`. |
+| `semantic_html.py` | Agent-readiness WP3 — `NON_SEMANTIC_BUTTON`, `INTERACTIVE_NO_ACCESSIBLE_NAME`, `LANDMARK_MAIN_MISSING`, `LANDMARK_NAV_MISSING`. |
 | `__init__.py` | Package docstring. |
+
+Agent-readiness WP4 (`PLACEHOLDER_LINK`, `WRONG_PLACEHOLDER_LINK`) lives in
+`links.py`, WP2 (`JS_DEPENDENT_NAVIGATION`) in `crawlability.py`, and WP5
+(`SCHEMA_ORG_MISSING`, `CONTACT_INFO_NOT_IN_HTML`) in `metadata.py`. The
+underlying signals are pre-computed on `ParsedPage` at parse time.
 
 ### 4.1 Metadata category
 
@@ -473,6 +479,45 @@ TalkingToad integrates with Google Search Console (GSC) to correlate structural 
 - **Refresh Triggers:** Automated "Review for Improvements" flags based on:
   - **Staleness:** >180 days since the last technical improvement.
   - **Traffic Decay:** >20% drop in clicks compared to the 3-month average.
+
+### 4.9 Agent-readiness checks (Phase 1)
+
+A coherent set of checks describing how findable, parseable, and operable a
+site is to AI crawlers (citation agents) and basic task-executing agents.
+Phase 1 reuses shipped codes where they already cover the intent and adds
+task-side codes for the gaps.
+
+**New categories:** `rendering`, `semantic_html` (joining `ai_readiness`).
+
+| Code | Category | Scope | Fires when |
+|---|---|---|---|
+| `JS_DEPENDENT_NAVIGATION` | rendering | per page | A navigation region exists but contains no usable links in the raw HTML (menu built client-side). In-page `#section` anchors count as links and do not fire. |
+| `NON_SEMANTIC_BUTTON` | semantic_html | per page | A `<div>`/`<span>` is used as a clickable control (inline `onclick`, or button class + `tabindex`) without an interactive ARIA role. |
+| `INTERACTIVE_NO_ACCESSIBLE_NAME` | semantic_html | per page | A `<button>` or text-style form field has no accessible name (text, `aria-label`, `title`, `<label>`, or placeholder). |
+| `LANDMARK_MAIN_MISSING` | semantic_html | per page | No `<main>` / `role="main"` landmark. |
+| `LANDMARK_NAV_MISSING` | semantic_html | homepage | No `<nav>` / `role="navigation"` landmark. |
+| `PLACEHOLDER_LINK` | broken_link | per page | A navigational CTA's href is `#` / `javascript:void(0)`. JS toggles (accordions/tabs) and in-page anchors are excluded. |
+| `WRONG_PLACEHOLDER_LINK` | broken_link | per page | A link points at a placeholder domain (example.com, localhost, a bare search-engine homepage). |
+| `SCHEMA_ORG_MISSING` | ai_readiness | homepage | Homepage has no Organization/LocalBusiness JSON-LD. Confidence: Reasonable proxy. |
+| `CONTACT_INFO_NOT_IN_HTML` | ai_readiness | homepage | Homepage exposes no machine-readable contact info (mailto/tel link, email, or phone in text). Confidence: Heuristic. |
+
+**Reused (not duplicated):** AI-crawler access is the shipped `AI_BOT_*`
+family (`check_ai_bot_access`, job-level — GPTBot/ClaudeBot/PerplexityBot/
+Google-Extended, blanket-disallow, Allow overrides, 5xx/404). JS-content
+absence is `RAW_HTML_JS_DEPENDENT`; FAQ-schema gap is `FAQ_SCHEMA_MISSING`;
+content date is `DATE_PUBLISHED_MISSING`.
+
+#### Agent Health score
+
+A second headline number alongside the SEO Health Score, surfaced in the
+Results summary (`SummaryPanel`), the PDF report, and the Excel export. It
+reuses the v1.5 Health-Score model — Page = `max(0, 100 − Σ impact)`, Site =
+mean of page scores — but restricts the impact sum to **agent-relevant**
+issues: categories `ai_readiness` / `rendering` / `semantic_html` plus the
+two placeholder-link codes. Serialised as `summary.agent_health_score` (int
+0–100) and `summary.agent_readiness.breakdown[]` (per-category counts and
+impact). More failing agent checks never raise the score (monotonic
+non-increasing).
 
 ---
 

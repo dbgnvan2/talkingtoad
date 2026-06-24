@@ -55,7 +55,9 @@ router = APIRouter(prefix="/api/crawl", dependencies=[Depends(require_auth)])
 # Valid category slugs for the filtered results endpoint
 _VALID_CATEGORIES: frozenset[str] = frozenset(
     ["broken_link", "metadata", "heading", "redirect",
-     "crawlability", "duplicate", "sitemap", "security", "url_structure", "ai_readiness", "image"]
+     "crawlability", "duplicate", "sitemap", "security", "url_structure", "ai_readiness", "image",
+     # Agent-readiness Phase 1 task-side categories
+     "rendering", "semantic_html"]
 )
 
 # Per-job cancel events (job_id → asyncio.Event)
@@ -707,6 +709,23 @@ async def get_page_issues(
 
     total = sum(len(v) for v in filtered_by_category.values())
 
+    # Agent-readiness Phase 1 (WP6): a flat list of the agent-relevant issues on
+    # this page, each with its evidence tier (confidence label, falling back to
+    # severity). Lets the UI surface "what an agent sees" without re-deriving the
+    # agent-relevant set client-side.
+    from api.services.job_store_base import _is_agent_issue
+    agent_issues = [
+        {
+            "code": i["issue_code"],
+            "severity": i["severity"],
+            "category": i["category"],
+            "tier": i.get("confidence_label") or i["severity"],
+        }
+        for issues in filtered_by_category.values()
+        for i in issues
+        if _is_agent_issue(i["category"], i["issue_code"])
+    ]
+
     # Include the raw page fields so the UI can show the actual offending content
     # (title text, meta description, H1s, robots directive, etc.) per issue.
     page_data = {
@@ -736,6 +755,7 @@ async def get_page_issues(
         "total_issues": total,
         "page_data": page_data,
         "by_category": filtered_by_category,
+        "agent_issues": agent_issues,
     }
 
 

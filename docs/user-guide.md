@@ -55,6 +55,20 @@ The **Health Score** at the top of the Results page gives your site a number fro
 
 The score is reduced by issue impacts — critical issues reduce it the most.
 
+### Agent Health Score
+
+Next to the Health Score you'll see a separate **Agent Health** score (0–100). It answers a
+different question: *how ready is your site for AI assistants?* Search is shifting from people
+clicking links to AI tools (ChatGPT, Google's AI answers, Perplexity, Claude) reading your site
+and answering on your behalf — and, increasingly, agents that *act* on your site.
+
+Agent Health uses the same 0–100 scale but only counts the checks that matter to those AI
+visitors: whether AI crawlers are allowed in, whether your content and navigation are readable
+without running JavaScript, whether buttons and links are real and labelled, and whether your
+homepage states who you are (Organization schema) and how to contact you in plain text. A high
+Health Score with a low Agent Health Score means your site is solid for traditional SEO but
+harder for AI tools to use — worth fixing as AI search grows.
+
 ### Issue Categories
 
 Results are grouped by type:
@@ -70,6 +84,9 @@ Results are grouped by type:
 | **Sitemap** | Missing sitemap, pages not listed in sitemap |
 | **Security** | HTTP pages, HTTPS redirect missing, mixed content, HSTS |
 | **URL Structure** | Uppercase URLs, spaces, underscores, overly long URLs |
+| **AI Readiness** | AI-crawler access, structured data, content extractability, homepage Organization schema & contact info |
+| **Rendering** | Navigation/content that only appears after JavaScript runs (invisible to AI crawlers) |
+| **Semantic HTML** | Fake buttons (div/span), unlabelled controls, missing `<main>`/`<nav>` landmarks |
 
 ### Top 5 Priority Fixes
 

@@ -511,7 +511,9 @@ Error response shape:
 
 ## Valid Category Slugs
 
-`broken_link`, `metadata`, `heading`, `redirect`, `crawlability`, `duplicate`, `sitemap`, `security`, `url_structure`, `ai_readiness`
+`broken_link`, `metadata`, `heading`, `redirect`, `crawlability`, `duplicate`, `sitemap`, `security`, `url_structure`, `ai_readiness`, `rendering`, `semantic_html`
+
+(`rendering` and `semantic_html` are the agent-readiness Phase 1 task-side categories.)
 
 ---
 
@@ -568,6 +570,14 @@ The `security` category always runs regardless of toggles.
     "pages_with_errors": 3,
     "total_issues": 17,
     "health_score": 74,
+    "agent_health_score": 81,
+    "agent_readiness": {
+      "score": 81,
+      "breakdown": [
+        { "category": "ai_readiness", "issues": 4, "impact": 14 },
+        { "category": "semantic_html", "issues": 2, "impact": 6 }
+      ]
+    },
     "by_severity": { "critical": 2, "warning": 8, "info": 7 },
     "by_category": { "metadata": 5, "heading": 3, "broken_link": 2 },
     "robots_txt": {
@@ -599,6 +609,10 @@ The `security` category always runs regardless of toggles.
 ```
 
 `health_score` is 0–100. Formula: `max(0, 100 − Σ issue impacts)` across all issues. The health score calculation normalises trailing slashes on page URLs so that issues and pages always match correctly.
+
+`agent_health_score` (agent-readiness Phase 1) is a separate 0–100 score using the same per-page model, but the impact sum is restricted to **agent-relevant** issues: categories `ai_readiness` / `rendering` / `semantic_html` plus codes `PLACEHOLDER_LINK` and `WRONG_PLACEHOLDER_LINK`. `agent_readiness.breakdown[]` lists per-category issue counts and summed impact. More failing agent checks never raise the score (monotonic non-increasing).
+
+`GET /api/crawl/{job_id}/pages/issues?url=…` additionally returns an `agent_issues` array — `[{ "code", "severity", "category", "tier" }]` — listing the agent-relevant issues on that page, where `tier` is the confidence label (falling back to severity).
 
 The `robots_txt` and `sitemap` objects are included in the summary when discovery data is available. Both may be `null` if the crawl has not yet completed the discovery phase.
 

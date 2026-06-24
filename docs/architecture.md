@@ -160,6 +160,10 @@ Image performance scoring no longer requires a full fetch (Level 2) to produce u
 
 The health score calculation normalises trailing slashes on both page URLs and issue URLs using `RTRIM(page_url, '/')` in SQL queries. This prevents mismatches where the crawled page URL has a trailing slash but the stored issue URL does not (or vice versa), which previously caused some pages to appear healthier than they actually were.
 
+### Agent Health score (agent-readiness Phase 1)
+
+Alongside the SEO Health score, `get_summary` returns an `agent_health_score` computed by `_compute_agent_health_score` in `api/services/job_store_base.py`. It reuses the same per-page model (`max(0, 100 − Σ impact)`, averaged over pages) but restricts the impact sum to **agent-relevant** issues — categories `ai_readiness` / `rendering` / `semantic_html` plus the `PLACEHOLDER_LINK` / `WRONG_PLACEHOLDER_LINK` codes (see `_is_agent_issue`). The two task-side categories `rendering` and `semantic_html` join the existing eleven. Underlying signals (JS-dependent nav, non-semantic buttons, landmarks, placeholder links, homepage Organization schema / contact info) are pre-computed on `ParsedPage` at parse time and emitted by the `checkers/` modules (`crawlability.py`, `semantic_html.py`, `links.py`, `metadata.py`).
+
 ### Auto-rescan after fix
 
 The frontend supports rescanning individual pages after fixes are applied. When a broken link source page is displayed, the user can click "Rescan Page" to re-fetch and re-check that page via `POST /api/crawl/{job_id}/rescan-url`. The rescan sends cache-bypass headers and updates stored issues, so the results view reflects the current state of the page. A manual URL input is also available for cases where source pages are not automatically tracked.

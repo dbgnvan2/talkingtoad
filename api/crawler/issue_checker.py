@@ -58,11 +58,16 @@ from api.crawler.checkers.crawlability import (  # noqa: F401
 from api.crawler.checkers.links import (  # noqa: F401
     issue_for_status,
     issues_for_redirect,
+    check_placeholder_links,
     _is_trailing_slash_only,
     _is_case_normalise_only,
 )
 from api.crawler.checkers.security import _check_security  # noqa: F401
-from api.crawler.checkers.metadata import _check_canonical  # noqa: F401
+from api.crawler.checkers.metadata import (  # noqa: F401
+    _check_canonical,
+    check_homepage_agent_readiness,
+)
+from api.crawler.checkers.semantic_html import check_semantic_html  # noqa: F401
 from api.crawler.checkers.headings import _check_headings  # noqa: F401
 from api.crawler.checkers.ai_readiness import _run_geo_checks  # noqa: F401
 from api.crawler.checkers.ai_readiness import check_content_date_stale_visible  # noqa: F401
@@ -638,5 +643,13 @@ def check_page(
                     url,
                     extra={"year": _stat_result["year"], "sentence": _stat_result["sentence"]},
                 ))
+
+    # ── Agent-readiness Phase 1 (WP2–WP5) ────────────────────────────────────
+    # WP4: placeholder / dead-CTA / wrong-domain links.
+    check_placeholder_links(page, issues)
+    # WP3: semantic-HTML & interactive-element correctness.
+    check_semantic_html(page, issues)
+    # WP5: homepage Organization schema + machine-readable contact info.
+    check_homepage_agent_readiness(page, issues)
 
     return issues

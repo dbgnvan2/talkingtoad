@@ -211,6 +211,7 @@
     <li><a href="#duplicates">Duplicate Content</a></li>
     <li><a href="#security">Security</a></li>
     <li><a href="#url-structure">URL Structure</a></li>
+    <li><a href="#agent-readiness">Agent-Readiness</a></li>
     <li><a href="#images">Images (Phase 2)</a></li>
     <li><a href="#performance">Performance (Phase 2)</a></li>
     <li><a href="#mobile">Mobile (Phase 2)</a></li>
@@ -1287,6 +1288,237 @@
       </div>
     </div>
   </div>
+</section>
+
+
+<!-- ══════════════════════════════════════════════════════════════ -->
+<!-- AGENT-READINESS                                                 -->
+<!-- ══════════════════════════════════════════════════════════════ -->
+<section id="agent-readiness">
+  <h2>Agent-Readiness</h2>
+  <p class="category-intro">
+    Search is shifting from people clicking links to AI assistants (ChatGPT, Google's AI
+    answers, Perplexity, Claude) reading your site and answering on your behalf. Agent-readiness
+    checks measure whether AI crawlers and task-executing agents can find, parse, and operate
+    your site. These contribute to a separate <strong>Agent Health</strong> score shown beside
+    your Health Score.
+  </p>
+
+  <!-- JS_DEPENDENT_NAVIGATION -->
+  <div class="issue-card" id="JS_DEPENDENT_NAVIGATION">
+    <div class="issue-header">
+      <span class="issue-code">JS_DEPENDENT_NAVIGATION</span>
+      <span class="issue-title">Navigation needs JavaScript</span>
+      <span class="badge badge-warning">Warning</span>
+    </div>
+    <div class="issue-body">
+      <div class="issue-section">
+        <div class="section-label what">What it is</div>
+        <p>The page has a navigation region (a <code>&lt;nav&gt;</code> or menu container) but no usable links in the server-rendered HTML — the menu only appears after JavaScript runs. In-page <code>#section</code> anchors count as links and do not trigger this.</p>
+      </div>
+      <div class="issue-section">
+        <div class="section-label impact">Why it matters</div>
+        <p>AI crawlers (GPTBot, ClaudeBot, PerplexityBot) and task agents often do not run JavaScript. If your navigation is JS-only, they reach a page with no way forward and cannot discover the rest of your site.</p>
+      </div>
+      <div class="issue-section">
+        <div class="section-label fix">How to fix it</div>
+        <p>Render the main navigation as real <code>&lt;a href&gt;</code> links in the initial HTML (server-side rendering or static generation). A <code>&lt;noscript&gt;</code> fallback list of links also helps.</p>
+      </div>
+    </div>
+  </div>
+  <a class="back-top" href="#agent-readiness">&uarr; Back to top of section</a>
+
+  <!-- NON_SEMANTIC_BUTTON -->
+  <div class="issue-card" id="NON_SEMANTIC_BUTTON">
+    <div class="issue-header">
+      <span class="issue-code">NON_SEMANTIC_BUTTON</span>
+      <span class="issue-title">Fake button (div/span)</span>
+      <span class="badge badge-warning">Warning</span>
+    </div>
+    <div class="issue-body">
+      <div class="issue-section">
+        <div class="section-label what">What it is</div>
+        <p>A clickable control is built from a <code>&lt;div&gt;</code> or <code>&lt;span&gt;</code> (with an inline <code>onclick</code>, or a button class plus <code>tabindex</code>) but has no interactive ARIA role, so structurally it is not a button or link.</p>
+      </div>
+      <div class="issue-section">
+        <div class="section-label impact">Why it matters</div>
+        <p>Agents and assistive technology decide what they can operate from each element's role. A <code>&lt;div&gt;</code> with no role is not recognised as a button, so the action it triggers becomes unreachable.</p>
+      </div>
+      <div class="issue-section">
+        <div class="section-label fix">How to fix it</div>
+        <p>Use a real <code>&lt;button&gt;</code> (for actions) or <code>&lt;a href&gt;</code> (for navigation). If you must keep the element, add <code>role="button"</code>, <code>tabindex="0"</code>, keyboard handlers, and an accessible name.</p>
+      </div>
+    </div>
+  </div>
+  <a class="back-top" href="#agent-readiness">&uarr; Back to top of section</a>
+
+  <!-- INTERACTIVE_NO_ACCESSIBLE_NAME -->
+  <div class="issue-card" id="INTERACTIVE_NO_ACCESSIBLE_NAME">
+    <div class="issue-header">
+      <span class="issue-code">INTERACTIVE_NO_ACCESSIBLE_NAME</span>
+      <span class="issue-title">Unlabelled control</span>
+      <span class="badge badge-warning">Warning</span>
+    </div>
+    <div class="issue-body">
+      <div class="issue-section">
+        <div class="section-label what">What it is</div>
+        <p>A <code>&lt;button&gt;</code> or text-style form field has no accessible name — no visible text, <code>aria-label</code>, <code>title</code>, associated <code>&lt;label&gt;</code>, or placeholder. (Empty links are reported separately as Empty Link Text.)</p>
+      </div>
+      <div class="issue-section">
+        <div class="section-label impact">Why it matters</div>
+        <p>An agent deciding which control performs an action relies on its accessible name. An unnamed control is ambiguous or unusable, so the agent may skip it and break the task.</p>
+      </div>
+      <div class="issue-section">
+        <div class="section-label fix">How to fix it</div>
+        <p>Add visible text, an <code>aria-label</code> (e.g. <code>aria-label="Search"</code>), a <code>&lt;label for&gt;</code> for form fields, or a <code>title</code>. Icon-only buttons especially need an <code>aria-label</code>.</p>
+      </div>
+    </div>
+  </div>
+  <a class="back-top" href="#agent-readiness">&uarr; Back to top of section</a>
+
+  <!-- LANDMARK_MAIN_MISSING -->
+  <div class="issue-card" id="LANDMARK_MAIN_MISSING">
+    <div class="issue-header">
+      <span class="issue-code">LANDMARK_MAIN_MISSING</span>
+      <span class="issue-title">No main content landmark</span>
+      <span class="badge badge-info">Info</span>
+    </div>
+    <div class="issue-body">
+      <div class="issue-section">
+        <div class="section-label what">What it is</div>
+        <p>The page has no <code>&lt;main&gt;</code> element (or <code>role="main"</code>) marking its primary content region, distinct from header, navigation, sidebar, and footer.</p>
+      </div>
+      <div class="issue-section">
+        <div class="section-label impact">Why it matters</div>
+        <p>Without a <code>&lt;main&gt;</code> landmark, agents and assistive technology must guess which part of the page is the real content, and may extract navigation or boilerplate instead.</p>
+      </div>
+      <div class="issue-section">
+        <div class="section-label fix">How to fix it</div>
+        <p>Wrap the primary content of the page in <code>&lt;main&gt;…&lt;/main&gt;</code> (one per page). Most CMS themes have a content template where this can be added.</p>
+      </div>
+    </div>
+  </div>
+  <a class="back-top" href="#agent-readiness">&uarr; Back to top of section</a>
+
+  <!-- LANDMARK_NAV_MISSING -->
+  <div class="issue-card" id="LANDMARK_NAV_MISSING">
+    <div class="issue-header">
+      <span class="issue-code">LANDMARK_NAV_MISSING</span>
+      <span class="issue-title">No navigation landmark</span>
+      <span class="badge badge-info">Info</span>
+    </div>
+    <div class="issue-body">
+      <div class="issue-section">
+        <div class="section-label what">What it is</div>
+        <p>The homepage has no <code>&lt;nav&gt;</code> element (or <code>role="navigation"</code>) identifying its navigation links. Checked once on the homepage, since navigation is site-wide.</p>
+      </div>
+      <div class="issue-section">
+        <div class="section-label impact">Why it matters</div>
+        <p>Without a <code>&lt;nav&gt;</code> landmark, an agent cannot reliably distinguish site navigation from ordinary in-content links, making automated traversal less reliable.</p>
+      </div>
+      <div class="issue-section">
+        <div class="section-label fix">How to fix it</div>
+        <p>Wrap your main menu in <code>&lt;nav&gt;…&lt;/nav&gt;</code>. Add an <code>aria-label</code> (e.g. "Primary", "Footer") if the page has more than one navigation region.</p>
+      </div>
+    </div>
+  </div>
+  <a class="back-top" href="#agent-readiness">&uarr; Back to top of section</a>
+
+  <!-- PLACEHOLDER_LINK -->
+  <div class="issue-card" id="PLACEHOLDER_LINK">
+    <div class="issue-header">
+      <span class="issue-code">PLACEHOLDER_LINK</span>
+      <span class="issue-title">Dead call-to-action link</span>
+      <span class="badge badge-critical">Critical</span>
+    </div>
+    <div class="issue-body">
+      <div class="issue-section">
+        <div class="section-label what">What it is</div>
+        <p>A navigational call-to-action links nowhere — its href is <code>#</code> or <code>javascript:void(0)</code>. Only links that read as CTAs (a button class or call-to-action text) are flagged; genuine in-page controls such as accordions and tabs are skipped.</p>
+      </div>
+      <div class="issue-section">
+        <div class="section-label impact">Why it matters</div>
+        <p>AI crawlers and task agents follow href values. A key action (Donate, Contact, Sign up) whose only href is a placeholder is a dead end — the agent cannot complete the journey.</p>
+      </div>
+      <div class="issue-section">
+        <div class="section-label fix">How to fix it</div>
+        <p>Set the link's href to its real destination URL. Reserve <code>#</code> / <code>javascript:void(0)</code> for true in-page controls, not for navigation.</p>
+      </div>
+    </div>
+  </div>
+  <a class="back-top" href="#agent-readiness">&uarr; Back to top of section</a>
+
+  <!-- WRONG_PLACEHOLDER_LINK -->
+  <div class="issue-card" id="WRONG_PLACEHOLDER_LINK">
+    <div class="issue-header">
+      <span class="issue-code">WRONG_PLACEHOLDER_LINK</span>
+      <span class="issue-title">Link to placeholder domain</span>
+      <span class="badge badge-critical">Critical</span>
+    </div>
+    <div class="issue-body">
+      <div class="issue-section">
+        <div class="section-label what">What it is</div>
+        <p>A link points at an obvious placeholder destination — example.com, localhost, 127.0.0.1, yourdomain.com, or a bare search-engine homepage used as filler — rather than the page it was meant to point to.</p>
+      </div>
+      <div class="issue-section">
+        <div class="section-label impact">Why it matters</div>
+        <p>An agent following the link lands somewhere meaningless or unreachable. These are almost always unfinished template content that shipped to production by mistake.</p>
+      </div>
+      <div class="issue-section">
+        <div class="section-label fix">How to fix it</div>
+        <p>Edit the link to use the real URL. If a link to that domain is genuinely intended, you can ignore the flag — the check is conservative and uses host and path to avoid false positives.</p>
+      </div>
+    </div>
+  </div>
+  <a class="back-top" href="#agent-readiness">&uarr; Back to top of section</a>
+
+  <!-- SCHEMA_ORG_MISSING -->
+  <div class="issue-card" id="SCHEMA_ORG_MISSING">
+    <div class="issue-header">
+      <span class="issue-code">SCHEMA_ORG_MISSING</span>
+      <span class="issue-title">No Organization schema</span>
+      <span class="badge badge-warning">Warning</span>
+    </div>
+    <div class="issue-body">
+      <div class="issue-section">
+        <div class="section-label what">What it is</div>
+        <p>The homepage has no Organization (or LocalBusiness) JSON-LD schema stating who the organisation is — name, URL, logo, and contact points. This is the primary machine-readable identity anchor for the whole site.</p>
+      </div>
+      <div class="issue-section">
+        <div class="section-label impact">Why it matters</div>
+        <p>AI systems build an entity profile of your organisation from Organization schema. Without it they must infer your identity from prose, weakening your chance of being correctly named and cited. <em>(Evidence tier: Reasonable proxy.)</em></p>
+      </div>
+      <div class="issue-section">
+        <div class="section-label fix">How to fix it</div>
+        <p>Add an Organization (or LocalBusiness) JSON-LD block to your homepage with name, url, logo, and contactPoint. TalkingToad's Entity Schema Factory can generate one, or enable Organization schema in your SEO plugin.</p>
+      </div>
+    </div>
+  </div>
+  <a class="back-top" href="#agent-readiness">&uarr; Back to top of section</a>
+
+  <!-- CONTACT_INFO_NOT_IN_HTML -->
+  <div class="issue-card" id="CONTACT_INFO_NOT_IN_HTML">
+    <div class="issue-header">
+      <span class="issue-code">CONTACT_INFO_NOT_IN_HTML</span>
+      <span class="issue-title">Contact info not in text</span>
+      <span class="badge badge-warning">Warning</span>
+    </div>
+    <div class="issue-body">
+      <div class="issue-section">
+        <div class="section-label what">What it is</div>
+        <p>The homepage exposes no machine-readable contact details — no <code>mailto:</code>/<code>tel:</code> link, no email address, and no phone-number pattern in the visible text. Contact info may exist only inside an image or be injected by JavaScript.</p>
+      </div>
+      <div class="issue-section">
+        <div class="section-label impact">Why it matters</div>
+        <p>When an AI assistant is asked how to contact your organisation, it can only answer from text it can read. Details locked in images or client-side JavaScript are missed. <em>(Evidence tier: Heuristic.)</em></p>
+      </div>
+      <div class="issue-section">
+        <div class="section-label fix">How to fix it</div>
+        <p>Render contact details as plain HTML text (a footer or contact block) and use <code>mailto:</code>/<code>tel:</code> links. Optionally add ContactPoint / PostalAddress schema to reinforce them.</p>
+      </div>
+    </div>
+  </div>
+  <a class="back-top" href="#agent-readiness">&uarr; Back to top of section</a>
 </section>
 
 

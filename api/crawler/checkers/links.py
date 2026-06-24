@@ -10,6 +10,31 @@ from api.crawler.normaliser import is_same_domain
 from api.crawler.checkers.registry import Issue, make_issue
 
 
+def check_placeholder_links(page, issues: list[Issue]) -> None:
+    """Emit PLACEHOLDER_LINK / WRONG_PLACEHOLDER_LINK (Agent-readiness WP4).
+
+    Reads the ``page.placeholder_links`` list pre-computed by the parser. Each
+    entry has a ``kind`` of ``"placeholder"`` (dead CTA: ``#`` /
+    ``javascript:void(0)``) or ``"wrong_domain"`` (example.com / localhost /
+    stray search-engine homepage). One issue is emitted per kind that occurs.
+    """
+    entries = getattr(page, "placeholder_links", None) or []
+    if not entries:
+        return
+    dead = [e for e in entries if e.get("kind") == "placeholder"]
+    wrong = [e for e in entries if e.get("kind") == "wrong_domain"]
+    if dead:
+        issues.append(make_issue(
+            "PLACEHOLDER_LINK", page.url,
+            extra={"count": len(dead), "examples": dead[:5]},
+        ))
+    if wrong:
+        issues.append(make_issue(
+            "WRONG_PLACEHOLDER_LINK", page.url,
+            extra={"count": len(wrong), "examples": wrong[:5]},
+        ))
+
+
 def issue_for_status(status_code: int, url: str) -> Issue | None:
     """Return a broken-link issue if *status_code* indicates a broken link, else None.
 

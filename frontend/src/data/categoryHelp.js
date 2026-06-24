@@ -234,6 +234,43 @@ export const categoryHelp = {
       "Missing schema markup",
       "Unclear content hierarchy"
     ]
+  },
+
+  rendering: {
+    title: "Rendering",
+    description:
+      "Rendering issues are about whether your content and navigation are present in the HTML a " +
+      "server sends, or only appear after JavaScript runs in a browser. AI crawlers and automated " +
+      "agents frequently do not run JavaScript.",
+    why:
+      "AI assistants (ChatGPT, Gemini, Perplexity, Claude) and task-executing agents often read the " +
+      "raw HTML without running scripts. If your menu or main content only appears after JavaScript " +
+      "runs, those visitors see an empty shell and cannot reach the rest of your site — so it becomes " +
+      "invisible to the AI tools more and more people now ask for recommendations.",
+    common: [
+      "Navigation menu built entirely by JavaScript (no links in the raw HTML)",
+      "Main content injected client-side after page load",
+      "Single-page-app shells with an empty content container"
+    ]
+  },
+
+  semantic_html: {
+    title: "Semantic HTML",
+    description:
+      "Semantic HTML is about using the right elements for the job — real buttons and links, labelled " +
+      "form fields, and landmark regions (<main>, <nav>) — so that machines reading the page structure " +
+      "can understand and operate it.",
+    why:
+      "Agents and assistive technology decide what they can read and operate from the structure of the " +
+      "page, not its visual styling. A <div> styled to look like a button, a control with no label, or a " +
+      "page with no <main> landmark all leave an agent guessing — which breaks both accessibility and " +
+      "automated tasks like an AI booking a session or following a call-to-action.",
+    common: [
+      "Clickable <div>/<span> used instead of a real button",
+      "Icon buttons or form fields with no accessible name",
+      "No <main> landmark identifying the primary content",
+      "No <nav> landmark identifying the navigation"
+    ]
   }
 }
 

@@ -35,18 +35,22 @@ def generate_excel_report(
     ws_summary["A4"] = "Health Score:"
     ws_summary["B4"] = summary.get("health_score", 0)
     ws_summary["A4"].font = label_font
-    
-    ws_summary["A5"] = "Total Pages:"
-    ws_summary["B5"] = summary.get("pages_crawled", 0)
+
+    ws_summary["A5"] = "Agent Health Score:"
+    ws_summary["B5"] = summary.get("agent_health_score", 0)
     ws_summary["A5"].font = label_font
-    
-    ws_summary["A6"] = "Total Issues:"
-    ws_summary["B6"] = summary.get("total_issues", 0)
+
+    ws_summary["A6"] = "Total Pages:"
+    ws_summary["B6"] = summary.get("pages_crawled", 0)
     ws_summary["A6"].font = label_font
 
+    ws_summary["A7"] = "Total Issues:"
+    ws_summary["B7"] = summary.get("total_issues", 0)
+    ws_summary["A7"].font = label_font
+
     # Category totals table
-    ws_summary["A8"] = "Issues by Category"
-    ws_summary["A8"].font = Font(bold=True, size=12)
+    ws_summary["A9"] = "Issues by Category"
+    ws_summary["A9"].font = Font(bold=True, size=12)
     
     ws_summary.append([]) # spacer
     ws_summary.append(["Category", "Count"])

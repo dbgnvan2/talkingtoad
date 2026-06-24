@@ -16,7 +16,7 @@ Lightweight web-based SEO crawler for nonprofit organisations — Screaming-Frog
 - **GitHub:** https://github.com/dbgnvan2/talkingtoad
 - **Specs index:** `docs/specs/README.md`
 - **Current version:** 3.0.0 (shipped — git tag `v3.0`). Milestone ledger: `PLAN-V3.0-UNIFIED.md`. Shipped-feature history lives in `docs/legacy_changelog.md` — not here.
-- **Issue catalogue:** 142 codes — source of truth `api/crawler/checkers/registry.py` (`_CATALOGUE` / `_ISSUE_SCORING` / `_AI_READINESS_CONFIDENCE`), surfaced in `docs/issue-codes.md`.
+- **Issue catalogue:** 151 codes — source of truth `api/crawler/checkers/registry.py` (`_CATALOGUE` / `_ISSUE_SCORING` / `_AI_READINESS_CONFIDENCE`), surfaced in `docs/issue-codes.md`.
 - **Parked / not shipped:** multi-tenant / per-customer AI keys / Identity Model (`docs/TODO-MULTITENANT.md`); SERP-Discovery (separate repo).
 
 ---
@@ -237,6 +237,14 @@ After writing any function — before staging it — answer these review questio
 **The one-question shortcut:** "What would a correct-looking but wrong result look like?" If you can describe it, write a test that produces it and assert it fails.
 
 A function without at least one adversarial test case is not done.
+
+### Learnings & review checklist (read before checker/fetch/scoring/report work)
+
+Before reviewing or writing any **checker, fetch, scoring, or report** code, read
+[`LEARNINGS.md`](LEARNINGS.md) — TalkingToad's failure-pattern review checklist, open risks,
+and fix log. After fixing any real bug, add a Fix-log entry there. The generic pattern
+catalogue (P1–P10) is shared across repos in `~/.claude/standards/learnings.md` (auto-loaded
+by Claude Code); `LEARNINGS.md` holds the TalkingToad-specific risks and history.
 
 ### Code Quality Standards
 

@@ -2696,6 +2696,239 @@ const issueHelp = {
       "some page types (privacy policies, terms of service) are unlikely to be cited by AI " +
       "regardless of quality — this check does not distinguish page intent.",
   },
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // AGENT-READINESS (Phase 1) — task-side checks
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  JS_DEPENDENT_NAVIGATION: {
+    title: "Navigation needs JavaScript",
+    category: "rendering",
+    severity: "warning",
+    definition:
+      "This page's primary navigation links are not present in the server-rendered HTML — " +
+      "the menu only appears after JavaScript runs in a browser. The check finds a " +
+      "navigation region (a <nav>, role=\"navigation\", or menu-classed container) that " +
+      "contains no usable links in the raw HTML.",
+    impact:
+      "AI crawlers (GPTBot, ClaudeBot, PerplexityBot) and task-executing agents frequently " +
+      "do not run JavaScript. If your navigation is JS-only, they receive a page with no way " +
+      "forward and cannot reach the rest of your site, so much of it becomes invisible to them.",
+    fix:
+      "Render your main navigation as real <a href> links in the initial HTML using " +
+      "server-side rendering or static generation. A <noscript> fallback list of links also " +
+      "helps. Verify by viewing the page source (not the inspector) and confirming the menu " +
+      "links are present.",
+    good_vs_bad:
+      "Good: <nav> contains <a href=\"/services\">Services</a> and similar real links in the " +
+      "page source. Bad: <nav> contains only a hamburger <button> and an empty <ul> that " +
+      "JavaScript fills in later.",
+    how_it_can_mislead:
+      "This is a static-HTML heuristic, not a full headless render. A nav that uses in-page " +
+      "anchors (href=\"#section\") counts as having links and will not fire. Conversely, a " +
+      "nav region that legitimately holds only a search form (no links) could be flagged — " +
+      "the warning is a prompt to check, not a guarantee of breakage.",
+  },
+
+  NON_SEMANTIC_BUTTON: {
+    title: "Fake button (div/span)",
+    category: "semantic_html",
+    severity: "warning",
+    definition:
+      "A clickable control on the page is built from a <div> or <span> that carries a click " +
+      "handler (or a button-style class plus tabindex) but has no interactive ARIA role. " +
+      "Structurally it is not a button or a link.",
+    impact:
+      "Task-executing agents and assistive technology decide what they can operate from each " +
+      "element's role. A <div> with no role is not recognised as a button, so an agent cannot " +
+      "click it and the action it triggers becomes unreachable.",
+    fix:
+      "Use a real <button> for actions or <a href> for navigation. If you must keep the " +
+      "element, add role=\"button\", tabindex=\"0\", keyboard handlers, and an accessible name.",
+    good_vs_bad:
+      "Good: <button class=\"btn\">Donate</button>, or <div role=\"button\" tabindex=\"0\" " +
+      "aria-label=\"Donate\">. Bad: <div class=\"btn\" onclick=\"donate()\">Donate</div> with " +
+      "no role.",
+    how_it_can_mislead:
+      "The check requires a strong interactivity signal (an inline onclick, or a button class " +
+      "with tabindex). Controls wired up purely in external JavaScript without those markers " +
+      "are not detectable from static HTML and will not be flagged.",
+  },
+
+  LANDMARK_MAIN_MISSING: {
+    title: "No main content landmark",
+    category: "semantic_html",
+    severity: "info",
+    definition:
+      "The page has no <main> element (or role=\"main\") marking its primary content region, " +
+      "distinct from the header, navigation, sidebar, and footer.",
+    impact:
+      "Without a <main> landmark, agents and assistive technology must guess which part of " +
+      "the page is the real content, and may extract navigation or boilerplate instead of " +
+      "your actual information.",
+    fix:
+      "Wrap the primary content of the page in <main>…</main> (one per page). Most CMS themes " +
+      "have a content template where this can be added.",
+    good_vs_bad:
+      "Good: <main><article>…your content…</article></main>. Bad: every section is a bare " +
+      "<div> with no landmark distinguishing content from chrome.",
+    how_it_can_mislead:
+      "Some themes convey the main region with <article> rather than <main>; this check looks " +
+      "specifically for the <main>/role=main landmark, so it may flag a page that is still " +
+      "reasonably structured. It is informational for that reason.",
+  },
+
+  LANDMARK_NAV_MISSING: {
+    title: "No navigation landmark",
+    category: "semantic_html",
+    severity: "info",
+    definition:
+      "The homepage has no <nav> element (or role=\"navigation\") identifying its navigation " +
+      "links. Checked once on the homepage, since navigation is site-wide.",
+    impact:
+      "Without a <nav> landmark an agent cannot reliably distinguish site navigation from " +
+      "ordinary in-content links, making automated traversal of the site less reliable.",
+    fix:
+      "Wrap your main menu in <nav>…</nav>. Add an aria-label (e.g. \"Primary\", \"Footer\") " +
+      "if the page has more than one navigation region.",
+    good_vs_bad:
+      "Good: <nav aria-label=\"Primary\"><ul>…menu…</ul></nav>. Bad: the menu is a plain " +
+      "<div class=\"menu\"> with no landmark role.",
+    how_it_can_mislead:
+      "Checked on the homepage only, so a homepage that genuinely has navigation but uses an " +
+      "unrecognised structure could be flagged while inner pages are not assessed for it.",
+  },
+
+  INTERACTIVE_NO_ACCESSIBLE_NAME: {
+    title: "Unlabelled control",
+    category: "semantic_html",
+    severity: "warning",
+    definition:
+      "An interactive element — a <button> or a text-style form field — has no accessible " +
+      "name: no visible text, aria-label, title, associated <label>, or placeholder. " +
+      "(Empty links are reported separately as Empty Link Text.)",
+    impact:
+      "An agent deciding which control performs an action relies on its accessible name. An " +
+      "unnamed control is ambiguous or unusable — the agent cannot tell what it does and may " +
+      "skip it, breaking the task.",
+    fix:
+      "Add visible text, an aria-label (e.g. aria-label=\"Search\"), a <label for> for form " +
+      "fields, or a title attribute to each unnamed control. Icon-only buttons especially " +
+      "need an aria-label.",
+    good_vs_bad:
+      "Good: <button aria-label=\"Close\">✕</button>, <label for=\"q\">Search</label>" +
+      "<input id=\"q\">. Bad: <button>✕</button> with no label, or <input type=\"text\"> with " +
+      "no label, placeholder, or aria-label.",
+    how_it_can_mislead:
+      "The check accepts a placeholder as a (weak) name to avoid false positives, even though " +
+      "a placeholder is not a robust label. It also limits itself to buttons and text-like " +
+      "fields, so other custom widgets are out of scope.",
+  },
+
+  PLACEHOLDER_LINK: {
+    title: "Dead call-to-action link",
+    category: "broken_link",
+    severity: "critical",
+    definition:
+      "A navigational call-to-action links nowhere — its href is \"#\" or " +
+      "\"javascript:void(0)\". The check only flags links that read as CTAs (a button class " +
+      "or call-to-action text) and skips genuine in-page controls such as accordions and tabs.",
+    impact:
+      "AI crawlers and task agents follow href values. A key action (Donate, Contact, Sign " +
+      "up) whose only href is a placeholder is a dead end — the agent cannot complete the " +
+      "journey, and the page's link graph looks broken.",
+    fix:
+      "Set the link's href to its real destination URL. Reserve \"#\" and " +
+      "\"javascript:void(0)\" for true in-page controls, not for navigation.",
+    good_vs_bad:
+      "Good: <a class=\"btn\" href=\"/donate\">Donate</a>. Bad: <a class=\"btn\" " +
+      "href=\"#\">Donate</a> that relies on JavaScript to navigate.",
+    how_it_can_mislead:
+      "A href=\"#\" that drives a JavaScript accordion or tab is legitimate; the check avoids " +
+      "those by requiring CTA-like text/class and skipping role=button / aria-expanded / " +
+      "data-toggle controls. Edge cases may still slip through in either direction.",
+  },
+
+  WRONG_PLACEHOLDER_LINK: {
+    title: "Link to placeholder domain",
+    category: "broken_link",
+    severity: "critical",
+    definition:
+      "A link points at an obvious placeholder destination — example.com, example.org, " +
+      "localhost, 127.0.0.1, yourdomain.com, or a bare search-engine homepage used as filler " +
+      "— rather than the page it was meant to point to.",
+    impact:
+      "An agent following the link lands somewhere meaningless or unreachable, breaking the " +
+      "task or citation trail. These are almost always unfinished template content that " +
+      "shipped to production by mistake.",
+    fix:
+      "Edit the link to use the real URL. If a link to that domain is genuinely intended, you " +
+      "can ignore the flag — the check is conservative and uses host and path to avoid false " +
+      "positives.",
+    good_vs_bad:
+      "Good: <a href=\"https://your-real-site.org/contact\">Contact</a>. Bad: <a " +
+      "href=\"https://example.com\">Contact</a> left over from a template.",
+    how_it_can_mislead:
+      "A bare google.com is only flagged when it has no path and is not your own domain, so " +
+      "legitimate deep links (e.g. google.com/maps/...) are not flagged. Unusual but real " +
+      "placeholder-looking hosts outside the known list will not be caught.",
+  },
+
+  SCHEMA_ORG_MISSING: {
+    title: "No Organization schema",
+    category: "ai_readiness",
+    severity: "warning",
+    confidence: "Reasonable proxy",
+    definition:
+      "The homepage has no Organization (or LocalBusiness) JSON-LD schema stating who the " +
+      "organisation is — name, URL, logo, and contact points. This is the primary " +
+      "machine-readable identity anchor for the whole site.",
+    impact:
+      "Evidence tier: Reasonable proxy. AI systems build an entity profile of your " +
+      "organisation from Organization schema. Without it they must infer your identity from " +
+      "prose, which is less reliable and weakens your chance of being correctly named and " +
+      "cited in AI answers.",
+    fix:
+      "Add an Organization (or LocalBusiness) JSON-LD block to your homepage with name, url, " +
+      "logo, and contactPoint. TalkingToad's Entity Schema Factory can generate one, or " +
+      "enable Organization schema in your SEO plugin.",
+    good_vs_bad:
+      "Good: homepage has <script type=\"application/ld+json\"> with @type \"Organization\" " +
+      "(or \"NGO\"/\"LocalBusiness\") and your real details. Bad: homepage has only Article " +
+      "or WebPage schema, or no JSON-LD at all.",
+    how_it_can_mislead:
+      "The check looks for any Organization-family type (including LocalBusiness subtypes and " +
+      "NGO). A page that describes the organisation only in visible prose, without schema, " +
+      "still fires — the absence of markup is the point, not the absence of information.",
+  },
+
+  CONTACT_INFO_NOT_IN_HTML: {
+    title: "Contact info not in text",
+    category: "ai_readiness",
+    severity: "warning",
+    confidence: "Heuristic",
+    definition:
+      "The homepage exposes no machine-readable contact details — no mailto:/tel: link, no " +
+      "email address, and no phone-number pattern in the visible text. Contact info may exist " +
+      "only inside an image or be injected by JavaScript.",
+    impact:
+      "Evidence tier: Heuristic. When an AI assistant is asked how to contact your " +
+      "organisation, it can only answer from text it can read. Contact details locked in " +
+      "images or client-side JavaScript are missed, so the agent cannot surface your phone, " +
+      "email, or address.",
+    fix:
+      "Render contact details as plain HTML text (a footer or contact block), and use " +
+      "mailto:/tel: links. Optionally add ContactPoint / PostalAddress schema to reinforce " +
+      "them.",
+    good_vs_bad:
+      "Good: footer reads \"Call 604-555-0100 or email hello@charity.org\" as real text with " +
+      "a mailto: link. Bad: the phone number appears only inside a banner image, or is " +
+      "written into the page by JavaScript after load.",
+    how_it_can_mislead:
+      "This is a proxy: it confirms readable contact info is present, not that it is absent " +
+      "from images. A homepage that intentionally routes all contact to a separate /contact " +
+      "page (with none on the homepage) will be flagged even though nothing is broken.",
+  },
   };
 
 

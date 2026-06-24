@@ -22,6 +22,7 @@ from api.services.job_store_base import (
     _SEVERITY_ORDER,
     _PRIORITY_ORDER,
     _compute_v15_health_score,
+    _compute_agent_health_score,
     _DEFAULT_TTL_DAYS,
 )
 
@@ -490,9 +491,15 @@ class SQLiteJobStore:
         pages_with_errors = row[0] if row else 0
 
         suppressed = await self.get_suppressed_codes()
+        _suppressed_set = set(suppressed) if suppressed else None
         health_score, _ = await _compute_v15_health_score(
             self._db, job_id, by_severity, job.pages_crawled,
-            suppressed_codes=set(suppressed) if suppressed else None,
+            suppressed_codes=_suppressed_set,
+        )
+        # Agent-readiness Phase 1 (WP6): a separate "Agent Health" score.
+        agent_health_score, agent_breakdown = await _compute_agent_health_score(
+            self._db, job_id, job.pages_crawled,
+            suppressed_codes=_suppressed_set,
         )
 
         # Load discovery info from job record
@@ -525,6 +532,11 @@ class SQLiteJobStore:
             "by_severity": by_severity,
             "by_category": by_category,
             "health_score": health_score,
+            "agent_health_score": agent_health_score,
+            "agent_readiness": {
+                "score": agent_health_score,
+                "breakdown": agent_breakdown,
+            },
             "robots_txt": robots_info,
             "sitemap": sitemap_info,
         }

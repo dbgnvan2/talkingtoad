@@ -50,6 +50,8 @@ const CATEGORIES = [
   { key: 'url_structure', label: 'URL Structure' },
   { key: 'image',         label: 'Images' },
   { key: 'ai_readiness',  label: 'AI Readiness' },
+  { key: 'rendering',     label: 'Rendering' },
+  { key: 'semantic_html', label: 'Semantic HTML' },
 ]
 
 const TAB_SUMMARY        = 0

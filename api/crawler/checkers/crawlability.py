@@ -45,6 +45,12 @@ def _check_crawlability(page: ParsedPage, issues: list[Issue]) -> None:
             "long_paragraph_count": long_para,
         }))
 
+    # ── Agent-readiness WP2: JS-dependent navigation ─────────────────────────
+    # The parser sets this flag when navigation regions exist but contain no
+    # usable links in the raw HTML (menu built client-side by JavaScript).
+    if getattr(page, "js_dependent_navigation", False):
+        issues.append(make_issue("JS_DEPENDENT_NAVIGATION", url))
+
 
 def check_amphtml_links(
     pages: list[ParsedPage],

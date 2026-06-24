@@ -271,3 +271,68 @@ class TestCrawlRouterValidation:
             headers=auth_headers,
         )
         assert r.status_code in (400, 422)
+
+
+# ===================================================================
+# Agent-readiness Phase 1 (WP6) — API contract surfaces
+# ===================================================================
+
+
+class TestAgentReadinessContract:
+    """Contract tests for the agent-readiness API surfaces (spec §5)."""
+
+    @pytest.mark.asyncio
+    async def test_summary_has_agent_readiness(self, api_client, auth_headers, seeded_job):
+        """GET /results exposes agent_health_score + agent_readiness.breakdown."""
+        api_client, job_id = seeded_job
+        r = await api_client.get(f"/api/crawl/{job_id}/results", headers=auth_headers)
+        assert r.status_code == 200
+        summary = r.json()["summary"]
+        assert isinstance(summary["agent_health_score"], int)
+        assert 0 <= summary["agent_health_score"] <= 100
+        assert "breakdown" in summary["agent_readiness"]
+        assert isinstance(summary["agent_readiness"]["breakdown"], list)
+
+    @pytest.mark.parametrize("category", ["rendering", "semantic_html", "ai_readiness"])
+    @pytest.mark.asyncio
+    async def test_agent_categories_resolve(
+        self, api_client, auth_headers, seeded_job, category
+    ):
+        """The new agent categories resolve (200), not rejected as INVALID_CATEGORY (422)."""
+        api_client, job_id = seeded_job
+        r = await api_client.get(
+            f"/api/crawl/{job_id}/results/{category}", headers=auth_headers
+        )
+        assert r.status_code == 200, f"category {category} should resolve, got {r.status_code}"
+
+    @pytest.mark.asyncio
+    async def test_pages_issues_has_agent_issue_tiers(
+        self, api_client, auth_headers, test_store
+    ):
+        """GET /pages/issues returns agent_issues[] with code/severity/tier."""
+        from api.models.issue import Issue
+        job_id = str(uuid4())
+        url = "https://example.com/about"
+        await test_store.create_job(CrawlJob(
+            job_id=job_id, target_url="https://example.com",
+            status="complete", pages_crawled=1,
+        ))
+        await test_store.save_pages([CrawledPage(
+            job_id=job_id, url=url, status_code=200, title="About",
+            crawled_at=datetime.now(timezone.utc),
+        )])
+        await test_store.save_issues([Issue(
+            job_id=job_id, page_url=url, category="semantic_html",
+            severity="warning", issue_code="NON_SEMANTIC_BUTTON",
+            description="x", recommendation="y", impact=4,
+        )])
+        r = await api_client.get(
+            f"/api/crawl/{job_id}/pages/issues",
+            params={"url": url}, headers=auth_headers,
+        )
+        assert r.status_code == 200
+        body = r.json()
+        assert "agent_issues" in body
+        assert any(a["code"] == "NON_SEMANTIC_BUTTON" for a in body["agent_issues"])
+        for a in body["agent_issues"]:
+            assert "code" in a and "severity" in a and "tier" in a

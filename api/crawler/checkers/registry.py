@@ -263,6 +263,16 @@ _ISSUE_SCORING: dict[str, tuple[int, int]] = {
     # M5: AI Citation Ingestion
     "AI_CITED_PAGE": (0, 0),
     "AI_HIGH_VALUE_UNCITED": (4, 2),
+    # ── Agent-readiness Phase 1 (WP2–WP5) — task-side checks ────────────────
+    "JS_DEPENDENT_NAVIGATION":      (5, 3),
+    "NON_SEMANTIC_BUTTON":          (4, 3),
+    "LANDMARK_MAIN_MISSING":        (2, 2),
+    "LANDMARK_NAV_MISSING":         (2, 2),
+    "INTERACTIVE_NO_ACCESSIBLE_NAME": (4, 2),
+    "PLACEHOLDER_LINK":             (7, 2),
+    "WRONG_PLACEHOLDER_LINK":       (7, 2),
+    "SCHEMA_ORG_MISSING":           (5, 2),
+    "CONTACT_INFO_NOT_IN_HTML":     (4, 2),
 }
 
 
@@ -1416,6 +1426,173 @@ _CATALOGUE: dict[str, _IssueSpec] = {
         fixability="content_edit",
         confidence_label="Reasonable proxy",
     ),
+    # ── Agent-readiness Phase 1 (WP2–WP5) — task-side checks ────────────────
+    # WP2: rendering — navigation absent from server HTML
+    "JS_DEPENDENT_NAVIGATION": _IssueSpec(
+        category="rendering", severity="warning",
+        description="The page's primary navigation links are not present in the server-rendered "
+                    "HTML — they appear only after JavaScript runs",
+        recommendation="Render your main navigation as real <a href> links in the server HTML "
+                       "(server-side rendering or static output). AI crawlers and task-executing "
+                       "agents that do not run JavaScript cannot follow JS-only navigation, so "
+                       "they may never discover the rest of your site.",
+        human_description="Navigation Needs JavaScript",
+        what_it_is="A site's navigation menu should be real HTML links that are present the moment "
+                   "the page is delivered. When the menu is built entirely by JavaScript in the "
+                   "browser, the raw HTML an automated client receives has no links to follow.",
+        impact_desc="AI crawlers (GPTBot, ClaudeBot, PerplexityBot) and task agents frequently do "
+                    "not execute JavaScript. If your navigation is JS-only, they see a page with no "
+                    "way forward and cannot reach your other pages — large parts of your site become "
+                    "invisible to them.",
+        how_to_fix="Use server-side rendering or static-site generation so the <nav> contains real "
+                   "<a href> links in the initial HTML. A <noscript> fallback list of links also helps.",
+        fixability="developer_needed",
+    ),
+    # WP3: semantic_html
+    "NON_SEMANTIC_BUTTON": _IssueSpec(
+        category="semantic_html", severity="warning",
+        description="A clickable control is built from a <div> or <span> with no button/link role "
+                    "and no accessible name",
+        recommendation="Use a real <button> or <a> element for clickable controls, or add "
+                       'role="button" plus an accessible name (text, aria-label, or title). '
+                       "Agents read the accessibility tree to decide what is operable.",
+        human_description="Fake Button (div/span)",
+        what_it_is="Buttons and links should be real <button>/<a> elements. A <div> or <span> with "
+                   "a click handler looks clickable to a sighted mouse user but is invisible as a "
+                   "control to anything reading the page structurally.",
+        impact_desc="Task-executing agents and assistive technology identify what they can operate "
+                    "from element roles. A <div> with no role is not recognised as a button, so an "
+                    "agent cannot click it — the action it triggers becomes unreachable.",
+        how_to_fix="Replace the <div>/<span> with a <button> (for actions) or <a href> (for "
+                   'navigation). If you must keep the element, add role="button", tabindex="0", '
+                   "and an accessible name.",
+        fixability="developer_needed",
+    ),
+    "LANDMARK_MAIN_MISSING": _IssueSpec(
+        category="semantic_html", severity="info",
+        description="Page has no <main> landmark (or role=\"main\") identifying its primary content",
+        recommendation="Wrap the primary content of the page in a <main> element. Landmarks let "
+                       "agents and screen readers jump straight to the main content instead of "
+                       "guessing where it begins.",
+        human_description="No Main Content Landmark",
+        what_it_is="The <main> landmark marks the principal content of a page, distinct from the "
+                   "header, navigation, sidebar, and footer.",
+        impact_desc="Without a <main> landmark, agents and assistive technology must heuristically "
+                    "guess which part of the page is the real content, and may extract navigation "
+                    "or boilerplate instead of your actual information.",
+        how_to_fix="Wrap your primary content in <main>…</main> (one per page). Most themes have a "
+                   "content template where this can be added.",
+        fixability="developer_needed",
+    ),
+    "LANDMARK_NAV_MISSING": _IssueSpec(
+        category="semantic_html", severity="info",
+        description="Page has no <nav> landmark (or role=\"navigation\") identifying its navigation",
+        recommendation="Wrap your primary navigation links in a <nav> element so agents and "
+                       "assistive technology can recognise and use the site navigation.",
+        human_description="No Navigation Landmark",
+        what_it_is="The <nav> landmark marks a block of navigation links. It tells structural "
+                   "readers 'these links are how you move around the site'.",
+        impact_desc="Without a <nav> landmark, an agent cannot reliably distinguish navigation "
+                    "from ordinary in-content links, making site traversal less reliable.",
+        how_to_fix="Wrap your main menu in <nav>…</nav>. Add aria-label if you have more than one "
+                   "navigation region (e.g. 'Primary', 'Footer').",
+        fixability="developer_needed",
+    ),
+    "INTERACTIVE_NO_ACCESSIBLE_NAME": _IssueSpec(
+        category="semantic_html", severity="warning",
+        description="An interactive element (button, link, or form field) has no accessible name — "
+                    "no text, aria-label, or title",
+        recommendation="Give every interactive element an accessible name: visible text, an "
+                       "aria-label, an associated <label> (for fields), or a title attribute. "
+                       "Icon-only controls especially need aria-label.",
+        human_description="Unlabelled Control",
+        what_it_is="An accessible name is the label an agent or screen reader announces for a "
+                   "control. A button with only an icon, or an input with no label, has no name.",
+        impact_desc="An agent deciding which control performs an action relies on the accessible "
+                    "name. An unnamed control is ambiguous or unusable — the agent cannot tell "
+                    "what it does and may skip it.",
+        how_to_fix="Add visible text, an aria-label (e.g. aria-label=\"Search\"), a <label for> for "
+                   "form fields, or a title attribute to each unnamed interactive element.",
+        fixability="developer_needed",
+    ),
+    # WP4: placeholder / dead links
+    "PLACEHOLDER_LINK": _IssueSpec(
+        category="broken_link", severity="critical",
+        description="A navigational call-to-action links nowhere — its href is \"#\" or "
+                    "\"javascript:void(0)\"",
+        recommendation="Point the link at its real destination URL. A prominent call-to-action "
+                       "(Donate, Contact, Sign up) whose only href is '#' goes nowhere for an "
+                       "agent following links, even if JavaScript makes it work for a mouse user.",
+        human_description="Dead Call-to-Action Link",
+        what_it_is="A placeholder link is a styled link or button whose href is a stand-in ('#', "
+                   "'javascript:void(0)') rather than a real URL. It often 'works' via JavaScript "
+                   "for human clicks but resolves to nothing for an automated follower.",
+        impact_desc="AI crawlers and task agents follow href values. A key action whose href is a "
+                    "placeholder is a dead end — the agent cannot complete the journey (e.g. reach "
+                    "your donation or contact page), and the page graph looks broken.",
+        how_to_fix="Set the link's href to the actual target page. Reserve '#'/'javascript:void(0)' "
+                   "for genuine in-page controls (accordions, tabs) — not for navigation.",
+        fixability="developer_needed",
+    ),
+    "WRONG_PLACEHOLDER_LINK": _IssueSpec(
+        category="broken_link", severity="critical",
+        description="A link points at a placeholder or example domain (example.com, localhost, or "
+                    "a stray search-engine URL) instead of a real destination",
+        recommendation="Replace the placeholder URL with the correct destination. Links to "
+                       "example.com / localhost / a bare google.com are usually template leftovers "
+                       "that were never filled in.",
+        human_description="Link to Placeholder Domain",
+        what_it_is="A link whose destination is an obvious placeholder — example.com, example.org, "
+                   "localhost, 127.0.0.1, or a bare search-engine homepage used as filler — rather "
+                   "than the page it was meant to point to.",
+        impact_desc="An agent following the link lands somewhere meaningless (or unreachable), "
+                    "breaking the task or citation trail. These are almost always unfinished "
+                    "template content that shipped by mistake.",
+        how_to_fix="Edit the link to use the real URL. If the link is a legitimate reference to "
+                   "that domain, ignore the flag — the check is conservative and uses link text "
+                   "and position to avoid false positives.",
+        fixability="content_edit",
+    ),
+    # WP5: structured data presence (homepage Organization) + contact info
+    "SCHEMA_ORG_MISSING": _IssueSpec(
+        category="ai_readiness", severity="warning",
+        description="The homepage has no Organization (or LocalBusiness) JSON-LD schema identifying "
+                    "the organisation",
+        recommendation="Add Organization (or LocalBusiness) JSON-LD to your homepage with your "
+                       "name, URL, logo, and contact details. This is the primary machine-readable "
+                       "identity AI systems use to recognise and cite your organisation.",
+        human_description="No Organization Schema",
+        what_it_is="Organization schema is the structured-data block that states who you are — "
+                   "name, logo, URL, social profiles, contact points. On the homepage it anchors "
+                   "your entire site's identity in the knowledge graph.",
+        impact_desc="AI systems build an entity profile of your organisation from Organization "
+                    "schema. Without it, they must infer your identity from prose, which is less "
+                    "reliable and weakens your chance of being correctly named and cited.",
+        how_to_fix="Add a <script type=\"application/ld+json\"> Organization block to your homepage "
+                   "(TalkingToad's Entity Schema Factory can generate one), or enable Organization "
+                   "schema in your SEO plugin.",
+        fixability="wp_fixable",
+        confidence_label="Reasonable proxy",
+    ),
+    "CONTACT_INFO_NOT_IN_HTML": _IssueSpec(
+        category="ai_readiness", severity="warning",
+        description="The homepage's contact details (address, phone, or email) appear only inside "
+                    "images or JavaScript, not as real text in the HTML",
+        recommendation="Put your address, phone number, and email in the page as real text (not "
+                       "baked into an image or injected by JavaScript). Agents and AI systems can "
+                       "only extract and surface contact details they can read as text.",
+        human_description="Contact Info Not in Text",
+        what_it_is="Contact information that exists on the page only as an image (e.g. a phone "
+                   "number in a banner graphic) or that is inserted by client-side JavaScript is "
+                   "invisible to anything reading the raw HTML.",
+        impact_desc="When an AI assistant is asked 'how do I contact this organisation?', it can "
+                    "only answer from text it can read. Image- or JS-only contact details are "
+                    "missed, so the agent cannot surface your phone, email, or address.",
+        how_to_fix="Render contact details as plain HTML text in the footer or a contact block. "
+                   "Optionally add ContactPoint / PostalAddress schema to reinforce them.",
+        fixability="content_edit",
+        confidence_label="Heuristic",
+    ),
 }
 _STOP_WORDS: frozenset[str] = frozenset({
     "a", "an", "the", "and", "or", "but", "in", "on", "at", "to", "for",
@@ -1531,6 +1708,9 @@ _AI_READINESS_CONFIDENCE: dict[str, str] = {
     # M5: AI Citation Ingestion
     "AI_CITED_PAGE":                "Established",
     "AI_HIGH_VALUE_UNCITED":        "Reasonable proxy",
+    # Agent-readiness Phase 1 (WP5) — ai_readiness-category task-side codes
+    "SCHEMA_ORG_MISSING":           "Reasonable proxy",
+    "CONTACT_INFO_NOT_IN_HTML":     "Heuristic",
 }
 def make_issue(
     code: str,

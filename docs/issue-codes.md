@@ -8,13 +8,13 @@ generator: scripts/generate_issue_codes_doc.py
 
 > **This file is auto-generated.** Do not edit by hand — your changes will be overwritten the next time the generator runs. To update an issue code, edit `api/crawler/issue_checker.py` (`_CATALOGUE`, `_ISSUE_SCORING`, `_AI_READINESS_CONFIDENCE`) and re-run `python scripts/generate_issue_codes_doc.py`.
 
-**142 issue codes** across 11 categories.
+**151 issue codes** across 13 categories.
 
 ## Table of contents
 
 - [METADATA](#metadata) (20)
 - [HEADING](#heading) (4)
-- [BROKEN_LINK](#broken_link) (6)
+- [BROKEN_LINK](#broken_link) (8)
 - [REDIRECT](#redirect) (8)
 - [CRAWLABILITY](#crawlability) (18)
 - [DUPLICATE](#duplicate) (1)
@@ -22,7 +22,9 @@ generator: scripts/generate_issue_codes_doc.py
 - [SECURITY](#security) (6)
 - [URL_STRUCTURE](#url_structure) (4)
 - [IMAGE](#image) (14)
-- [AI_READINESS](#ai_readiness) (60)
+- [AI_READINESS](#ai_readiness) (62)
+- [RENDERING](#rendering) (1)
+- [SEMANTIC_HTML](#semantic_html) (4)
 
 ---
 
@@ -319,7 +321,7 @@ Heading levels skip (e.g., H1 → H3)
 
 Internal and external links returning 4xx/5xx, login redirects.
 
-_6 codes in this category._
+_8 codes in this category._
 
 ### BROKEN_LINK_404
 **Severity:** 🔴 critical | **Impact:** 10 | **Effort:** 2 | **Fixability:** wp_fixable
@@ -384,6 +386,38 @@ External link did not respond — destination may be slow or unavailable
 **Recommendation:** Click the link to confirm it works in a browser. If it consistently fails, the destination site may be down or the domain may have expired.
 
 **Plain-English:** Slow External Link
+
+---
+
+### PLACEHOLDER_LINK
+**Severity:** 🔴 critical | **Impact:** 7 | **Effort:** 2
+
+**What it is**
+A placeholder link is a styled link or button whose href is a stand-in ('#', 'javascript:void(0)') rather than a real URL. It often 'works' via JavaScript for human clicks but resolves to nothing for an automated follower.
+
+**Why it matters**
+AI crawlers and task agents follow href values. A key action whose href is a placeholder is a dead end — the agent cannot complete the journey (e.g. reach your donation or contact page), and the page graph looks broken.
+
+**How to fix**
+Set the link's href to the actual target page. Reserve '#'/'javascript:void(0)' for genuine in-page controls (accordions, tabs) — not for navigation.
+
+**Plain-English:** Dead Call-to-Action Link
+
+---
+
+### WRONG_PLACEHOLDER_LINK
+**Severity:** 🔴 critical | **Impact:** 7 | **Effort:** 2 | **Fixability:** content_edit
+
+**What it is**
+A link whose destination is an obvious placeholder — example.com, example.org, localhost, 127.0.0.1, or a bare search-engine homepage used as filler — rather than the page it was meant to point to.
+
+**Why it matters**
+An agent following the link lands somewhere meaningless (or unreachable), breaking the task or citation trail. These are almost always unfinished template content that shipped by mistake.
+
+**How to fix**
+Edit the link to use the real URL. If the link is a legitimate reference to that domain, ignore the flag — the check is conservative and uses link text and position to avoid false positives.
+
+**Plain-English:** Link to Placeholder Domain
 
 ---
 
@@ -1013,7 +1047,7 @@ Image takes too long to load (over 1 second)
 
 Site readiness for AI search engines (Google AI Overviews, ChatGPT, Perplexity, etc.). Every code in this category carries a confidence label per the v2.0 spec: **Established** (vendor-confirmed effect), **Reasonable proxy** (industry consensus + Google's published best practices), **Heuristic** (industry consensus only, no vendor confirmation).
 
-_60 codes in this category._
+_62 codes in this category._
 
 ### AI_BOT_BLANKET_DISALLOW
 **Severity:** 🔴 critical | **Confidence:** Established | **Impact:** 9 | **Effort:** 1
@@ -1276,6 +1310,22 @@ Page contains comparison language ('vs', 'versus', 'compared to') but no table
 **Recommendation:** Add a structured comparison table. Tables are the most extractable format for comparisons — AI systems can read them as structured data.
 
 **Plain-English:** Comparison Without Table
+
+---
+
+### CONTACT_INFO_NOT_IN_HTML
+**Severity:** 🟡 warning | **Confidence:** Heuristic | **Impact:** 4 | **Effort:** 2 | **Fixability:** content_edit
+
+**What it is**
+Contact information that exists on the page only as an image (e.g. a phone number in a banner graphic) or that is inserted by client-side JavaScript is invisible to anything reading the raw HTML.
+
+**Why it matters**
+When an AI assistant is asked 'how do I contact this organisation?', it can only answer from text it can read. Image- or JS-only contact details are missed, so the agent cannot surface your phone, email, or address.
+
+**How to fix**
+Render contact details as plain HTML text in the footer or a contact block. Optionally add ContactPoint / PostalAddress schema to reinforce them.
+
+**Plain-English:** Contact Info Not in Text
 
 ---
 
@@ -1576,6 +1626,22 @@ Page uses deprecated schema.org types
 
 ---
 
+### SCHEMA_ORG_MISSING
+**Severity:** 🟡 warning | **Confidence:** Reasonable proxy | **Impact:** 5 | **Effort:** 2 | **Fixability:** wp_fixable
+
+**What it is**
+Organization schema is the structured-data block that states who you are — name, logo, URL, social profiles, contact points. On the homepage it anchors your entire site's identity in the knowledge graph.
+
+**Why it matters**
+AI systems build an entity profile of your organisation from Organization schema. Without it, they must infer your identity from prose, which is less reliable and weakens your chance of being correctly named and cited.
+
+**How to fix**
+Add a <script type="application/ld+json"> Organization block to your homepage (TalkingToad's Entity Schema Factory can generate one), or enable Organization schema in your SEO plugin.
+
+**Plain-English:** No Organization Schema
+
+---
+
 ### SCHEMA_TYPE_CONFLICT
 **Severity:** 🟡 warning | **Confidence:** Reasonable proxy | **Impact:** 3 | **Effort:** 2 | **Fixability:** content_edit
 
@@ -1672,5 +1738,95 @@ AI crawler user agents (GPTBot, ClaudeBot) receive substantially less content th
 **Recommendation:** Ensure AI crawler requests receive the same content as regular browsers. Serving stripped content to AI bots prevents citation and indexing.
 
 **Plain-English:** AI Bot Content Stripping
+
+---
+
+<a id="rendering"></a>
+## RENDERING
+
+_1 codes in this category._
+
+### JS_DEPENDENT_NAVIGATION
+**Severity:** 🟡 warning | **Impact:** 5 | **Effort:** 3
+
+**What it is**
+A site's navigation menu should be real HTML links that are present the moment the page is delivered. When the menu is built entirely by JavaScript in the browser, the raw HTML an automated client receives has no links to follow.
+
+**Why it matters**
+AI crawlers (GPTBot, ClaudeBot, PerplexityBot) and task agents frequently do not execute JavaScript. If your navigation is JS-only, they see a page with no way forward and cannot reach your other pages — large parts of your site become invisible to them.
+
+**How to fix**
+Use server-side rendering or static-site generation so the <nav> contains real <a href> links in the initial HTML. A <noscript> fallback list of links also helps.
+
+**Plain-English:** Navigation Needs JavaScript
+
+---
+
+<a id="semantic_html"></a>
+## SEMANTIC_HTML
+
+_4 codes in this category._
+
+### INTERACTIVE_NO_ACCESSIBLE_NAME
+**Severity:** 🟡 warning | **Impact:** 4 | **Effort:** 2
+
+**What it is**
+An accessible name is the label an agent or screen reader announces for a control. A button with only an icon, or an input with no label, has no name.
+
+**Why it matters**
+An agent deciding which control performs an action relies on the accessible name. An unnamed control is ambiguous or unusable — the agent cannot tell what it does and may skip it.
+
+**How to fix**
+Add visible text, an aria-label (e.g. aria-label="Search"), a <label for> for form fields, or a title attribute to each unnamed interactive element.
+
+**Plain-English:** Unlabelled Control
+
+---
+
+### LANDMARK_MAIN_MISSING
+**Severity:** 🔵 info | **Impact:** 2 | **Effort:** 2
+
+**What it is**
+The <main> landmark marks the principal content of a page, distinct from the header, navigation, sidebar, and footer.
+
+**Why it matters**
+Without a <main> landmark, agents and assistive technology must heuristically guess which part of the page is the real content, and may extract navigation or boilerplate instead of your actual information.
+
+**How to fix**
+Wrap your primary content in <main>…</main> (one per page). Most themes have a content template where this can be added.
+
+**Plain-English:** No Main Content Landmark
+
+---
+
+### LANDMARK_NAV_MISSING
+**Severity:** 🔵 info | **Impact:** 2 | **Effort:** 2
+
+**What it is**
+The <nav> landmark marks a block of navigation links. It tells structural readers 'these links are how you move around the site'.
+
+**Why it matters**
+Without a <nav> landmark, an agent cannot reliably distinguish navigation from ordinary in-content links, making site traversal less reliable.
+
+**How to fix**
+Wrap your main menu in <nav>…</nav>. Add aria-label if you have more than one navigation region (e.g. 'Primary', 'Footer').
+
+**Plain-English:** No Navigation Landmark
+
+---
+
+### NON_SEMANTIC_BUTTON
+**Severity:** 🟡 warning | **Impact:** 4 | **Effort:** 3
+
+**What it is**
+Buttons and links should be real <button>/<a> elements. A <div> or <span> with a click handler looks clickable to a sighted mouse user but is invisible as a control to anything reading the page structurally.
+
+**Why it matters**
+Task-executing agents and assistive technology identify what they can operate from element roles. A <div> with no role is not recognised as a button, so an agent cannot click it — the action it triggers becomes unreachable.
+
+**How to fix**
+Replace the <div>/<span> with a <button> (for actions) or <a href> (for navigation). If you must keep the element, add role="button", tabindex="0", and an accessible name.
+
+**Plain-English:** Fake Button (div/span)
 
 ---

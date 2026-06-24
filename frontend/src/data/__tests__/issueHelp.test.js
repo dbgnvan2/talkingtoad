@@ -48,6 +48,8 @@ describe('issueHelp data', () => {
       'broken_link', 'metadata', 'heading', 'redirect',
       'crawlability', 'duplicate', 'sitemap', 'security',
       'url_structure', 'ai_readiness', 'image',
+      // Agent-readiness Phase 1 task-side categories
+      'rendering', 'semantic_html',
     ])
     for (const [code, help] of Object.entries(issueHelp)) {
       expect(validCategories.has(help.category), `${code} has invalid category: ${help.category}`).toBe(true)

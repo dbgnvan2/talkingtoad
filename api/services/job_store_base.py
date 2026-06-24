@@ -119,6 +119,99 @@ async def _compute_v15_health_score(
     return site_health, len(page_scores)
 
 
+# ---------------------------------------------------------------------------
+# Agent-readiness ("Agent Health") score (Agent-readiness Phase 1, WP6)
+# ---------------------------------------------------------------------------
+# The Agent Health score reuses the exact v1.5 Health-Score model
+# (Page = max(0, 100 − Σ impact); Site = mean of page scores) but restricts
+# the impact sum to *agent-relevant* issues: the citation-side ai_readiness
+# codes (already shipped) plus the Phase 1 task-side codes (rendering,
+# semantic_html, and the two placeholder-link codes that live in broken_link).
+#
+# Defined as (category set) ∪ (explicit code set) so the two placeholder-link
+# codes are included without recategorising them out of broken_link.
+
+_AGENT_READINESS_CATEGORIES: frozenset[str] = frozenset(
+    {"ai_readiness", "rendering", "semantic_html"}
+)
+_AGENT_READINESS_EXTRA_CODES: frozenset[str] = frozenset(
+    {"PLACEHOLDER_LINK", "WRONG_PLACEHOLDER_LINK"}
+)
+
+
+def _is_agent_issue(category: str, code: str) -> bool:
+    """Return True if an issue counts toward the Agent Health score."""
+    return category in _AGENT_READINESS_CATEGORIES or code in _AGENT_READINESS_EXTRA_CODES
+
+
+def _agent_issue_sql_filter() -> str:
+    """SQL fragment selecting agent-relevant issues (categories ∪ explicit codes)."""
+    cats = ",".join(f"'{c}'" for c in sorted(_AGENT_READINESS_CATEGORIES))
+    codes = ",".join(f"'{c}'" for c in sorted(_AGENT_READINESS_EXTRA_CODES))
+    return f"(category IN ({cats}) OR issue_code IN ({codes}))"
+
+
+async def _compute_agent_health_score(
+    db: aiosqlite.Connection,
+    job_id: str,
+    pages_crawled: int,
+    suppressed_codes: set[str] | None = None,
+) -> tuple[int, list[dict]]:
+    """Compute the Agent Health score and a per-category breakdown.
+
+    Mirrors :func:`_compute_v15_health_score` but only sums the impact of
+    agent-relevant issues. Returns ``(agent_health_score, breakdown)`` where
+    breakdown is a list of ``{"category", "issues", "impact"}`` dicts (sorted
+    by impact desc) covering only agent-relevant categories/codes present.
+    """
+    agent_filter = _agent_issue_sql_filter()
+
+    # Per-page impact sum for agent-relevant issues (excluding suppressed codes).
+    where = f"job_id = ? AND page_url IS NOT NULL AND {agent_filter}"
+    params: list = [job_id]
+    if suppressed_codes:
+        placeholders = ",".join("?" * len(suppressed_codes))
+        where += f" AND issue_code NOT IN ({placeholders})"
+        params.extend(sorted(suppressed_codes))
+
+    async with db.execute(
+        f"SELECT RTRIM(page_url, '/') AS norm_url, SUM(impact) AS total_impact "
+        f"FROM issues WHERE {where} GROUP BY norm_url",
+        tuple(params),
+    ) as cursor:
+        impact_rows = await cursor.fetchall()
+    impact_by_url: dict[str, int] = {r[0]: (r[1] or 0) for r in impact_rows}
+
+    # Breakdown by category (counts + impact) for agent-relevant issues.
+    async with db.execute(
+        f"SELECT category, COUNT(*), COALESCE(SUM(impact), 0) "
+        f"FROM issues WHERE job_id = ? AND {agent_filter} GROUP BY category",
+        (job_id,),
+    ) as cursor:
+        cat_rows = await cursor.fetchall()
+    breakdown = [
+        {"category": r[0], "issues": r[1], "impact": r[2] or 0}
+        for r in cat_rows
+    ]
+    breakdown.sort(key=lambda d: d["impact"], reverse=True)
+
+    # Site score = mean of per-page agent-health scores over all crawled pages.
+    async with db.execute(
+        "SELECT url FROM crawled_pages WHERE job_id = ?",
+        (job_id,),
+    ) as cursor:
+        page_rows = await cursor.fetchall()
+    if not page_rows:
+        return 100, breakdown
+
+    page_scores = [
+        max(0, 100 - impact_by_url.get(url.rstrip("/"), 0))
+        for (url,) in page_rows
+    ]
+    site = round(sum(page_scores) / len(page_scores))
+    return site, breakdown
+
+
 @runtime_checkable
 class JobStore(Protocol):
     """Async interface for job persistence."""
