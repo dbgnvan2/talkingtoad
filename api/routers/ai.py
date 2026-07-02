@@ -21,7 +21,34 @@ router = APIRouter(prefix="/api/ai", dependencies=[Depends(require_auth)])
 class AIAnalysisRequest(BaseModel):
     job_id: str
     page_url: str
-    analysis_type: str  # e.g. "title_meta_optimize", "semantic_alignment"
+    analysis_type: str  # e.g. "title_meta_optimize", "semantic_alignment", "issue_advisor"
+    issue_code: str | None = None
+    issue_description: str | None = None
+    extra_context: str | None = None
+
+
+# Issue codes where AI can actually write better text (SEO/GEO rewriting only)
+_AI_TEXT_SUGGESTION_CODES = {
+    # Title / meta
+    "TITLE_MISSING", "TITLE_TOO_SHORT", "TITLE_TOO_LONG", "TITLE_DUPLICATE",
+    "TITLE_META_DUPLICATE_PAIR",
+    "META_DESC_MISSING", "META_DESC_TOO_SHORT", "META_DESC_TOO_LONG", "META_DESC_DUPLICATE",
+    # Social / OG
+    "OG_TITLE_MISSING", "OG_DESC_MISSING",
+    # Headings
+    "H1_MISSING", "H1_MULTIPLE", "HEADING_EMPTY",
+    # Images
+    "IMG_ALT_MISSING", "IMG_ALT_TOO_SHORT", "IMG_ALT_TOO_LONG",
+    "IMG_ALT_GENERIC", "IMG_ALT_DUP_FILENAME", "IMG_ALT_MISUSED",
+    # Links
+    "LINK_EMPTY_ANCHOR",
+    # Content
+    "THIN_CONTENT",
+    # Schema
+    "SCHEMA_MISSING", "SCHEMA_ORG_MISSING",
+    # AI readiness — text AI can rewrite
+    "CONVERSATIONAL_H2_MISSING", "QUERY_COVERAGE_WEAK",
+}
 
 
 @router.post("/analyze")
@@ -45,14 +72,52 @@ async def analyze_page(request: Request, body: AIAnalysisRequest, store=Depends(
             "h1": page_data.h1_tags[0] if page_data.h1_tags else "None",
             "body_snippet": page_data.meta_description or "None"
         }
+    elif body.analysis_type == "issue_advisor":
+        if not body.issue_code:
+            return {"error": "issue_code is required for issue_advisor analysis"}
+        if body.issue_code not in _AI_TEXT_SUGGESTION_CODES:
+            return {"error": f"Issue code '{body.issue_code}' does not support AI text suggestions"}
+        context = {
+            "issue_code": body.issue_code,
+            "issue_description": body.issue_description or "",
+            "url": body.page_url,
+            "title": page_data.title or "(none)",
+            "meta_description": page_data.meta_description or "(none)",
+            "h1": page_data.h1_tags[0] if page_data.h1_tags else "(none)",
+            "extra_context": body.extra_context or "none",
+        }
     else:
         return {"error": f"Invalid analysis type: {body.analysis_type}"}
 
-    suggestion = await analyze_with_ai(body.analysis_type, context)
+    import json, re as _re
+    raw = await analyze_with_ai(body.analysis_type, context)
+
+    if body.analysis_type == "issue_advisor":
+        # Strip markdown fences the model sometimes wraps around JSON
+        cleaned = raw.strip()
+        if cleaned.startswith("```"):
+            cleaned = _re.sub(r'^```(?:json)?\s*\n?', '', cleaned)
+            cleaned = _re.sub(r'\n?```\s*$', '', cleaned)
+        try:
+            parsed = json.loads(cleaned)
+            # Normalise: if the model returned a different shape, fold it into suggested_text
+            if not isinstance(parsed.get("suggested_text"), str):
+                # Best-effort: turn the whole response into a readable string
+                readable = "\n".join(f"{k}: {v}" for k, v in parsed.items() if isinstance(v, str))
+                parsed = {
+                    "suggested_text": readable or json.dumps(parsed, indent=2),
+                    "why": "",
+                    "where_to_apply": "",
+                }
+            raw = json.dumps(parsed)
+        except (json.JSONDecodeError, AttributeError):
+            # Return as-is; frontend fallback handles plain text
+            pass
+
     return {
         "page_url": body.page_url,
         "analysis_type": body.analysis_type,
-        "suggestion": suggestion
+        "suggestion": raw,
     }
 
 

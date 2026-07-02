@@ -22,6 +22,7 @@ import { useToast } from '../contexts/ToastContext.jsx'
 const GSCInsightsPanel = React.lazy(() => import('../components/GSCInsightsPanel'))
 const PagePriorityPanel = React.lazy(() => import('../components/PagePriorityPanel'))
 import { getIssueHelp } from '../data/issueHelp.js'
+import sectionHelp from '../data/sectionHelp.js'
 import {
   getResults, getResultsByCategory, getPages, getPageIssues,
   downloadCsv, downloadPdfReport, downloadExcelReport,
@@ -37,6 +38,28 @@ import {
 } from '../api.js'
 
 const IMAGE_FIXABLE_CODES = new Set(['IMG_OVERSIZED', 'IMG_ALT_MISSING'])
+
+const AI_TEXT_SUGGESTION_CODES = new Set([
+  // Title / meta
+  'TITLE_MISSING', 'TITLE_TOO_SHORT', 'TITLE_TOO_LONG', 'TITLE_DUPLICATE',
+  'TITLE_META_DUPLICATE_PAIR',
+  'META_DESC_MISSING', 'META_DESC_TOO_SHORT', 'META_DESC_TOO_LONG', 'META_DESC_DUPLICATE',
+  // Social / OG
+  'OG_TITLE_MISSING', 'OG_DESC_MISSING',
+  // Headings
+  'H1_MISSING', 'H1_MULTIPLE', 'HEADING_EMPTY',
+  // Images
+  'IMG_ALT_MISSING', 'IMG_ALT_TOO_SHORT', 'IMG_ALT_TOO_LONG',
+  'IMG_ALT_GENERIC', 'IMG_ALT_DUP_FILENAME', 'IMG_ALT_MISUSED',
+  // Links
+  'LINK_EMPTY_ANCHOR',
+  // Content
+  'THIN_CONTENT',
+  // Schema
+  'SCHEMA_MISSING', 'SCHEMA_ORG_MISSING',
+  // AI readiness — text AI can rewrite
+  'CONVERSATIONAL_H2_MISSING', 'QUERY_COVERAGE_WEAK',
+])
 
 const CATEGORIES = [
   { key: 'broken_link',   label: 'Broken Links' },
@@ -624,6 +647,7 @@ function PageDetail({ jobId, pageUrl, onRescan }) {
         expanded={expandedSections.metadata}
         onToggle={() => toggleSection('metadata')}
         badge={<span className="text-[9px] px-2 py-0.5 bg-gray-100 text-gray-500 rounded-full font-bold">SEO</span>}
+        helpContent={sectionHelp.page_metadata}
       >
         <div className="space-y-4">
           <MetadataField label="Title" value={pageData.title} limit={60} />
@@ -648,6 +672,7 @@ function PageDetail({ jobId, pageUrl, onRescan }) {
         badge={pageData.headings_outline?.length > 0 && (
           <span className="text-[9px] px-2 py-0.5 bg-indigo-100 text-indigo-600 rounded-full font-bold">{pageData.headings_outline.length} headings</span>
         )}
+        helpContent={sectionHelp.headings_structure}
       >
         <HeadingsPanel jobId={jobId} pageUrl={pageUrl} headings={pageData.headings_outline || []} onUpdate={rescanAfterFix} />
       </CollapsibleSection>
@@ -660,6 +685,7 @@ function PageDetail({ jobId, pageUrl, onRescan }) {
         badge={data.total_issues > 0 && (
           <span className="text-[9px] px-2 py-0.5 bg-red-100 text-red-600 rounded-full font-bold">{data.total_issues} issues</span>
         )}
+        helpContent={sectionHelp.issues_found}
       >
         {Object.keys(grouped).length === 0 ? (
           <div className="py-8 text-center text-gray-400 font-medium">
@@ -693,20 +719,38 @@ function PageDetail({ jobId, pageUrl, onRescan }) {
   )
 }
 
-function CollapsibleSection({ title, expanded, onToggle, badge, children }) {
+function CollapsibleSection({ title, expanded, onToggle, badge, helpContent, children }) {
   const { getFontClass } = useTheme()
+  const [showHelp, setShowHelp] = useState(false)
   return (
     <div className="bg-white border border-gray-200 rounded-2xl overflow-hidden shadow-sm">
-      <button
-        onClick={onToggle}
-        className="w-full flex items-center justify-between px-5 py-4 hover:bg-gray-50 transition-colors"
-      >
-        <div className="flex items-center gap-3">
+      <div className="w-full flex items-center justify-between px-5 py-4">
+        <button
+          onClick={onToggle}
+          className="flex items-center gap-3 flex-1 text-left hover:opacity-80 transition-opacity"
+        >
           <span className="font-bold text-gray-800" style={{ ...getFontClass('headingSize'), fontSize: `${getFontClass('headingSize').fontSize.replace('px', '') * 1.3}px` }}>{title}</span>
           {badge}
+        </button>
+        <div className="flex items-center gap-2 ml-2">
+          {helpContent && (
+            <button
+              onClick={() => setShowHelp(h => !h)}
+              className={`w-6 h-6 flex items-center justify-center rounded-full text-xs font-black transition-colors ${showHelp ? 'bg-blue-100 text-blue-600' : 'bg-gray-100 text-gray-400 hover:text-gray-600'}`}
+              title="What is this?"
+              aria-label="Show section help"
+            >?</button>
+          )}
+          <button onClick={onToggle} className="text-gray-600 text-xl font-black px-1">{expanded ? '▲' : '▼'}</button>
         </div>
-        <span className="text-gray-600 text-xl font-black">{expanded ? '▲' : '▼'}</span>
-      </button>
+      </div>
+      {showHelp && helpContent && (
+        <div className="px-5 pb-4 pt-0 bg-blue-50 border-t border-blue-100 space-y-2">
+          <p className="text-sm text-gray-700"><span className="font-black text-blue-700">What this is: </span>{helpContent.what}</p>
+          <p className="text-sm text-gray-700"><span className="font-black text-blue-700">Why it matters: </span>{helpContent.why}</p>
+          <p className="text-sm text-gray-700"><span className="font-black text-blue-700">How to act on it: </span>{helpContent.how}</p>
+        </div>
+      )}
       {expanded && (
         <div className="px-5 pb-5 border-t border-gray-100 pt-4">
           {children}
@@ -899,6 +943,7 @@ function IssueCard({ issue: iss, jobId, pageUrl, isOpen, onToggleFix, onFixCompl
   const [anchorFixes, setAnchorFixes] = useState({})
 
   const canFix = FIXABLE_CODES.has(iss.issue_code) || IMAGE_FIXABLE_CODES.has(iss.issue_code) || FIXABLE_LINK_CODES.has(iss.issue_code)
+  const canSuggestAI = AI_TEXT_SUGGESTION_CODES.has(iss.issue_code)
   const isBrokenLink = ['BROKEN_LINK_404', 'BROKEN_LINK_410', 'BROKEN_LINK_5XX', 'BROKEN_LINK_503', 'EXTERNAL_LINK_TIMEOUT', 'EXTERNAL_LINK_SKIPPED'].includes(iss.issue_code)
   const isEmptyAnchor = iss.issue_code === 'LINK_EMPTY_ANCHOR'
   const isImageIssue = IMAGE_FIXABLE_CODES.has(iss.issue_code)
@@ -991,10 +1036,38 @@ function IssueCard({ issue: iss, jobId, pageUrl, isOpen, onToggleFix, onFixCompl
   async function handleAiAnalyze() {
     setAiLoading(true)
     try {
-      const result = await analyzeWithAi(jobId, pageUrl, 'title_meta_optimize')
-      setAiResult(result.suggestion || result.result || JSON.stringify(result))
+      const extras = []
+      if (iss.extra?.image_url) extras.push(`image: ${iss.extra.image_url}`)
+      if (iss.extra?.current_alt) extras.push(`current alt: ${iss.extra.current_alt}`)
+      if (iss.extra?.link_url) extras.push(`link: ${iss.extra.link_url}`)
+      if (iss.extra?.href) extras.push(`href: ${iss.extra.href}`)
+      if (iss.extra?.duplicate_urls?.length)
+        extras.push(`also on: ${iss.extra.duplicate_urls.slice(0, 3).join(', ')}`)
+      if (iss.extra?.h2_headings?.length)
+        extras.push(`current H2s: ${iss.extra.h2_headings.join(' | ')}`)
+      if (iss.extra?.h1)
+        extras.push(`H1 topic: ${iss.extra.h1}`)
+
+      const result = await analyzeWithAi(jobId, pageUrl, 'issue_advisor', {
+        issue_code: iss.issue_code,
+        issue_description: iss.description,
+        extra_context: extras.join('; ') || 'none',
+      })
+
+      try {
+        const parsed = JSON.parse(result.suggestion)
+        // Ensure every field we render is a plain string, never an object
+        const safe = (v) => (v && typeof v === 'object' ? JSON.stringify(v) : v)
+        setAiResult({
+          suggested_text: safe(parsed.suggested_text) || '',
+          why: safe(parsed.why) || '',
+          where_to_apply: safe(parsed.where_to_apply) || '',
+        })
+      } catch {
+        setAiResult({ suggested_text: result.suggestion || JSON.stringify(result), why: '', where_to_apply: '' })
+      }
     } catch (err) {
-      setAiResult('AI analysis failed: ' + err.message)
+      setAiResult({ suggested_text: 'AI analysis failed: ' + err.message })
     } finally {
       setAiLoading(false)
     }
@@ -1018,6 +1091,14 @@ function IssueCard({ issue: iss, jobId, pageUrl, isOpen, onToggleFix, onFixCompl
             >
               {isOpen ? 'Close' : 'Fix'}
             </button>
+          )}
+          {helpContent && (
+            <button
+              onClick={() => setShowHelp(h => !h)}
+              className={`w-6 h-6 flex items-center justify-center rounded-full text-xs font-black transition-colors ${showHelp ? 'bg-blue-100 text-blue-600' : 'bg-gray-100 text-gray-400 hover:text-gray-600'}`}
+              title="What is this issue?"
+              aria-label="Show help"
+            >?</button>
           )}
           <button
             onClick={() => setShowActions(!showActions)}
@@ -1202,9 +1283,8 @@ function IssueCard({ issue: iss, jobId, pageUrl, isOpen, onToggleFix, onFixCompl
       )}
 
       {/* Extra data display (for non-empty-anchor, non-duplicate, non-breakdown issues) */}
-      {!isEmptyAnchor && !iss.extra?.duplicate_urls && !iss.extra?.breakdown && iss.extra && Object.keys(iss.extra).length > 0 && (
+      {!isEmptyAnchor && !iss.extra?.duplicate_urls && !iss.extra?.breakdown && iss.extra && (iss.extra.link_url || iss.extra.href || iss.extra.image_url || iss.extra.size_kb || iss.extra.status_code) && (
         <div className="mt-2 p-3 bg-gray-100 rounded-lg">
-          <p className="text-xs font-bold text-gray-400 uppercase mb-1">Details</p>
           {iss.extra.link_url && <p className="text-sm text-gray-600 font-mono truncate">Link: {iss.extra.link_url}</p>}
           {iss.extra.href && <p className="text-sm text-gray-600 font-mono truncate">Href: {iss.extra.href}</p>}
           {iss.extra.image_url && <p className="text-sm text-gray-600 font-mono truncate">Image: {iss.extra.image_url}</p>}
@@ -1256,13 +1336,15 @@ function IssueCard({ issue: iss, jobId, pageUrl, isOpen, onToggleFix, onFixCompl
             >
               {showHelp ? 'Hide Help' : 'Show Help'}
             </button>
-            <button
-              onClick={handleAiAnalyze}
-              disabled={aiLoading}
-              className="text-sm font-bold px-4 py-2 bg-indigo-50 text-indigo-700 rounded-lg hover:bg-indigo-100 disabled:opacity-50"
-            >
-              {aiLoading ? 'Analyzing...' : '✨ AI Suggestion'}
-            </button>
+            {canSuggestAI && (
+              <button
+                onClick={handleAiAnalyze}
+                disabled={aiLoading}
+                className="text-sm font-bold px-4 py-2 bg-indigo-50 text-indigo-700 rounded-lg hover:bg-indigo-100 disabled:opacity-50"
+              >
+                {aiLoading ? 'Analyzing...' : '✨ AI Suggestion'}
+              </button>
+            )}
           </div>
         </div>
       )}
@@ -1276,10 +1358,35 @@ function IssueCard({ issue: iss, jobId, pageUrl, isOpen, onToggleFix, onFixCompl
 
       {/* AI result */}
       {aiResult && (
-        <div className="mt-3 p-4 bg-indigo-50 border border-indigo-100 rounded-lg animate-slide-in">
-          <p className="text-xs font-black text-indigo-600 uppercase mb-2">AI Suggestion</p>
-          <p className="text-sm text-indigo-900 whitespace-pre-wrap">{aiResult}</p>
-          <button onClick={() => setAiResult(null)} className="mt-2 text-sm text-indigo-500 hover:text-indigo-700">Dismiss</button>
+        <div className="mt-3 p-4 bg-indigo-50 border border-indigo-100 rounded-lg animate-slide-in space-y-3">
+          <div className="flex items-center justify-between">
+            <p className="text-xs font-black text-indigo-600 uppercase">AI Suggestion</p>
+            <button onClick={() => setAiResult(null)} className="text-sm text-indigo-400 hover:text-indigo-600">Dismiss</button>
+          </div>
+          {aiResult.suggested_text && (
+            <div className="bg-white rounded-lg p-3 border border-indigo-100">
+              <p className="text-xs font-bold text-gray-500 mb-1">Suggested text</p>
+              <p className="text-sm text-gray-900 font-medium">{aiResult.suggested_text}</p>
+              <button
+                onClick={() => { navigator.clipboard.writeText(aiResult.suggested_text); toast.success('Copied!') }}
+                className="mt-2 px-3 py-1 text-xs font-bold bg-indigo-100 text-indigo-700 rounded hover:bg-indigo-200"
+              >
+                Copy
+              </button>
+            </div>
+          )}
+          {aiResult.why && (
+            <div>
+              <p className="text-xs font-bold text-gray-500 mb-0.5">Why it helps</p>
+              <p className="text-sm text-indigo-800">{aiResult.why}</p>
+            </div>
+          )}
+          {aiResult.where_to_apply && (
+            <div>
+              <p className="text-xs font-bold text-gray-500 mb-0.5">Where to apply</p>
+              <p className="text-sm text-indigo-800">{aiResult.where_to_apply}</p>
+            </div>
+          )}
         </div>
       )}
 
@@ -1626,6 +1733,9 @@ function OptionToggle({ label, desc, checked, onChange }) {
 }
 
 function AIRecommendationsPanel({ recommendations, onClose }) {
+  const [showHelp, setShowHelp] = useState(false)
+  const help = sectionHelp.ai_recommendations
+
   // Check if recommendations has the raw_response field (fallback case)
   if (recommendations.raw_response) {
     return (
@@ -1652,7 +1762,15 @@ function AIRecommendationsPanel({ recommendations, onClose }) {
   return (
     <div className="bg-purple-50 border border-purple-200 rounded-2xl p-6">
       <div className="flex items-start justify-between mb-4">
-        <h3 className="text-lg font-black text-purple-800">AI Recommendations</h3>
+        <div className="flex items-center gap-2">
+          <h3 className="text-lg font-black text-purple-800">AI Recommendations</h3>
+          <button
+            onClick={() => setShowHelp(h => !h)}
+            className={`w-6 h-6 flex items-center justify-center rounded-full text-xs font-black transition-colors ${showHelp ? 'bg-blue-100 text-blue-600' : 'bg-purple-100 text-purple-400 hover:text-purple-600'}`}
+            title="What is this?"
+            aria-label="Show help"
+          >?</button>
+        </div>
         <button
           onClick={onClose}
           className="w-6 h-6 flex items-center justify-center rounded-full bg-purple-100 text-purple-600 hover:bg-purple-200 transition-all text-xl font-black"
@@ -1660,6 +1778,14 @@ function AIRecommendationsPanel({ recommendations, onClose }) {
           ×
         </button>
       </div>
+
+      {showHelp && help && (
+        <div className="px-1 pb-4 pt-2 bg-blue-50 border border-blue-100 rounded-xl mb-4 space-y-2">
+          <p className="text-sm text-gray-700"><span className="font-black text-blue-700">What this is: </span>{help.what}</p>
+          <p className="text-sm text-gray-700"><span className="font-black text-blue-700">Why it matters: </span>{help.why}</p>
+          <p className="text-sm text-gray-700"><span className="font-black text-blue-700">How to act on it: </span>{help.how}</p>
+        </div>
+      )}
 
       <div className="space-y-6">
         {/* Title Recommendation */}

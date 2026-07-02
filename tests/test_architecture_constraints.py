@@ -532,3 +532,35 @@ class TestAIReadinessConfidenceLabels:
             "even though every other layer carries it."
         )
         assert payload["confidence_label"] == "Established"
+
+
+class TestSectionHelp:
+    """sectionHelp.js must have the correct structure for all four sections."""
+
+    REQUIRED_SECTIONS = ["page_metadata", "headings_structure", "issues_found", "ai_recommendations"]
+    REQUIRED_KEYS = ["what", "why", "how"]
+
+    def _load_section_help(self):
+        import pathlib, re
+        path = pathlib.Path(__file__).parent.parent / "frontend" / "src" / "data" / "sectionHelp.js"
+        text = path.read_text()
+        return text
+
+    def test_section_help_file_exists(self):
+        import pathlib
+        path = pathlib.Path(__file__).parent.parent / "frontend" / "src" / "data" / "sectionHelp.js"
+        assert path.exists(), "sectionHelp.js not found — help icons will be broken"
+
+    def test_section_help_has_all_sections(self):
+        text = self._load_section_help()
+        for section in self.REQUIRED_SECTIONS:
+            assert section in text, f"sectionHelp.js missing section: {section}"
+
+    def test_section_help_has_required_keys_in_each_section(self):
+        text = self._load_section_help()
+        for key in self.REQUIRED_KEYS:
+            assert key + ":" in text, f"sectionHelp.js missing key '{key}' in one or more sections"
+
+    def test_section_help_exported_as_default(self):
+        text = self._load_section_help()
+        assert "export default sectionHelp" in text, "sectionHelp.js must export default sectionHelp"

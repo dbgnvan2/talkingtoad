@@ -617,6 +617,26 @@ Receiving endpoint for a sibling tool that produces per-URL AI citation data. No
 - **Pricing Service:** `PriceLookup` (`api/services/ai_pricing.py`) computes execution costs deterministically using `decimal.Decimal` per 1M-token pricing tables, protecting upstream drivers from float inaccuracy.
 - **Aggregation API:** `GET /api/ai/stats` provides time-bounded (max 90-day) usage summaries, aggregating total spend, call successes vs. failures, and detailed provider/model breakdowns.
 
+### 6.7 Issue-aware AI Suggestion (`/api/ai/analyze` — `issue_advisor` type)
+
+Per-issue AI text suggestion button in the Page Audit. Only appears on issue codes where AI can write improved text (26 codes: title, meta, OG, headings, alt text, anchors, thin content, schema, and select AI-readiness codes).
+
+**Analysis type:** `issue_advisor` — added to `PROMPT_LIBRARY` in `api/services/ai_analyzer.py`. Takes `issue_code`, `issue_description`, and `extra_context` (image URL, current alt, link URL, H2 list, H1 topic — forwarded from issue `extra` fields). Returns `{suggested_text, why, where_to_apply}` JSON.
+
+**Eligibility set:** `_AI_TEXT_SUGGESTION_CODES` in `api/routers/ai.py` — 26 codes. Requests with out-of-scope codes are rejected immediately with an error response.
+
+**Frontend:** `AI_TEXT_SUGGESTION_CODES` set in `Results.jsx` gates the `✨ AI Suggestion` button per issue card. On response, renders three labelled fields (Suggested text + Copy, Why, Where to apply) instead of a raw blob.
+
+**AI Readiness codes included:** `SCHEMA_ORG_MISSING`, `CONVERSATIONAL_H2_MISSING`, `QUERY_COVERAGE_WEAK`. `CITATIONS_MISSING_SUBSTANTIAL_CONTENT` is excluded (AI cannot invent real citations).
+
+### 6.8 Contextual help icons — Page Audit
+
+Every section header and every issue card in the Page Audit panel shows a visible `?` icon.
+
+**Section-level help:** `CollapsibleSection` accepts a `helpContent` prop `{what, why, how}`. A `?` button after the section title toggles an inline blue panel. Content lives in `frontend/src/data/sectionHelp.js` (four entries: `page_metadata`, `headings_structure`, `issues_found`, `ai_recommendations`). `AIRecommendationsPanel` has its own inline `?` button using the same pattern.
+
+**Issue-level help:** `?` button added to the IssueCard header row (between Fix button and `···`), always visible when help content exists for the code. Clicking toggles `showHelp` — same state used by the "Show Help" action in `···`. Source content: `issueHelp.js` (140 entries, unchanged).
+
 ---
 
 ## 7. Reporting and export

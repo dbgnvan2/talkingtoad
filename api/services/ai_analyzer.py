@@ -104,6 +104,28 @@ PROMPT_LIBRARY = {
         "H1: {h1}\n"
         "Body Text Snippet: {body_snippet}"
     ),
+    "issue_advisor": (
+        "You are an SEO and GEO (Generative Engine Optimization) consultant for nonprofit organizations.\n"
+        "A specific issue has been found on a page. Write the best possible replacement text.\n\n"
+        "Issue type: {issue_code}\n"
+        "Issue description: {issue_description}\n"
+        "Page URL: {url}\n"
+        "Current Title: {title}\n"
+        "Current Meta Description: {meta_description}\n"
+        "Current H1: {h1}\n"
+        "Extra context: {extra_context}\n\n"
+        "Instructions:\n"
+        "1. Write the ACTUAL suggested replacement text (not a description of what to write).\n"
+        "2. Keep it specific to this page based on its URL, title, and H1 — not generic.\n"
+        "3. For title: ≤60 chars. For meta description: ≤160 chars. For alt text: 80-125 chars, entity-rich.\n"
+        "4. Prioritize entity-rich language that helps AI Overviews and nonprofit search queries.\n\n"
+        "Respond with ONLY valid JSON (no markdown, no code blocks):\n"
+        "{{\n"
+        "  \"suggested_text\": \"...\",\n"
+        "  \"why\": \"One sentence on why this helps SEO/GEO.\",\n"
+        "  \"where_to_apply\": \"Plain-English instruction on where in the CMS/HTML to paste this.\"\n"
+        "}}"
+    ),
     "page_advisor": (
         "You are an SEO consultant for nonprofit organizations. Analyze this page and provide specific, "
         "actionable recommendations with ACTUAL suggested content (not just 'improve this').\n\n"

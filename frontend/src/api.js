@@ -475,11 +475,11 @@ export async function downloadExcelReport(jobId) {
   await saveBlob(blob, filename)
 }
 
-export async function analyzeWithAi(jobId, pageUrl, type) {
+export async function analyzeWithAi(jobId, pageUrl, type, extras = {}) {
   const res = await fetch('/api/ai/analyze', {
     method: 'POST',
     headers: { ...authHeaders(), 'Content-Type': 'application/json' },
-    body: JSON.stringify({ job_id: jobId, page_url: pageUrl, analysis_type: type })
+    body: JSON.stringify({ job_id: jobId, page_url: pageUrl, analysis_type: type, ...extras })
   })
   return checkResponse(res)
 }
