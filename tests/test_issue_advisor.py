@@ -296,6 +296,58 @@ async def test_issue_advisor_query_coverage_passes_h1(api_client, test_store, au
     assert h1_topic in captured_body["text"]
 
 
+@pytest.mark.asyncio
+async def test_issue_advisor_wrong_shape_preserves_why_and_where(api_client, test_store, auth_headers, monkeypatch, respx_mock):
+    """When AI returns JSON with wrong keys (no suggested_text), why/where_to_apply are preserved
+    and any non-standard string values are collected into suggested_text."""
+    job_id = "job-advisor-wrongshape"
+    url = "https://livingsystems.ca/"
+    await _seed_page(test_store, job_id, url)
+
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setenv("GEMINI_API_KEY", "fake-key")
+    monkeypatch.setattr("api.services.ai_analyzer.load_dotenv", lambda *a, **kw: None)
+
+    # Simulate AI returning h2_1/h2_2 keys instead of suggested_text
+    wrong_shape_stub = {
+        "candidates": [{
+            "content": {
+                "parts": [{
+                    "text": json.dumps({
+                        "h2_1": "How does counselling help with anxiety?",
+                        "h2_2": "What services does Living Systems offer?",
+                        "why": "Conversational H2s improve AI retrieval.",
+                        "where_to_apply": "Edit H2 headings in WordPress block editor.",
+                    })
+                }]
+            }
+        }]
+    }
+    respx_mock.post(GEMINI_URL).mock(return_value=httpx.Response(200, json=wrong_shape_stub))
+
+    response = await api_client.post(
+        "/api/ai/analyze",
+        headers=auth_headers,
+        json={
+            "job_id": job_id,
+            "page_url": url,
+            "analysis_type": "issue_advisor",
+            "issue_code": "CONVERSATIONAL_H2_MISSING",
+            "issue_description": "H2s are not in question form",
+            "extra_context": "current H2s: About Us | Our Team",
+        },
+    )
+
+    assert response.status_code == 200
+    parsed = json.loads(response.json()["suggestion"])
+    # why and where_to_apply must be preserved as separate fields, not jammed into suggested_text
+    assert parsed["why"] == "Conversational H2s improve AI retrieval."
+    assert parsed["where_to_apply"] == "Edit H2 headings in WordPress block editor."
+    # suggested_text must collect the h2 values, not the why/where text
+    assert "counselling" in parsed["suggested_text"] or "Living Systems" in parsed["suggested_text"]
+    assert "Conversational H2s improve" not in parsed["suggested_text"]
+
+
 def test_ai_text_suggestion_codes_excludes_non_text_issues():
     """Technical/structural issue codes are not in the suggestion eligibility set."""
     non_text = [

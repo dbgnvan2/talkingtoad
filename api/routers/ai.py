@@ -100,15 +100,27 @@ async def analyze_page(request: Request, body: AIAnalysisRequest, store=Depends(
             cleaned = _re.sub(r'\n?```\s*$', '', cleaned)
         try:
             parsed = json.loads(cleaned)
-            # Normalise: if the model returned a different shape, fold it into suggested_text
-            if not isinstance(parsed.get("suggested_text"), str):
-                # Best-effort: turn the whole response into a readable string
-                readable = "\n".join(f"{k}: {v}" for k, v in parsed.items() if isinstance(v, str))
-                parsed = {
-                    "suggested_text": readable or json.dumps(parsed, indent=2),
-                    "why": "",
-                    "where_to_apply": "",
-                }
+            # Preserve why / where_to_apply whatever shape the model returned
+            why = parsed.get("why", "") if isinstance(parsed.get("why"), str) else ""
+            where = parsed.get("where_to_apply", "") if isinstance(parsed.get("where_to_apply"), str) else ""
+            suggested = parsed.get("suggested_text")
+            if not isinstance(suggested, str) or not suggested.strip():
+                # Model omitted suggested_text or returned wrong keys.
+                # Collect any string values that are NOT why/where — those are the
+                # actual suggestions (e.g. h2_1, h2_2, rewritten_title, etc.)
+                extra_vals = [
+                    v for k, v in parsed.items()
+                    if isinstance(v, str) and k not in ("suggested_text", "why", "where_to_apply") and v.strip()
+                ]
+                if extra_vals:
+                    suggested = "\n".join(extra_vals)
+                else:
+                    suggested = ""
+            parsed = {
+                "suggested_text": suggested,
+                "why": why,
+                "where_to_apply": where,
+            }
             raw = json.dumps(parsed)
         except (json.JSONDecodeError, AttributeError):
             # Return as-is; frontend fallback handles plain text
