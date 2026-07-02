@@ -950,6 +950,13 @@ function IssueCard({ issue: iss, jobId, pageUrl, isOpen, onToggleFix, onFixCompl
 
   const helpContent = useMemo(() => getIssueHelp(iss.issue_code), [iss.issue_code])
 
+  // W4: Reset per-issue UI state when the card is reused with a different issue_code.
+  useEffect(() => {
+    setShowHelp(false)
+    setAiResult(null)
+    setShowActions(false)
+  }, [iss.issue_code])
+
   async function handleVerifyLink() {
     const linkUrl = iss.extra?.link_url || iss.extra?.href
     if (!linkUrl) { toast.error('No link URL found in issue data'); return }

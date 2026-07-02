@@ -293,9 +293,18 @@ async def analyze_with_ai(prompt_key: str, context: dict[str, Any]) -> str:
         raise ValueError(f"Unknown prompt key: {prompt_key}")
 
     prompt_template = PROMPT_LIBRARY[prompt_key]
-    prompt = prompt_template.format(**context)
+    try:
+        prompt = prompt_template.format(**context)
+    except KeyError as exc:
+        logger.error("ai_analysis_prompt_key_error", extra={"prompt_key": prompt_key, "missing_key": str(exc)})
+        return f"Error calling AI: prompt template missing key {exc}"
 
     _provider, cfg = _pick_model(_DEFAULT_TEXT_MODEL_BY_PROVIDER)
+    # Schema codes ask the model to write a full JSON-LD <script> block which
+    # can exceed 500 tokens. Bump the limit for those codes to avoid silent truncation.
+    _SCHEMA_CODES = {"SCHEMA_MISSING", "SCHEMA_ORG_MISSING"}
+    if context.get("issue_code") in _SCHEMA_CODES:
+        cfg = ModelConfig(model=cfg.model, max_tokens=1000)
 
     try:
         # The ai_analyzer prompts are designed as full user instructions

@@ -93,6 +93,11 @@ async def analyze_page(request: Request, body: AIAnalysisRequest, store=Depends(
     raw = await analyze_with_ai(body.analysis_type, context)
 
     if body.analysis_type == "issue_advisor":
+        # C1: Detect error strings from analyze_with_ai (no key, timeout, etc.)
+        # and route them as error responses rather than presenting them as suggestions.
+        if raw.startswith("AI analysis skipped") or raw.startswith("Error calling AI"):
+            return {"error": raw}
+
         # Strip markdown fences the model sometimes wraps around JSON
         cleaned = raw.strip()
         if cleaned.startswith("```"):
@@ -105,17 +110,18 @@ async def analyze_page(request: Request, body: AIAnalysisRequest, store=Depends(
             where = parsed.get("where_to_apply", "") if isinstance(parsed.get("where_to_apply"), str) else ""
             suggested = parsed.get("suggested_text")
             if not isinstance(suggested, str) or not suggested.strip():
-                # Model omitted suggested_text or returned wrong keys.
-                # Collect any string values that are NOT why/where — those are the
-                # actual suggestions (e.g. h2_1, h2_2, rewritten_title, etc.)
+                # Model omitted suggested_text or returned wrong keys (e.g. h2_1, h2_2).
+                # Collect values from keys that look like content — named with known prefixes
+                # or long enough to be a real suggestion (>20 chars), and are not why/where.
+                _META_KEYS = {"suggested_text", "why", "where_to_apply", "note", "source",
+                              "confidence", "explanation", "instructions"}
                 extra_vals = [
                     v for k, v in parsed.items()
-                    if isinstance(v, str) and k not in ("suggested_text", "why", "where_to_apply") and v.strip()
+                    if isinstance(v, str)
+                    and k not in _META_KEYS
+                    and len(v.strip()) > 20
                 ]
-                if extra_vals:
-                    suggested = "\n".join(extra_vals)
-                else:
-                    suggested = ""
+                suggested = "\n".join(extra_vals) if extra_vals else ""
             parsed = {
                 "suggested_text": suggested,
                 "why": why,
@@ -123,8 +129,12 @@ async def analyze_page(request: Request, body: AIAnalysisRequest, store=Depends(
             }
             raw = json.dumps(parsed)
         except (json.JSONDecodeError, AttributeError):
-            # Return as-is; frontend fallback handles plain text
-            pass
+            # W3: Model returned prose rather than JSON. Best-effort: return as suggested_text
+            # so why/where are empty but the user still gets content. Log for monitoring.
+            logger.warning("issue_advisor_non_json_response", extra={
+                "issue_code": body.issue_code, "length": len(raw)
+            })
+            raw = json.dumps({"suggested_text": raw, "why": "", "where_to_apply": ""})
 
     return {
         "page_url": body.page_url,

@@ -343,9 +343,47 @@ async def test_issue_advisor_wrong_shape_preserves_why_and_where(api_client, tes
     # why and where_to_apply must be preserved as separate fields, not jammed into suggested_text
     assert parsed["why"] == "Conversational H2s improve AI retrieval."
     assert parsed["where_to_apply"] == "Edit H2 headings in WordPress block editor."
-    # suggested_text must collect the h2 values, not the why/where text
-    assert "counselling" in parsed["suggested_text"] or "Living Systems" in parsed["suggested_text"]
+    # Structural: suggested_text must be exactly the joined non-meta string values (h2_1 + h2_2)
+    expected_suggested = "How does counselling help with anxiety?\nWhat services does Living Systems offer?"
+    assert parsed["suggested_text"] == expected_suggested
+    # why/where must NOT have leaked into suggested_text
     assert "Conversational H2s improve" not in parsed["suggested_text"]
+    assert "WordPress" not in parsed["suggested_text"]
+
+
+@pytest.mark.asyncio
+async def test_issue_advisor_no_api_key_returns_error_not_suggestion(api_client, test_store, auth_headers, monkeypatch):
+    """When no AI key is configured, the endpoint must return {error:...} not a 200 with
+    the error string in suggestion — which would display the error as copy-ready text."""
+    job_id = "job-advisor-nokey"
+    url = "https://livingsystems.ca/"
+    await _seed_page(test_store, job_id, url)
+
+    # Simulate analyze_with_ai returning the no-key error string
+    async def mock_analyze(prompt_key, context):
+        return "AI analysis skipped: No API key configured (GEMINI_API_KEY or OPENAI_API_KEY)."
+
+    monkeypatch.setattr("api.routers.ai.analyze_with_ai", mock_analyze)
+
+    response = await api_client.post(
+        "/api/ai/analyze",
+        headers=auth_headers,
+        json={
+            "job_id": job_id,
+            "page_url": url,
+            "analysis_type": "issue_advisor",
+            "issue_code": "TITLE_MISSING",
+            "issue_description": "No title tag found",
+            "extra_context": "none",
+        },
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    # Must surface as an error, not as a suggestion the user would copy
+    assert "error" in data, "Error string must return as {error:} not as suggestion content"
+    assert data.get("suggestion") is None, "suggestion field must be absent when AI call fails"
+    assert "skipped" in data["error"] or "No API key" in data["error"]
 
 
 def test_ai_text_suggestion_codes_excludes_non_text_issues():
