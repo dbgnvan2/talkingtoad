@@ -37,6 +37,8 @@ impossible.
 | Max pages per crawl (default) | 500 | `api/crawler/engine.py:47` `_DEFAULT_MAX_PAGES` | `MAX_PAGES_PER_CRAWL` |
 | Per-request fetch timeout | 5 seconds | `api/crawler/fetcher.py:20` `_DEFAULT_TIMEOUT` | `CRAWL_REQUEST_TIMEOUT_S` |
 | Rescan timeout | 20 seconds | `api/crawler/fetcher.py:21` `_RESCAN_TIMEOUT` | `RESCAN_TIMEOUT_S` |
+| Fetch retries (transient failures only) | 1 | `api/crawler/fetcher.py` `_MAX_RETRIES` | `CRAWL_MAX_RETRIES` |
+| Fetch retry backoff base | 0.5 seconds (×2^attempt) | `api/crawler/fetcher.py` `_RETRY_BACKOFF_S` | `CRAWL_RETRY_BACKOFF_S` |
 | Max redirect hops | 10 | `api/crawler/fetcher.py:26` `_MAX_REDIRECTS` | — |
 | Min crawl delay | 200 ms | `api/crawler/engine.py:48` `_MIN_CRAWL_DELAY_MS` | — |
 | Default crawl delay | 500 ms | `api/crawler/engine.py:104` `CrawlSettings.crawl_delay_ms` | — |

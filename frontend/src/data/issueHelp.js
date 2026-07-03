@@ -1727,21 +1727,24 @@ const issueHelp = {
   },
 
   AI_BOT_USER_FETCH_BLOCKED: {
-    title: "AI user-fetch bot blocked (ineffective)",
+    title: "AI user-fetch bot blocked",
     category: "ai_readiness",
     severity: "warning",
     definition:
-      "Your robots.txt disallows a user-fetch bot (ChatGPT-User, Claude-User, Perplexity-User). " +
-      "These bots do NOT honor robots.txt by design — they make requests on behalf of end users.",
+      "Your robots.txt disallows a user-fetch bot (ChatGPT-User, Claude-User, Perplexity-User) — " +
+      "the agents that fetch a page when a person asks an AI assistant about it.",
     impact:
-      "Confidence: Established. Blocking user-fetch bots in robots.txt has no effect because " +
-      "the user (not a bot) is making the request. It signals that the site owner may misunderstand " +
-      "how robots.txt works.",
+      "Confidence: Established. robots.txt compliance here is vendor-specific: Anthropic's " +
+      "Claude-User DOES honor robots.txt, so this block genuinely stops it (a real visibility " +
+      "cost if the block was unintended). OpenAI's ChatGPT-User treats robots.txt as 'may not " +
+      "apply', and Perplexity-User ignores it — so the same block has little effect on those.",
     fix:
-      'Remove the block for these bots. Examples of ineffective directives to delete:\n\n' +
-      'User-agent: ChatGPT-User\n' +
+      'Decide deliberately, per vendor. If you WANT AI assistants to fetch this page when users ask, ' +
+      'remove the disallow for the user-fetch agents, e.g.:\n\n' +
+      'User-agent: Claude-User\n' +
       'Disallow: /\n\n' +
-      'These bots will still access your pages regardless. There is no way to block user-initiated requests.',
+      'Removing that lets Claude-User reach the page. Note that ChatGPT-User / Perplexity-User may ' +
+      'fetch it regardless of robots.txt.',
   },
 
   AI_BOT_DEPRECATED_DIRECTIVE: {
@@ -2289,7 +2292,7 @@ const issueHelp = {
   CONTENT_CLOAKING_DETECTED: {
     title: "Possible content cloaking",
     category: "ai_readiness",
-    severity: "error",
+    severity: "warning",
     confidence: "Mechanistic",
     definition:
       "The topic of the rendered page appears significantly different from the raw HTML content. " +

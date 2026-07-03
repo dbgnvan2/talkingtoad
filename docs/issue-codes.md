@@ -1118,11 +1118,11 @@ An AI training bot is disallowed in robots.txt
 ### AI_BOT_USER_FETCH_BLOCKED
 **Severity:** 🟡 warning | **Confidence:** Established | **Impact:** 4 | **Effort:** 1
 
-An AI user-fetch bot is disallowed in robots.txt — this block has no effect
+An AI user-fetch bot is disallowed in robots.txt
 
-**Recommendation:** Remove the block. User-fetch bots (ChatGPT-User, Claude-User) do not honor robots.txt by design. Blocking them signals misconfiguration.
+**Recommendation:** Decide deliberately. robots.txt compliance for user-fetch bots is vendor-specific: Anthropic's Claude-User honors robots.txt (so this block does stop it — a real visibility cost if unintended), while OpenAI's ChatGPT-User treats robots.txt as 'may not apply' and Perplexity-User ignores it. Remove the block only if you want these assistants to fetch the page.
 
-**Plain-English:** AI User Bot Blocked (Ineffective)
+**Plain-English:** AI User Bot Blocked
 
 ---
 
@@ -1330,7 +1330,7 @@ Render contact details as plain HTML text in the footer or a contact block. Opti
 ---
 
 ### CONTENT_CLOAKING_DETECTED
-**Severity:** ⚪ error | **Confidence:** Reasonable proxy | **Impact:** 8 | **Effort:** 4
+**Severity:** 🟡 warning | **Confidence:** Reasonable proxy | **Impact:** 8 | **Effort:** 4
 
 Rendered content appears to shift the page's topic versus raw HTML — possible cloaking
 

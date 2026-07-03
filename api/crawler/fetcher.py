@@ -4,6 +4,7 @@ Async HTTP page fetcher for the TalkingToad crawler.
 Implements spec §2.4, §2.5, §2.9, and logging from §8.2.
 """
 
+import asyncio
 import ipaddress
 import logging
 import os
@@ -19,6 +20,15 @@ logger = logging.getLogger(__name__)
 
 _DEFAULT_TIMEOUT = float(os.getenv("CRAWL_REQUEST_TIMEOUT_S", "5"))
 _RESCAN_TIMEOUT = float(os.getenv("RESCAN_TIMEOUT_S", "20"))
+
+# Retry policy (audit 2026-07-03, R0.3): a single transient failure must not
+# become a permanent negative (BROKEN_LINK_5XX / PAGE_TIMEOUT / EXTERNAL_LINK_
+# TIMEOUT). We retry ONLY transient conditions — network errors/timeouts and
+# 5xx responses — with exponential backoff. Deterministic outcomes (2xx, 3xx,
+# 4xx, redirect loops, SSRF blocks) are never retried. Set CRAWL_MAX_RETRIES=0
+# to disable.
+_MAX_RETRIES = int(os.getenv("CRAWL_MAX_RETRIES", "1"))
+_RETRY_BACKOFF_S = float(os.getenv("CRAWL_RETRY_BACKOFF_S", "0.5"))
 _DEFAULT_USER_AGENT = os.getenv(
     "CRAWLER_USER_AGENT",
     "NonprofitCrawler/1.0 (+https://github.com/dbgnvan2/talkingtoad)",
@@ -154,88 +164,107 @@ async def fetch_page(
             error="SSRF_BLOCKED: URL resolves to a private/internal network",
         )
 
-    try:
-        async with client.stream(
-            method,
-            url,
-            timeout=timeout if timeout is not None else _DEFAULT_TIMEOUT,
-            follow_redirects=True,
-            headers=extra_headers,
-        ) as response:
-            redirect_chain = [str(r.url) for r in response.history]
-            final_url = str(response.url)
+    # Retry loop (R0.3): only transient failures are retried — network
+    # errors/timeouts (httpx.RequestError) and 5xx responses — with exponential
+    # backoff. Deterministic outcomes (2xx/3xx/4xx, redirect loops, SSRF blocks)
+    # return immediately and are never retried.
+    for attempt in range(_MAX_RETRIES + 1):
+        try:
+            async with client.stream(
+                method,
+                url,
+                timeout=timeout if timeout is not None else _DEFAULT_TIMEOUT,
+                follow_redirects=True,
+                headers=extra_headers,
+            ) as response:
+                redirect_chain = [str(r.url) for r in response.history]
+                final_url = str(response.url)
 
-            # SSRF protection on redirect chain: reject if any hop resolves to a private IP
-            for hop_url in redirect_chain + [final_url]:
-                if not is_ssrf_safe(hop_url):
-                    logger.warning("ssrf_redirect_blocked", extra={"url": url, "blocked_hop": hop_url})
-                    return FetchResult(
-                        url=url, final_url=hop_url, status_code=0,
-                        error="SSRF_BLOCKED: redirect to private/internal network",
-                    )
+                # SSRF protection on redirect chain: reject if any hop resolves to a private IP
+                for hop_url in redirect_chain + [final_url]:
+                    if not is_ssrf_safe(hop_url):
+                        logger.warning("ssrf_redirect_blocked", extra={"url": url, "blocked_hop": hop_url})
+                        return FetchResult(
+                            url=url, final_url=hop_url, status_code=0,
+                            error="SSRF_BLOCKED: redirect to private/internal network",
+                        )
 
-            is_login_redirect = _check_login_redirect(redirect_chain + [final_url])
-            first_status = response.history[0].status_code if response.history else response.status_code
-            content_type = response.headers.get("content-type", "").split(";")[0].strip().lower()
+                is_login_redirect = _check_login_redirect(redirect_chain + [final_url])
+                first_status = response.history[0].status_code if response.history else response.status_code
+                content_type = response.headers.get("content-type", "").split(";")[0].strip().lower()
 
-            html: str | None = None
-            is_html = "html" in content_type
-            is_pdf = "pdf" in content_type
-            result_size = 0
+                html: str | None = None
+                is_html = "html" in content_type
+                is_pdf = "pdf" in content_type
+                result_size = 0
 
-            if not is_head and (is_html or is_pdf):
-                raw = await response.aread()
-                result_size = len(raw)
-                if len(raw) <= _MAX_HTML_BYTES:
-                    if is_html:
-                        html = raw.decode(response.encoding or "utf-8", errors="replace")
-                    result_content = raw if is_pdf else None
+                if not is_head and (is_html or is_pdf):
+                    raw = await response.aread()
+                    result_size = len(raw)
+                    if len(raw) <= _MAX_HTML_BYTES:
+                        if is_html:
+                            html = raw.decode(response.encoding or "utf-8", errors="replace")
+                        result_content = raw if is_pdf else None
+                    else:
+                        logger.warning(
+                            "content_too_large",
+                            extra={"url": url, "bytes": len(raw), "type": content_type},
+                        )
+                        result_content = None
                 else:
-                    logger.warning(
-                        "content_too_large",
-                        extra={"url": url, "bytes": len(raw), "type": content_type},
-                    )
                     result_content = None
-            else:
-                result_content = None
-                try:
-                    result_size = int(response.headers.get("content-length", 0))
-                except (ValueError, TypeError):
-                    result_size = 0
+                    try:
+                        result_size = int(response.headers.get("content-length", 0))
+                    except (ValueError, TypeError):
+                        result_size = 0
 
-            result = FetchResult(
-                url=url,
-                final_url=final_url,
-                status_code=response.status_code,
-                first_status_code=first_status,
-                headers=dict(response.headers),
-                html=html,
-                content=result_content,
-                content_type=content_type,
-                redirect_chain=redirect_chain,
-                is_login_redirect=is_login_redirect,
-                response_size_bytes=result_size,
+                result = FetchResult(
+                    url=url,
+                    final_url=final_url,
+                    status_code=response.status_code,
+                    first_status_code=first_status,
+                    headers=dict(response.headers),
+                    html=html,
+                    content=result_content,
+                    content_type=content_type,
+                    redirect_chain=redirect_chain,
+                    is_login_redirect=is_login_redirect,
+                    response_size_bytes=result_size,
+                )
+
+        except httpx.TooManyRedirects:
+            # Deterministic — never retry.
+            logger.warning("redirect_loop_detected", extra={"url": url})
+            return FetchResult(url=url, final_url=url, status_code=0, error="REDIRECT_LOOP")
+        except httpx.RequestError as exc:
+            # Transient network error / timeout — retry with backoff if attempts remain.
+            if attempt < _MAX_RETRIES:
+                logger.info("fetch_retry", extra={"url": url, "attempt": attempt + 1, "error": str(exc)})
+                await asyncio.sleep(_RETRY_BACKOFF_S * (2 ** attempt))
+                continue
+            logger.warning("fetch_error", extra={"url": url, "error": str(exc)})
+            return FetchResult(url=url, final_url=url, status_code=0, error=str(exc))
+
+        # Got a response. Retry only transient 5xx responses.
+        if 500 <= result.status_code <= 599 and attempt < _MAX_RETRIES:
+            logger.info(
+                "fetch_retry_5xx",
+                extra={"url": url, "attempt": attempt + 1, "status": result.status_code},
             )
+            await asyncio.sleep(_RETRY_BACKOFF_S * (2 ** attempt))
+            continue
 
-    except httpx.TooManyRedirects:
-        logger.warning("redirect_loop_detected", extra={"url": url})
-        return FetchResult(url=url, final_url=url, status_code=0, error="REDIRECT_LOOP")
-    except httpx.RequestError as exc:
-        logger.warning("fetch_error", extra={"url": url, "error": str(exc)})
-        return FetchResult(url=url, final_url=url, status_code=0, error=str(exc))
-
-    logger.debug(
-        "page_fetched",
-        extra={
-            "url": url,
-            "final_url": final_url,
-            "status_code": result.status_code,
-            "redirect_count": result.redirect_count,
-            "is_login_redirect": is_login_redirect,
-        },
-    )
-
-    return result
+        logger.debug(
+            "page_fetched",
+            extra={
+                "url": url,
+                "final_url": final_url,
+                "status_code": result.status_code,
+                "redirect_count": result.redirect_count,
+                "is_login_redirect": is_login_redirect,
+            },
+        )
+        return result
 
 
 def make_client(user_agent: str | None = None) -> httpx.AsyncClient:

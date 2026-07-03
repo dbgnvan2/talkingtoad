@@ -51,7 +51,11 @@ AI_BOTS = {
     "Claude-User": {
         "vendor": "Anthropic",
         "category": "user_fetch",
-        "honors_robots": False,
+        # Anthropic states ALL three of its bots — ClaudeBot, Claude-User,
+        # Claude-SearchBot — honor robots.txt (vendor docs; verified 2026-07).
+        # This is vendor-specific: OpenAI's ChatGPT-User says robots.txt "may
+        # not apply", and Perplexity-User does not honor it.
+        "honors_robots": True,
         "current": True,
     },
     # Anthropic deprecated bots (flagged for user awareness)

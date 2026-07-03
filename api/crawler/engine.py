@@ -44,6 +44,27 @@ from api.crawler.image_analyzer import analyze_batch as analyze_images
 
 logger = logging.getLogger(__name__)
 
+
+def _classify_fetch_error(error: str) -> str | None:
+    """Classify a status-0 fetch error for accurate reporting (audit R0.4).
+
+    Returns ``None`` for SSRF blocks (a security decision, not a page-health
+    problem — the caller should skip emitting a page issue). Otherwise returns
+    one of ``"timeout"``, ``"dns"``, ``"connection"``, ``"other"`` so the
+    finding text is honest instead of blanket-labelling everything a timeout.
+    """
+    err = error or ""
+    if err.startswith("SSRF_BLOCKED"):
+        return None
+    low = err.lower()
+    if "timeout" in low or "timed out" in low:
+        return "timeout"
+    if "name or service" in low or "resolve" in low or "nodename" in low:
+        return "dns"
+    if "connect" in low or "connection" in low:
+        return "connection"
+    return "other"
+
 _DEFAULT_MAX_PAGES = int(os.getenv("MAX_PAGES_PER_CRAWL", "500"))
 _MIN_CRAWL_DELAY_MS = 200
 _EXTERNAL_LINK_CAP_PER_PAGE = 50
@@ -448,12 +469,26 @@ async def run_crawl(
                 all_issues.append(make_issue("REDIRECT_LOOP", url))
                 continue
 
-            # Handle fetch errors / timeouts (network failure, status_code=0)
+            # Handle fetch errors / timeouts (network failure, status_code=0).
+            # R0.4 (audit 2026-07-03): PAGE_TIMEOUT previously fired for ANY
+            # status-0 error — DNS failures, refused connections, and even SSRF
+            # blocks were reported to the user as "timeouts". Now we classify:
+            #   • SSRF blocks are a security decision, not a page-health problem
+            #     — log and skip, do NOT emit a page issue.
+            #   • real timeouts vs other fetch failures are tagged in
+            #     extra.error_type so the finding text is accurate.
+            # (Follow-up R0.4-full: a dedicated FETCH_FAILED code — needs
+            #  catalogue + scoring + frontend help + parity, deferred to the
+            #  scoring PR. Until then we keep PAGE_TIMEOUT but label it honestly.)
             if result.error and result.status_code == 0:
-                log.warning("fetch_failed", extra={"url": url, "error": result.error})
-                # Emit a PAGE_TIMEOUT issue so the user knows the page was attempted
+                err = result.error or ""
+                error_type = _classify_fetch_error(err)
+                if error_type is None:  # SSRF block — security decision, not page health
+                    log.warning("fetch_ssrf_blocked", extra={"url": url, "error": err})
+                    continue
+                log.warning("fetch_failed", extra={"url": url, "error": err, "error_type": error_type})
                 timeout_issue = make_issue("PAGE_TIMEOUT", url,
-                                           extra={"error": result.error})
+                                           extra={"error": err, "error_type": error_type})
                 all_issues.append(timeout_issue)
                 continue
 

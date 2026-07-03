@@ -12,9 +12,10 @@ integrity of this file is enforced by five CI parity invariants — see
 
 Single source of truth for:
     - ``Issue`` dataclass and ``_IssueSpec`` dataclass
-    - ``_ISSUE_SCORING`` (impact, effort) by code — 131 codes
-    - ``_CATALOGUE`` (every issue spec) — 131 codes
-    - ``_AI_READINESS_CONFIDENCE`` (confidence labels) — 49 codes
+    - ``_ISSUE_SCORING`` (impact, effort) by code — 151 codes
+    - ``_CATALOGUE`` (every issue spec) — 151 codes
+    - ``_AI_READINESS_CONFIDENCE`` (confidence labels) — 62 codes
+      (of 151 total; the 89 non-ai_readiness codes carry no confidence label)
     - ``_STOP_WORDS`` and ``_GENERIC_ANCHOR_TEXTS`` (shared helpers)
     - Size-limit constants
     - ``make_issue()`` factory, ``_sig_words()``, ``_titles_mismatch()``
@@ -978,10 +979,13 @@ _CATALOGUE: dict[str, _IssueSpec] = {
     ),
     "AI_BOT_USER_FETCH_BLOCKED": _IssueSpec(
         category="ai_readiness", severity="warning",
-        description="An AI user-fetch bot is disallowed in robots.txt — this block has no effect",
-        recommendation="Remove the block. User-fetch bots (ChatGPT-User, Claude-User) do not honor "
-                       "robots.txt by design. Blocking them signals misconfiguration.",
-        human_description="AI User Bot Blocked (Ineffective)",
+        description="An AI user-fetch bot is disallowed in robots.txt",
+        recommendation="Decide deliberately. robots.txt compliance for user-fetch bots is "
+                       "vendor-specific: Anthropic's Claude-User honors robots.txt (so this block "
+                       "does stop it — a real visibility cost if unintended), while OpenAI's "
+                       "ChatGPT-User treats robots.txt as 'may not apply' and Perplexity-User "
+                       "ignores it. Remove the block only if you want these assistants to fetch the page.",
+        human_description="AI User Bot Blocked",
         fixability="developer_needed",
     ),
     "AI_BOT_DEPRECATED_DIRECTIVE": _IssueSpec(
@@ -1207,7 +1211,7 @@ _CATALOGUE: dict[str, _IssueSpec] = {
         fixability="developer_needed",
     ),
     "CONTENT_CLOAKING_DETECTED": _IssueSpec(
-        category="ai_readiness", severity="error",
+        category="ai_readiness", severity="warning",
         description="Rendered content appears to shift the page's topic versus raw HTML — possible cloaking",
         recommendation="Ensure raw HTML and rendered content describe the same topic. Serving different "
                        "content to AI crawlers than to users violates search quality guidelines.",
@@ -1640,12 +1644,16 @@ def _titles_mismatch(title: str, h1: str) -> bool:
 # The architecture test in tests/test_architecture_constraints.py enforces
 # that every code with category=="ai_readiness" has an entry here.
 _AI_READINESS_CONFIDENCE: dict[str, str] = {
-    # ── Established (vendor-confirmed via robots.txt protocol) ──
+    # ── Established (vendor-confirmed: robots.txt protocol, Google directives,
+    #    or literal HTTP-header facts) ──
     "AI_BOT_SEARCH_BLOCKED":      "Established",
     "AI_BOT_TRAINING_DISALLOWED": "Established",
     "AI_BOT_USER_FETCH_BLOCKED":  "Established",
     "AI_BOT_DEPRECATED_DIRECTIVE":"Established",
     "AI_BOT_BLANKET_DISALLOW":    "Established",
+    "SCHEMA_VISIBLE_MISMATCH":      "Established",  # Google: schema values must be visible
+    "AI_PREVIEW_SUPPRESSED":        "Established",  # literal X-Robots-Tag directive
+    "AI_PREVIEW_BLOCKED_AT_BOT":    "Established",  # literal X-Robots-Tag directive
 
     # ── Reasonable proxy (industry consensus + Google's published best practices) ──
     "AI_BOT_NO_AI_DIRECTIVES":      "Reasonable proxy",
@@ -1654,12 +1662,8 @@ _AI_READINESS_CONFIDENCE: dict[str, str] = {
     "SCHEMA_TYPE_MISMATCH":         "Reasonable proxy",
     "SCHEMA_DEPRECATED_TYPE":       "Reasonable proxy",
     "SCHEMA_TYPE_CONFLICT":         "Reasonable proxy",
-    "SCHEMA_VISIBLE_MISMATCH":      "Established",
     "AI_CONTENT_NOT_IN_TEXT":       "Reasonable proxy",
-    "AI_PREVIEW_SUPPRESSED":        "Established",
-    "AI_PREVIEW_BLOCKED_AT_BOT":    "Established",
     "AI_NO_VISUAL_COMPANION":       "Reasonable proxy",
-    "AI_MAIN_CONTENT_LOW_RATIO":    "Heuristic",
     "FAQ_SCHEMA_MISSING":           "Reasonable proxy",
     "DOCUMENT_PROPS_MISSING":       "Reasonable proxy",
     "DATE_PUBLISHED_MISSING":       "Reasonable proxy",
@@ -1675,6 +1679,7 @@ _AI_READINESS_CONFIDENCE: dict[str, str] = {
     "CONTENT_THIN":                 "Reasonable proxy",  # Google has thin-content guidance
 
     # ── Heuristic (industry consensus only — no vendor confirmation) ──
+    "AI_MAIN_CONTENT_LOW_RATIO":    "Heuristic",
     "LLMS_TXT_MISSING":             "Heuristic",
     "LLMS_TXT_INVALID":             "Heuristic",
     "AI_TXT_MISSING":               "Heuristic",
@@ -1722,7 +1727,13 @@ def make_issue(
     """Construct an :class:`Issue` from a code in the catalogue.
 
     Automatically populates *impact*, *effort*, and *priority_rank* from
-    :data:`_ISSUE_SCORING`.  Unknown codes get zeroes for all three.
+    :data:`_ISSUE_SCORING`.
+
+    Raises :class:`KeyError` if *code* is not in :data:`_CATALOGUE` — a typo'd
+    or unregistered code must fail fast, not silently produce a zero-scored,
+    empty-metadata issue that buries itself in every ranking. (The parity tests
+    guarantee every catalogue code also has a scoring entry, so the ``.get()``
+    fallback below is defensive only and never hit for a real catalogue code.)
 
     For ai_readiness category codes, also populates *confidence_label* from
     :data:`_AI_READINESS_CONFIDENCE` per the v2.0 spec confidence taxonomy.
@@ -1733,7 +1744,14 @@ def make_issue(
         extra: Optional supplementary data.
         job_id: The crawl job ID (used for image analysis module).
     """
-    spec = _CATALOGUE[code]
+    try:
+        spec = _CATALOGUE[code]
+    except KeyError:
+        raise KeyError(
+            f"make_issue: unknown issue code {code!r} — not found in _CATALOGUE. "
+            f"Register the code in api/crawler/checkers/registry.py "
+            f"(_CATALOGUE + _ISSUE_SCORING) before emitting it."
+        ) from None
     impact, effort = _ISSUE_SCORING.get(code, (0, 0))
     priority_rank = (impact * 10) - (effort * 2)
     # Prefer the spec-attached confidence_label if set (lets individual

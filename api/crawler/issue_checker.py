@@ -591,22 +591,24 @@ def check_page(
         except Exception as e:
             logger.warning("extractability_error", extra={"url": url, "error": str(e)})
 
-    # ── Citation Assessment (v2.0) ────────────────────────────────────────────
-    if page.is_indexable and page.word_count and page.word_count > 200:
-        try:
-            from api.services.citation_model import PageCitations, assess_citation_readiness, diagnose_citation_issue
-            page_citations = PageCitations(
-                url=url,
-                citations=[],
-                attribution_style="none",
-            )
-            citation_issue = assess_citation_readiness(page_citations, page.word_count)
-            diagnosis = diagnose_citation_issue(citation_issue)
-            if diagnosis:
-                issues.append(make_issue(diagnosis, url,
-                                        extra={"word_count": page.word_count}))
-        except Exception as e:
-            logger.warning("citation_check_error", extra={"url": url, "error": str(e)})
+    # ── Citation Assessment (v2.0) — QUARANTINED (audit 2026-07-03, R0.1/R6) ──
+    # DISABLED: this block constructed PageCitations(citations=[],
+    # attribution_style="none") with the citation list HARDCODED empty, never
+    # parsing the page's actual links/attributions. Consequences (verified +
+    # independently re-verified 2026-07-03):
+    #   • lacks_citations is (word_count>200 and citation_count==0 and
+    #     attribution_style=="none") — ALWAYS True here, so
+    #     CITATIONS_MISSING_SUBSTANTIAL_CONTENT fired on essentially EVERY
+    #     >200-word page: a site-wide false positive worth -3 per page.
+    #   • has_inaccessible_sources is hardcoded False -> CITATIONS_SOURCES_
+    #     INACCESSIBLE could never fire; orphan check over [] is always False ->
+    #     CITATIONS_ORPHANED could never fire.
+    # The three codes stay in the catalogue (read-only, dead-code allowlisted)
+    # and are re-enabled by remediation R6, which wires a real citation parser
+    # into PageCitations. Until then we emit nothing rather than a meaningless
+    # blanket penalty. Do NOT re-enable without real citation extraction.
+    if False:  # pragma: no cover — re-enabled by R6 (real citation parser)
+        pass
 
     # PDF Metadata
     if url.lower().endswith(".pdf") and page.pdf_metadata is not None:
