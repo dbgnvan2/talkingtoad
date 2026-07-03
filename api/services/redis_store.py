@@ -245,16 +245,16 @@ class RedisJobStore:
         from api.services.job_store_base import compute_impact_health, _is_agent_issue
         page_norm_urls = [p.url.rstrip("/") for p in pages]
 
-        per_page: dict[str, list[tuple[str, int]]] = {}
-        agent_per_page: dict[str, list[tuple[str, int]]] = {}
+        per_page: dict[str, list[tuple[str, int, str]]] = {}
+        agent_per_page: dict[str, list[tuple[str, int, str]]] = {}
         agent_breakdown_acc: dict[str, dict[str, int]] = {}
         for issue in issues:
             if not issue.page_url:
                 continue
             key = issue.page_url.rstrip("/")
-            per_page.setdefault(key, []).append((issue.issue_code, issue.impact or 0))
+            per_page.setdefault(key, []).append((issue.issue_code, issue.impact or 0, issue.category or ""))
             if _is_agent_issue(issue.category, issue.issue_code):
-                agent_per_page.setdefault(key, []).append((issue.issue_code, issue.impact or 0))
+                agent_per_page.setdefault(key, []).append((issue.issue_code, issue.impact or 0, issue.category or ""))
                 acc = agent_breakdown_acc.setdefault(
                     issue.category, {"issues": 0, "impact": 0}
                 )

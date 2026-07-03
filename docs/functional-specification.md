@@ -115,11 +115,16 @@ and acceptance criteria for the journey as a whole.
   already linked from the homepage.
 - Crawl finishes within a bounded time (default `MAX_PAGES_PER_CRAWL = 500`).
 - Every page returns one of: a HTTP status code, an issue, or both.
-- **Page Health = `max(0, 100 − Σ impact)`** across the page's charged issues;
-  **Site Health = mean of page scores**. Computed by the single shared function
-  `job_store_base.compute_impact_health`, used by **both** the SQLite (dev) and
-  Redis (prod) stores so the two cannot diverge (the pre-v1.5 density model
-  survives only as its internal fallback). *(Audit 2026-07-03, Path A.)*
+- **Page Health = `max(0, 100 − deduction)`**; **Site Health = mean of page scores**. Computed by
+  the single shared function `job_store_base.compute_impact_health`, used by **both** the SQLite
+  (dev) and Redis (prod) stores so the two cannot diverge (the pre-v1.5 density model survives only
+  as its internal fallback). *(Audit 2026-07-03, Path A.)*
+- **Deduction = per-category caps + page-fatal bypass** *(audit R3 structural fix):* after cluster
+  suppression, each category's charged impact is capped at **20** so correlated minor issues (and
+  per-occurrence codes like many `BROKEN_LINK_*` on one page) can't stack a page to 0; **page-fatal
+  codes bypass the cap** and are charged in full so a genuinely dead page still scores low. Fatal
+  codes: `NOINDEX_META`, `NOINDEX_HEADER`, `ROBOTS_BLOCKED`, `PAGE_TIMEOUT`, `HTTP_PAGE`,
+  `HTTPS_REDIRECT_MISSING`, `REDIRECT_LOOP`, `LOGIN_REDIRECT`.
 - **Cluster suppression (R4):** when a parent code and its correlated children
   are present on the same page, only the parent is charged to the score, so one
   root cause is not double-counted. Suppressed issues remain fully visible in the

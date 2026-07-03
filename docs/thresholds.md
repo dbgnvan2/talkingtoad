@@ -46,6 +46,7 @@ impossible.
 | External link cap per job | 500 | `api/crawler/engine.py:50` `_EXTERNAL_LINK_CAP_PER_JOB` | — |
 | Query variant cap per path | 50 | `api/crawler/normaliser.py` (variant limit) | — |
 | Image HEAD-fetch timeout | 3 seconds | `api/crawler/engine.py:900` | — |
+| Per-category health-score cap | 20 points | `api/services/job_store_base.py` `_CATEGORY_IMPACT_CAP` | — |
 
 ## HTML / page size
 

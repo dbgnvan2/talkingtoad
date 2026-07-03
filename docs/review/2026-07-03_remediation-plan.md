@@ -55,9 +55,24 @@ Full suite 1784 passed; same 3 pre-existing unrelated `test_usage_aggregation.py
 - Tests: `tests/test_r4_cluster_suppression.py` (unit + interactions + parity via the shared
   function); Redis summary tests updated to the shared helper.
 
-**Not yet done:** R3 (confidence×effect_size model — needs SME sign-off; two independent expert
-opinions being gathered via `docs/review/2026-07-03_R3-expert-prompt.md`), R2.x precision fixes,
-R6-R8 features.
+### Implemented 2026-07-03 (R3 structural pieces — page-health model + cluster merge)
+
+From the validated-merge spec (`docs/pending/2026-07-03_r3-model-b-calibration.md`), the low-regret
+structural half shipped; the high-variance impact recalibration is held for a second opinion.
+- **Per-category cap (20) + page-fatal bypass** in the shared `compute_impact_health` — correlated
+  minor issues and per-occurrence broken-link stacking can no longer zero a page, while genuine
+  page-fatal codes bypass the cap and still score a dead page low. Both stores; scoring-only.
+- **Cluster merge** — `JS_DEPENDENT_NAVIGATION` added to the JS-shell cluster; two of Gemini's
+  proposed clusters dropped as already mutually exclusive; `HTTPS_REDIRECT_MISSING⊳HTTP_PAGE` dropped
+  as cross-scope (site vs page).
+- Threaded `category` through the scoring path (both stores). Docs updated (functional spec, thresholds).
+- Tests: `tests/test_r4_cluster_suppression.py` (caps, page-fatal bypass, per-occurrence); two
+  `test_api.py` health tests updated to the capped model. Full suite 1785 passed; same 3 pre-existing
+  unrelated failures.
+
+**Held for sign-off / second opinion:** R3 §5 (the 151-value Model B impact recalibration) and §3
+(priority-ordering formula). Also pending: R2.x precision fixes, R6-R8 features. See
+`docs/review/2026-07-03_R3-expert-prompt.md` for the second-opinion prompt.
 
 ---
 

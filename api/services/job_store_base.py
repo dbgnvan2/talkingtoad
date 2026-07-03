@@ -59,13 +59,32 @@ _CLUSTER_SUPPRESSION: dict[str, frozenset[str]] = {
     "SCHEMA_MISSING": frozenset({"JSON_LD_MISSING", "SCHEMA_ORG_MISSING"}),
     # page duplicated (both title+meta) → charge the pair once
     "TITLE_META_DUPLICATE_PAIR": frozenset({"TITLE_DUPLICATE", "META_DESC_DUPLICATE"}),
-    # whole page is a JS shell → its symptoms are the same root cause
+    # whole page is a JS shell → its symptoms are the same root cause.
+    # JS_DEPENDENT_NAVIGATION added per the Gemini R3 report (a JS shell page's
+    # nav is unusable for the same reason its content is).
     "RAW_HTML_JS_DEPENDENT": frozenset(
-        {"AI_CONTENT_NOT_IN_TEXT", "CONTENT_NOT_EXTRACTABLE_NO_TEXT", "CONTACT_INFO_NOT_IN_HTML"}
+        {"AI_CONTENT_NOT_IN_TEXT", "CONTENT_NOT_EXTRACTABLE_NO_TEXT",
+         "CONTACT_INFO_NOT_IN_HTML", "JS_DEPENDENT_NAVIGATION"}
     ),
     # too few words → THIN_CONTENT and CONTENT_THIN are the same finding
     "THIN_CONTENT": frozenset({"CONTENT_THIN"}),
 }
+
+# ---------------------------------------------------------------------------
+# Per-category cap + page-fatal bypass (audit R3 structural fix, 2026-07-03).
+# The additive formula lets minor issues in one category stack and lets
+# per-occurrence codes (many BROKEN_LINK_* on one page) zero a page. We cap each
+# category's NON-FATAL deduction, so correlated minor issues can't dominate,
+# while genuine page-fatal codes bypass the cap and CAN still drive a page to 0
+# (a noindex'd / robots-blocked / unreachable page should score 0). This is a
+# scoring-only transform; the issue list/counts are unchanged.
+# ---------------------------------------------------------------------------
+_CATEGORY_IMPACT_CAP = 20
+
+_PAGE_FATAL_CODES: frozenset[str] = frozenset({
+    "NOINDEX_META", "NOINDEX_HEADER", "ROBOTS_BLOCKED", "PAGE_TIMEOUT",
+    "HTTP_PAGE", "HTTPS_REDIRECT_MISSING", "REDIRECT_LOOP", "LOGIN_REDIRECT",
+})
 
 
 def page_suppressed_codes(codes_on_page: set[str]) -> set[str]:
@@ -83,20 +102,38 @@ def page_suppressed_codes(codes_on_page: set[str]) -> set[str]:
     return drop
 
 
+def _page_deduction(rows: list[tuple[str, int, str]]) -> int:
+    """Deduction for one page: page-fatal codes summed uncapped, every other
+    category capped at ``_CATEGORY_IMPACT_CAP``. ``rows`` are the CHARGED
+    (post-suppression) ``(code, impact, category)`` tuples for the page."""
+    fatal = 0
+    by_cat: dict[str, int] = {}
+    for code, impact, category in rows:
+        if code in _PAGE_FATAL_CODES:
+            fatal += impact
+        else:
+            by_cat[category] = by_cat.get(category, 0) + impact
+    capped = sum(min(_CATEGORY_IMPACT_CAP, s) for s in by_cat.values())
+    return fatal + capped
+
+
 def compute_impact_health(
     page_norm_urls: list[str],
-    per_page_issues: dict[str, list[tuple[str, int]]],
+    per_page_issues: dict[str, list[tuple[str, int, str]]],
     by_severity: dict[str, int],
     *,
     suppressed_codes: set[str] | None = None,
 ) -> tuple[int, int]:
-    """Store-agnostic v1.5 impact health with R4 cluster suppression.
+    """Store-agnostic v1.5 impact health with R4 cluster suppression AND
+    per-category caps + page-fatal bypass (R3 structural fix).
 
-    Page Health = max(0, 100 − Σ(impact of charged issues on the page));
+    Page Health = max(0, 100 − deduction), where deduction sums page-fatal codes
+    uncapped and every other category capped at ``_CATEGORY_IMPACT_CAP``.
     Site Health = mean of page scores; pages with no issues score 100.
     ``per_page_issues`` maps a trailing-slash-normalised URL to a list of
-    ``(issue_code, impact)`` rows (one entry per issue row — per-occurrence
-    codes like BROKEN_LINK_* appear multiple times).
+    ``(issue_code, impact, category)`` rows — one entry per issue row (so
+    per-occurrence codes like BROKEN_LINK_* appear multiple times, and the
+    category cap is what bounds their stacking).
 
     Job-level ``suppressed_codes`` are removed first; R4 cluster suppression is
     then applied to the survivors. Falls back to the density model only for
@@ -105,7 +142,7 @@ def compute_impact_health(
     SINGLE SOURCE OF TRUTH — both the SQLite and Redis stores call this so their
     health scores cannot diverge (audit 2026-07-03: they previously did).
     """
-    total_impact_sum = sum(imp for rows in per_page_issues.values() for _, imp in rows)
+    total_impact_sum = sum(imp for rows in per_page_issues.values() for _, imp, _ in rows)
     total_issues = sum(by_severity.values())
     if total_issues > 0 and total_impact_sum == 0:
         return _density_health_score(by_severity, len(page_norm_urls)), len(page_norm_urls)
@@ -116,10 +153,10 @@ def compute_impact_health(
     for url in page_norm_urls:
         rows = per_page_issues.get(url, [])
         if suppressed_codes:
-            rows = [(c, imp) for c, imp in rows if c not in suppressed_codes]
-        drop = page_suppressed_codes({c for c, _ in rows})
-        total = sum(imp for c, imp in rows if c not in drop)
-        page_scores.append(max(0, 100 - total))
+            rows = [(c, imp, cat) for c, imp, cat in rows if c not in suppressed_codes]
+        drop = page_suppressed_codes({c for c, _, _ in rows})
+        charged = [(c, imp, cat) for c, imp, cat in rows if c not in drop]
+        page_scores.append(max(0, 100 - _page_deduction(charged)))
     return round(sum(page_scores) / len(page_scores)), len(page_scores)
 
 
@@ -146,15 +183,15 @@ async def _compute_v15_health_score(
     # Fetch per-issue rows (code + impact) so cluster suppression can see the
     # code set per page. Trailing slashes normalised so issues match pages.
     async with db.execute(
-        "SELECT RTRIM(page_url, '/') AS norm_url, issue_code, impact "
+        "SELECT RTRIM(page_url, '/') AS norm_url, issue_code, impact, category "
         "FROM issues WHERE job_id = ? AND page_url IS NOT NULL",
         (job_id,),
     ) as cursor:
         issue_rows = await cursor.fetchall()
 
-    per_page: dict[str, list[tuple[str, int]]] = {}
-    for norm_url, code, impact in issue_rows:
-        per_page.setdefault(norm_url, []).append((code, impact or 0))
+    per_page: dict[str, list[tuple[str, int, str]]] = {}
+    for norm_url, code, impact, category in issue_rows:
+        per_page.setdefault(norm_url, []).append((code, impact or 0, category or ""))
 
     async with db.execute(
         "SELECT url FROM crawled_pages WHERE job_id = ?",
@@ -218,14 +255,14 @@ async def _compute_agent_health_score(
     # Per-issue rows for agent-relevant issues (suppression handled in the shared
     # helper so R4 cluster suppression applies to the agent score too).
     async with db.execute(
-        f"SELECT RTRIM(page_url, '/') AS norm_url, issue_code, impact "
+        f"SELECT RTRIM(page_url, '/') AS norm_url, issue_code, impact, category "
         f"FROM issues WHERE job_id = ? AND page_url IS NOT NULL AND {agent_filter}",
         (job_id,),
     ) as cursor:
         issue_rows = await cursor.fetchall()
-    per_page: dict[str, list[tuple[str, int]]] = {}
-    for norm_url, code, impact in issue_rows:
-        per_page.setdefault(norm_url, []).append((code, impact or 0))
+    per_page: dict[str, list[tuple[str, int, str]]] = {}
+    for norm_url, code, impact, category in issue_rows:
+        per_page.setdefault(norm_url, []).append((code, impact or 0, category or ""))
 
     # Breakdown by category (counts + impact) for agent-relevant issues.
     async with db.execute(

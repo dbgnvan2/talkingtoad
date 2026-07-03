@@ -528,50 +528,57 @@ class TestHealthScore:
         assert r.json()["summary"]["health_score"] == 96
 
     async def test_health_score_floors_at_zero_per_page(self, api_client, auth_headers, test_store):
-        """A page with cumulative impact > 100 still scores 0 (not negative)."""
+        """A page whose capped per-category deductions reach 100 scores 0 (not negative).
+
+        With per-category caps (20 each, audit R3), flooring a page now requires
+        several saturated categories rather than a pile of one-category issues —
+        which is the intended anti-inflation behavior.
+        """
         job = _job(pages_crawled=2)
         pages = [
             _page(job.job_id, url="https://example.com/bad"),
             _page(job.job_id, url="https://example.com/good"),
         ]
-        # 15 issues each with impact=10 → total impact=150 → page health = max(0, 100-150) = 0
+        # 5 categories × 3 impact-10 issues each → every category caps at 20 →
+        # total deduction 5×20 = 100 → bad page = max(0, 100-100) = 0.
+        cats = ["metadata", "image", "heading", "url_structure", "ai_readiness"]
         issues = [
-            _issue(job.job_id, page_url="https://example.com/bad", impact=10)
-            for _ in range(15)
+            _issue(job.job_id, page_url="https://example.com/bad", impact=10, category=c)
+            for c in cats for _ in range(3)
         ]
         await _seed(test_store, job, issues=issues, pages=pages)
         r = await api_client.get(f"/api/crawl/{job.job_id}/results", headers=auth_headers)
         score = r.json()["summary"]["health_score"]
-        # site health = (0 + 100) / 2 = 50
-        assert score == 50
+        assert score == 50  # site = (0 + 100) / 2
         assert score >= 0
 
     async def test_health_score_improves_as_issues_resolved(self, api_client, auth_headers, test_store):
-        """Fewer issues on a page → higher site health score."""
-        # Setup A: 1 page with impact 50 among 2 pages → site health = (50+100)/2 = 75
+        """Fewer/lower-impact issues on a page → higher site health score
+        (using sub-cap impacts so the per-category cap doesn't flatten them)."""
+        # Setup A: p1 has one impact-10 issue → page 90 → site (90+100)/2 = 95
         job_a = _job(pages_crawled=2)
         pages_a = [
             _page(job_a.job_id, url="https://example.com/p1"),
             _page(job_a.job_id, url="https://example.com/p2"),
         ]
-        issues_a = [_issue(job_a.job_id, page_url="https://example.com/p1", impact=50)]
+        issues_a = [_issue(job_a.job_id, page_url="https://example.com/p1", impact=10)]
         await _seed(test_store, job_a, issues=issues_a, pages=pages_a)
         r_a = await api_client.get(f"/api/crawl/{job_a.job_id}/results", headers=auth_headers)
         score_a = r_a.json()["summary"]["health_score"]
 
-        # Setup B: same but impact 20 → site health = (80+100)/2 = 90
+        # Setup B: same page has a smaller impact-4 issue → page 96 → site (96+100)/2 = 98
         job_b = _job(pages_crawled=2)
         pages_b = [
             _page(job_b.job_id, url="https://example.com/p1"),
             _page(job_b.job_id, url="https://example.com/p2"),
         ]
-        issues_b = [_issue(job_b.job_id, page_url="https://example.com/p1", impact=20)]
+        issues_b = [_issue(job_b.job_id, page_url="https://example.com/p1", impact=4)]
         await _seed(test_store, job_b, issues=issues_b, pages=pages_b)
         r_b = await api_client.get(f"/api/crawl/{job_b.job_id}/results", headers=auth_headers)
         score_b = r_b.json()["summary"]["health_score"]
 
-        assert score_a == 75
-        assert score_b == 90
+        assert score_a == 95
+        assert score_b == 98
         assert score_b > score_a
 
 
