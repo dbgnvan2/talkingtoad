@@ -237,32 +237,32 @@ class RedisJobStore:
         pages = await self._load_pages(job_id)
         pages_with_errors = sum(1 for p in pages if p.status_code >= 400)
 
-        health_score = self._compute_health_score(by_severity, job.pages_crawled)
+        # Impact-based v1.5 health WITH R4 cluster suppression, via the SAME
+        # shared helper the SQLite store uses (audit 2026-07-03 parity fix — prod
+        # previously scored the MAIN health with the density model, so the impact
+        # calibration never reached production). Agent Health uses the same helper
+        # restricted to agent-relevant issues.
+        from api.services.job_store_base import compute_impact_health, _is_agent_issue
+        page_norm_urls = [p.url.rstrip("/") for p in pages]
 
-        # Agent-readiness Phase 1 (WP6): separate "Agent Health" score, using the
-        # impact-weighted model (Page = 100 − Σ impact; Site = mean) restricted to
-        # agent-relevant issues.
-        from api.services.job_store_base import _is_agent_issue
-        agent_impact_by_url: dict[str, int] = {}
+        per_page: dict[str, list[tuple[str, int]]] = {}
+        agent_per_page: dict[str, list[tuple[str, int]]] = {}
         agent_breakdown_acc: dict[str, dict[str, int]] = {}
         for issue in issues:
-            if not _is_agent_issue(issue.category, issue.issue_code):
+            if not issue.page_url:
                 continue
-            acc = agent_breakdown_acc.setdefault(
-                issue.category, {"issues": 0, "impact": 0}
-            )
-            acc["issues"] += 1
-            acc["impact"] += issue.impact or 0
-            if issue.page_url:
-                key = issue.page_url.rstrip("/")
-                agent_impact_by_url[key] = agent_impact_by_url.get(key, 0) + (issue.impact or 0)
-        if pages:
-            agent_page_scores = [
-                max(0, 100 - agent_impact_by_url.get(p.url.rstrip("/"), 0)) for p in pages
-            ]
-            agent_health_score = round(sum(agent_page_scores) / len(agent_page_scores))
-        else:
-            agent_health_score = 100
+            key = issue.page_url.rstrip("/")
+            per_page.setdefault(key, []).append((issue.issue_code, issue.impact or 0))
+            if _is_agent_issue(issue.category, issue.issue_code):
+                agent_per_page.setdefault(key, []).append((issue.issue_code, issue.impact or 0))
+                acc = agent_breakdown_acc.setdefault(
+                    issue.category, {"issues": 0, "impact": 0}
+                )
+                acc["issues"] += 1
+                acc["impact"] += issue.impact or 0
+
+        health_score, _ = compute_impact_health(page_norm_urls, per_page, by_severity)
+        agent_health_score, _ = compute_impact_health(page_norm_urls, agent_per_page, {})
         agent_breakdown = sorted(
             ({"category": cat, "issues": v["issues"], "impact": v["impact"]}
              for cat, v in agent_breakdown_acc.items()),
@@ -679,12 +679,8 @@ class RedisJobStore:
             last_technical_improvement_at=d.get("last_technical_improvement_at"),
         )
 
-    @staticmethod
-    def _compute_health_score(by_severity: dict[str, int], pages_crawled: int) -> int:
-        """Fallback density-based score used when impact data is unavailable (pre-v1.5 crawls)."""
-        pages = max(1, pages_crawled)
-        c_density = min(1.0, by_severity.get("critical", 0) / pages)
-        w_density = min(1.0, by_severity.get("warning", 0) / pages)
-        i_density = min(1.0, by_severity.get("info", 0) / pages)
-        deduction = round((c_density * 50) + (w_density * 30) + (i_density * 10))
-        return max(0, 100 - deduction)
+    # NOTE: the old density-based ``_compute_health_score`` was removed 2026-07-03
+    # (audit Path A). get_summary now uses the shared, impact-based
+    # ``compute_impact_health`` from job_store_base so the Redis (prod) and SQLite
+    # (dev) health scores are computed by ONE function and cannot diverge. The
+    # density model survives only as the pre-v1.5 fallback INSIDE that helper.

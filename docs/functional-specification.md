@@ -115,7 +115,19 @@ and acceptance criteria for the journey as a whole.
   already linked from the homepage.
 - Crawl finishes within a bounded time (default `MAX_PAGES_PER_CRAWL = 500`).
 - Every page returns one of: a HTTP status code, an issue, or both.
-- The health score equals `max(0, 100 − Σ impact)` across all issues.
+- **Page Health = `max(0, 100 − Σ impact)`** across the page's charged issues;
+  **Site Health = mean of page scores**. Computed by the single shared function
+  `job_store_base.compute_impact_health`, used by **both** the SQLite (dev) and
+  Redis (prod) stores so the two cannot diverge (the pre-v1.5 density model
+  survives only as its internal fallback). *(Audit 2026-07-03, Path A.)*
+- **Cluster suppression (R4):** when a parent code and its correlated children
+  are present on the same page, only the parent is charged to the score, so one
+  root cause is not double-counted. Suppressed issues remain fully visible in the
+  issue list/counts — suppression is scoring-only. Rules:
+  `SCHEMA_MISSING` ⊳ {`JSON_LD_MISSING`, `SCHEMA_ORG_MISSING`};
+  `TITLE_META_DUPLICATE_PAIR` ⊳ {`TITLE_DUPLICATE`, `META_DESC_DUPLICATE`};
+  `RAW_HTML_JS_DEPENDENT` ⊳ {`AI_CONTENT_NOT_IN_TEXT`, `CONTENT_NOT_EXTRACTABLE_NO_TEXT`, `CONTACT_INFO_NOT_IN_HTML`};
+  `THIN_CONTENT` ⊳ {`CONTENT_THIN`}.
 - The Summary tab loads within 2 seconds of crawl completion.
 
 ### Journey B — Review and triage issues

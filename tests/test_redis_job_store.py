@@ -412,18 +412,17 @@ class TestSummary:
         result = await store.get_summary("nonexistent")
         assert result == {}
 
-    @patch("api.services.redis_store.RedisJobStore._compute_health_score")
+    @patch("api.services.job_store_base.compute_impact_health")
     async def test_get_summary_calculates_correctly(
         self, mock_health_fn, store, mock_redis
     ):
         """Test get_summary with a valid job and issues.
 
-        The patch target is the staticmethod on RedisJobStore itself, because
-        get_summary calls self._compute_health_score(...). Patching the
-        module-level name (api.services.job_store._compute_health_score)
-        would not intercept that call.
+        get_summary now delegates scoring to the shared
+        ``compute_impact_health`` helper (audit Path A parity fix), so we patch
+        that. It is called twice (main + agent health), each returning (site, count).
         """
-        mock_health_fn.return_value = 75
+        mock_health_fn.return_value = (75, 2)
 
         job = _job(pages_crawled=5)
         mapping = store._job_to_mapping(job)
@@ -466,14 +465,11 @@ class TestSummary:
         assert summary["by_severity"]["info"] == 1
         assert summary["health_score"] == 75
 
-        mock_health_fn.assert_called_once()
+        assert mock_health_fn.called  # called for main + agent health
 
-    @patch("api.services.redis_store.RedisJobStore._compute_health_score")
     async def test_get_summary_with_no_issues(
-        self, mock_health_fn, store, mock_redis
+        self, store, mock_redis
     ):
-        mock_health_fn.return_value = 100
-
         job = _job(pages_crawled=3)
         mock_redis.hgetall.return_value = store._job_to_mapping(job)
         mock_redis.get.return_value = None  # no issues, no pages

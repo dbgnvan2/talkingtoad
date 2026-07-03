@@ -41,9 +41,23 @@ unrelated `test_usage_aggregation.py` failures):
 - **R1** dead-code allowlist justifications corrected (`test_class1_invariants.py`) — the JS-trio ("engine consumes JSRenderResult" was false → unwired/R7), citation codes (quarantined/R6), and extractability codes (actually live via dynamic dispatch, were mislabeled "not feasible") now grouped by real reason.
 - `docs/issue-codes.md` regenerated.
 
-**Not yet done:** R3 (confidence×effect_size model — needs SME sign-off on the matrix), R4 (cluster
-suppression — biggest remaining score-accuracy win), R2.x precision fixes, R6-R8 features. Each needs
-a `docs/pending/` micro-spec first.
+### Implemented 2026-07-03 (Path A — store parity + R4 cluster suppression)
+
+Full suite 1784 passed; same 3 pre-existing unrelated `test_usage_aggregation.py` failures.
+- **Store-parity fix (newly discovered blocker).** Redis (prod) computed the MAIN health score with
+  the density model, not the impact model — so R2/R3/R4 never reached production. Both stores now
+  route through one shared `job_store_base.compute_impact_health`; the dead Redis
+  `_compute_health_score` was removed. **One-time effect: production main health scores shift from
+  the density model to the impact model.** Folded into `docs/functional-specification.md`.
+- **R4 cluster suppression** — `page_suppressed_codes` + `_CLUSTER_SUPPRESSION` (4 rules) applied in
+  the shared helper, so both stores and both the main + agent scores charge one root cause once.
+  Issues stay visible; scoring-only.
+- Tests: `tests/test_r4_cluster_suppression.py` (unit + interactions + parity via the shared
+  function); Redis summary tests updated to the shared helper.
+
+**Not yet done:** R3 (confidence×effect_size model — needs SME sign-off; two independent expert
+opinions being gathered via `docs/review/2026-07-03_R3-expert-prompt.md`), R2.x precision fixes,
+R6-R8 features.
 
 ---
 

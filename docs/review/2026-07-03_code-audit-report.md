@@ -302,7 +302,16 @@ Source: `api/services/job_store_base.py`.
 - **Page Health = `max(0, 100 − Σ(impact of every issue on that page))`**
   (`_compute_v15_health_score`, `job_store_base.py:48–119`; per-page sum at SQL `:80–86`, floor at `:115`).
 - **Site Health = mean of all crawled pages' Page Health** (pages with no issues = 100)
-  (`job_store_base.py:118`). Redis mirror: `redis_store.py:240`.
+  (`job_store_base.py:118`).
+
+> **CORRECTION (2026-07-03, found during R4):** the above describes the **SQLite (dev)** path only.
+> **Redis (prod) does NOT use the impact model for the main health score.** `redis_store.get_summary`
+> (`redis_store.py:240`) calls `_compute_health_score` — the **density model** (severity counts ×
+> 50/30/10), which SQLite uses only as a *pre-v1.5 fallback*. So in **production the main health
+> score has never used impact**; only `agent_health_score` uses impact in Redis (`redis_store.py:246-263`).
+> Consequence: the entire impact-based calibration (R2 migration, R3 model, R4 suppression) affects
+> the prod **main** score **not at all** until a store-parity fix lands. This is a High-severity
+> divergence [code] that this Phase-2 section originally missed by assuming Redis mirrored SQLite.
 - **Agent Health = identical model, restricted to agent-relevant issues** — categories
   `{ai_readiness, rendering, semantic_html}` ∪ codes `{PLACEHOLDER_LINK, WRONG_PLACEHOLDER_LINK}`
   (`_compute_agent_health_score`, `job_store_base.py:154–212`; filter `:134–151`).
