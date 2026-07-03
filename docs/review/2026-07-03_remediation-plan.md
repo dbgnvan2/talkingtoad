@@ -32,8 +32,18 @@ Shipped with tests in `tests/test_audit_2026_07_p0.py` (all green; full suite 17
 - **R-Q4** `_AI_READINESS_CONFIDENCE` grouping tidied (misplaced entries moved under correct section comments).
 - `docs/issue-codes.md` regenerated from the catalogue (sync test green).
 
-**Not yet done:** R1-R8 (scoring migration, model, suppression, precision, features) — each needs a
-`docs/pending/` micro-spec + human/SME sign-off on the Phase 4 numbers first.
+### Implemented 2026-07-03 (scoring-value migration batch — R1 + R2 + R5)
+
+Shipped with tests in `tests/test_audit_2026_07_p0.py` (full suite 1766 passed; same 3 pre-existing
+unrelated `test_usage_aggregation.py` failures):
+- **R2** the 20 evidence-based impact/effort changes applied to `_ISSUE_SCORING` — `test_scoring_migration_applied` (parametrized ×20).
+- **R5** fixability corrections `ORPHAN_PAGE` and `BROKEN_LINK_5XX` → `content_edit`; fixability-group tests updated — `test_fixability_corrections_applied`.
+- **R1** dead-code allowlist justifications corrected (`test_class1_invariants.py`) — the JS-trio ("engine consumes JSRenderResult" was false → unwired/R7), citation codes (quarantined/R6), and extractability codes (actually live via dynamic dispatch, were mislabeled "not feasible") now grouped by real reason.
+- `docs/issue-codes.md` regenerated.
+
+**Not yet done:** R3 (confidence×effect_size model — needs SME sign-off on the matrix), R4 (cluster
+suppression — biggest remaining score-accuracy win), R2.x precision fixes, R6-R8 features. Each needs
+a `docs/pending/` micro-spec first.
 
 ---
 

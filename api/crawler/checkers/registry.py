@@ -98,12 +98,12 @@ _ISSUE_SCORING: dict[str, tuple[int, int]] = {
     # code:                       (impact, effort)
     "BROKEN_LINK_404":            (10, 2),
     "BROKEN_LINK_410":            (8,  2),
-    "BROKEN_LINK_5XX":            (7,  3),
+    "BROKEN_LINK_5XX":            (7, 2),
     "BROKEN_LINK_503":            (4,  3),
     "REDIRECT_LOOP":              (10, 4),
     "REDIRECT_CHAIN":             (6,  3),
     "REDIRECT_301":               (3,  2),
-    "REDIRECT_302":               (5,  2),
+    "REDIRECT_302":               (4, 2),
     "REDIRECT_TRAILING_SLASH":    (2,  1),
     "REDIRECT_CASE_NORMALISE":    (2,  1),
     "TITLE_MISSING":              (9,  1),
@@ -117,11 +117,11 @@ _ISSUE_SCORING: dict[str, tuple[int, int]] = {
     "OG_TITLE_MISSING":           (4,  1),
     "OG_DESC_MISSING":            (3,  1),
     "CANONICAL_MISSING":          (6,  2),
-    "CANONICAL_EXTERNAL":         (5,  2),
+    "CANONICAL_EXTERNAL":         (5, 3),
     "TITLE_META_DUPLICATE_PAIR":  (6,  2),
     "FAVICON_MISSING":            (3,  2),
-    "H1_MISSING":                 (8,  1),
-    "H1_MULTIPLE":                (6,  2),
+    "H1_MISSING":                 (6, 1),
+    "H1_MULTIPLE":                (5, 2),
     "HEADING_SKIP":               (4,  3),
     "NOINDEX_META":               (10, 1),
     "NOINDEX_HEADER":             (10, 2),
@@ -132,11 +132,11 @@ _ISSUE_SCORING: dict[str, tuple[int, int]] = {
     "MIXED_CONTENT":              (6,  2),
     "MISSING_HSTS":               (4,  2),
     "UNSAFE_CROSS_ORIGIN_LINK":   (3,  1),
-    "URL_TOO_LONG":               (2,  4),
+    "URL_TOO_LONG":               (2, 2),
     "URL_UPPERCASE":              (3,  2),
-    "URL_HAS_SPACES":             (5,  3),
-    "URL_HAS_UNDERSCORES":        (2,  4),
-    "THIN_CONTENT":               (6,  4),
+    "URL_HAS_SPACES":             (5, 2),
+    "URL_HAS_UNDERSCORES":        (2, 2),
+    "THIN_CONTENT":               (6, 3),
     "HIGH_CRAWL_DEPTH":           (5,  3),
     "PAGE_TIMEOUT":               (6,  3),
     "EXTERNAL_LINK_TIMEOUT":      (3,  1),
@@ -161,7 +161,7 @@ _ISSUE_SCORING: dict[str, tuple[int, int]] = {
     "IMG_DUPLICATE_CONTENT":      (2,  2),
     "LOGIN_REDIRECT":             (2,  1),
     "INTERNAL_REDIRECT_301":      (4,  1),
-    "ORPHAN_PAGE":                (6,  4),
+    "ORPHAN_PAGE":                (6, 2),
     "SCHEMA_MISSING":             (5,  2),
     "MISSING_VIEWPORT_META":      (6,  1),
     "IMG_BROKEN":                 (8,  2),
@@ -174,9 +174,9 @@ _ISSUE_SCORING: dict[str, tuple[int, int]] = {
     "HTTPS_REDIRECT_MISSING":     (9,  2),
     "CANONICAL_SELF_MISSING":     (5,  1),
     # v1.7 AI-Readiness Module
-    "LLMS_TXT_MISSING":           (6,  1),
-    "LLMS_TXT_INVALID":           (4,  2),
-    "SEMANTIC_DENSITY_LOW":       (5,  3),
+    "LLMS_TXT_MISSING":           (3, 1),
+    "LLMS_TXT_INVALID":           (2, 2),
+    "SEMANTIC_DENSITY_LOW":       (3, 3),
     "DOCUMENT_PROPS_MISSING":     (4,  2),
     "JSON_LD_MISSING":            (7,  2),
     "CONVERSATIONAL_H2_MISSING":  (4,  2),
@@ -184,7 +184,7 @@ _ISSUE_SCORING: dict[str, tuple[int, int]] = {
     # v1.9.2 new checks
     "OG_IMAGE_MISSING":           (3,  1),
     "TWITTER_CARD_MISSING":       (3,  1),
-    "CONTENT_STALE":              (3,  4),
+    "CONTENT_STALE":              (3, 3),
     # Phase 3 new checks
     "ANCHOR_TEXT_GENERIC":        (4,  2),
     "HEADING_EMPTY":              (4,  1),
@@ -222,9 +222,9 @@ _ISSUE_SCORING: dict[str, tuple[int, int]] = {
     "CITATIONS_ORPHANED":         (2,  1),
     "CITATIONS_SOURCES_INACCESSIBLE": (4, 3),
     # v2.1 GEO Analyzer: Aggarwal et al. checks (Empirical tier, highest impact)
-    "STATISTICS_COUNT_LOW":       (7,  2),
-    "EXTERNAL_CITATIONS_LOW":     (7,  2),
-    "QUOTATIONS_MISSING":         (6,  2),
+    "STATISTICS_COUNT_LOW":       (5, 2),
+    "EXTERNAL_CITATIONS_LOW":     (5, 2),
+    "QUOTATIONS_MISSING":         (4, 2),
     "ORPHAN_CLAIM_TECHNICAL":     (6,  2),
     # v2.1 GEO Analyzer: Mechanistic checks
     "RAW_HTML_JS_DEPENDENT":      (6,  3),
@@ -244,16 +244,16 @@ _ISSUE_SCORING: dict[str, tuple[int, int]] = {
     # word-position / signal-presence checks. Per continuation-prompt
     # Q5's "stronger penalty" intent (penalty=20 didn't translate to
     # this codebase's (impact, effort) tuple; (7, 3) is the closest).
-    "GEO_SUMMARY_BURIED":         (7,  3),
+    "GEO_SUMMARY_BURIED":         (5, 3),
     "LINK_PROFILE_PROMOTIONAL":   (4,  2),
     "STRUCTURED_ELEMENTS_LOW":    (3,  2),
     # v2.1 GEO Analyzer: Conventional checks
     "JSON_LD_INVALID":            (4,  2),
-    "FAQ_SCHEMA_MISSING":         (3,  2),
+    "FAQ_SCHEMA_MISSING":         (2, 2),
     "PROMOTIONAL_CONTENT_INTERRUPTS": (3, 3),
     "AI_TXT_MISSING":             (1,  1),
     # Tier 1 GEO heuristics (spec §4.3–4.6)
-    "QUERY_COVERAGE_WEAK":        (7,  2),
+    "QUERY_COVERAGE_WEAK":        (5, 2),
     "SECTION_VAGUE_OPENER":       (5,  2),
     "SECTION_CROSS_REFERENCES":   (6,  2),
     "PARA_TOO_LONG":              (4,  2),
@@ -439,7 +439,9 @@ _CATALOGUE: dict[str, _IssueSpec] = {
         description="Link destination returns a server error",
         recommendation="Check whether the linked site is down. If the problem persists, remove or replace the link.",
         human_description="Broken Server Link",
-        fixability="wp_fixable",
+        # A 5xx lives on the DESTINATION server — nothing in WordPress can fix
+        # it. The author's action is to remove/replace the link (content edit).
+        fixability="content_edit",
     ),
     "BROKEN_LINK_503": _IssueSpec(
         category="broken_link", severity="warning",
@@ -609,7 +611,8 @@ _CATALOGUE: dict[str, _IssueSpec] = {
         recommendation="Add at least one internal link to this page from a navigation menu, hub page, "
                        "or relevant content page so search engines and visitors can find it.",
         human_description="Disconnected Page",
-        fixability="developer_needed",
+        # Adding internal links pointing at the page is content work, not dev.
+        fixability="content_edit",
     ),
     "CONTENT_STALE": _IssueSpec(
         category="crawlability", severity="info",

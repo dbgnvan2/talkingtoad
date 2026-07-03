@@ -293,36 +293,49 @@ class TestCatalogueLiveness:
     or moved to a documented "v3.0 planned" allowlist below.
     """
 
-    # Codes whose emission site uses a path the simple
-    # `make_issue("CODE", ...)` grep doesn't catch (architectural alternates),
-    # OR which are stubbed pending v3.0 implementation. Each entry needs a
-    # justification comment so future maintainers know which is which.
+    # Codes whose emission site the simple `make_issue("CODE", ...)` literal
+    # grep can't see, grouped by the REAL reason (corrected 2026-07-03 audit R1
+    # — the previous grouping's justifications for the JS trio and citation
+    # codes were factually wrong). Each group states exactly why the code isn't
+    # found by the literal grep and, where applicable, which remediation
+    # re-wires it.
     _DEAD_CODE_ALLOWLIST: set[str] = {
-        # ── Architectural alternates (real emission, different code path) ──
-        # Emitted as dict literal in sitemap.py + engine.py:
+        # ── (a) Live, but emitted via a non-literal path the grep misses ──
+        # Emitted as a dict literal (not make_issue) in sitemap.py + engine.py:
         "SITEMAP_MISSING",
-        # System-warning code (emitted from non-make_issue admin path):
+        # System-warning emitted from a non-make_issue admin path:
         "AI_BOT_TABLE_STALE",
-        # Computed as boolean flags on JSRenderResult in js_renderer.py;
-        # emission happens when the engine consumes JSRenderResult into Issues:
-        "JS_RENDERED_CONTENT_DIFFERS",
-        "CONTENT_CLOAKING_DETECTED",
-        "UA_CONTENT_DIFFERS",
-        # Returned as code string from citation_model.classify_citation; emission
-        # happens when the AI advisor consumes the model output:
-        "CITATIONS_ORPHANED",
-
-        # ── v3.0-planned LLM-driven checks (catalogue + help present;
-        #    static implementation not feasible — needs LLM classifier) ──
-        "PROMOTIONAL_CONTENT_INTERRUPTS",
-        "CHUNKS_NOT_SELF_CONTAINED",
-        "CENTRAL_CLAIM_BURIED",
-        "CITATIONS_MISSING_SUBSTANTIAL_CONTENT",
-        "CITATIONS_SOURCES_INACCESSIBLE",
-        "CONTENT_IMAGE_HEAVY",
+        # LIVE via dynamic dispatch: diagnose_extractability() returns a code
+        # STRING that is emitted with make_issue(<variable>, ...) at
+        # issue_checker.py — so these DO fire (one per page, mutually
+        # exclusive), the grep just can't see a string variable:
         "CONTENT_NOT_EXTRACTABLE_NO_TEXT",
         "CONTENT_THIN",
         "CONTENT_UNSTRUCTURED",
+        "CONTENT_IMAGE_HEAVY",
+
+        # ── (b) Quarantined pending remediation R6 (real citation parser) ──
+        # The citation block in issue_checker.py was fed hardcoded-empty
+        # citations and is now disabled (audit R0.1). These three cannot fire
+        # until a real parser is wired in:
+        "CITATIONS_MISSING_SUBSTANTIAL_CONTENT",
+        "CITATIONS_ORPHANED",
+        "CITATIONS_SOURCES_INACCESSIBLE",
+
+        # ── (c) Scored but UNWIRED — pending remediation R7 (Playwright) ──
+        # run_js_render_checks() has NO non-test caller and no make_issue for
+        # these exists anywhere in api/. They are computed as flags on
+        # JSRenderResult but never consumed into Issues. (The prior comment
+        # claimed "the engine consumes JSRenderResult" — it does not.)
+        "JS_RENDERED_CONTENT_DIFFERS",
+        "CONTENT_CLOAKING_DETECTED",
+        "UA_CONTENT_DIFFERS",
+
+        # ── (d) Not implemented — pending remediation R8 (LLM classifier) ──
+        # Catalogue + help present; no static implementation exists yet:
+        "PROMOTIONAL_CONTENT_INTERRUPTS",
+        "CHUNKS_NOT_SELF_CONTAINED",
+        "CENTRAL_CLAIM_BURIED",
     }
 
     def test_every_catalogue_code_has_an_emission_site(self):

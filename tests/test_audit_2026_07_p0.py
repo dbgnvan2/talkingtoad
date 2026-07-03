@@ -25,6 +25,30 @@ _PUBLIC_RESOLUTION = [
 ]
 
 
+# ── R2/R5: scoring-value migration locked in (impact, effort) ─────────────────
+_MIGRATED_SCORING = {
+    "BROKEN_LINK_5XX": (7, 2), "CANONICAL_EXTERNAL": (5, 3), "CONTENT_STALE": (3, 3),
+    "EXTERNAL_CITATIONS_LOW": (5, 2), "FAQ_SCHEMA_MISSING": (2, 2), "GEO_SUMMARY_BURIED": (5, 3),
+    "H1_MISSING": (6, 1), "H1_MULTIPLE": (5, 2), "LLMS_TXT_INVALID": (2, 2),
+    "LLMS_TXT_MISSING": (3, 1), "ORPHAN_PAGE": (6, 2), "QUERY_COVERAGE_WEAK": (5, 2),
+    "QUOTATIONS_MISSING": (4, 2), "REDIRECT_302": (4, 2), "SEMANTIC_DENSITY_LOW": (3, 3),
+    "STATISTICS_COUNT_LOW": (5, 2), "THIN_CONTENT": (6, 3), "URL_HAS_SPACES": (5, 2),
+    "URL_HAS_UNDERSCORES": (2, 2), "URL_TOO_LONG": (2, 2),
+}
+
+
+@pytest.mark.parametrize("code,expected", sorted(_MIGRATED_SCORING.items()))
+def test_scoring_migration_applied(code, expected):
+    """The 20 evidence-based Phase-4 scoring changes are present in _ISSUE_SCORING."""
+    assert _ISSUE_SCORING[code] == expected
+
+
+def test_fixability_corrections_applied():
+    """BROKEN_LINK_5XX and ORPHAN_PAGE reclassified to content_edit (audit R5)."""
+    assert _CATALOGUE["BROKEN_LINK_5XX"].fixability == "content_edit"
+    assert _CATALOGUE["ORPHAN_PAGE"].fixability == "content_edit"
+
+
 # ── R0.5: no invalid severity values in the catalogue ─────────────────────────
 def test_all_catalogue_severities_valid():
     """CONTENT_CLOAKING_DETECTED had severity='error', which is not in the

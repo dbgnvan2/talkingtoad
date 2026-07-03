@@ -1960,7 +1960,7 @@ class TestFixabilityTagging:
             "OG_TITLE_MISSING", "OG_DESC_MISSING",
             "NOINDEX_META", "NOT_IN_SITEMAP", "SCHEMA_MISSING",
             "TITLE_H1_MISMATCH",
-            "BROKEN_LINK_404", "BROKEN_LINK_410", "BROKEN_LINK_5XX",
+            "BROKEN_LINK_404", "BROKEN_LINK_410",  # BROKEN_LINK_5XX -> content_edit (audit R5)
             "IMG_ALT_MISSING", "IMG_ALT_TOO_SHORT", "IMG_ALT_TOO_LONG",
             "IMG_ALT_GENERIC", "IMG_ALT_DUP_FILENAME",
         ]
@@ -1979,6 +1979,8 @@ class TestFixabilityTagging:
             "CONVERSATIONAL_H2_MISSING",
             "LLMS_TXT_MISSING", "LLMS_TXT_INVALID",
             "DOCUMENT_PROPS_MISSING",
+            # audit R5: reclassified from their old (wrong) fixability
+            "BROKEN_LINK_5XX", "ORPHAN_PAGE",
             "IMG_OVERSIZED", "IMG_FORMAT_LEGACY", "IMG_POOR_COMPRESSION",
             "IMG_OVERSCALED", "IMG_ALT_MISUSED",
         ]
@@ -1995,7 +1997,7 @@ class TestFixabilityTagging:
             "ROBOTS_BLOCKED", "MIXED_CONTENT", "MISSING_HSTS",
             "CANONICAL_MISSING", "CANONICAL_EXTERNAL",
             "PAGE_TIMEOUT", "PAGE_SIZE_LARGE",
-            "ORPHAN_PAGE", "INTERNAL_NOFOLLOW",
+            "INTERNAL_NOFOLLOW",  # ORPHAN_PAGE -> content_edit (audit R5)
             "SEMANTIC_DENSITY_LOW", "JSON_LD_MISSING",
             "IMG_BROKEN", "IMG_SLOW_LOAD", "IMG_NO_SRCSET", "IMG_DUPLICATE_CONTENT",
         ]

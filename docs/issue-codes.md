@@ -47,7 +47,7 @@ Links use non-descriptive anchor text like 'click here' or 'read more'
 ---
 
 ### CANONICAL_EXTERNAL
-**Severity:** 🟡 warning | **Impact:** 5 | **Effort:** 2
+**Severity:** 🟡 warning | **Impact:** 5 | **Effort:** 3
 
 Canonical points to a different domain
 
@@ -273,7 +273,7 @@ H1 presence and uniqueness, heading hierarchy, empty headings.
 _4 codes in this category._
 
 ### H1_MISSING
-**Severity:** 🔴 critical | **Impact:** 8 | **Effort:** 1 | **Fixability:** content_edit
+**Severity:** 🔴 critical | **Impact:** 6 | **Effort:** 1 | **Fixability:** content_edit
 
 No H1 tag found on page
 
@@ -284,7 +284,7 @@ No H1 tag found on page
 ---
 
 ### H1_MULTIPLE
-**Severity:** 🟡 warning | **Impact:** 6 | **Effort:** 2 | **Fixability:** content_edit
+**Severity:** 🟡 warning | **Impact:** 5 | **Effort:** 2 | **Fixability:** content_edit
 
 More than one H1 on the page
 
@@ -357,7 +357,7 @@ Link destination returns 503 — may be temporarily down or blocking automated c
 ---
 
 ### BROKEN_LINK_5XX
-**Severity:** 🔴 critical | **Impact:** 7 | **Effort:** 3 | **Fixability:** wp_fixable
+**Severity:** 🔴 critical | **Impact:** 7 | **Effort:** 2 | **Fixability:** content_edit
 
 Link destination returns a server error
 
@@ -462,7 +462,7 @@ Page returns a permanent redirect
 ---
 
 ### REDIRECT_302
-**Severity:** 🟡 warning | **Impact:** 5 | **Effort:** 2
+**Severity:** 🟡 warning | **Impact:** 4 | **Effort:** 2
 
 Page returns a temporary redirect
 
@@ -535,7 +535,7 @@ Page declares an AMP version via <link rel="amphtml"> but the AMP URL is not rea
 ---
 
 ### CONTENT_STALE
-**Severity:** 🔵 info | **Impact:** 3 | **Effort:** 4 | **Fixability:** content_edit
+**Severity:** 🔵 info | **Impact:** 3 | **Effort:** 3 | **Fixability:** content_edit
 
 Page content has not been modified in over 12 months
 
@@ -623,7 +623,7 @@ Crawlable page not listed in sitemap
 ---
 
 ### ORPHAN_PAGE
-**Severity:** 🟡 warning | **Impact:** 6 | **Effort:** 4
+**Severity:** 🟡 warning | **Impact:** 6 | **Effort:** 2 | **Fixability:** content_edit
 
 Page has no internal links pointing to it — search engines may not discover it
 
@@ -711,7 +711,7 @@ No structured data (schema markup) found on this page
 ---
 
 ### THIN_CONTENT
-**Severity:** 🟡 warning | **Impact:** 6 | **Effort:** 4 | **Fixability:** content_edit
+**Severity:** 🟡 warning | **Impact:** 6 | **Effort:** 3 | **Fixability:** content_edit
 
 Page has fewer than 300 words of body content
 
@@ -838,7 +838,7 @@ URL format: uppercase, spaces, underscores, length.
 _4 codes in this category._
 
 ### URL_HAS_SPACES
-**Severity:** 🟡 warning | **Impact:** 5 | **Effort:** 3 | **Fixability:** content_edit
+**Severity:** 🟡 warning | **Impact:** 5 | **Effort:** 2 | **Fixability:** content_edit
 
 URL contains encoded spaces (%20)
 
@@ -849,7 +849,7 @@ URL contains encoded spaces (%20)
 ---
 
 ### URL_HAS_UNDERSCORES
-**Severity:** 🔵 info | **Impact:** 2 | **Effort:** 4 | **Fixability:** content_edit
+**Severity:** 🔵 info | **Impact:** 2 | **Effort:** 2 | **Fixability:** content_edit
 
 URL path uses underscores instead of hyphens
 
@@ -860,7 +860,7 @@ URL path uses underscores instead of hyphens
 ---
 
 ### URL_TOO_LONG
-**Severity:** 🔵 info | **Impact:** 2 | **Effort:** 4 | **Fixability:** content_edit
+**Severity:** 🔵 info | **Impact:** 2 | **Effort:** 2 | **Fixability:** content_edit
 
 URL exceeds 200 characters
 
@@ -1451,7 +1451,7 @@ PDF is missing internal Title or Subject metadata
 ---
 
 ### EXTERNAL_CITATIONS_LOW
-**Severity:** 🟡 warning | **Confidence:** Reasonable proxy | **Impact:** 7 | **Effort:** 2 | **Fixability:** content_edit
+**Severity:** 🟡 warning | **Confidence:** Reasonable proxy | **Impact:** 5 | **Effort:** 2 | **Fixability:** content_edit
 
 500+ word page has no outbound links to external authoritative sources in body text
 
@@ -1462,7 +1462,7 @@ PDF is missing internal Title or Subject metadata
 ---
 
 ### FAQ_SCHEMA_MISSING
-**Severity:** 🔵 info | **Confidence:** Reasonable proxy | **Impact:** 3 | **Effort:** 2
+**Severity:** 🔵 info | **Confidence:** Reasonable proxy | **Impact:** 2 | **Effort:** 2
 
 Page has an FAQ section but no FAQPage JSON-LD schema
 
@@ -1484,7 +1484,7 @@ First 200 words contain no direct answer signal (definition, TL;DR, summary phra
 ---
 
 ### GEO_SUMMARY_BURIED
-**Severity:** 🟡 warning | **Confidence:** Heuristic | **Impact:** 7 | **Effort:** 3 | **Fixability:** content_edit
+**Severity:** 🟡 warning | **Confidence:** Heuristic | **Impact:** 5 | **Effort:** 3 | **Fixability:** content_edit
 
 The first paragraph or list does not lead its H2 or H3 section — the core answer is pushed below images, media, or preamble
 
@@ -1539,7 +1539,7 @@ Over 80% of outbound body-text links point to the same organisation's own domain
 ---
 
 ### LLMS_TXT_INVALID
-**Severity:** 🟡 warning | **Confidence:** Heuristic | **Impact:** 4 | **Effort:** 2 | **Fixability:** content_edit
+**Severity:** 🟡 warning | **Confidence:** Heuristic | **Impact:** 2 | **Effort:** 2 | **Fixability:** content_edit
 
 /llms.txt format is invalid
 
@@ -1550,7 +1550,7 @@ Over 80% of outbound body-text links point to the same organisation's own domain
 ---
 
 ### LLMS_TXT_MISSING
-**Severity:** 🔵 info | **Confidence:** Heuristic | **Impact:** 6 | **Effort:** 1 | **Fixability:** content_edit
+**Severity:** 🔵 info | **Confidence:** Heuristic | **Impact:** 3 | **Effort:** 1 | **Fixability:** content_edit
 
 No llms.txt found at root
 
@@ -1583,7 +1583,7 @@ Mid-article sections classified as promotional interrupt the content flow
 ---
 
 ### QUERY_COVERAGE_WEAK
-**Severity:** 🟡 warning | **Confidence:** Heuristic | **Impact:** 7 | **Effort:** 2 | **Fixability:** content_edit
+**Severity:** 🟡 warning | **Confidence:** Heuristic | **Impact:** 5 | **Effort:** 2 | **Fixability:** content_edit
 
 Page H1 topic terms are under-represented in the intro or section headings — AI retrieval systems may not associate this page with its target query
 
@@ -1594,7 +1594,7 @@ Page H1 topic terms are under-represented in the intro or section headings — A
 ---
 
 ### QUOTATIONS_MISSING
-**Severity:** 🟡 warning | **Confidence:** Heuristic | **Impact:** 6 | **Effort:** 2 | **Fixability:** content_edit
+**Severity:** 🟡 warning | **Confidence:** Heuristic | **Impact:** 4 | **Effort:** 2 | **Fixability:** content_edit
 
 500+ word page contains no direct quotations from named sources
 
@@ -1698,7 +1698,7 @@ One or more H2/H3 sections begin with a vague demonstrative reference ('This met
 ---
 
 ### SEMANTIC_DENSITY_LOW
-**Severity:** 🟡 warning | **Confidence:** Heuristic | **Impact:** 5 | **Effort:** 3
+**Severity:** 🟡 warning | **Confidence:** Heuristic | **Impact:** 3 | **Effort:** 3
 
 Text-to-HTML ratio is below 10%
 
@@ -1709,7 +1709,7 @@ Text-to-HTML ratio is below 10%
 ---
 
 ### STATISTICS_COUNT_LOW
-**Severity:** 🟡 warning | **Confidence:** Heuristic | **Impact:** 7 | **Effort:** 2 | **Fixability:** content_edit
+**Severity:** 🟡 warning | **Confidence:** Heuristic | **Impact:** 5 | **Effort:** 2 | **Fixability:** content_edit
 
 500+ word page contains no statistics (numbers paired with units, percentages, or dates)
 
