@@ -92,9 +92,13 @@ def _check_schema_conflicts_intrinsic(schema_types: list[str]) -> str | None:
     if "article" in schema_set and "product" in schema_set:
         return "article_product_conflict"
 
-    # Person + Organization together is always a conflict (they describe different entities)
-    if "person" in schema_set and "organization" in schema_set:
-        return "person_org_conflict"
+    # NOTE: Person + Organization together is NOT a conflict. In the standard
+    # @graph pattern (Yoast/RankMath/most WP SEO plugins) a page carries a
+    # publisher Organization node AND an author/person node as SEPARATE entities
+    # in one graph — that is valid and near-universal. Flagging it here false-
+    # positived on essentially every WordPress site (audit accuracy fix
+    # 2026-07-04). A true "same entity typed two ways" conflict can't be
+    # detected from the flat schema_types list, so we don't guess.
 
     return None
 
@@ -123,6 +127,15 @@ _SCHEMA_FIELDS_TO_CHECK: dict[str, list[tuple[str, str]]] = {
 def _normalize(text: str) -> str:
     """Lowercase, collapse whitespace, strip — used for substring comparison."""
     return " ".join(text.lower().split())
+
+
+def _is_machine_identifier(value: str) -> bool:
+    """True if *value* is a machine identifier (email / URL) rather than display
+    content. SEO plugins inject author/publisher Person nodes whose ``name`` is
+    an email or agency URL; those are not expected to appear in visible text, so
+    they must not trip SCHEMA_VISIBLE_MISMATCH (audit accuracy fix 2026-07-04)."""
+    v = value.strip().lower()
+    return ("@" in v and "." in v.split("@")[-1]) or v.startswith(("http://", "https://", "www."))
 
 
 def _assemble_address(block: dict) -> str | None:
@@ -170,6 +183,8 @@ def _check_block_fields(
             value = block.get(field_name)
             if not isinstance(value, str) or not value.strip():
                 continue  # absent or empty → not a mismatch
+            if _is_machine_identifier(value):
+                continue  # email/URL identifier, not display content
             if _normalize(value) not in normalized_visible:
                 mismatched.append(f"{prefix}{label}")
 

@@ -174,7 +174,12 @@ def _run_geo_checks(page: "ParsedPage", url: str, issues: list) -> None:
                     if isinstance(inner, dict):
                         flat_blocks.append(inner)
             # else: malformed entry — drop
-        invalid = [b for b in flat_blocks if not (b.get("@type") and b.get("@context"))]
+        # A JSON-LD node is invalid only if it lacks @type. Do NOT require
+        # @context per node: in the @graph pattern (Yoast/RankMath/most WP SEO
+        # plugins) @context lives once on the ROOT and the @graph children
+        # inherit it — requiring it on every flattened child false-positived on
+        # essentially every WordPress site (audit accuracy fix 2026-07-04).
+        invalid = [b for b in flat_blocks if not b.get("@type")]
         if invalid:
             issues.append(make_issue("JSON_LD_INVALID", url, extra={
                 "invalid_count": len(invalid),

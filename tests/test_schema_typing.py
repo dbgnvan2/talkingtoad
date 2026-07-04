@@ -105,12 +105,14 @@ class TestConflictingSchemas:
         assert issue is not None
         assert "schema_conflict" in issue
 
-    def test_person_org_conflict(self):
-        """Person + Organization on non-team/contact page should be conflict."""
-        page = _make_page("https://example.com/random", title="Page", schema_types=["Person", "Organization"])
+    def test_person_org_not_a_conflict(self):
+        """Person + Organization together is NOT a conflict — it's the standard
+        WordPress @graph (publisher Organization + author Person as separate
+        entities). Flagging it was a site-wide false positive (audit fix)."""
+        page = _make_page("https://example.com/random", title="Page",
+                          schema_types=["Person", "Organization"])
         is_appropriate, issue = validate_schema_typing(page)
-        assert is_appropriate is False
-        assert "person_org_conflict" in issue
+        assert issue != "schema_conflict:person_org_conflict"
 
 
 class TestMissingSchema:
