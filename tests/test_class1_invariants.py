@@ -327,11 +327,9 @@ class TestCatalogueLiveness:
         #    with literal make_issue when the engine consumes JSRenderResult
         #    (engine step 7c, Playwright-gated), so they are NOT allowlisted. ──
 
-        # ── (d) Not implemented — pending remediation R8 (LLM classifier) ──
-        # Catalogue + help present; no static implementation exists yet:
-        "PROMOTIONAL_CONTENT_INTERRUPTS",
-        "CHUNKS_NOT_SELF_CONTAINED",
-        "CENTRAL_CLAIM_BURIED",
+        # ── (d) R8 IMPLEMENTED — geo_llm.geo_llm_issues() emits these three via
+        #    literal make_issue (LLM classifier, /api/ai/geo-llm-checks), so they
+        #    are NOT allowlisted. ──
     }
 
     def test_every_catalogue_code_has_an_emission_site(self):

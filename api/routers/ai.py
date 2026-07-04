@@ -524,3 +524,44 @@ async def generate_geo_faq(body: GeoFaqRequest, store=Depends(get_store)):
 
     result = await generate_faq_block(geo_config, mode=body.mode, limit=body.limit)
     return result
+
+
+class GeoLlmChecksRequest(BaseModel):
+    """R8: opt-in LLM-driven GEO checks for a single page (one LLM call)."""
+    page_url: str
+    job_id: str | None = None  # optional — for logging/traceability
+
+
+@router.post("/geo-llm-checks")
+@limiter.limit(AI_ANALYSIS_LIMIT)
+async def geo_llm_checks(request: Request, body: GeoLlmChecksRequest):
+    """Run the three LLM-driven GEO checks (CENTRAL_CLAIM_BURIED,
+    CHUNKS_NOT_SELF_CONTAINED, PROMOTIONAL_CONTENT_INTERRUPTS) on a page.
+
+    Opt-in (costs one LLM call). Re-fetches + parses the page for its body text
+    (the store does not persist it), then classifies. A failed/refused LLM
+    response yields an empty verdict — never a spurious finding (P14).
+    """
+    from api.crawler.fetcher import fetch_page, make_client
+    from api.crawler.parser import parse_page
+    from api.services.geo_llm import classify_geo_llm, geo_llm_issues
+
+    async with make_client() as client:
+        result = await fetch_page(body.page_url, client)  # SSRF-guarded
+    if result.status_code != 200 or not result.html:
+        return {"error": f"Could not fetch page (status {result.status_code})"}
+
+    page = parse_page(result, body.page_url)
+    text = getattr(page, "first_1500_words", None) or ""
+    if (getattr(page, "word_count", 0) or 0) < 200 or not text:
+        return {"verdict": {}, "issues": [], "note": "insufficient content for GEO LLM analysis"}
+
+    verdict = await classify_geo_llm(text)
+    issues = geo_llm_issues(body.page_url, verdict)
+    return {
+        "verdict": verdict,
+        "issues": [
+            {"code": i.code, "severity": i.severity, "priority_rank": i.priority_rank}
+            for i in issues
+        ],
+    }
