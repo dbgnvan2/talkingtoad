@@ -451,13 +451,20 @@ async def start_crawl(
     store: SQLiteJobStore | RedisJobStore = Depends(get_store),
 ) -> dict:
     """Submit a new crawl job (spec §6.4 POST /api/crawl/start)."""
-    import sys
-    print("[START] ====== start_crawl endpoint called ======", flush=True)
-    sys.stderr.write("[START] ====== STDERR start_crawl ======\n")
-    sys.stderr.flush()
     target_url = body.get("target_url", "").strip()
+    # Add the scheme when the user omits it: "example.org" → "https://example.org".
+    # (Bare hosts are the common case for a scan box; only prepend when there is
+    # no scheme at all so we don't mangle a mistyped one like "ftp://…".)
+    if target_url and "://" not in target_url:
+        target_url = "https://" + target_url
     if not target_url or not target_url.startswith(("http://", "https://")):
         return _err("INVALID_URL", "target_url must be a valid http or https URL.", 422)
+    # Require a plausible host (a dot) so typos like "example" / "not-a-url"
+    # aren't silently turned into an unresolvable https:// target.
+    from urllib.parse import urlparse
+    _host = urlparse(target_url).netloc.split("@")[-1].split(":")[0]
+    if "." not in _host:
+        return _err("INVALID_URL", "target_url must include a valid domain (e.g. example.org).", 422)
 
     if not is_ssrf_safe(target_url):
         return _err("BLOCKED_URL", "URLs targeting private or internal networks are not allowed.", 403)

@@ -133,11 +133,23 @@ class TestStartCrawl:
     async def test_start_invalid_url_returns_422(self, api_client, auth_headers):
         r = await api_client.post(
             "/api/crawl/start",
-            json={"target_url": "not-a-url"},
+            json={"target_url": "not-a-url"},  # normalises to https://not-a-url — no dot → invalid
             headers=auth_headers,
         )
         assert r.status_code == 422
         assert r.json()["error"]["code"] == "INVALID_URL"
+
+    async def test_start_adds_https_when_scheme_missing(self, api_client, auth_headers):
+        """A bare domain (no scheme) is accepted — https:// is added server-side."""
+        with patch("api.routers.crawl._run_crawl_background", new_callable=AsyncMock):
+            r = await api_client.post(
+                "/api/crawl/start",
+                json={"target_url": "example.org"},
+                headers=auth_headers,
+            )
+        assert r.status_code == 202
+        job = await api_client.get(f"/api/crawl/{r.json()['job_id']}", headers=auth_headers)
+        assert job.json()["target_url"] == "https://example.org"
 
     async def test_start_missing_url_returns_422(self, api_client, auth_headers):
         r = await api_client.post(
