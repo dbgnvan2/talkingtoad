@@ -875,6 +875,23 @@ async def run_crawl(
         cross_issues = check_cross_page(html_pages, start_url=normalised_start)
         all_issues.extend(cross_issues)
 
+        # ── 7b. Citation source accessibility (R6) ───────────────────────
+        # Collect the pages' cited external-source URLs and HEAD-check them
+        # (reuses fetch_page retry+SSRF via check_source_accessibility, capped),
+        # then flag pages whose sources are broken/blocked.
+        try:
+            from api.crawler.issue_checker import build_page_citations, citation_source_issues
+            from api.services.citation_model import check_source_accessibility
+            cite_urls: set[str] = set()
+            for p in html_pages:
+                if getattr(p, "is_indexable", True) and (p.word_count or 0) > 200:
+                    cite_urls |= {c.url for c in build_page_citations(p).citations if c.url}
+            if cite_urls:
+                inaccessible = await check_source_accessibility(cite_urls, client)
+                all_issues.extend(citation_source_issues(html_pages, inaccessible))
+        except Exception as e:
+            log.warning("citation_accessibility_error", extra={"error": str(e)})
+
         # ── 8. Apply analysis-toggle category filter ──────────────────────
         allowed = _enabled_categories(settings.enabled_analyses)
         if allowed is not None:

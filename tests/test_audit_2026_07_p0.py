@@ -100,14 +100,19 @@ def test_user_fetch_recommendation_not_blanket_ineffective():
 
 
 # ── R0.1: citation misfire quarantined ────────────────────────────────────────
-def test_citation_missing_not_emitted_on_substantial_page():
-    """With the citation model fed hardcoded-empty data, this code fired on
-    every >200-word page. Quarantined until R6 wires a real parser."""
-    page = _page(url="https://example.com/long", word_count=800, is_indexable=True)
+def test_citation_check_measures_real_citations():
+    """R0.1 → R6: the citation check no longer fires blindly on every >200-word
+    page. A page with a real external citation is NOT flagged missing; source
+    accessibility (CITATIONS_SOURCES_INACCESSIBLE) is a post-crawl network check,
+    never emitted from check_page. (Uncited-page firing is covered in
+    tests/test_r6_citations.py.)"""
+    from api.crawler.parser import ParsedLink
+    page = _page(url="https://example.com/long", word_count=800, is_indexable=True,
+                 links=[ParsedLink("https://ref.org/study", "the study", False)])
     codes = {i.code for i in check_page(page)}
     assert "CITATIONS_MISSING_SUBSTANTIAL_CONTENT" not in codes
     assert "CITATIONS_ORPHANED" not in codes
-    assert "CITATIONS_SOURCES_INACCESSIBLE" not in codes
+    assert "CITATIONS_SOURCES_INACCESSIBLE" not in codes  # post-crawl only
 
 
 # ── R0.4: fetch-error classification ──────────────────────────────────────────

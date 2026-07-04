@@ -126,6 +126,77 @@ def _check_ai_no_visual_companion(
 # A pure-delegation rewrite of this function is tracked as follow-up work.
 
 
+# Social / share / utility domains that are NOT source citations even when
+# linked externally from the body (audit R6).
+_NON_CITATION_DOMAINS = frozenset({
+    "facebook.com", "twitter.com", "x.com", "instagram.com", "linkedin.com",
+    "youtube.com", "youtu.be", "tiktok.com", "pinterest.com", "threads.net",
+    "wa.me", "t.me", "maps.google.com", "goo.gl", "bit.ly",
+})
+
+
+def build_page_citations(page: "ParsedPage"):
+    """Extract real citations from a parsed page (audit R6).
+
+    A citation = an external body link to a non-social source. The anchor text
+    is the citation's context (a bare-URL link with no anchor text is treated as
+    an orphan citation). Attribution style is inferred from the visible text.
+    """
+    from urllib.parse import urlparse
+    from api.services.citation_model import PageCitations, Citation
+
+    page_host = (urlparse(page.url).netloc or "").lower().removeprefix("www.")
+    citations = []
+    for link in (page.links or []):
+        href = (getattr(link, "url", "") or "").strip()
+        if not href.lower().startswith("http"):
+            continue
+        host = (urlparse(href).netloc or "").lower().removeprefix("www.")
+        if not host or host == page_host:
+            continue  # internal / same-site — not an external source
+        if any(host == d or host.endswith("." + d) for d in _NON_CITATION_DOMAINS):
+            continue  # social/share/utility link, not a citation
+        text = (getattr(link, "text", None) or "").strip()
+        citations.append(Citation(
+            text=text or href, url=href,
+            context=text or None,  # no anchor text ⇒ orphan citation
+            source_type="link", is_inline=True,
+        ))
+
+    window = (getattr(page, "first_1500_words", None) or getattr(page, "first_600_words", None)
+              or getattr(page, "first_200_words", None) or "")
+    has_footnote = bool(re.search(r"\[\d+\]|\bfootnotes?\b|\bendnotes?\b|\breferences?\b", window, re.I))
+    has_inline = bool(re.search(r"\baccording to\b|\bsources?[:\s]|\bcited\b|\(\d{4}\)", window, re.I))
+    if has_footnote and has_inline:
+        style = "mixed"
+    elif has_footnote:
+        style = "footnote"
+    elif has_inline or citations:
+        style = "inline"
+    else:
+        style = "none"
+    return PageCitations(url=page.url, citations=citations,
+                         has_links_to_sources=bool(citations),
+                         has_footnotes=has_footnote, attribution_style=style)
+
+
+def citation_source_issues(pages: list, inaccessible_urls: set) -> list:
+    """Post-crawl: emit CITATIONS_SOURCES_INACCESSIBLE for pages whose cited
+    sources are inaccessible (audit R6). *inaccessible_urls* is precomputed via
+    citation_model.check_source_accessibility using the crawl's shared client."""
+    out: list = []
+    if not inaccessible_urls:
+        return out
+    for page in pages:
+        if not getattr(page, "is_indexable", True):
+            continue
+        bad = {c.url for c in build_page_citations(page).citations if c.url} & inaccessible_urls
+        if bad:
+            out.append(make_issue("CITATIONS_SOURCES_INACCESSIBLE", page.url,
+                                   extra={"inaccessible_sources": sorted(bad)[:10], "count": len(bad)}))
+    return out
+
+
 def check_page(
     page: ParsedPage,
     *,
@@ -604,24 +675,26 @@ def check_page(
         except Exception as e:
             logger.warning("extractability_error", extra={"url": url, "error": str(e)})
 
-    # ── Citation Assessment (v2.0) — QUARANTINED (audit 2026-07-03, R0.1/R6) ──
-    # DISABLED: this block constructed PageCitations(citations=[],
-    # attribution_style="none") with the citation list HARDCODED empty, never
-    # parsing the page's actual links/attributions. Consequences (verified +
-    # independently re-verified 2026-07-03):
-    #   • lacks_citations is (word_count>200 and citation_count==0 and
-    #     attribution_style=="none") — ALWAYS True here, so
-    #     CITATIONS_MISSING_SUBSTANTIAL_CONTENT fired on essentially EVERY
-    #     >200-word page: a site-wide false positive worth -3 per page.
-    #   • has_inaccessible_sources is hardcoded False -> CITATIONS_SOURCES_
-    #     INACCESSIBLE could never fire; orphan check over [] is always False ->
-    #     CITATIONS_ORPHANED could never fire.
-    # The three codes stay in the catalogue (read-only, dead-code allowlisted)
-    # and are re-enabled by remediation R6, which wires a real citation parser
-    # into PageCitations. Until then we emit nothing rather than a meaningless
-    # blanket penalty. Do NOT re-enable without real citation extraction.
-    if False:  # pragma: no cover — re-enabled by R6 (real citation parser)
-        pass
+    # ── Citation Assessment (v2.0) — R6: real citation parser ────────────────
+    # Uses build_page_citations() to extract the page's actual external-source
+    # links + attribution style, so lacks_citations / orphan reflect reality
+    # (was hardcoded-empty and mis-fired on every >200-word page). Source
+    # accessibility (CITATIONS_SOURCES_INACCESSIBLE) is a post-crawl network
+    # check — see citation_source_issues() called from the engine.
+    if page.is_indexable and page.word_count and page.word_count > 200:
+        try:
+            from api.services.citation_model import assess_citation_readiness, diagnose_citation_issue
+            page_citations = build_page_citations(page)
+            citation_issue = assess_citation_readiness(page_citations, page.word_count)
+            diagnosis = diagnose_citation_issue(citation_issue)
+            if diagnosis:
+                issues.append(make_issue(diagnosis, url, extra={
+                    "word_count": page.word_count,
+                    "citation_count": page_citations.get_citation_count(),
+                    "attribution_style": page_citations.attribution_style,
+                }))
+        except Exception as e:
+            logger.warning("citation_check_error", extra={"url": url, "error": str(e)})
 
     # PDF Metadata
     if url.lower().endswith(".pdf") and page.pdf_metadata is not None:

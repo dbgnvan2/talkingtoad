@@ -314,13 +314,14 @@ class TestCatalogueLiveness:
         "CONTENT_UNSTRUCTURED",
         "CONTENT_IMAGE_HEAVY",
 
-        # ── (b) Quarantined pending remediation R6 (real citation parser) ──
-        # The citation block in issue_checker.py was fed hardcoded-empty
-        # citations and is now disabled (audit R0.1). These three cannot fire
-        # until a real parser is wired in:
+        # ── (b) LIVE via dynamic dispatch (R6 re-enabled the real parser) ──
+        # build_page_citations() feeds real citations; diagnose_citation_issue()
+        # returns a code STRING emitted with make_issue(<variable>, ...) in
+        # issue_checker.check_page — so these fire but the literal grep can't see
+        # the variable. (CITATIONS_SOURCES_INACCESSIBLE is emitted with a LITERAL
+        # make_issue in citation_source_issues(), so it is NOT allowlisted.)
         "CITATIONS_MISSING_SUBSTANTIAL_CONTENT",
         "CITATIONS_ORPHANED",
-        "CITATIONS_SOURCES_INACCESSIBLE",
 
         # ── (c) Scored but UNWIRED — pending remediation R7 (Playwright) ──
         # run_js_render_checks() has NO non-test caller and no make_issue for

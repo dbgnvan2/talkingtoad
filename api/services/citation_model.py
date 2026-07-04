@@ -62,7 +62,11 @@ class CitationIssue:
     average_citation_recency_days: Optional[int] = None  # Age of cited sources
 
 
-def assess_citation_readiness(page_citations: PageCitations, word_count: int) -> CitationIssue:
+def assess_citation_readiness(
+    page_citations: PageCitations,
+    word_count: int,
+    inaccessible_urls: set[str] | None = None,
+) -> CitationIssue:
     """Assess how well-cited and attribution-friendly a page is.
 
     Purpose: Check page citation practices for AI Overviews compatibility
@@ -70,8 +74,11 @@ def assess_citation_readiness(page_citations: PageCitations, word_count: int) ->
     Tests:   tests/test_citation_model.py::test_assess_citation_*
 
     Args:
-        page_citations: Citation metadata for the page
-        word_count: Total word count of the page
+        page_citations: Citation metadata for the page (real, parsed — audit R6).
+        word_count: Total word count of the page.
+        inaccessible_urls: Optional set of citation source URLs that failed an
+            HTTP accessibility check (computed out-of-band; see
+            :func:`check_source_accessibility`). ``None`` when not checked.
 
     Returns:
         CitationIssue with assessment of citation problems
@@ -94,8 +101,9 @@ def assess_citation_readiness(page_citations: PageCitations, word_count: int) ->
     # Check for orphan citations (citations without visible context)
     has_orphan_citations = any(c.context is None for c in page_citations.citations)
 
-    # TODO: Check for inaccessible sources (requires HTTP requests)
-    has_inaccessible_sources = False
+    # Inaccessible sources: a cited URL that returned a broken/blocked response.
+    cited_urls = {c.url for c in page_citations.citations if c.url}
+    has_inaccessible_sources = bool(inaccessible_urls and (cited_urls & inaccessible_urls))
 
     return CitationIssue(
         page_url=page_citations.url,
@@ -104,6 +112,31 @@ def assess_citation_readiness(page_citations: PageCitations, word_count: int) ->
         has_orphan_citations=has_orphan_citations,
         has_inaccessible_sources=has_inaccessible_sources,
     )
+
+
+async def check_source_accessibility(urls, client, *, cap: int = 30) -> set[str]:
+    """Return the subset of citation source *urls* that are inaccessible
+    (HTTP >= 400, or an SSRF/network failure returning status 0).
+
+    Reuses ``fetch_page`` (its retry + backoff + SSRF guard, audit R0.3/R6) with
+    HEAD requests. Capped to *cap* URLs per job to bound crawl cost.
+    """
+    from api.crawler.fetcher import fetch_page
+
+    inaccessible: set[str] = set()
+    checked = 0
+    for url in urls:
+        if checked >= cap:
+            break
+        checked += 1
+        try:
+            result = await fetch_page(url, client, is_head=True)
+        except Exception:
+            continue  # transient/unknown — don't assert "inaccessible"
+        # status 0 = SSRF-blocked or network error; >=400 = broken/blocked.
+        if result.status_code == 0 or result.status_code >= 400:
+            inaccessible.add(url)
+    return inaccessible
 
 
 def diagnose_citation_issue(issue: CitationIssue) -> Optional[str]:
