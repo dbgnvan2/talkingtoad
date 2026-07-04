@@ -87,11 +87,10 @@ def test_job_level_suppression_of_parent_frees_children():
 
 # ── per-category cap + page-fatal bypass ──────────────────────────────────────
 def test_category_cap_bounds_stacking():
-    """Many metadata issues on one page cap at _CATEGORY_IMPACT_CAP."""
+    """Many issues in one (non-fatal) category cap at _CATEGORY_IMPACT_CAP."""
     p = "https://x/"
-    # five metadata codes summing well over the cap
-    rows = [_r("TITLE_DUPLICATE"), _r("META_DESC_DUPLICATE"), _r("ANCHOR_TEXT_GENERIC"),
-            _r("OG_TITLE_MISSING"), _r("OG_DESC_MISSING"), _r("TWITTER_CARD_MISSING")]
+    # repeats of one metadata code, summing well over the cap
+    rows = [_r("META_DESC_DUPLICATE") for _ in range(15)]
     raw_sum = sum(i for _, i, _ in rows)
     assert raw_sum > _CATEGORY_IMPACT_CAP  # precondition
     site, _ = compute_impact_health([p], {p: rows}, dict(_NO_SEV))
@@ -111,9 +110,8 @@ def test_page_fatal_bypasses_cap():
     capped category total, so a broken page scores worse than the cap alone."""
     p = "https://x/"
     assert "NOINDEX_META" in _PAGE_FATAL_CODES
-    # NOINDEX (fatal) + a maxed-out metadata category
-    meta = [_r("TITLE_DUPLICATE"), _r("META_DESC_DUPLICATE"), _r("ANCHOR_TEXT_GENERIC"),
-            _r("OG_TITLE_MISSING"), _r("OG_DESC_MISSING"), _r("TWITTER_CARD_MISSING")]
+    # NOINDEX (fatal) + a maxed-out (over-cap) metadata category
+    meta = [_r("META_DESC_DUPLICATE") for _ in range(15)]
     rows = [_r("NOINDEX_META")] + meta
     site, _ = compute_impact_health([p], {p: rows}, dict(_NO_SEV))
     assert site == 100 - _imp("NOINDEX_META") - _CATEGORY_IMPACT_CAP

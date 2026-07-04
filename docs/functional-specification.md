@@ -357,10 +357,22 @@ High-level inventory. Each row maps to detailed sections later.
 ## 4. Audit capabilities
 
 The crawler emits **151 distinct issue codes** organised into 13
-categories. Each code has: severity (`critical` / `warning` / `info`),
-impact (0–10), effort (0–5), priority rank `(impact × 10) − (effort × 2)`,
-fixability (`wp_fixable` / `content_edit` / `developer_needed`), and —
-for ai_readiness codes — a confidence label.
+categories. Each code has: impact (0–10), effort (0–5), fixability
+(`wp_fixable` / `content_edit` / `developer_needed`), and a confidence label.
+
+**Scoring calibration (R3, 2026-07-03 — Model B, triangulated from two independent
+expert reviews + audit).** Impact is **derived**, not hand-set:
+`impact = matrix(confidence, effect_size)` where confidence ∈ {Heuristic, Reasonable
+proxy, Established} (+ an Aggarwal "measured" lane) and effect_size ∈ {none, small,
+moderate, large}; the 10-tier is reserved for documented page-removal
+(`NOINDEX_META/HEADER`, `REDIRECT_LOOP`). A small documented override set adjudicates
+the inter-reviewer divergences. The calibration record and `derive_impact()` live in
+`registry.py`; `test_r3_calibration.py` asserts `_ISSUE_SCORING == derive_impact`.
+- **Severity is derived from impact** (single source of truth — no drift):
+  `impact ≥ 8 → critical`, `4–7 → warning`, `≤3 → info`.
+- **Priority rank** `(impact × 10) − (effort × 6)` (effort weighted so real quick wins
+  surface within an impact tier); plus a derived **`quick_win`** flag
+  (`impact ≥ 4 AND effort ≤ 1`) for the UI's quick-wins list.
 
 ### 4.0 Audit engine architecture (Cycle K, v2.6 M9.1)
 

@@ -582,7 +582,7 @@ class TestIssueForStatus:
         issue = issue_for_status(404, "https://example.com/gone")
         assert issue is not None
         assert issue.code == "BROKEN_LINK_404"
-        assert issue.severity == "critical"
+        assert issue.severity == "info"  # R3: broken outbound links downweighted (impact 2 → info)
 
     def test_410_returns_broken_link_410(self):
         issue = issue_for_status(410, "https://example.com/deleted")
@@ -599,7 +599,7 @@ class TestIssueForStatus:
         issue = issue_for_status(503, "https://example.com/error")
         assert issue is not None
         assert issue.code == "BROKEN_LINK_503"
-        assert issue.severity == "warning"
+        assert issue.severity == "info"  # R3: 503 often transient (impact 1 → info)
 
     def test_200_returns_none(self):
         assert issue_for_status(200, "https://example.com/ok") is None
@@ -620,14 +620,14 @@ class TestIssueForStatus:
         issue = issue_for_status(503, "https://example.com/service")
         assert issue is not None
         assert issue.code == "BROKEN_LINK_503"
-        assert issue.severity == "warning"
+        assert issue.severity == "info"  # R3: 503 often transient (impact 1 → info)
 
     def test_502_returns_broken_link_5xx(self):
-        # 502 is a real server error — stays critical
+        # 502 is a real server error; R3 downweights (may be transient) → impact 3 / info
         issue = issue_for_status(502, "https://example.com/error")
         assert issue is not None
         assert issue.code == "BROKEN_LINK_5XX"
-        assert issue.severity == "critical"
+        assert issue.severity == "info"
 
 
 class TestIssuesForRedirect:
@@ -1233,7 +1233,7 @@ class TestLangMissing:
         issue = next((i for i in issues if i.code == "LANG_MISSING"), None)
         assert issue is not None
         assert issue.category == "metadata"
-        assert issue.severity == "warning"
+        assert issue.severity == "info"  # R3: Google ignores lang attr (impact 2 → info)
 
 
 # ---------------------------------------------------------------------------
@@ -1824,7 +1824,7 @@ class TestAnchorTextGeneric:
         codes = _codes(issues)
         assert "ANCHOR_TEXT_GENERIC" in codes
         issue = next(i for i in issues if i.code == "ANCHOR_TEXT_GENERIC")
-        assert issue.severity == "warning"
+        assert issue.severity == "info"  # R3: descriptive-anchor effect small (impact 2 → info)
         assert issue.extra["count"] == 1
         assert issue.extra["examples"][0]["text"] == "click here"
 
@@ -1889,7 +1889,7 @@ class TestHeadingEmpty:
         codes = _codes(issues)
         assert "HEADING_EMPTY" in codes
         issue = next(i for i in issues if i.code == "HEADING_EMPTY")
-        assert issue.severity == "warning"
+        assert issue.severity == "info"  # R3: cosmetic template junk (impact 1 → info)
         assert "H2" in issue.extra["empty_levels"]
 
     def test_whitespace_heading_emits(self):

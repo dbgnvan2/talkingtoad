@@ -387,7 +387,7 @@ class TestRegistration:
     def test_in_scoring(self):
         from api.crawler.checkers.registry import _ISSUE_SCORING
         assert "SCHEMA_VISIBLE_MISMATCH" in _ISSUE_SCORING
-        assert _ISSUE_SCORING["SCHEMA_VISIBLE_MISMATCH"] == (5, 2)
+        assert _ISSUE_SCORING["SCHEMA_VISIBLE_MISMATCH"] == (6, 2)  # R3: Established/moderate
 
     def test_in_catalogue(self):
         from api.crawler.checkers.registry import _CATALOGUE

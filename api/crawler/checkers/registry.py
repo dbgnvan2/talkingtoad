@@ -53,7 +53,8 @@ class Issue:
     extra: dict | None = None   # optional supplementary data (e.g. redirect chain)
     impact: int = 0             # v1.5 impact score (0–10)
     effort: int = 0             # v1.5 effort score (0–5)
-    priority_rank: int = 0      # v1.5 priority: (impact × 10) − (effort × 2)
+    priority_rank: int = 0      # R3: (impact × 10) − (effort × 6)
+    quick_win: bool = False     # R3: impact ≥ 4 AND effort ≤ 1 (easy, worthwhile)
     human_description: str = "" # plain-English label for nonprofit staff
     # Expanded help for PDF reports
     what_it_is: str = ""
@@ -96,191 +97,401 @@ class _IssueSpec:
 
 _ISSUE_SCORING: dict[str, tuple[int, int]] = {
     # code:                       (impact, effort)
-    "BROKEN_LINK_404":            (10, 2),
-    "BROKEN_LINK_410":            (8,  2),
-    "BROKEN_LINK_5XX":            (7, 2),
-    "BROKEN_LINK_503":            (4,  3),
+    "BROKEN_LINK_404":            (2, 2),
+    "BROKEN_LINK_410":            (2, 2),
+    "BROKEN_LINK_5XX":            (3, 2),
+    "BROKEN_LINK_503":            (1, 3),
     "REDIRECT_LOOP":              (10, 4),
-    "REDIRECT_CHAIN":             (6,  3),
-    "REDIRECT_301":               (3,  2),
-    "REDIRECT_302":               (4, 2),
-    "REDIRECT_TRAILING_SLASH":    (2,  1),
-    "REDIRECT_CASE_NORMALISE":    (2,  1),
-    "TITLE_MISSING":              (9,  1),
-    "TITLE_DUPLICATE":            (5,  2),
-    "TITLE_TOO_SHORT":            (5,  1),
-    "TITLE_TOO_LONG":             (4,  1),
-    "META_DESC_MISSING":          (7,  1),
-    "META_DESC_DUPLICATE":        (4,  2),
-    "META_DESC_TOO_SHORT":        (4,  1),
-    "META_DESC_TOO_LONG":         (3,  1),
-    "OG_TITLE_MISSING":           (4,  1),
-    "OG_DESC_MISSING":            (3,  1),
+    "REDIRECT_CHAIN":             (2, 3),
+    "REDIRECT_301":               (2, 2),
+    "REDIRECT_302":               (2, 2),
+    "REDIRECT_TRAILING_SLASH":    (0, 1),
+    "REDIRECT_CASE_NORMALISE":    (0, 1),
+    "TITLE_MISSING":              (6, 1),
+    "TITLE_DUPLICATE":            (4, 2),
+    "TITLE_TOO_SHORT":            (1, 1),
+    "TITLE_TOO_LONG":             (2, 1),
+    "META_DESC_MISSING":          (2, 1),
+    "META_DESC_DUPLICATE":        (2, 2),
+    "META_DESC_TOO_SHORT":        (2, 1),
+    "META_DESC_TOO_LONG":         (2, 1),
+    "OG_TITLE_MISSING":           (1, 1),
+    "OG_DESC_MISSING":            (1, 1),
     "CANONICAL_MISSING":          (6,  2),
-    "CANONICAL_EXTERNAL":         (5, 3),
-    "TITLE_META_DUPLICATE_PAIR":  (6,  2),
-    "FAVICON_MISSING":            (3,  2),
-    "H1_MISSING":                 (6, 1),
-    "H1_MULTIPLE":                (5, 2),
-    "HEADING_SKIP":               (4,  3),
+    "CANONICAL_EXTERNAL":         (6, 3),
+    "TITLE_META_DUPLICATE_PAIR":  (4, 2),
+    "FAVICON_MISSING":            (2, 2),
+    "H1_MISSING":                 (4, 1),
+    "H1_MULTIPLE":                (2, 2),
+    "HEADING_SKIP":               (1, 3),
     "NOINDEX_META":               (10, 1),
     "NOINDEX_HEADER":             (10, 2),
     "ROBOTS_BLOCKED":             (9,  2),
-    "NOT_IN_SITEMAP":             (4,  1),
-    "SITEMAP_MISSING":            (6,  2),
-    "HTTP_PAGE":                  (9,  2),
-    "MIXED_CONTENT":              (6,  2),
-    "MISSING_HSTS":               (4,  2),
-    "UNSAFE_CROSS_ORIGIN_LINK":   (3,  1),
-    "URL_TOO_LONG":               (2, 2),
-    "URL_UPPERCASE":              (3,  2),
-    "URL_HAS_SPACES":             (5, 2),
+    "NOT_IN_SITEMAP":             (2, 1),
+    "SITEMAP_MISSING":            (2, 2),
+    "HTTP_PAGE":                  (6, 2),
+    "MIXED_CONTENT":              (4, 2),
+    "MISSING_HSTS":               (1, 2),
+    "UNSAFE_CROSS_ORIGIN_LINK":   (0, 1),
+    "URL_TOO_LONG":               (1, 2),
+    "URL_UPPERCASE":              (2, 2),
+    "URL_HAS_SPACES":             (2, 2),
     "URL_HAS_UNDERSCORES":        (2, 2),
-    "THIN_CONTENT":               (6, 3),
-    "HIGH_CRAWL_DEPTH":           (5,  3),
+    "THIN_CONTENT":               (4, 3),
+    "HIGH_CRAWL_DEPTH":           (4, 3),
     "PAGE_TIMEOUT":               (6,  3),
-    "EXTERNAL_LINK_TIMEOUT":      (3,  1),
-    "EXTERNAL_LINK_SKIPPED":      (2,  1),
-    "META_REFRESH_REDIRECT":      (5,  2),
-    "PAGINATION_LINKS_PRESENT":   (2,  2),
-    "AMPHTML_BROKEN":             (4,  3),
-    "PDF_TOO_LARGE":              (4,  2),
-    "IMG_OVERSIZED":              (5,  2),
-    "IMG_ALT_MISSING":            (5,  2),
+    "EXTERNAL_LINK_TIMEOUT":      (1, 1),
+    "EXTERNAL_LINK_SKIPPED":      (0, 1),
+    "META_REFRESH_REDIRECT":      (2, 2),
+    "PAGINATION_LINKS_PRESENT":   (0, 2),
+    "AMPHTML_BROKEN":             (2, 3),
+    "PDF_TOO_LARGE":              (1, 2),
+    "IMG_OVERSIZED":              (2, 2),
+    "IMG_ALT_MISSING":            (3, 2),
     # v1.9image - New image issue codes
-    "IMG_ALT_TOO_SHORT":          (3,  1),
-    "IMG_ALT_TOO_LONG":           (2,  1),
-    "IMG_ALT_GENERIC":            (4,  1),
-    "IMG_ALT_DUP_FILENAME":       (3,  1),
-    "IMG_ALT_MISUSED":            (3,  2),
-    "IMG_SLOW_LOAD":              (4,  2),
-    "IMG_OVERSCALED":             (4,  3),
-    "IMG_POOR_COMPRESSION":       (4,  2),
+    "IMG_ALT_TOO_SHORT":          (1, 1),
+    "IMG_ALT_TOO_LONG":           (1, 1),
+    "IMG_ALT_GENERIC":            (2, 1),
+    "IMG_ALT_DUP_FILENAME":       (1, 1),
+    "IMG_ALT_MISUSED":            (1, 2),
+    "IMG_SLOW_LOAD":              (2, 2),
+    "IMG_OVERSCALED":             (2, 3),
+    "IMG_POOR_COMPRESSION":       (2, 2),
     "IMG_FORMAT_LEGACY":          (2,  2),
     "IMG_NO_SRCSET":              (2,  3),
-    "IMG_DUPLICATE_CONTENT":      (2,  2),
+    "IMG_DUPLICATE_CONTENT":      (1, 2),
     "LOGIN_REDIRECT":             (2,  1),
-    "INTERNAL_REDIRECT_301":      (4,  1),
-    "ORPHAN_PAGE":                (6, 2),
-    "SCHEMA_MISSING":             (5,  2),
+    "INTERNAL_REDIRECT_301":      (2, 1),
+    "ORPHAN_PAGE":                (4, 2),
+    "SCHEMA_MISSING":             (4, 2),
     "MISSING_VIEWPORT_META":      (6,  1),
-    "IMG_BROKEN":                 (8,  2),
-    "LINK_EMPTY_ANCHOR":          (7,  2),
-    "INTERNAL_NOFOLLOW":          (5,  2),
-    "PAGE_SIZE_LARGE":            (5,  3),
+    "IMG_BROKEN":                 (4, 2),
+    "LINK_EMPTY_ANCHOR":          (2, 2),
+    "INTERNAL_NOFOLLOW":          (4, 2),
+    "PAGE_SIZE_LARGE":            (2, 3),
     # v1.6 new checks
-    "LANG_MISSING":               (6,  1),
-    "TITLE_H1_MISMATCH":          (6,  2),
-    "HTTPS_REDIRECT_MISSING":     (9,  2),
-    "CANONICAL_SELF_MISSING":     (5,  1),
+    "LANG_MISSING":               (2, 1),
+    "TITLE_H1_MISMATCH":          (1, 2),
+    "HTTPS_REDIRECT_MISSING":     (6, 2),
+    "CANONICAL_SELF_MISSING":     (2, 1),
     # v1.7 AI-Readiness Module
-    "LLMS_TXT_MISSING":           (3, 1),
-    "LLMS_TXT_INVALID":           (2, 2),
-    "SEMANTIC_DENSITY_LOW":       (3, 3),
-    "DOCUMENT_PROPS_MISSING":     (4,  2),
-    "JSON_LD_MISSING":            (7,  2),
-    "CONVERSATIONAL_H2_MISSING":  (4,  2),
-    "BLOG_SECTIONS_MISSING":      (5,  2),
+    "LLMS_TXT_MISSING":           (1, 1),
+    "LLMS_TXT_INVALID":           (1, 2),
+    "SEMANTIC_DENSITY_LOW":       (1, 3),
+    "DOCUMENT_PROPS_MISSING":     (2, 2),
+    "JSON_LD_MISSING":            (4, 2),
+    "CONVERSATIONAL_H2_MISSING":  (1, 2),
+    "BLOG_SECTIONS_MISSING":      (2, 2),
     # v1.9.2 new checks
-    "OG_IMAGE_MISSING":           (3,  1),
-    "TWITTER_CARD_MISSING":       (3,  1),
-    "CONTENT_STALE":              (3, 3),
+    "OG_IMAGE_MISSING":           (1, 1),
+    "TWITTER_CARD_MISSING":       (1, 1),
+    "CONTENT_STALE":              (1, 3),
     # Phase 3 new checks
-    "ANCHOR_TEXT_GENERIC":        (4,  2),
-    "HEADING_EMPTY":              (4,  1),
-    "WWW_CANONICALIZATION":       (5,  2),
+    "ANCHOR_TEXT_GENERIC":        (2, 2),
+    "HEADING_EMPTY":              (1, 1),
+    "WWW_CANONICALIZATION":       (4, 2),
     # v2.0 AI-Readiness: AI Bot Access
-    "AI_BOT_SEARCH_BLOCKED":      (8,  1),
+    "AI_BOT_SEARCH_BLOCKED":      (9, 1),
     "AI_BOT_TRAINING_DISALLOWED": (0,  1),
-    "AI_BOT_USER_FETCH_BLOCKED":  (4,  1),
+    "AI_BOT_USER_FETCH_BLOCKED":  (3, 1),
     "AI_BOT_DEPRECATED_DIRECTIVE":(2,  1),
     "AI_BOT_NO_AI_DIRECTIVES":    (1,  1),
     "AI_BOT_BLANKET_DISALLOW":    (9,  1),
     "AI_BOT_TABLE_STALE":         (0,  1),
     # v2.0 AI-Readiness: Schema Typing
-    "SCHEMA_TYPE_MISMATCH":       (4,  2),
+    "SCHEMA_TYPE_MISMATCH":       (2, 2),
     "SCHEMA_DEPRECATED_TYPE":     (2,  1),
-    "SCHEMA_TYPE_CONFLICT":       (3,  2),
+    "SCHEMA_TYPE_CONFLICT":       (2, 2),
     # M3.1: Schema values not visible on page (Established — Google directive)
-    "SCHEMA_VISIBLE_MISMATCH":    (5,  2),
+    "SCHEMA_VISIBLE_MISMATCH":    (6, 2),
     # M3.2: Content not in textual form (Reasonable proxy)
     "AI_CONTENT_NOT_IN_TEXT":     (4,  2),
     # M3.3: X-Robots-Tag AI-preview controls (Established — literal header facts)
-    "AI_PREVIEW_SUPPRESSED":     (3,  1),
-    "AI_PREVIEW_BLOCKED_AT_BOT": (3,  1),
+    "AI_PREVIEW_SUPPRESSED":     (4, 1),
+    "AI_PREVIEW_BLOCKED_AT_BOT": (4, 1),
     # M3.4: No visual companion for text-heavy content (Reasonable proxy)
     "AI_NO_VISUAL_COMPANION":    (1,  1),
     # M3.5: Main content is a small share of total visible text (Heuristic)
     "AI_MAIN_CONTENT_LOW_RATIO": (2,  1),
     # v2.0 AI-Readiness: Content Extractability
-    "CONTENT_NOT_EXTRACTABLE_NO_TEXT": (6, 4),
+    "CONTENT_NOT_EXTRACTABLE_NO_TEXT": (9, 4),
     "CONTENT_THIN":               (4,  3),
     "CONTENT_UNSTRUCTURED":       (3,  2),
-    "CONTENT_IMAGE_HEAVY":        (2,  3),
+    "CONTENT_IMAGE_HEAVY":        (1, 3),
     # v2.0 AI-Readiness: Citation & Attribution
     "CITATIONS_MISSING_SUBSTANTIAL_CONTENT": (3, 2),
-    "CITATIONS_ORPHANED":         (2,  1),
-    "CITATIONS_SOURCES_INACCESSIBLE": (4, 3),
+    "CITATIONS_ORPHANED":         (1, 1),
+    "CITATIONS_SOURCES_INACCESSIBLE": (1, 3),
     # v2.1 GEO Analyzer: Aggarwal et al. checks (Empirical tier, highest impact)
-    "STATISTICS_COUNT_LOW":       (5, 2),
-    "EXTERNAL_CITATIONS_LOW":     (5, 2),
-    "QUOTATIONS_MISSING":         (4, 2),
-    "ORPHAN_CLAIM_TECHNICAL":     (6,  2),
+    "STATISTICS_COUNT_LOW":       (3, 2),
+    "EXTERNAL_CITATIONS_LOW":     (3, 2),
+    "QUOTATIONS_MISSING":         (3, 2),
+    "ORPHAN_CLAIM_TECHNICAL":     (3, 2),
     # v2.1 GEO Analyzer: Mechanistic checks
-    "RAW_HTML_JS_DEPENDENT":      (6,  3),
+    "RAW_HTML_JS_DEPENDENT":      (9, 3),
     "JS_RENDERED_CONTENT_DIFFERS":(6,  4),
-    "CONTENT_CLOAKING_DETECTED":  (8,  4),
-    "UA_CONTENT_DIFFERS":         (7,  3),
-    "FIRST_VIEWPORT_NO_ANSWER":   (5,  2),
+    "CONTENT_CLOAKING_DETECTED":  (6, 4),
+    "UA_CONTENT_DIFFERS":         (6, 3),
+    "FIRST_VIEWPORT_NO_ANSWER":   (2, 2),
     "AUTHOR_BYLINE_MISSING":      (4,  2),
-    "DATE_PUBLISHED_MISSING":     (3,  1),
+    "DATE_PUBLISHED_MISSING":     (2, 1),
     "DATE_MODIFIED_MISSING":      (2,  1),
-    "CODE_BLOCK_MISSING_TECHNICAL":(4, 2),
-    "COMPARISON_TABLE_MISSING":   (3,  2),
-    "CHUNKS_NOT_SELF_CONTAINED":  (5,  4),
-    "CENTRAL_CLAIM_BURIED":       (5,  3),
+    "CODE_BLOCK_MISSING_TECHNICAL":(1, 2),
+    "COMPARISON_TABLE_MISSING":   (1, 2),
+    "CHUNKS_NOT_SELF_CONTAINED":  (2, 4),
+    "CENTRAL_CLAIM_BURIED":       (2, 3),
     # Cycle GG: higher impact than its peers — a buried answer under
     # an H2 is a stronger AI-extraction failure mode than the cousin
     # word-position / signal-presence checks. Per continuation-prompt
     # Q5's "stronger penalty" intent (penalty=20 didn't translate to
     # this codebase's (impact, effort) tuple; (7, 3) is the closest).
-    "GEO_SUMMARY_BURIED":         (5, 3),
-    "LINK_PROFILE_PROMOTIONAL":   (4,  2),
-    "STRUCTURED_ELEMENTS_LOW":    (3,  2),
+    "GEO_SUMMARY_BURIED":         (2, 3),
+    "LINK_PROFILE_PROMOTIONAL":   (1, 2),
+    "STRUCTURED_ELEMENTS_LOW":    (1, 2),
     # v2.1 GEO Analyzer: Conventional checks
     "JSON_LD_INVALID":            (4,  2),
     "FAQ_SCHEMA_MISSING":         (2, 2),
-    "PROMOTIONAL_CONTENT_INTERRUPTS": (3, 3),
+    "PROMOTIONAL_CONTENT_INTERRUPTS": (1, 3),
     "AI_TXT_MISSING":             (1,  1),
     # Tier 1 GEO heuristics (spec §4.3–4.6)
-    "QUERY_COVERAGE_WEAK":        (5, 2),
-    "SECTION_VAGUE_OPENER":       (5,  2),
-    "SECTION_CROSS_REFERENCES":   (6,  2),
-    "PARA_TOO_LONG":              (4,  2),
+    "QUERY_COVERAGE_WEAK":        (2, 2),
+    "SECTION_VAGUE_OPENER":       (1, 2),
+    "SECTION_CROSS_REFERENCES":   (1, 2),
+    "PARA_TOO_LONG":              (1, 2),
     # M4.1: Visible date stale for page type (Content Freshness)
-    "CONTENT_DATE_STALE_VISIBLE": (4,  2),
+    "CONTENT_DATE_STALE_VISIBLE": (2, 2),
     # M4.2: Outdated statistic or year reference (Content Freshness)
-    "CONTENT_STAT_OUTDATED": (2,  1),
+    "CONTENT_STAT_OUTDATED": (1, 1),
     # M5: AI Citation Ingestion
     "AI_CITED_PAGE": (0, 0),
-    "AI_HIGH_VALUE_UNCITED": (4, 2),
+    "AI_HIGH_VALUE_UNCITED": (2, 2),
     # ── Agent-readiness Phase 1 (WP2–WP5) — task-side checks ────────────────
-    "JS_DEPENDENT_NAVIGATION":      (5, 3),
-    "NON_SEMANTIC_BUTTON":          (4, 3),
-    "LANDMARK_MAIN_MISSING":        (2, 2),
-    "LANDMARK_NAV_MISSING":         (2, 2),
-    "INTERACTIVE_NO_ACCESSIBLE_NAME": (4, 2),
-    "PLACEHOLDER_LINK":             (7, 2),
-    "WRONG_PLACEHOLDER_LINK":       (7, 2),
-    "SCHEMA_ORG_MISSING":           (5, 2),
+    "JS_DEPENDENT_NAVIGATION":      (6, 3),
+    "NON_SEMANTIC_BUTTON":          (1, 3),
+    "LANDMARK_MAIN_MISSING":        (1, 2),
+    "LANDMARK_NAV_MISSING":         (1, 2),
+    "INTERACTIVE_NO_ACCESSIBLE_NAME": (1, 2),
+    "PLACEHOLDER_LINK":             (2, 2),
+    "WRONG_PLACEHOLDER_LINK":       (2, 2),
+    "SCHEMA_ORG_MISSING":           (4, 2),
     "CONTACT_INFO_NOT_IN_HTML":     (4, 2),
 }
+
+
+# ---------------------------------------------------------------------------
+# R3 calibration record (2026-07-03) — triangulated from two independent expert
+# reviews (Gemini + Fable) + audit. impact is DERIVED from (confidence x effect)
+# via the Model-B matrix, with an Aggarwal "measured" lane and a documented
+# override set. test_r3_calibration.py asserts _ISSUE_SCORING matches this.
+# Spec: docs/pending/2026-07-03_r3-FINAL-calibration.md
+# ---------------------------------------------------------------------------
+_IMPACT_MATRIX: dict[tuple[str, str], int] = {
+    ("Heuristic", "none"): 0,
+    ("Heuristic", "small"): 1,
+    ("Heuristic", "moderate"): 2,
+    ("Heuristic", "large"): 3,
+    ("Reasonable proxy", "none"): 0,
+    ("Reasonable proxy", "small"): 2,
+    ("Reasonable proxy", "moderate"): 4,
+    ("Reasonable proxy", "large"): 6,
+    ("Established", "none"): 0,
+    ("Established", "small"): 2,
+    ("Established", "moderate"): 6,
+    ("Established", "large"): 9,
+}
+_MEASURED_MATRIX: dict[str, int] = {"none": 0, "small": 2, "moderate": 3, "large": 4}
+_PAGE_FATAL_10: frozenset[str] = frozenset({"NOINDEX_HEADER", "NOINDEX_META", "REDIRECT_LOOP"})
+
+# code -> (confidence, effect_size, measured)
+_CALIBRATION: dict[str, tuple[str, str, bool]] = {
+    "AI_BOT_BLANKET_DISALLOW": ("Established", "large", False),
+    "AI_BOT_DEPRECATED_DIRECTIVE": ("Established", "small", False),
+    "AI_BOT_NO_AI_DIRECTIVES": ("Heuristic", "small", False),
+    "AI_BOT_SEARCH_BLOCKED": ("Established", "large", False),
+    "AI_BOT_TABLE_STALE": ("Heuristic", "none", False),
+    "AI_BOT_TRAINING_DISALLOWED": ("Established", "none", False),
+    "AI_BOT_USER_FETCH_BLOCKED": ("Established", "small", False),
+    "AI_CITED_PAGE": ("Established", "none", False),
+    "AI_CONTENT_NOT_IN_TEXT": ("Reasonable proxy", "moderate", False),
+    "AI_HIGH_VALUE_UNCITED": ("Heuristic", "none", False),
+    "AI_MAIN_CONTENT_LOW_RATIO": ("Heuristic", "moderate", False),
+    "AI_NO_VISUAL_COMPANION": ("Heuristic", "small", False),
+    "AI_PREVIEW_BLOCKED_AT_BOT": ("Established", "moderate", False),
+    "AI_PREVIEW_SUPPRESSED": ("Established", "moderate", False),
+    "AI_TXT_MISSING": ("Heuristic", "small", False),
+    "AMPHTML_BROKEN": ("Reasonable proxy", "small", False),
+    "ANCHOR_TEXT_GENERIC": ("Established", "small", False),
+    "AUTHOR_BYLINE_MISSING": ("Reasonable proxy", "moderate", False),
+    "BLOG_SECTIONS_MISSING": ("Heuristic", "moderate", False),
+    "BROKEN_LINK_404": ("Established", "small", False),
+    "BROKEN_LINK_410": ("Established", "small", False),
+    "BROKEN_LINK_503": ("Heuristic", "small", False),
+    "BROKEN_LINK_5XX": ("Reasonable proxy", "small", False),
+    "CANONICAL_EXTERNAL": ("Established", "moderate", False),
+    "CANONICAL_MISSING": ("Established", "moderate", False),
+    "CANONICAL_SELF_MISSING": ("Established", "small", False),
+    "CENTRAL_CLAIM_BURIED": ("Heuristic", "moderate", False),
+    "CHUNKS_NOT_SELF_CONTAINED": ("Heuristic", "moderate", False),
+    "CITATIONS_MISSING_SUBSTANTIAL_CONTENT": ("Heuristic", "moderate", True),
+    "CITATIONS_ORPHANED": ("Heuristic", "small", False),
+    "CITATIONS_SOURCES_INACCESSIBLE": ("Heuristic", "small", False),
+    "CODE_BLOCK_MISSING_TECHNICAL": ("Heuristic", "small", False),
+    "COMPARISON_TABLE_MISSING": ("Heuristic", "small", False),
+    "CONTACT_INFO_NOT_IN_HTML": ("Reasonable proxy", "moderate", False),
+    "CONTENT_CLOAKING_DETECTED": ("Reasonable proxy", "large", False),
+    "CONTENT_DATE_STALE_VISIBLE": ("Reasonable proxy", "small", False),
+    "CONTENT_IMAGE_HEAVY": ("Heuristic", "small", False),
+    "CONTENT_NOT_EXTRACTABLE_NO_TEXT": ("Established", "large", False),
+    "CONTENT_STALE": ("Heuristic", "small", False),
+    "CONTENT_STAT_OUTDATED": ("Heuristic", "small", False),
+    "CONTENT_THIN": ("Reasonable proxy", "moderate", False),
+    "CONTENT_UNSTRUCTURED": ("Reasonable proxy", "moderate", False),
+    "CONVERSATIONAL_H2_MISSING": ("Heuristic", "small", False),
+    "DATE_MODIFIED_MISSING": ("Reasonable proxy", "small", False),
+    "DATE_PUBLISHED_MISSING": ("Reasonable proxy", "small", False),
+    "DOCUMENT_PROPS_MISSING": ("Established", "small", False),
+    "EXTERNAL_CITATIONS_LOW": ("Heuristic", "moderate", True),
+    "EXTERNAL_LINK_SKIPPED": ("Heuristic", "none", False),
+    "EXTERNAL_LINK_TIMEOUT": ("Heuristic", "small", False),
+    "FAQ_SCHEMA_MISSING": ("Established", "small", False),
+    "FAVICON_MISSING": ("Established", "small", False),
+    "FIRST_VIEWPORT_NO_ANSWER": ("Heuristic", "moderate", False),
+    "GEO_SUMMARY_BURIED": ("Heuristic", "moderate", False),
+    "H1_MISSING": ("Reasonable proxy", "moderate", False),
+    "H1_MULTIPLE": ("Established", "small", False),
+    "HEADING_EMPTY": ("Heuristic", "small", False),
+    "HEADING_SKIP": ("Heuristic", "small", False),
+    "HIGH_CRAWL_DEPTH": ("Reasonable proxy", "moderate", False),
+    "HTTPS_REDIRECT_MISSING": ("Established", "moderate", False),
+    "HTTP_PAGE": ("Established", "moderate", False),
+    "IMG_ALT_DUP_FILENAME": ("Heuristic", "small", False),
+    "IMG_ALT_GENERIC": ("Established", "small", False),
+    "IMG_ALT_MISSING": ("Established", "small", False),
+    "IMG_ALT_MISUSED": ("Heuristic", "small", False),
+    "IMG_ALT_TOO_LONG": ("Heuristic", "small", False),
+    "IMG_ALT_TOO_SHORT": ("Heuristic", "small", False),
+    "IMG_BROKEN": ("Reasonable proxy", "moderate", False),
+    "IMG_DUPLICATE_CONTENT": ("Heuristic", "small", False),
+    "IMG_FORMAT_LEGACY": ("Reasonable proxy", "small", False),
+    "IMG_NO_SRCSET": ("Reasonable proxy", "small", False),
+    "IMG_OVERSCALED": ("Reasonable proxy", "small", False),
+    "IMG_OVERSIZED": ("Established", "small", False),
+    "IMG_POOR_COMPRESSION": ("Reasonable proxy", "small", False),
+    "IMG_SLOW_LOAD": ("Reasonable proxy", "small", False),
+    "INTERACTIVE_NO_ACCESSIBLE_NAME": ("Heuristic", "small", False),
+    "INTERNAL_NOFOLLOW": ("Reasonable proxy", "moderate", False),
+    "INTERNAL_REDIRECT_301": ("Established", "small", False),
+    "JSON_LD_INVALID": ("Reasonable proxy", "moderate", False),
+    "JSON_LD_MISSING": ("Reasonable proxy", "moderate", False),
+    "JS_DEPENDENT_NAVIGATION": ("Established", "moderate", False),
+    "JS_RENDERED_CONTENT_DIFFERS": ("Established", "moderate", False),
+    "LANDMARK_MAIN_MISSING": ("Heuristic", "small", False),
+    "LANDMARK_NAV_MISSING": ("Heuristic", "small", False),
+    "LANG_MISSING": ("Established", "small", False),
+    "LINK_EMPTY_ANCHOR": ("Reasonable proxy", "small", False),
+    "LINK_PROFILE_PROMOTIONAL": ("Heuristic", "small", False),
+    "LLMS_TXT_INVALID": ("Heuristic", "small", False),
+    "LLMS_TXT_MISSING": ("Heuristic", "small", False),
+    "LOGIN_REDIRECT": ("Heuristic", "none", False),
+    "META_DESC_DUPLICATE": ("Established", "small", False),
+    "META_DESC_MISSING": ("Established", "small", False),
+    "META_DESC_TOO_LONG": ("Established", "small", False),
+    "META_DESC_TOO_SHORT": ("Established", "small", False),
+    "META_REFRESH_REDIRECT": ("Established", "small", False),
+    "MISSING_HSTS": ("Heuristic", "small", False),
+    "MISSING_VIEWPORT_META": ("Established", "moderate", False),
+    "MIXED_CONTENT": ("Reasonable proxy", "moderate", False),
+    "NOINDEX_HEADER": ("Established", "large", False),
+    "NOINDEX_META": ("Established", "large", False),
+    "NON_SEMANTIC_BUTTON": ("Heuristic", "small", False),
+    "NOT_IN_SITEMAP": ("Established", "small", False),
+    "OG_DESC_MISSING": ("Heuristic", "small", False),
+    "OG_IMAGE_MISSING": ("Heuristic", "small", False),
+    "OG_TITLE_MISSING": ("Heuristic", "small", False),
+    "ORPHAN_CLAIM_TECHNICAL": ("Heuristic", "moderate", True),
+    "ORPHAN_PAGE": ("Reasonable proxy", "moderate", False),
+    "PAGE_SIZE_LARGE": ("Reasonable proxy", "small", False),
+    "PAGE_TIMEOUT": ("Reasonable proxy", "large", False),
+    "PAGINATION_LINKS_PRESENT": ("Established", "none", False),
+    "PARA_TOO_LONG": ("Heuristic", "small", False),
+    "PDF_TOO_LARGE": ("Heuristic", "small", False),
+    "PLACEHOLDER_LINK": ("Reasonable proxy", "small", False),
+    "PROMOTIONAL_CONTENT_INTERRUPTS": ("Heuristic", "small", False),
+    "QUERY_COVERAGE_WEAK": ("Heuristic", "moderate", False),
+    "QUOTATIONS_MISSING": ("Heuristic", "moderate", True),
+    "RAW_HTML_JS_DEPENDENT": ("Established", "large", False),
+    "REDIRECT_301": ("Established", "small", False),
+    "REDIRECT_302": ("Established", "small", False),
+    "REDIRECT_CASE_NORMALISE": ("Established", "none", False),
+    "REDIRECT_CHAIN": ("Established", "small", False),
+    "REDIRECT_LOOP": ("Established", "large", False),
+    "REDIRECT_TRAILING_SLASH": ("Established", "none", False),
+    "ROBOTS_BLOCKED": ("Established", "large", False),
+    "SCHEMA_DEPRECATED_TYPE": ("Established", "small", False),
+    "SCHEMA_MISSING": ("Reasonable proxy", "moderate", False),
+    "SCHEMA_ORG_MISSING": ("Reasonable proxy", "moderate", False),
+    "SCHEMA_TYPE_CONFLICT": ("Reasonable proxy", "small", False),
+    "SCHEMA_TYPE_MISMATCH": ("Reasonable proxy", "small", False),
+    "SCHEMA_VISIBLE_MISMATCH": ("Established", "moderate", False),
+    "SECTION_CROSS_REFERENCES": ("Heuristic", "small", False),
+    "SECTION_VAGUE_OPENER": ("Heuristic", "small", False),
+    "SEMANTIC_DENSITY_LOW": ("Heuristic", "small", False),
+    "SITEMAP_MISSING": ("Established", "small", False),
+    "STATISTICS_COUNT_LOW": ("Heuristic", "moderate", True),
+    "STRUCTURED_ELEMENTS_LOW": ("Heuristic", "small", False),
+    "THIN_CONTENT": ("Reasonable proxy", "moderate", False),
+    "TITLE_DUPLICATE": ("Reasonable proxy", "moderate", False),
+    "TITLE_H1_MISMATCH": ("Heuristic", "small", False),
+    "TITLE_META_DUPLICATE_PAIR": ("Heuristic", "small", False),
+    "TITLE_MISSING": ("Established", "moderate", False),
+    "TITLE_TOO_LONG": ("Established", "small", False),
+    "TITLE_TOO_SHORT": ("Heuristic", "small", False),
+    "TWITTER_CARD_MISSING": ("Heuristic", "small", False),
+    "UA_CONTENT_DIFFERS": ("Reasonable proxy", "large", False),
+    "UNSAFE_CROSS_ORIGIN_LINK": ("Established", "none", False),
+    "URL_HAS_SPACES": ("Established", "small", False),
+    "URL_HAS_UNDERSCORES": ("Established", "small", False),
+    "URL_TOO_LONG": ("Heuristic", "small", False),
+    "URL_UPPERCASE": ("Reasonable proxy", "small", False),
+    "WRONG_PLACEHOLDER_LINK": ("Reasonable proxy", "small", False),
+    "WWW_CANONICALIZATION": ("Reasonable proxy", "moderate", False),
+}
+
+# Deliberate deviations from the pure matrix (auditor adjudication of the 21
+# inter-reviewer divergences); see spec for rationale per code.
+_IMPACT_OVERRIDES: dict[str, int] = {
+    "AI_BOT_USER_FETCH_BLOCKED": 3,
+    "AI_HIGH_VALUE_UNCITED": 2,
+    "AI_PREVIEW_BLOCKED_AT_BOT": 4,
+    "AI_PREVIEW_SUPPRESSED": 4,
+    "BROKEN_LINK_5XX": 3,
+    "CONTENT_UNSTRUCTURED": 3,
+    "IMG_ALT_MISSING": 3,
+    "LOGIN_REDIRECT": 2,
+    "TITLE_META_DUPLICATE_PAIR": 4,
+}
+
+def derive_impact(code: str) -> int:
+    """Impact derived from the calibration record: matrix(confidence, effect),
+    the Aggarwal measured lane, the page-fatal 10-tier, then any override."""
+    if code in _IMPACT_OVERRIDES:
+        return _IMPACT_OVERRIDES[code]
+    conf, eff, measured = _CALIBRATION[code]
+    base = _MEASURED_MATRIX[eff] if measured else _IMPACT_MATRIX[(conf, eff)]
+    if code in _PAGE_FATAL_10 and conf == "Established" and eff == "large":
+        return 10
+    return base
+
+
+def severity_from_impact(impact: int) -> str:
+    """Single source of truth for severity (R3): derived from impact."""
+    return "critical" if impact >= 8 else ("warning" if impact >= 4 else "info")
 
 
 _CATALOGUE: dict[str, _IssueSpec] = {
     # ── Metadata ──────────────────────────────────────────────────────────
     "TITLE_MISSING": _IssueSpec(
-        category="metadata", severity="critical",
+        category="metadata", severity="warning",
         description="Page has no <title> tag",
         recommendation="Add a unique title tag between 30–60 characters that clearly describes this page.",
         human_description="Missing Name Tag",
@@ -297,21 +508,21 @@ _CATALOGUE: dict[str, _IssueSpec] = {
         fixability="content_edit",
     ),
     "TITLE_TOO_SHORT": _IssueSpec(
-        category="metadata", severity="warning",
+        category="metadata", severity="info",
         description="Title under 30 characters",
         recommendation="Expand the title to 30–60 characters. Include your organisation name and the page topic.",
         human_description="Too-Short Page Name",
         fixability="wp_fixable",
     ),
     "TITLE_TOO_LONG": _IssueSpec(
-        category="metadata", severity="warning",
+        category="metadata", severity="info",
         description="Title over 60 characters",
         recommendation="Shorten the title to under 60 characters. Google truncates longer titles in search results.",
         human_description="Too-Long Page Name",
         fixability="wp_fixable",
     ),
     "META_DESC_MISSING": _IssueSpec(
-        category="metadata", severity="critical",
+        category="metadata", severity="info",
         description="No meta description",
         recommendation="Add a meta description of 70–160 characters summarising what visitors will find on this page.",
         human_description="Missing Summary Snippet",
@@ -321,21 +532,21 @@ _CATALOGUE: dict[str, _IssueSpec] = {
         fixability="wp_fixable",
     ),
     "META_DESC_DUPLICATE": _IssueSpec(
-        category="metadata", severity="warning",
+        category="metadata", severity="info",
         description="Same meta description on multiple pages",
         recommendation="Write a unique meta description for this page that reflects its specific content.",
         human_description="Duplicate Summary Snippet",
         fixability="content_edit",
     ),
     "META_DESC_TOO_SHORT": _IssueSpec(
-        category="metadata", severity="warning",
+        category="metadata", severity="info",
         description="Meta description under 70 characters",
         recommendation="Expand the description to 70–160 characters to give search engines more context.",
         human_description="Too-Short Summary Snippet",
         fixability="wp_fixable",
     ),
     "META_DESC_TOO_LONG": _IssueSpec(
-        category="metadata", severity="warning",
+        category="metadata", severity="info",
         description="Meta description over 160 characters",
         recommendation="Shorten the description to under 160 characters. Longer descriptions are cut off in search results.",
         human_description="Too-Long Summary Snippet",
@@ -392,28 +603,28 @@ _CATALOGUE: dict[str, _IssueSpec] = {
     ),
     # ── Headings ──────────────────────────────────────────────────────────
     "H1_MISSING": _IssueSpec(
-        category="heading", severity="critical",
+        category="heading", severity="warning",
         description="No H1 tag found on page",
         recommendation="Add a single H1 heading that clearly states the main topic of this page.",
         human_description="Missing Main Heading",
         fixability="content_edit",
     ),
     "H1_MULTIPLE": _IssueSpec(
-        category="heading", severity="warning",
+        category="heading", severity="info",
         description="More than one H1 on the page",
         recommendation="Remove extra H1 tags. Each page should have exactly one H1 that introduces the main topic.",
         human_description="Multiple Main Headings",
         fixability="content_edit",
     ),
     "HEADING_SKIP": _IssueSpec(
-        category="heading", severity="warning",
+        category="heading", severity="info",
         description="Heading levels skip (e.g., H1 → H3)",
         recommendation="Fix the heading structure so levels are not skipped. Use H1, then H2, then H3 in order.",
         human_description="Skipped Heading Level",
         fixability="content_edit",
     ),
     "HEADING_EMPTY": _IssueSpec(
-        category="heading", severity="warning",
+        category="heading", severity="info",
         description="One or more heading tags have no text content",
         recommendation="Remove empty heading tags or add descriptive text. Empty headings confuse screen readers and waste heading structure.",
         human_description="Empty Heading",
@@ -421,21 +632,21 @@ _CATALOGUE: dict[str, _IssueSpec] = {
     ),
     # ── Broken links ──────────────────────────────────────────────────────
     "BROKEN_LINK_404": _IssueSpec(
-        category="broken_link", severity="critical",
+        category="broken_link", severity="info",
         description="Link destination returns 404 Not Found",
         recommendation="Remove or update this link. The page it points to no longer exists.",
         human_description="Dead Link",
         fixability="wp_fixable",
     ),
     "BROKEN_LINK_410": _IssueSpec(
-        category="broken_link", severity="critical",
+        category="broken_link", severity="info",
         description="Link destination returns 410 Gone",
         recommendation="Remove this link. The destination has been permanently removed.",
         human_description="Removed Link",
         fixability="wp_fixable",
     ),
     "BROKEN_LINK_5XX": _IssueSpec(
-        category="broken_link", severity="critical",
+        category="broken_link", severity="info",
         description="Link destination returns a server error",
         recommendation="Check whether the linked site is down. If the problem persists, remove or replace the link.",
         human_description="Broken Server Link",
@@ -444,7 +655,7 @@ _CATALOGUE: dict[str, _IssueSpec] = {
         fixability="content_edit",
     ),
     "BROKEN_LINK_503": _IssueSpec(
-        category="broken_link", severity="warning",
+        category="broken_link", severity="info",
         description="Link destination returns 503 — may be temporarily down or blocking automated checks",
         recommendation="Visit the link manually to see if it loads for real visitors. "
                        "If the problem persists, the destination site may be down or blocking crawlers.",
@@ -482,14 +693,14 @@ _CATALOGUE: dict[str, _IssueSpec] = {
         fixability="developer_needed",
     ),
     "REDIRECT_302": _IssueSpec(
-        category="redirect", severity="warning",
+        category="redirect", severity="info",
         description="Page returns a temporary redirect",
         recommendation="Confirm whether this redirect is intentional. If permanent, change it to a 301 redirect.",
         human_description="Temporary Redirect",
         fixability="developer_needed",
     ),
     "REDIRECT_CHAIN": _IssueSpec(
-        category="redirect", severity="warning",
+        category="redirect", severity="info",
         description="Page involves a multi-hop redirect chain",
         recommendation="Consolidate the redirect chain to a single direct redirect to the final destination.",
         human_description="Multi-Hop Detour",
@@ -513,7 +724,7 @@ _CATALOGUE: dict[str, _IssueSpec] = {
         fixability="developer_needed",
     ),
     "META_REFRESH_REDIRECT": _IssueSpec(
-        category="redirect", severity="warning",
+        category="redirect", severity="info",
         description="Page uses a <meta http-equiv=\"refresh\"> tag to redirect users",
         recommendation="Replace meta refresh redirects with server-side 301 redirects.",
         human_description="HTML Redirect (Outdated)",
@@ -536,21 +747,21 @@ _CATALOGUE: dict[str, _IssueSpec] = {
         fixability="developer_needed",
     ),
     "ROBOTS_BLOCKED": _IssueSpec(
-        category="crawlability", severity="warning",
+        category="crawlability", severity="critical",
         description="Page blocked by robots.txt",
         recommendation="Check whether this page should be blocked. If not, update your robots.txt file.",
         human_description="Blocked by Crawl Rules",
         fixability="developer_needed",
     ),
     "NOINDEX_META": _IssueSpec(
-        category="crawlability", severity="warning",
+        category="crawlability", severity="critical",
         description="Page has a noindex meta tag",
         recommendation="Confirm whether this page should be excluded from search results. Remove the noindex tag if not.",
         human_description="Hidden from Search",
         fixability="wp_fixable",
     ),
     "NOINDEX_HEADER": _IssueSpec(
-        category="crawlability", severity="warning",
+        category="crawlability", severity="critical",
         description="Page has a noindex HTTP header",
         recommendation="Check your server configuration. This page is being hidden from search engines via an HTTP header.",
         human_description="Hidden from Search (Server)",
@@ -564,14 +775,14 @@ _CATALOGUE: dict[str, _IssueSpec] = {
         fixability="wp_fixable",
     ),
     "PDF_TOO_LARGE": _IssueSpec(
-        category="crawlability", severity="warning",
+        category="crawlability", severity="info",
         description="PDF file exceeds 10 MB",
         recommendation="Reduce the PDF file size. Large PDFs are slow to download and may be skipped by crawlers.",
         human_description="Oversized Document",
         fixability="developer_needed",
     ),
     "IMG_OVERSIZED": _IssueSpec(
-        category="image", severity="warning",
+        category="image", severity="info",
         description="Image file exceeds 200 KB",
         recommendation="Compress this image. Use Squoosh, TinyPNG, or ImageOptim to reduce the file size without visible quality loss.",
         human_description="Oversized Image",
@@ -592,7 +803,7 @@ _CATALOGUE: dict[str, _IssueSpec] = {
         fixability="content_edit",
     ),
     "AMPHTML_BROKEN": _IssueSpec(
-        category="crawlability", severity="warning",
+        category="crawlability", severity="info",
         description="Page declares an AMP version via <link rel=\"amphtml\"> but the AMP URL is not reachable",
         recommendation="Fix the AMP URL or remove the amphtml link element if AMP is no longer in use.",
         human_description="Broken Mobile Version",
@@ -623,7 +834,7 @@ _CATALOGUE: dict[str, _IssueSpec] = {
         fixability="content_edit",
     ),
     "SCHEMA_MISSING": _IssueSpec(
-        category="crawlability", severity="info",
+        category="crawlability", severity="warning",
         description="No structured data (schema markup) found on this page",
         recommendation="Consider adding JSON-LD structured data to help search engines understand the page content. "
                        "At minimum, add Organisation schema to your homepage. "
@@ -649,7 +860,7 @@ _CATALOGUE: dict[str, _IssueSpec] = {
     ),
     # ── Security (§E1) ────────────────────────────────────────────────────
     "HTTP_PAGE": _IssueSpec(
-        category="security", severity="critical",
+        category="security", severity="warning",
         description="Page is served over HTTP, not HTTPS",
         recommendation="Migrate to HTTPS and configure a server-side 301 redirect from HTTP to HTTPS.",
         human_description="Unsecured Page",
@@ -685,7 +896,7 @@ _CATALOGUE: dict[str, _IssueSpec] = {
     ),
     # ── URL structure (§E2) ───────────────────────────────────────────────
     "URL_UPPERCASE": _IssueSpec(
-        category="url_structure", severity="warning",
+        category="url_structure", severity="info",
         description="URL path contains uppercase characters",
         recommendation="Use lowercase-only URLs. Most web servers will auto-redirect uppercase URLs to lowercase, "
                        "but this creates an unnecessary extra redirect. Update internal links and page slugs "
@@ -694,7 +905,7 @@ _CATALOGUE: dict[str, _IssueSpec] = {
         fixability="content_edit",
     ),
     "URL_HAS_SPACES": _IssueSpec(
-        category="url_structure", severity="warning",
+        category="url_structure", severity="info",
         description="URL contains encoded spaces (%20)",
         recommendation="Replace spaces in URLs with hyphens.",
         human_description="Spaces in Web Address",
@@ -716,7 +927,7 @@ _CATALOGUE: dict[str, _IssueSpec] = {
     ),
     # ── v1.5 bug fixes — codes that existed in scoring but had no catalogue entry ──
     "IMG_ALT_MISSING": _IssueSpec(
-        category="image", severity="warning",
+        category="image", severity="info",
         description="One or more images are missing an alt attribute or have empty/blank alt text",
         recommendation="Add a descriptive alt attribute to every <img> tag. Describe what the image shows "
                        "in plain language, e.g. alt=\"Counsellor speaking with a young person\". "
@@ -742,7 +953,7 @@ _CATALOGUE: dict[str, _IssueSpec] = {
         fixability="developer_needed",
     ),
     "IMG_BROKEN": _IssueSpec(
-        category="image", severity="critical",
+        category="image", severity="warning",
         description="Image src URL returns an error response (4xx/5xx)",
         recommendation="Replace or remove the broken image. Use your CMS media library to re-upload the file "
                        "or update the src URL to point to the correct location.",
@@ -751,7 +962,7 @@ _CATALOGUE: dict[str, _IssueSpec] = {
     ),
     # ── v1.9image - Enhanced Image Analysis ─────────────────────────────────
     "IMG_ALT_TOO_SHORT": _IssueSpec(
-        category="image", severity="warning",
+        category="image", severity="info",
         description="Image alt text is too short (under 5 characters)",
         recommendation="Expand the alt text to at least 5 characters. Describe what the image shows, "
                        "not just a single word.",
@@ -759,7 +970,7 @@ _CATALOGUE: dict[str, _IssueSpec] = {
         fixability="wp_fixable",
     ),
     "IMG_ALT_TOO_LONG": _IssueSpec(
-        category="image", severity="warning",
+        category="image", severity="info",
         description="Image alt text is too long (over 125 characters)",
         recommendation="Shorten the alt text to under 125 characters. Be concise while still describing "
                        "the image content. Screen readers may truncate longer alt text.",
@@ -767,7 +978,7 @@ _CATALOGUE: dict[str, _IssueSpec] = {
         fixability="wp_fixable",
     ),
     "IMG_ALT_GENERIC": _IssueSpec(
-        category="image", severity="warning",
+        category="image", severity="info",
         description="Image alt text uses a generic term like 'image', 'photo', or 'picture'",
         recommendation="Replace generic alt text with a specific description of what the image shows. "
                        "Instead of 'photo', describe the scene, people, or objects depicted.",
@@ -775,7 +986,7 @@ _CATALOGUE: dict[str, _IssueSpec] = {
         fixability="wp_fixable",
     ),
     "IMG_ALT_DUP_FILENAME": _IssueSpec(
-        category="image", severity="warning",
+        category="image", severity="info",
         description="Image alt text matches the filename",
         recommendation="Write descriptive alt text instead of using the filename. Describe what the "
                        "image shows to help search engines and screen reader users.",
@@ -783,7 +994,7 @@ _CATALOGUE: dict[str, _IssueSpec] = {
         fixability="wp_fixable",
     ),
     "IMG_ALT_MISUSED": _IssueSpec(
-        category="image", severity="warning",
+        category="image", severity="info",
         description="Alt text usage is incorrect for image type (decorative image has alt text)",
         recommendation="Decorative images should have empty alt=\"\" to be skipped by screen readers. "
                        "Only meaningful images should have descriptive alt text.",
@@ -791,7 +1002,7 @@ _CATALOGUE: dict[str, _IssueSpec] = {
         fixability="content_edit",
     ),
     "IMG_SLOW_LOAD": _IssueSpec(
-        category="image", severity="warning",
+        category="image", severity="info",
         description="Image takes too long to load (over 1 second)",
         recommendation="Optimize the image by compressing it, reducing dimensions, or using a CDN. "
                        "Consider lazy loading for below-the-fold images.",
@@ -799,7 +1010,7 @@ _CATALOGUE: dict[str, _IssueSpec] = {
         fixability="developer_needed",
     ),
     "IMG_OVERSCALED": _IssueSpec(
-        category="image", severity="warning",
+        category="image", severity="info",
         description="Image intrinsic size is more than 2x its display size (wasted bandwidth)",
         recommendation="Resize the image to match its display dimensions. Use srcset to serve "
                        "appropriately sized images to different devices.",
@@ -807,7 +1018,7 @@ _CATALOGUE: dict[str, _IssueSpec] = {
         fixability="content_edit",
     ),
     "IMG_POOR_COMPRESSION": _IssueSpec(
-        category="image", severity="warning",
+        category="image", severity="info",
         description="Image has poor compression efficiency (high bytes per pixel)",
         recommendation="Re-compress the image using WebP format for better efficiency. "
                        "Use tools like Squoosh or ImageOptim for lossless compression.",
@@ -839,14 +1050,14 @@ _CATALOGUE: dict[str, _IssueSpec] = {
         fixability="developer_needed",
     ),
     "LINK_EMPTY_ANCHOR": _IssueSpec(
-        category="metadata", severity="warning",
+        category="metadata", severity="info",
         description="Link has no visible anchor text — screen readers and search engines cannot describe its destination",
         recommendation='Add descriptive text inside the link. If it is an icon-only link, add an aria-label attribute (e.g. aria-label="Donate now").',
         human_description="Empty Link Text",
         fixability="content_edit",
     ),
     "ANCHOR_TEXT_GENERIC": _IssueSpec(
-        category="metadata", severity="warning",
+        category="metadata", severity="info",
         description="Links use non-descriptive anchor text like 'click here' or 'read more'",
         recommendation="Replace generic link text with descriptive text that tells the reader (and search engines) where the link goes. Instead of 'click here', write 'view our counselling services'.",
         human_description="Non-Descriptive Link Text",
@@ -861,7 +1072,7 @@ _CATALOGUE: dict[str, _IssueSpec] = {
         fixability="developer_needed",
     ),
     "PAGE_SIZE_LARGE": _IssueSpec(
-        category="crawlability", severity="warning",
+        category="crawlability", severity="info",
         description="HTML page response is unusually large — slower to load, especially on mobile connections",
         recommendation="Reduce page weight by removing unused HTML, lazy-loading off-screen content, and deferring "
                        "non-critical scripts. Large pages cost more mobile data and take longer to render.",
@@ -870,7 +1081,7 @@ _CATALOGUE: dict[str, _IssueSpec] = {
     ),
     # ── v1.6 new codes ────────────────────────────────────────────────────────
     "LANG_MISSING": _IssueSpec(
-        category="metadata", severity="warning",
+        category="metadata", severity="info",
         description="Page is missing the lang attribute on the <html> element",
         recommendation='Add a lang attribute to your <html> tag, e.g. <html lang="en">. '
                        "This tells search engines and screen readers what language your content is in, "
@@ -879,7 +1090,7 @@ _CATALOGUE: dict[str, _IssueSpec] = {
         fixability="developer_needed",
     ),
     "TITLE_H1_MISMATCH": _IssueSpec(
-        category="metadata", severity="warning",
+        category="metadata", severity="info",
         description="The page title and the H1 heading share no significant words",
         recommendation="Align the page title and H1 heading so they describe the same topic. "
                        "They do not need to be identical, but both should clearly reflect the page's main subject. "
@@ -888,7 +1099,7 @@ _CATALOGUE: dict[str, _IssueSpec] = {
         fixability="wp_fixable",
     ),
     "HTTPS_REDIRECT_MISSING": _IssueSpec(
-        category="security", severity="critical",
+        category="security", severity="warning",
         description="HTTP version of the site does not redirect to HTTPS",
         recommendation="Configure a server-side 301 redirect from http:// to https:// for all URLs on your domain. "
                        "Without this, visitors who type your address without 'https' will reach an insecure version "
@@ -915,7 +1126,7 @@ _CATALOGUE: dict[str, _IssueSpec] = {
         fixability="content_edit",
     ),
     "LLMS_TXT_INVALID": _IssueSpec(
-        category="ai_readiness", severity="warning",
+        category="ai_readiness", severity="info",
         description="/llms.txt format is invalid",
         recommendation="Ensure your /llms.txt uses text/plain MIME type and includes a Markdown-style "
                        "H1 title, a blockquote summary, and a list of high-value URLs (max 20).",
@@ -923,7 +1134,7 @@ _CATALOGUE: dict[str, _IssueSpec] = {
         fixability="content_edit",
     ),
     "SEMANTIC_DENSITY_LOW": _IssueSpec(
-        category="ai_readiness", severity="warning",
+        category="ai_readiness", severity="info",
         description="Text-to-HTML ratio is below 10%",
         recommendation="Clean up excessive code-bloat (styles, scripts, nested divs). "
                        "High code-to-text ratios consume more AI tokens and confuse retrieval engines.",
@@ -931,7 +1142,7 @@ _CATALOGUE: dict[str, _IssueSpec] = {
         fixability="developer_needed",
     ),
     "DOCUMENT_PROPS_MISSING": _IssueSpec(
-        category="ai_readiness", severity="warning",
+        category="ai_readiness", severity="info",
         description="PDF is missing internal Title or Subject metadata",
         recommendation="Update PDF document properties to include a clear Title and Subject. "
                        "AIs use these properties for source labels and citations.",
@@ -955,7 +1166,7 @@ _CATALOGUE: dict[str, _IssueSpec] = {
         fixability="content_edit",
     ),
     "BLOG_SECTIONS_MISSING": _IssueSpec(
-        category="ai_readiness", severity="warning",
+        category="ai_readiness", severity="info",
         description="Blog or article page lacks sufficient heading structure for AI citation anchors",
         recommendation="Add H2/H3 headings to break content into named sections. AI engines use "
                        "headings as citation anchors — a long post with fewer than 3 headings "
@@ -965,7 +1176,7 @@ _CATALOGUE: dict[str, _IssueSpec] = {
     ),
     # v2.0 AI Bot Access
     "AI_BOT_SEARCH_BLOCKED": _IssueSpec(
-        category="ai_readiness", severity="warning",
+        category="ai_readiness", severity="critical",
         description="A major AI search bot is disallowed in robots.txt",
         recommendation="Allow AI search bots in robots.txt. This bot enables ChatGPT, Gemini, "
                        "and other AI engines to include your site in their answers.",
@@ -981,7 +1192,7 @@ _CATALOGUE: dict[str, _IssueSpec] = {
         fixability="developer_needed",
     ),
     "AI_BOT_USER_FETCH_BLOCKED": _IssueSpec(
-        category="ai_readiness", severity="warning",
+        category="ai_readiness", severity="info",
         description="An AI user-fetch bot is disallowed in robots.txt",
         recommendation="Decide deliberately. robots.txt compliance for user-fetch bots is "
                        "vendor-specific: Anthropic's Claude-User honors robots.txt (so this block "
@@ -992,7 +1203,7 @@ _CATALOGUE: dict[str, _IssueSpec] = {
         fixability="developer_needed",
     ),
     "AI_BOT_DEPRECATED_DIRECTIVE": _IssueSpec(
-        category="ai_readiness", severity="warning",
+        category="ai_readiness", severity="info",
         description="robots.txt references a deprecated AI bot user agent",
         recommendation="Remove deprecated directives (anthropic-ai, claude-web) and replace with "
                        "current bot names (ClaudeBot, Claude-SearchBot, Claude-User).",
@@ -1024,7 +1235,7 @@ _CATALOGUE: dict[str, _IssueSpec] = {
     ),
     # v2.0 Schema Typing
     "SCHEMA_TYPE_MISMATCH": _IssueSpec(
-        category="ai_readiness", severity="warning",
+        category="ai_readiness", severity="info",
         description="Page schema type does not match inferred page type",
         recommendation="Ensure JSON-LD @type matches the page content (Article for blog posts, "
                        "Person for team bios, Service for service pages).",
@@ -1039,7 +1250,7 @@ _CATALOGUE: dict[str, _IssueSpec] = {
         fixability="content_edit",
     ),
     "SCHEMA_TYPE_CONFLICT": _IssueSpec(
-        category="ai_readiness", severity="warning",
+        category="ai_readiness", severity="info",
         description="Page declares multiple conflicting schema types",
         recommendation="Use a single coherent @type. For multiple entities use @graph or nesting.",
         human_description="Conflicting Schema Types",
@@ -1068,7 +1279,7 @@ _CATALOGUE: dict[str, _IssueSpec] = {
     ),
     # M3.3: X-Robots-Tag AI-preview controls (Established — literal header facts)
     "AI_PREVIEW_SUPPRESSED": _IssueSpec(
-        category="ai_readiness", severity="info",
+        category="ai_readiness", severity="warning",
         description="An X-Robots-Tag response header suppresses this page's search/AI preview "
                     "(nosnippet or max-snippet:0)",
         recommendation="If you want this page to be eligible for AI Overviews and citations, "
@@ -1078,7 +1289,7 @@ _CATALOGUE: dict[str, _IssueSpec] = {
         fixability="developer_needed",
     ),
     "AI_PREVIEW_BLOCKED_AT_BOT": _IssueSpec(
-        category="ai_readiness", severity="info",
+        category="ai_readiness", severity="warning",
         description="An X-Robots-Tag directive specifically blocks an AI crawler "
                     "(e.g. GPTBot, Google-Extended) from indexing this page",
         recommendation="This is intentional if you don't want AI engines using this page. "
@@ -1098,7 +1309,7 @@ _CATALOGUE: dict[str, _IssueSpec] = {
     ),
     # M3.5: Main content is a small share of total visible text (Heuristic)
     "AI_MAIN_CONTENT_LOW_RATIO": _IssueSpec(
-        category="ai_readiness", severity="warning",
+        category="ai_readiness", severity="info",
         description="The main content area contains less than 40% of the page's visible text. "
                     "Navigation, sidebar, and footer content dominates, making it harder for "
                     "AI systems and readers to identify the primary content.",
@@ -1110,7 +1321,7 @@ _CATALOGUE: dict[str, _IssueSpec] = {
     ),
     # v2.0 Content Extractability
     "CONTENT_NOT_EXTRACTABLE_NO_TEXT": _IssueSpec(
-        category="ai_readiness", severity="warning",
+        category="ai_readiness", severity="critical",
         description="Page has no visible text — only images, video, or interactive media",
         recommendation="Add descriptive text, captions, or transcripts. AI systems cannot extract "
                        "information from images or videos without accompanying text.",
@@ -1126,7 +1337,7 @@ _CATALOGUE: dict[str, _IssueSpec] = {
         fixability="content_edit",
     ),
     "CONTENT_UNSTRUCTURED": _IssueSpec(
-        category="ai_readiness", severity="warning",
+        category="ai_readiness", severity="info",
         description="Page has substantial text but no heading structure",
         recommendation="Add H2 and H3 headings to break content into sections. Headings help AI "
                        "systems identify topics and extract structured information.",
@@ -1157,7 +1368,7 @@ _CATALOGUE: dict[str, _IssueSpec] = {
         fixability="content_edit",
     ),
     "CITATIONS_SOURCES_INACCESSIBLE": _IssueSpec(
-        category="ai_readiness", severity="warning",
+        category="ai_readiness", severity="info",
         description="Page cites sources that are broken or inaccessible",
         recommendation="Replace broken citation links with working alternatives.",
         human_description="Inaccessible Citation Sources",
@@ -1165,7 +1376,7 @@ _CATALOGUE: dict[str, _IssueSpec] = {
     ),
     # ── v2.1 GEO Analyzer: Aggarwal et al. checks (Empirical) ──────────────
     "STATISTICS_COUNT_LOW": _IssueSpec(
-        category="ai_readiness", severity="warning",
+        category="ai_readiness", severity="info",
         description="500+ word page contains no statistics (numbers paired with units, percentages, or dates)",
         recommendation="Add specific data points: percentages, measurements, dates, counts. "
                        "Aggarwal et al. (2023) found statistics measurably increase citation by generative engines.",
@@ -1173,7 +1384,7 @@ _CATALOGUE: dict[str, _IssueSpec] = {
         fixability="content_edit",
     ),
     "EXTERNAL_CITATIONS_LOW": _IssueSpec(
-        category="ai_readiness", severity="warning",
+        category="ai_readiness", severity="info",
         description="500+ word page has no outbound links to external authoritative sources in body text",
         recommendation="Add links to authoritative external sources (.gov, .edu, research papers, official docs). "
                        "Aggarwal et al. (2023) found citations measurably increase AI engine quotability.",
@@ -1181,7 +1392,7 @@ _CATALOGUE: dict[str, _IssueSpec] = {
         fixability="content_edit",
     ),
     "QUOTATIONS_MISSING": _IssueSpec(
-        category="ai_readiness", severity="warning",
+        category="ai_readiness", severity="info",
         description="500+ word page contains no direct quotations from named sources",
         recommendation="Add quoted statements from named experts or sources. Use <blockquote> for longer quotes. "
                        "Aggarwal et al. (2023) found quotations measurably increase AI citation rates.",
@@ -1189,7 +1400,7 @@ _CATALOGUE: dict[str, _IssueSpec] = {
         fixability="content_edit",
     ),
     "ORPHAN_CLAIM_TECHNICAL": _IssueSpec(
-        category="ai_readiness", severity="warning",
+        category="ai_readiness", severity="info",
         description="Technical/how-to page has 3+ factual claims not paired with a source link or attribution",
         recommendation="Add a source link or attribution ('according to [source]') next to each specific "
                        "capability claim, number, or procedure step.",
@@ -1198,7 +1409,7 @@ _CATALOGUE: dict[str, _IssueSpec] = {
     ),
     # ── v2.1 GEO Analyzer: Mechanistic checks ───────────────────────────────
     "RAW_HTML_JS_DEPENDENT": _IssueSpec(
-        category="ai_readiness", severity="warning",
+        category="ai_readiness", severity="critical",
         description="Page raw HTML is a JavaScript app shell with near-zero visible text",
         recommendation="Render critical content server-side (SSR) or as static HTML. AI crawlers "
                        "may not execute JavaScript, so JS-gated content is invisible to them.",
@@ -1230,7 +1441,7 @@ _CATALOGUE: dict[str, _IssueSpec] = {
         fixability="developer_needed",
     ),
     "FIRST_VIEWPORT_NO_ANSWER": _IssueSpec(
-        category="ai_readiness", severity="warning",
+        category="ai_readiness", severity="info",
         description="First 200 words contain no direct answer signal (definition, TL;DR, summary phrase)",
         recommendation="Lead with a concise definition or summary ('X is...', 'In short...', 'Key takeaway:'). "
                        "AI systems read top-to-bottom; putting the answer in the first 200 words "
@@ -1261,7 +1472,7 @@ _CATALOGUE: dict[str, _IssueSpec] = {
         fixability="developer_needed",
     ),
     "CODE_BLOCK_MISSING_TECHNICAL": _IssueSpec(
-        category="ai_readiness", severity="warning",
+        category="ai_readiness", severity="info",
         description="Technical how-to/guide page with numbered steps has no <pre> or <code> blocks",
         recommendation="Wrap command-line examples, code snippets, and configuration in <code> or <pre> tags. "
                        "This makes them unambiguously extractable by AI systems.",
@@ -1277,7 +1488,7 @@ _CATALOGUE: dict[str, _IssueSpec] = {
         fixability="content_edit",
     ),
     "CHUNKS_NOT_SELF_CONTAINED": _IssueSpec(
-        category="ai_readiness", severity="warning",
+        category="ai_readiness", severity="info",
         description="More than half of the page's H2/H3 sections are not understandable in isolation",
         recommendation="Each section should open with a context sentence that restates the subject. "
                        "AI retrieval systems serve individual chunks, not whole pages.",
@@ -1285,7 +1496,7 @@ _CATALOGUE: dict[str, _IssueSpec] = {
         fixability="content_edit",
     ),
     "CENTRAL_CLAIM_BURIED": _IssueSpec(
-        category="ai_readiness", severity="warning",
+        category="ai_readiness", severity="info",
         description="The page's main claim or answer does not appear in the first 150 words",
         recommendation="State the central point in the opening paragraph. AI systems weight early content "
                        "more heavily when deciding what to extract and cite.",
@@ -1297,7 +1508,7 @@ _CATALOGUE: dict[str, _IssueSpec] = {
     # looks at content-node depth under each <h2> heading. Together
     # they triangulate "the answer is hard to find" from two angles.
     "GEO_SUMMARY_BURIED": _IssueSpec(
-        category="ai_readiness", severity="warning",
+        category="ai_readiness", severity="info",
         description="The first paragraph or list does not lead its H2 or H3 section — the core "
                     "answer is pushed below images, media, or preamble",
         recommendation="Reorder each H2/H3 section so the core answer leads in 1–2 sentences, "
@@ -1356,7 +1567,7 @@ _CATALOGUE: dict[str, _IssueSpec] = {
     ),
     # Tier 1 GEO heuristics (spec §4.3–4.6)
     "QUERY_COVERAGE_WEAK": _IssueSpec(
-        category="ai_readiness", severity="warning",
+        category="ai_readiness", severity="info",
         description="Page H1 topic terms are under-represented in the intro or section headings — "
                     "AI retrieval systems may not associate this page with its target query",
         recommendation="Ensure the language from your H1 (the page's primary topic) appears naturally "
@@ -1367,7 +1578,7 @@ _CATALOGUE: dict[str, _IssueSpec] = {
         fixability="content_edit",
     ),
     "SECTION_VAGUE_OPENER": _IssueSpec(
-        category="ai_readiness", severity="warning",
+        category="ai_readiness", severity="info",
         description="One or more H2/H3 sections begin with a vague demonstrative reference "
                     "('This method…', 'It allows…', 'These features…') instead of an explicit subject",
         recommendation="Replace vague openers with explicit nouns: instead of 'This approach improves…' "
@@ -1377,7 +1588,7 @@ _CATALOGUE: dict[str, _IssueSpec] = {
         fixability="content_edit",
     ),
     "SECTION_CROSS_REFERENCES": _IssueSpec(
-        category="ai_readiness", severity="warning",
+        category="ai_readiness", severity="info",
         description="Page contains backward-reference phrases ('as mentioned above', 'as discussed earlier') "
                     "that break section independence",
         recommendation="Remove or replace phrases like 'as mentioned above' with the actual information being "
@@ -1397,7 +1608,7 @@ _CATALOGUE: dict[str, _IssueSpec] = {
     ),
     # M4.1: Content Freshness — visible date stale for page type
     "CONTENT_DATE_STALE_VISIBLE": _IssueSpec(
-        category="ai_readiness", severity="warning",
+        category="ai_readiness", severity="info",
         description="Visible/declared modified date is old enough to read as stale for its page type",
         recommendation="Review the content for accuracy and update the visible date if the information "
                        "is still current. For evergreen content, consider removing the date entirely "
@@ -1426,7 +1637,7 @@ _CATALOGUE: dict[str, _IssueSpec] = {
         confidence_label="Established",
     ),
     "AI_HIGH_VALUE_UNCITED": _IssueSpec(
-        category="ai_readiness", severity="warning",
+        category="ai_readiness", severity="info",
         description="This healthy, content-rich page has zero AI citations despite recent data, suggesting an AI visibility gap.",
         recommendation="Improve content structure, add schema markup, and build backlinks to increase AI discoverability.",
         human_description="High-Value Page Not AI-Cited",
@@ -1457,7 +1668,7 @@ _CATALOGUE: dict[str, _IssueSpec] = {
     ),
     # WP3: semantic_html
     "NON_SEMANTIC_BUTTON": _IssueSpec(
-        category="semantic_html", severity="warning",
+        category="semantic_html", severity="info",
         description="A clickable control is built from a <div> or <span> with no button/link role "
                     "and no accessible name",
         recommendation="Use a real <button> or <a> element for clickable controls, or add "
@@ -1506,7 +1717,7 @@ _CATALOGUE: dict[str, _IssueSpec] = {
         fixability="developer_needed",
     ),
     "INTERACTIVE_NO_ACCESSIBLE_NAME": _IssueSpec(
-        category="semantic_html", severity="warning",
+        category="semantic_html", severity="info",
         description="An interactive element (button, link, or form field) has no accessible name — "
                     "no text, aria-label, or title",
         recommendation="Give every interactive element an accessible name: visible text, an "
@@ -1524,7 +1735,7 @@ _CATALOGUE: dict[str, _IssueSpec] = {
     ),
     # WP4: placeholder / dead links
     "PLACEHOLDER_LINK": _IssueSpec(
-        category="broken_link", severity="critical",
+        category="broken_link", severity="info",
         description="A navigational call-to-action links nowhere — its href is \"#\" or "
                     "\"javascript:void(0)\"",
         recommendation="Point the link at its real destination URL. A prominent call-to-action "
@@ -1542,7 +1753,7 @@ _CATALOGUE: dict[str, _IssueSpec] = {
         fixability="developer_needed",
     ),
     "WRONG_PLACEHOLDER_LINK": _IssueSpec(
-        category="broken_link", severity="critical",
+        category="broken_link", severity="info",
         description="A link points at a placeholder or example domain (example.com, localhost, or "
                     "a stray search-engine URL) instead of a real destination",
         recommendation="Replace the placeholder URL with the correct destination. Links to "
@@ -1647,78 +1858,70 @@ def _titles_mismatch(title: str, h1: str) -> bool:
 # The architecture test in tests/test_architecture_constraints.py enforces
 # that every code with category=="ai_readiness" has an entry here.
 _AI_READINESS_CONFIDENCE: dict[str, str] = {
-    # ── Established (vendor-confirmed: robots.txt protocol, Google directives,
-    #    or literal HTTP-header facts) ──
-    "AI_BOT_SEARCH_BLOCKED":      "Established",
+    # Regenerated from _CALIBRATION (R3, 2026-07-03). Canonical 3 tiers;
+    # the Aggarwal 'measured' lane is tracked separately in _CALIBRATION.
+    "AI_BOT_BLANKET_DISALLOW": "Established",
+    "AI_BOT_DEPRECATED_DIRECTIVE": "Established",
+    "AI_BOT_NO_AI_DIRECTIVES": "Heuristic",
+    "AI_BOT_SEARCH_BLOCKED": "Established",
+    "AI_BOT_TABLE_STALE": "Heuristic",
     "AI_BOT_TRAINING_DISALLOWED": "Established",
-    "AI_BOT_USER_FETCH_BLOCKED":  "Established",
-    "AI_BOT_DEPRECATED_DIRECTIVE":"Established",
-    "AI_BOT_BLANKET_DISALLOW":    "Established",
-    "SCHEMA_VISIBLE_MISMATCH":      "Established",  # Google: schema values must be visible
-    "AI_PREVIEW_SUPPRESSED":        "Established",  # literal X-Robots-Tag directive
-    "AI_PREVIEW_BLOCKED_AT_BOT":    "Established",  # literal X-Robots-Tag directive
-
-    # ── Reasonable proxy (industry consensus + Google's published best practices) ──
-    "AI_BOT_NO_AI_DIRECTIVES":      "Reasonable proxy",
-    "JSON_LD_MISSING":              "Reasonable proxy",
-    "JSON_LD_INVALID":              "Reasonable proxy",
-    "SCHEMA_TYPE_MISMATCH":         "Reasonable proxy",
-    "SCHEMA_DEPRECATED_TYPE":       "Reasonable proxy",
-    "SCHEMA_TYPE_CONFLICT":         "Reasonable proxy",
-    "AI_CONTENT_NOT_IN_TEXT":       "Reasonable proxy",
-    "AI_NO_VISUAL_COMPANION":       "Reasonable proxy",
-    "FAQ_SCHEMA_MISSING":           "Reasonable proxy",
-    "DOCUMENT_PROPS_MISSING":       "Reasonable proxy",
-    "DATE_PUBLISHED_MISSING":       "Reasonable proxy",
-    "DATE_MODIFIED_MISSING":        "Reasonable proxy",
-    "AUTHOR_BYLINE_MISSING":        "Reasonable proxy",
-    "CONTENT_NOT_EXTRACTABLE_NO_TEXT": "Reasonable proxy",
-    "RAW_HTML_JS_DEPENDENT":        "Reasonable proxy",
-    "JS_RENDERED_CONTENT_DIFFERS":  "Reasonable proxy",
-    "CONTENT_CLOAKING_DETECTED":    "Reasonable proxy",
-    "UA_CONTENT_DIFFERS":           "Reasonable proxy",
-    "CITATIONS_MISSING_SUBSTANTIAL_CONTENT": "Reasonable proxy",
-    "EXTERNAL_CITATIONS_LOW":       "Reasonable proxy",
-    "CONTENT_THIN":                 "Reasonable proxy",  # Google has thin-content guidance
-
-    # ── Heuristic (industry consensus only — no vendor confirmation) ──
-    "AI_MAIN_CONTENT_LOW_RATIO":    "Heuristic",
-    "LLMS_TXT_MISSING":             "Heuristic",
-    "LLMS_TXT_INVALID":             "Heuristic",
-    "AI_TXT_MISSING":               "Heuristic",
-    "AI_BOT_TABLE_STALE":           "Heuristic",
-    "SEMANTIC_DENSITY_LOW":         "Heuristic",
-    "CENTRAL_CLAIM_BURIED":         "Heuristic",
-    "GEO_SUMMARY_BURIED":           "Heuristic",  # Cycle GG — DOM-depth heuristic
-    "CHUNKS_NOT_SELF_CONTAINED":    "Heuristic",
-    "CITATIONS_ORPHANED":           "Heuristic",
+    "AI_BOT_USER_FETCH_BLOCKED": "Established",
+    "AI_CITED_PAGE": "Established",
+    "AI_CONTENT_NOT_IN_TEXT": "Reasonable proxy",
+    "AI_HIGH_VALUE_UNCITED": "Heuristic",
+    "AI_MAIN_CONTENT_LOW_RATIO": "Heuristic",
+    "AI_NO_VISUAL_COMPANION": "Heuristic",
+    "AI_PREVIEW_BLOCKED_AT_BOT": "Established",
+    "AI_PREVIEW_SUPPRESSED": "Established",
+    "AI_TXT_MISSING": "Heuristic",
+    "AUTHOR_BYLINE_MISSING": "Reasonable proxy",
+    "BLOG_SECTIONS_MISSING": "Heuristic",
+    "CENTRAL_CLAIM_BURIED": "Heuristic",
+    "CHUNKS_NOT_SELF_CONTAINED": "Heuristic",
+    "CITATIONS_MISSING_SUBSTANTIAL_CONTENT": "Heuristic",
+    "CITATIONS_ORPHANED": "Heuristic",
     "CITATIONS_SOURCES_INACCESSIBLE": "Heuristic",
     "CODE_BLOCK_MISSING_TECHNICAL": "Heuristic",
-    "COMPARISON_TABLE_MISSING":     "Heuristic",
-    "CONTENT_IMAGE_HEAVY":          "Heuristic",
-    "CONTENT_UNSTRUCTURED":         "Heuristic",
-    "FIRST_VIEWPORT_NO_ANSWER":     "Heuristic",
-    "ORPHAN_CLAIM_TECHNICAL":       "Heuristic",
+    "COMPARISON_TABLE_MISSING": "Heuristic",
+    "CONTACT_INFO_NOT_IN_HTML": "Reasonable proxy",
+    "CONTENT_CLOAKING_DETECTED": "Reasonable proxy",
+    "CONTENT_DATE_STALE_VISIBLE": "Reasonable proxy",
+    "CONTENT_IMAGE_HEAVY": "Heuristic",
+    "CONTENT_NOT_EXTRACTABLE_NO_TEXT": "Established",
+    "CONTENT_STAT_OUTDATED": "Heuristic",
+    "CONTENT_THIN": "Reasonable proxy",
+    "CONTENT_UNSTRUCTURED": "Reasonable proxy",
+    "CONVERSATIONAL_H2_MISSING": "Heuristic",
+    "DATE_MODIFIED_MISSING": "Reasonable proxy",
+    "DATE_PUBLISHED_MISSING": "Reasonable proxy",
+    "DOCUMENT_PROPS_MISSING": "Established",
+    "EXTERNAL_CITATIONS_LOW": "Heuristic",
+    "FAQ_SCHEMA_MISSING": "Established",
+    "FIRST_VIEWPORT_NO_ANSWER": "Heuristic",
+    "GEO_SUMMARY_BURIED": "Heuristic",
+    "JSON_LD_INVALID": "Reasonable proxy",
+    "JSON_LD_MISSING": "Reasonable proxy",
+    "JS_RENDERED_CONTENT_DIFFERS": "Established",
+    "LINK_PROFILE_PROMOTIONAL": "Heuristic",
+    "LLMS_TXT_INVALID": "Heuristic",
+    "LLMS_TXT_MISSING": "Heuristic",
+    "ORPHAN_CLAIM_TECHNICAL": "Heuristic",
     "PROMOTIONAL_CONTENT_INTERRUPTS": "Heuristic",
-    "QUERY_COVERAGE_WEAK":          "Heuristic",
-    "QUOTATIONS_MISSING":           "Heuristic",
-    "SECTION_CROSS_REFERENCES":     "Heuristic",
-    "SECTION_VAGUE_OPENER":         "Heuristic",
-    "STATISTICS_COUNT_LOW":         "Heuristic",
-    "STRUCTURED_ELEMENTS_LOW":      "Heuristic",
-    "BLOG_SECTIONS_MISSING":        "Heuristic",
-    "LINK_PROFILE_PROMOTIONAL":     "Heuristic",
-    "CONVERSATIONAL_H2_MISSING":    "Heuristic",  # legacy v1.7 — no vendor confirmation
-    # M4.1: Content Freshness — visible date stale for page type
-    "CONTENT_DATE_STALE_VISIBLE":   "Reasonable proxy",
-    # M4.2: Content Freshness — outdated statistic/year reference
-    "CONTENT_STAT_OUTDATED":        "Heuristic",
-    # M5: AI Citation Ingestion
-    "AI_CITED_PAGE":                "Established",
-    "AI_HIGH_VALUE_UNCITED":        "Reasonable proxy",
-    # Agent-readiness Phase 1 (WP5) — ai_readiness-category task-side codes
-    "SCHEMA_ORG_MISSING":           "Reasonable proxy",
-    "CONTACT_INFO_NOT_IN_HTML":     "Heuristic",
+    "QUERY_COVERAGE_WEAK": "Heuristic",
+    "QUOTATIONS_MISSING": "Heuristic",
+    "RAW_HTML_JS_DEPENDENT": "Established",
+    "SCHEMA_DEPRECATED_TYPE": "Established",
+    "SCHEMA_ORG_MISSING": "Reasonable proxy",
+    "SCHEMA_TYPE_CONFLICT": "Reasonable proxy",
+    "SCHEMA_TYPE_MISMATCH": "Reasonable proxy",
+    "SCHEMA_VISIBLE_MISMATCH": "Established",
+    "SECTION_CROSS_REFERENCES": "Heuristic",
+    "SECTION_VAGUE_OPENER": "Heuristic",
+    "SEMANTIC_DENSITY_LOW": "Heuristic",
+    "STATISTICS_COUNT_LOW": "Heuristic",
+    "STRUCTURED_ELEMENTS_LOW": "Heuristic",
+    "UA_CONTENT_DIFFERS": "Reasonable proxy",
 }
 def make_issue(
     code: str,
@@ -1756,7 +1959,10 @@ def make_issue(
             f"(_CATALOGUE + _ISSUE_SCORING) before emitting it."
         ) from None
     impact, effort = _ISSUE_SCORING.get(code, (0, 0))
-    priority_rank = (impact * 10) - (effort * 2)
+    # R3 priority formula: effort weighted ×6 so it can reorder WITHIN an impact
+    # tier (surfacing volunteer "quick wins") but never across two tiers.
+    priority_rank = (impact * 10) - (effort * 6)
+    quick_win = impact >= 4 and effort <= 1
     # Prefer the spec-attached confidence_label if set (lets individual
     # codes override the lookup); otherwise read from the centralised map.
     confidence_label = spec.confidence_label or _AI_READINESS_CONFIDENCE.get(code)
@@ -1771,6 +1977,7 @@ def make_issue(
         impact=impact,
         effort=effort,
         priority_rank=priority_rank,
+        quick_win=quick_win,
         human_description=spec.human_description,
         what_it_is=spec.what_it_is,
         impact_desc=spec.impact_desc,

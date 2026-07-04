@@ -10,7 +10,7 @@ from __future__ import annotations
 from typing import Literal
 from uuid import uuid4
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, computed_field
 
 
 Severity = Literal["critical", "warning", "info"]
@@ -62,7 +62,7 @@ class Issue(BaseModel):
     recommendation: str
     impact: int = 0                # v1.5: how badly this issue hurts SEO/UX (0–10)
     effort: int = 0                # v1.5: how hard it is to fix (0–5)
-    priority_rank: int = 0         # v1.5: (impact × 10) − (effort × 2)
+    priority_rank: int = 0         # R3: (impact × 10) − (effort × 6)
     human_description: str = ""    # plain-English label for nonprofit staff
     what_it_is: str = ""           # detailed help text
     impact_desc: str = ""          # detailed impact help
@@ -74,3 +74,13 @@ class Issue(BaseModel):
     # taxonomy (Established / Reasonable proxy / Heuristic). None for issues
     # outside the ai_readiness category.
     confidence_label: str | None = None
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def quick_win(self) -> bool:
+        """R3: an easy, worthwhile fix — surfaced in the UI's Quick-Wins list.
+
+        Derived (not stored) so it is always consistent with impact/effort:
+        ``impact >= 4 AND effort <= 1``.
+        """
+        return self.impact >= 4 and self.effort <= 1

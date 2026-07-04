@@ -70,9 +70,24 @@ structural half shipped; the high-variance impact recalibration is held for a se
   `test_api.py` health tests updated to the capped model. Full suite 1785 passed; same 3 pre-existing
   unrelated failures.
 
-**Held for sign-off / second opinion:** R3 §5 (the 151-value Model B impact recalibration) and §3
-(priority-ordering formula). Also pending: R2.x precision fixes, R6-R8 features. See
-`docs/review/2026-07-03_R3-expert-prompt.md` for the second-opinion prompt.
+### Implemented 2026-07-03 (R3 — full calibration, two-opinion triangulation)
+
+Both expert opinions (Gemini + Fable) received and triangulated with the audit (130/151 codes
+converged; 21 divergences adjudicated). Adopted Fable's synthesis (hard-capped Model B). Spec:
+`docs/pending/2026-07-03_r3-FINAL-calibration.md`.
+- **R3.1** — 120 impacts recalibrated; impact now **derived** from a `_CALIBRATION` record via
+  `derive_impact()` (matrix + Aggarwal measured lane + page-fatal 10-tier + documented overrides);
+  `_AI_READINESS_CONFIDENCE` regenerated.
+- **R3.2** — severity **derived from impact** (`severity_from_impact`: ≥8 critical / 4–7 warning /
+  ≤3 info) — one source of truth, fixing the impact/severity drift.
+- **R3.3** — priority `impact×10 − effort×6`; `quick_win` computed field (impact≥4 & effort≤1).
+- Tests: `tests/test_r3_calibration.py` (derivation parity, severity, 10-tier, measured lane,
+  priority, quick-win). Docs regenerated (issue-codes.md, functional-spec, thresholds). Full suite
+  1790 passed; only the 3 pre-existing unrelated failures.
+
+**Held / next:** validate on a real before/after crawl of livingsystems.ca (scores rise — intended);
+R3.4 optional extra suppression clusters; R2.x precision fixes; R6-R8 features. Frontend
+`issueHelp.js` per-code severity labels may now lag the derived severities (spawned as a follow-up).
 
 ---
 

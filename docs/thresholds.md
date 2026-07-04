@@ -47,6 +47,9 @@ impossible.
 | Query variant cap per path | 50 | `api/crawler/normaliser.py` (variant limit) | — |
 | Image HEAD-fetch timeout | 3 seconds | `api/crawler/engine.py:900` | — |
 | Per-category health-score cap | 20 points | `api/services/job_store_base.py` `_CATEGORY_IMPACT_CAP` | — |
+| Priority-rank formula | `impact×10 − effort×6` | `api/crawler/checkers/registry.py` `make_issue` | — |
+| Quick-win threshold | impact ≥ 4 and effort ≤ 1 | `api/models/issue.py` `Issue.quick_win` | — |
+| Severity from impact | ≥8 critical · 4–7 warning · ≤3 info | `registry.py` `severity_from_impact` | — |
 
 ## HTML / page size
 

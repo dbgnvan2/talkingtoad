@@ -36,7 +36,7 @@ Title, meta description, OG tags, canonical, favicon.
 _20 codes in this category._
 
 ### ANCHOR_TEXT_GENERIC
-**Severity:** 🟡 warning | **Impact:** 4 | **Effort:** 2 | **Fixability:** content_edit
+**Severity:** 🔵 info | **Impact:** 2 | **Effort:** 2 | **Fixability:** content_edit
 
 Links use non-descriptive anchor text like 'click here' or 'read more'
 
@@ -47,7 +47,7 @@ Links use non-descriptive anchor text like 'click here' or 'read more'
 ---
 
 ### CANONICAL_EXTERNAL
-**Severity:** 🟡 warning | **Impact:** 5 | **Effort:** 3
+**Severity:** 🟡 warning | **Impact:** 6 | **Effort:** 3
 
 Canonical points to a different domain
 
@@ -69,7 +69,7 @@ No canonical tag — page has query strings or is a near-duplicate
 ---
 
 ### CANONICAL_SELF_MISSING
-**Severity:** 🔵 info | **Impact:** 5 | **Effort:** 1
+**Severity:** 🔵 info | **Impact:** 2 | **Effort:** 1
 
 Indexable page has no canonical tag — consider adding a self-referencing canonical
 
@@ -80,7 +80,7 @@ Indexable page has no canonical tag — consider adding a self-referencing canon
 ---
 
 ### FAVICON_MISSING
-**Severity:** 🔵 info | **Impact:** 3 | **Effort:** 2 | **Fixability:** content_edit
+**Severity:** 🔵 info | **Impact:** 2 | **Effort:** 2 | **Fixability:** content_edit
 
 No favicon found (homepage only)
 
@@ -91,7 +91,7 @@ No favicon found (homepage only)
 ---
 
 ### LANG_MISSING
-**Severity:** 🟡 warning | **Impact:** 6 | **Effort:** 1
+**Severity:** 🔵 info | **Impact:** 2 | **Effort:** 1
 
 Page is missing the lang attribute on the <html> element
 
@@ -102,7 +102,7 @@ Page is missing the lang attribute on the <html> element
 ---
 
 ### LINK_EMPTY_ANCHOR
-**Severity:** 🟡 warning | **Impact:** 7 | **Effort:** 2 | **Fixability:** content_edit
+**Severity:** 🔵 info | **Impact:** 2 | **Effort:** 2 | **Fixability:** content_edit
 
 Link has no visible anchor text — screen readers and search engines cannot describe its destination
 
@@ -113,7 +113,7 @@ Link has no visible anchor text — screen readers and search engines cannot des
 ---
 
 ### META_DESC_DUPLICATE
-**Severity:** 🟡 warning | **Impact:** 4 | **Effort:** 2 | **Fixability:** content_edit
+**Severity:** 🔵 info | **Impact:** 2 | **Effort:** 2 | **Fixability:** content_edit
 
 Same meta description on multiple pages
 
@@ -124,7 +124,7 @@ Same meta description on multiple pages
 ---
 
 ### META_DESC_MISSING
-**Severity:** 🔴 critical | **Impact:** 7 | **Effort:** 1 | **Fixability:** wp_fixable
+**Severity:** 🔵 info | **Impact:** 2 | **Effort:** 1 | **Fixability:** wp_fixable
 
 **What it is**
 A meta description is a brief summary of a page's content that appears under the title in search results. It helps users decide whether to click on your link.
@@ -140,7 +140,7 @@ Add a <meta name='description'> tag to your page. Use your SEO plugin to write a
 ---
 
 ### META_DESC_TOO_LONG
-**Severity:** 🟡 warning | **Impact:** 3 | **Effort:** 1 | **Fixability:** wp_fixable
+**Severity:** 🔵 info | **Impact:** 2 | **Effort:** 1 | **Fixability:** wp_fixable
 
 Meta description over 160 characters
 
@@ -151,7 +151,7 @@ Meta description over 160 characters
 ---
 
 ### META_DESC_TOO_SHORT
-**Severity:** 🟡 warning | **Impact:** 4 | **Effort:** 1 | **Fixability:** wp_fixable
+**Severity:** 🔵 info | **Impact:** 2 | **Effort:** 1 | **Fixability:** wp_fixable
 
 Meta description under 70 characters
 
@@ -162,7 +162,7 @@ Meta description under 70 characters
 ---
 
 ### OG_DESC_MISSING
-**Severity:** 🔵 info | **Impact:** 3 | **Effort:** 1 | **Fixability:** wp_fixable
+**Severity:** 🔵 info | **Impact:** 1 | **Effort:** 1 | **Fixability:** wp_fixable
 
 Open Graph description tag missing
 
@@ -173,7 +173,7 @@ Open Graph description tag missing
 ---
 
 ### OG_IMAGE_MISSING
-**Severity:** 🔵 info | **Impact:** 3 | **Effort:** 1 | **Fixability:** content_edit
+**Severity:** 🔵 info | **Impact:** 1 | **Effort:** 1 | **Fixability:** content_edit
 
 Open Graph image tag (og:image) is missing
 
@@ -184,7 +184,7 @@ Open Graph image tag (og:image) is missing
 ---
 
 ### OG_TITLE_MISSING
-**Severity:** 🔵 info | **Impact:** 4 | **Effort:** 1 | **Fixability:** wp_fixable
+**Severity:** 🔵 info | **Impact:** 1 | **Effort:** 1 | **Fixability:** wp_fixable
 
 Open Graph title tag missing
 
@@ -195,7 +195,7 @@ Open Graph title tag missing
 ---
 
 ### TITLE_DUPLICATE
-**Severity:** 🟡 warning | **Impact:** 5 | **Effort:** 2 | **Fixability:** content_edit
+**Severity:** 🟡 warning | **Impact:** 4 | **Effort:** 2 | **Fixability:** content_edit
 
 Same title used on multiple pages
 
@@ -206,7 +206,7 @@ Same title used on multiple pages
 ---
 
 ### TITLE_H1_MISMATCH
-**Severity:** 🟡 warning | **Impact:** 6 | **Effort:** 2 | **Fixability:** wp_fixable
+**Severity:** 🔵 info | **Impact:** 1 | **Effort:** 2 | **Fixability:** wp_fixable
 
 The page title and the H1 heading share no significant words
 
@@ -217,7 +217,7 @@ The page title and the H1 heading share no significant words
 ---
 
 ### TITLE_MISSING
-**Severity:** 🔴 critical | **Impact:** 9 | **Effort:** 1 | **Fixability:** wp_fixable
+**Severity:** 🟡 warning | **Impact:** 6 | **Effort:** 1 | **Fixability:** wp_fixable
 
 **What it is**
 The title tag is the most important on-page SEO element. It tells search engines and users what the page is about and appears as the clickable headline in search results.
@@ -233,7 +233,7 @@ Add a <title> tag to the <head> section of your HTML. In WordPress, you can typi
 ---
 
 ### TITLE_TOO_LONG
-**Severity:** 🟡 warning | **Impact:** 4 | **Effort:** 1 | **Fixability:** wp_fixable
+**Severity:** 🔵 info | **Impact:** 2 | **Effort:** 1 | **Fixability:** wp_fixable
 
 Title over 60 characters
 
@@ -244,7 +244,7 @@ Title over 60 characters
 ---
 
 ### TITLE_TOO_SHORT
-**Severity:** 🟡 warning | **Impact:** 5 | **Effort:** 1 | **Fixability:** wp_fixable
+**Severity:** 🔵 info | **Impact:** 1 | **Effort:** 1 | **Fixability:** wp_fixable
 
 Title under 30 characters
 
@@ -255,7 +255,7 @@ Title under 30 characters
 ---
 
 ### TWITTER_CARD_MISSING
-**Severity:** 🔵 info | **Impact:** 3 | **Effort:** 1 | **Fixability:** content_edit
+**Severity:** 🔵 info | **Impact:** 1 | **Effort:** 1 | **Fixability:** content_edit
 
 Missing Twitter/X Card meta tag
 
@@ -273,7 +273,7 @@ H1 presence and uniqueness, heading hierarchy, empty headings.
 _4 codes in this category._
 
 ### H1_MISSING
-**Severity:** 🔴 critical | **Impact:** 6 | **Effort:** 1 | **Fixability:** content_edit
+**Severity:** 🟡 warning | **Impact:** 4 | **Effort:** 1 | **Fixability:** content_edit
 
 No H1 tag found on page
 
@@ -284,7 +284,7 @@ No H1 tag found on page
 ---
 
 ### H1_MULTIPLE
-**Severity:** 🟡 warning | **Impact:** 5 | **Effort:** 2 | **Fixability:** content_edit
+**Severity:** 🔵 info | **Impact:** 2 | **Effort:** 2 | **Fixability:** content_edit
 
 More than one H1 on the page
 
@@ -295,7 +295,7 @@ More than one H1 on the page
 ---
 
 ### HEADING_EMPTY
-**Severity:** 🟡 warning | **Impact:** 4 | **Effort:** 1 | **Fixability:** content_edit
+**Severity:** 🔵 info | **Impact:** 1 | **Effort:** 1 | **Fixability:** content_edit
 
 One or more heading tags have no text content
 
@@ -306,7 +306,7 @@ One or more heading tags have no text content
 ---
 
 ### HEADING_SKIP
-**Severity:** 🟡 warning | **Impact:** 4 | **Effort:** 3 | **Fixability:** content_edit
+**Severity:** 🔵 info | **Impact:** 1 | **Effort:** 3 | **Fixability:** content_edit
 
 Heading levels skip (e.g., H1 → H3)
 
@@ -324,7 +324,7 @@ Internal and external links returning 4xx/5xx, login redirects.
 _8 codes in this category._
 
 ### BROKEN_LINK_404
-**Severity:** 🔴 critical | **Impact:** 10 | **Effort:** 2 | **Fixability:** wp_fixable
+**Severity:** 🔵 info | **Impact:** 2 | **Effort:** 2 | **Fixability:** wp_fixable
 
 Link destination returns 404 Not Found
 
@@ -335,7 +335,7 @@ Link destination returns 404 Not Found
 ---
 
 ### BROKEN_LINK_410
-**Severity:** 🔴 critical | **Impact:** 8 | **Effort:** 2 | **Fixability:** wp_fixable
+**Severity:** 🔵 info | **Impact:** 2 | **Effort:** 2 | **Fixability:** wp_fixable
 
 Link destination returns 410 Gone
 
@@ -346,7 +346,7 @@ Link destination returns 410 Gone
 ---
 
 ### BROKEN_LINK_503
-**Severity:** 🟡 warning | **Impact:** 4 | **Effort:** 3
+**Severity:** 🔵 info | **Impact:** 1 | **Effort:** 3
 
 Link destination returns 503 — may be temporarily down or blocking automated checks
 
@@ -357,7 +357,7 @@ Link destination returns 503 — may be temporarily down or blocking automated c
 ---
 
 ### BROKEN_LINK_5XX
-**Severity:** 🔴 critical | **Impact:** 7 | **Effort:** 2 | **Fixability:** content_edit
+**Severity:** 🔵 info | **Impact:** 3 | **Effort:** 2 | **Fixability:** content_edit
 
 Link destination returns a server error
 
@@ -368,7 +368,7 @@ Link destination returns a server error
 ---
 
 ### EXTERNAL_LINK_SKIPPED
-**Severity:** 🔵 info | **Impact:** 2 | **Effort:** 1
+**Severity:** 🔵 info | **Impact:** 0 | **Effort:** 1
 
 Link not verified — social media platforms block automated checks
 
@@ -379,7 +379,7 @@ Link not verified — social media platforms block automated checks
 ---
 
 ### EXTERNAL_LINK_TIMEOUT
-**Severity:** 🔵 info | **Impact:** 3 | **Effort:** 1
+**Severity:** 🔵 info | **Impact:** 1 | **Effort:** 1
 
 External link did not respond — destination may be slow or unavailable
 
@@ -390,7 +390,7 @@ External link did not respond — destination may be slow or unavailable
 ---
 
 ### PLACEHOLDER_LINK
-**Severity:** 🔴 critical | **Impact:** 7 | **Effort:** 2
+**Severity:** 🔵 info | **Impact:** 2 | **Effort:** 2
 
 **What it is**
 A placeholder link is a styled link or button whose href is a stand-in ('#', 'javascript:void(0)') rather than a real URL. It often 'works' via JavaScript for human clicks but resolves to nothing for an automated follower.
@@ -406,7 +406,7 @@ Set the link's href to the actual target page. Reserve '#'/'javascript:void(0)' 
 ---
 
 ### WRONG_PLACEHOLDER_LINK
-**Severity:** 🔴 critical | **Impact:** 7 | **Effort:** 2 | **Fixability:** content_edit
+**Severity:** 🔵 info | **Impact:** 2 | **Effort:** 2 | **Fixability:** content_edit
 
 **What it is**
 A link whose destination is an obvious placeholder — example.com, example.org, localhost, 127.0.0.1, or a bare search-engine homepage used as filler — rather than the page it was meant to point to.
@@ -429,7 +429,7 @@ Redirect chains, loops, and per-status-code findings.
 _8 codes in this category._
 
 ### INTERNAL_REDIRECT_301
-**Severity:** 🔵 info | **Impact:** 4 | **Effort:** 1
+**Severity:** 🔵 info | **Impact:** 2 | **Effort:** 1
 
 Internal page URL redirects with a 301 — links should point to the final URL
 
@@ -440,7 +440,7 @@ Internal page URL redirects with a 301 — links should point to the final URL
 ---
 
 ### META_REFRESH_REDIRECT
-**Severity:** 🟡 warning | **Impact:** 5 | **Effort:** 2
+**Severity:** 🔵 info | **Impact:** 2 | **Effort:** 2
 
 Page uses a <meta http-equiv="refresh"> tag to redirect users
 
@@ -451,7 +451,7 @@ Page uses a <meta http-equiv="refresh"> tag to redirect users
 ---
 
 ### REDIRECT_301
-**Severity:** 🔵 info | **Impact:** 3 | **Effort:** 2
+**Severity:** 🔵 info | **Impact:** 2 | **Effort:** 2
 
 Page returns a permanent redirect
 
@@ -462,7 +462,7 @@ Page returns a permanent redirect
 ---
 
 ### REDIRECT_302
-**Severity:** 🟡 warning | **Impact:** 4 | **Effort:** 2
+**Severity:** 🔵 info | **Impact:** 2 | **Effort:** 2
 
 Page returns a temporary redirect
 
@@ -473,7 +473,7 @@ Page returns a temporary redirect
 ---
 
 ### REDIRECT_CASE_NORMALISE
-**Severity:** 🔵 info | **Impact:** 2 | **Effort:** 1
+**Severity:** 🔵 info | **Impact:** 0 | **Effort:** 1
 
 Redirect normalises URL case — your web server handles this automatically
 
@@ -484,7 +484,7 @@ Redirect normalises URL case — your web server handles this automatically
 ---
 
 ### REDIRECT_CHAIN
-**Severity:** 🟡 warning | **Impact:** 6 | **Effort:** 3
+**Severity:** 🔵 info | **Impact:** 2 | **Effort:** 3
 
 Page involves a multi-hop redirect chain
 
@@ -506,7 +506,7 @@ Redirect loop detected
 ---
 
 ### REDIRECT_TRAILING_SLASH
-**Severity:** 🔵 info | **Impact:** 2 | **Effort:** 1
+**Severity:** 🔵 info | **Impact:** 0 | **Effort:** 1
 
 Redirect adds or removes a trailing slash — your CMS handles this automatically
 
@@ -524,7 +524,7 @@ robots.txt blocks, noindex directives, thin content, orphan pages.
 _18 codes in this category._
 
 ### AMPHTML_BROKEN
-**Severity:** 🟡 warning | **Impact:** 4 | **Effort:** 3
+**Severity:** 🔵 info | **Impact:** 2 | **Effort:** 3
 
 Page declares an AMP version via <link rel="amphtml"> but the AMP URL is not reachable
 
@@ -535,7 +535,7 @@ Page declares an AMP version via <link rel="amphtml"> but the AMP URL is not rea
 ---
 
 ### CONTENT_STALE
-**Severity:** 🔵 info | **Impact:** 3 | **Effort:** 3 | **Fixability:** content_edit
+**Severity:** 🔵 info | **Impact:** 1 | **Effort:** 3 | **Fixability:** content_edit
 
 Page content has not been modified in over 12 months
 
@@ -546,7 +546,7 @@ Page content has not been modified in over 12 months
 ---
 
 ### HIGH_CRAWL_DEPTH
-**Severity:** 🟡 warning | **Impact:** 5 | **Effort:** 3
+**Severity:** 🟡 warning | **Impact:** 4 | **Effort:** 3
 
 Page is more than 4 clicks from the homepage
 
@@ -557,7 +557,7 @@ Page is more than 4 clicks from the homepage
 ---
 
 ### INTERNAL_NOFOLLOW
-**Severity:** 🟡 warning | **Impact:** 5 | **Effort:** 2
+**Severity:** 🟡 warning | **Impact:** 4 | **Effort:** 2
 
 Internal link carries rel="nofollow", which may prevent search engines from discovering linked pages
 
@@ -590,7 +590,7 @@ Page is missing the viewport meta tag
 ---
 
 ### NOINDEX_HEADER
-**Severity:** 🟡 warning | **Impact:** 10 | **Effort:** 2
+**Severity:** 🔴 critical | **Impact:** 10 | **Effort:** 2
 
 Page has a noindex HTTP header
 
@@ -601,7 +601,7 @@ Page has a noindex HTTP header
 ---
 
 ### NOINDEX_META
-**Severity:** 🟡 warning | **Impact:** 10 | **Effort:** 1 | **Fixability:** wp_fixable
+**Severity:** 🔴 critical | **Impact:** 10 | **Effort:** 1 | **Fixability:** wp_fixable
 
 Page has a noindex meta tag
 
@@ -612,7 +612,7 @@ Page has a noindex meta tag
 ---
 
 ### NOT_IN_SITEMAP
-**Severity:** 🔵 info | **Impact:** 4 | **Effort:** 1 | **Fixability:** wp_fixable
+**Severity:** 🔵 info | **Impact:** 2 | **Effort:** 1 | **Fixability:** wp_fixable
 
 Crawlable page not listed in sitemap
 
@@ -623,7 +623,7 @@ Crawlable page not listed in sitemap
 ---
 
 ### ORPHAN_PAGE
-**Severity:** 🟡 warning | **Impact:** 6 | **Effort:** 2 | **Fixability:** content_edit
+**Severity:** 🟡 warning | **Impact:** 4 | **Effort:** 2 | **Fixability:** content_edit
 
 Page has no internal links pointing to it — search engines may not discover it
 
@@ -634,7 +634,7 @@ Page has no internal links pointing to it — search engines may not discover it
 ---
 
 ### PAGE_SIZE_LARGE
-**Severity:** 🟡 warning | **Impact:** 5 | **Effort:** 3
+**Severity:** 🔵 info | **Impact:** 2 | **Effort:** 3
 
 HTML page response is unusually large — slower to load, especially on mobile connections
 
@@ -656,7 +656,7 @@ Page did not respond within the timeout period
 ---
 
 ### PAGINATION_LINKS_PRESENT
-**Severity:** 🔵 info | **Impact:** 2 | **Effort:** 2
+**Severity:** 🔵 info | **Impact:** 0 | **Effort:** 2
 
 Page declares rel="next" or rel="prev" pagination link elements
 
@@ -667,7 +667,7 @@ Page declares rel="next" or rel="prev" pagination link elements
 ---
 
 ### PARA_TOO_LONG
-**Severity:** 🔵 info | **Impact:** 4 | **Effort:** 2 | **Fixability:** content_edit
+**Severity:** 🔵 info | **Impact:** 1 | **Effort:** 2 | **Fixability:** content_edit
 
 One or more paragraphs exceed 150 words, making content harder to scan and extract
 
@@ -678,7 +678,7 @@ One or more paragraphs exceed 150 words, making content harder to scan and extra
 ---
 
 ### PDF_TOO_LARGE
-**Severity:** 🟡 warning | **Impact:** 4 | **Effort:** 2
+**Severity:** 🔵 info | **Impact:** 1 | **Effort:** 2
 
 PDF file exceeds 10 MB
 
@@ -689,7 +689,7 @@ PDF file exceeds 10 MB
 ---
 
 ### ROBOTS_BLOCKED
-**Severity:** 🟡 warning | **Impact:** 9 | **Effort:** 2
+**Severity:** 🔴 critical | **Impact:** 9 | **Effort:** 2
 
 Page blocked by robots.txt
 
@@ -700,7 +700,7 @@ Page blocked by robots.txt
 ---
 
 ### SCHEMA_MISSING
-**Severity:** 🔵 info | **Impact:** 5 | **Effort:** 2 | **Fixability:** wp_fixable
+**Severity:** 🟡 warning | **Impact:** 4 | **Effort:** 2 | **Fixability:** wp_fixable
 
 No structured data (schema markup) found on this page
 
@@ -711,7 +711,7 @@ No structured data (schema markup) found on this page
 ---
 
 ### THIN_CONTENT
-**Severity:** 🟡 warning | **Impact:** 6 | **Effort:** 3 | **Fixability:** content_edit
+**Severity:** 🟡 warning | **Impact:** 4 | **Effort:** 3 | **Fixability:** content_edit
 
 Page has fewer than 300 words of body content
 
@@ -729,7 +729,7 @@ Cross-page title / meta description / title+meta pair duplicates.
 _1 codes in this category._
 
 ### TITLE_META_DUPLICATE_PAIR
-**Severity:** 🟡 warning | **Impact:** 6 | **Effort:** 2 | **Fixability:** content_edit
+**Severity:** 🟡 warning | **Impact:** 4 | **Effort:** 2 | **Fixability:** content_edit
 
 Both title and meta description duplicated on another page
 
@@ -747,7 +747,7 @@ Sitemap presence and per-URL coverage.
 _1 codes in this category._
 
 ### SITEMAP_MISSING
-**Severity:** 🔵 info | **Impact:** 6 | **Effort:** 2
+**Severity:** 🔵 info | **Impact:** 2 | **Effort:** 2
 
 No sitemap found for this domain
 
@@ -765,7 +765,7 @@ HTTPS, HSTS, mixed content, unsafe cross-origin links.
 _6 codes in this category._
 
 ### HTTPS_REDIRECT_MISSING
-**Severity:** 🔴 critical | **Impact:** 9 | **Effort:** 2
+**Severity:** 🟡 warning | **Impact:** 6 | **Effort:** 2
 
 HTTP version of the site does not redirect to HTTPS
 
@@ -776,7 +776,7 @@ HTTP version of the site does not redirect to HTTPS
 ---
 
 ### HTTP_PAGE
-**Severity:** 🔴 critical | **Impact:** 9 | **Effort:** 2
+**Severity:** 🟡 warning | **Impact:** 6 | **Effort:** 2
 
 Page is served over HTTP, not HTTPS
 
@@ -787,7 +787,7 @@ Page is served over HTTP, not HTTPS
 ---
 
 ### MISSING_HSTS
-**Severity:** 🔵 info | **Impact:** 4 | **Effort:** 2
+**Severity:** 🔵 info | **Impact:** 1 | **Effort:** 2
 
 HTTPS page is missing the Strict-Transport-Security header
 
@@ -798,7 +798,7 @@ HTTPS page is missing the Strict-Transport-Security header
 ---
 
 ### MIXED_CONTENT
-**Severity:** 🟡 warning | **Impact:** 6 | **Effort:** 2
+**Severity:** 🟡 warning | **Impact:** 4 | **Effort:** 2
 
 HTTPS page loads resources over HTTP
 
@@ -809,7 +809,7 @@ HTTPS page loads resources over HTTP
 ---
 
 ### UNSAFE_CROSS_ORIGIN_LINK
-**Severity:** 🔵 info | **Impact:** 3 | **Effort:** 1
+**Severity:** 🔵 info | **Impact:** 0 | **Effort:** 1
 
 External link opens in a new tab without rel="noopener" or rel="noreferrer"
 
@@ -820,7 +820,7 @@ External link opens in a new tab without rel="noopener" or rel="noreferrer"
 ---
 
 ### WWW_CANONICALIZATION
-**Severity:** 🟡 warning | **Impact:** 5 | **Effort:** 2
+**Severity:** 🟡 warning | **Impact:** 4 | **Effort:** 2
 
 Both www and non-www versions of the site resolve without redirecting to each other
 
@@ -838,7 +838,7 @@ URL format: uppercase, spaces, underscores, length.
 _4 codes in this category._
 
 ### URL_HAS_SPACES
-**Severity:** 🟡 warning | **Impact:** 5 | **Effort:** 2 | **Fixability:** content_edit
+**Severity:** 🔵 info | **Impact:** 2 | **Effort:** 2 | **Fixability:** content_edit
 
 URL contains encoded spaces (%20)
 
@@ -860,7 +860,7 @@ URL path uses underscores instead of hyphens
 ---
 
 ### URL_TOO_LONG
-**Severity:** 🔵 info | **Impact:** 2 | **Effort:** 2 | **Fixability:** content_edit
+**Severity:** 🔵 info | **Impact:** 1 | **Effort:** 2 | **Fixability:** content_edit
 
 URL exceeds 200 characters
 
@@ -871,7 +871,7 @@ URL exceeds 200 characters
 ---
 
 ### URL_UPPERCASE
-**Severity:** 🟡 warning | **Impact:** 3 | **Effort:** 2 | **Fixability:** content_edit
+**Severity:** 🔵 info | **Impact:** 2 | **Effort:** 2 | **Fixability:** content_edit
 
 URL path contains uppercase characters
 
@@ -889,7 +889,7 @@ Image accessibility, performance, format, srcset, and content checks.
 _14 codes in this category._
 
 ### IMG_ALT_DUP_FILENAME
-**Severity:** 🟡 warning | **Impact:** 3 | **Effort:** 1 | **Fixability:** wp_fixable
+**Severity:** 🔵 info | **Impact:** 1 | **Effort:** 1 | **Fixability:** wp_fixable
 
 Image alt text matches the filename
 
@@ -900,7 +900,7 @@ Image alt text matches the filename
 ---
 
 ### IMG_ALT_GENERIC
-**Severity:** 🟡 warning | **Impact:** 4 | **Effort:** 1 | **Fixability:** wp_fixable
+**Severity:** 🔵 info | **Impact:** 2 | **Effort:** 1 | **Fixability:** wp_fixable
 
 Image alt text uses a generic term like 'image', 'photo', or 'picture'
 
@@ -911,7 +911,7 @@ Image alt text uses a generic term like 'image', 'photo', or 'picture'
 ---
 
 ### IMG_ALT_MISSING
-**Severity:** 🟡 warning | **Impact:** 5 | **Effort:** 2 | **Fixability:** wp_fixable
+**Severity:** 🔵 info | **Impact:** 3 | **Effort:** 2 | **Fixability:** wp_fixable
 
 One or more images are missing an alt attribute or have empty/blank alt text
 
@@ -922,7 +922,7 @@ One or more images are missing an alt attribute or have empty/blank alt text
 ---
 
 ### IMG_ALT_MISUSED
-**Severity:** 🟡 warning | **Impact:** 3 | **Effort:** 2 | **Fixability:** content_edit
+**Severity:** 🔵 info | **Impact:** 1 | **Effort:** 2 | **Fixability:** content_edit
 
 Alt text usage is incorrect for image type (decorative image has alt text)
 
@@ -933,7 +933,7 @@ Alt text usage is incorrect for image type (decorative image has alt text)
 ---
 
 ### IMG_ALT_TOO_LONG
-**Severity:** 🟡 warning | **Impact:** 2 | **Effort:** 1 | **Fixability:** wp_fixable
+**Severity:** 🔵 info | **Impact:** 1 | **Effort:** 1 | **Fixability:** wp_fixable
 
 Image alt text is too long (over 125 characters)
 
@@ -944,7 +944,7 @@ Image alt text is too long (over 125 characters)
 ---
 
 ### IMG_ALT_TOO_SHORT
-**Severity:** 🟡 warning | **Impact:** 3 | **Effort:** 1 | **Fixability:** wp_fixable
+**Severity:** 🔵 info | **Impact:** 1 | **Effort:** 1 | **Fixability:** wp_fixable
 
 Image alt text is too short (under 5 characters)
 
@@ -955,7 +955,7 @@ Image alt text is too short (under 5 characters)
 ---
 
 ### IMG_BROKEN
-**Severity:** 🔴 critical | **Impact:** 8 | **Effort:** 2
+**Severity:** 🟡 warning | **Impact:** 4 | **Effort:** 2
 
 Image src URL returns an error response (4xx/5xx)
 
@@ -966,7 +966,7 @@ Image src URL returns an error response (4xx/5xx)
 ---
 
 ### IMG_DUPLICATE_CONTENT
-**Severity:** 🔵 info | **Impact:** 2 | **Effort:** 2
+**Severity:** 🔵 info | **Impact:** 1 | **Effort:** 2
 
 Same image content used under multiple URLs
 
@@ -999,7 +999,7 @@ Large image lacks srcset for responsive delivery
 ---
 
 ### IMG_OVERSCALED
-**Severity:** 🟡 warning | **Impact:** 4 | **Effort:** 3 | **Fixability:** content_edit
+**Severity:** 🔵 info | **Impact:** 2 | **Effort:** 3 | **Fixability:** content_edit
 
 Image intrinsic size is more than 2x its display size (wasted bandwidth)
 
@@ -1010,7 +1010,7 @@ Image intrinsic size is more than 2x its display size (wasted bandwidth)
 ---
 
 ### IMG_OVERSIZED
-**Severity:** 🟡 warning | **Impact:** 5 | **Effort:** 2 | **Fixability:** content_edit
+**Severity:** 🔵 info | **Impact:** 2 | **Effort:** 2 | **Fixability:** content_edit
 
 Image file exceeds 200 KB
 
@@ -1021,7 +1021,7 @@ Image file exceeds 200 KB
 ---
 
 ### IMG_POOR_COMPRESSION
-**Severity:** 🟡 warning | **Impact:** 4 | **Effort:** 2 | **Fixability:** content_edit
+**Severity:** 🔵 info | **Impact:** 2 | **Effort:** 2 | **Fixability:** content_edit
 
 Image has poor compression efficiency (high bytes per pixel)
 
@@ -1032,7 +1032,7 @@ Image has poor compression efficiency (high bytes per pixel)
 ---
 
 ### IMG_SLOW_LOAD
-**Severity:** 🟡 warning | **Impact:** 4 | **Effort:** 2
+**Severity:** 🔵 info | **Impact:** 2 | **Effort:** 2
 
 Image takes too long to load (over 1 second)
 
@@ -1061,7 +1061,7 @@ robots.txt blocks all bots with User-agent: * / Disallow: /
 ---
 
 ### AI_BOT_DEPRECATED_DIRECTIVE
-**Severity:** 🟡 warning | **Confidence:** Established | **Impact:** 2 | **Effort:** 1
+**Severity:** 🔵 info | **Confidence:** Established | **Impact:** 2 | **Effort:** 1
 
 robots.txt references a deprecated AI bot user agent
 
@@ -1072,7 +1072,7 @@ robots.txt references a deprecated AI bot user agent
 ---
 
 ### AI_BOT_NO_AI_DIRECTIVES
-**Severity:** 🔵 info | **Confidence:** Reasonable proxy | **Impact:** 1 | **Effort:** 1
+**Severity:** 🔵 info | **Confidence:** Heuristic | **Impact:** 1 | **Effort:** 1
 
 robots.txt has no explicit directives for known AI bots
 
@@ -1083,7 +1083,7 @@ robots.txt has no explicit directives for known AI bots
 ---
 
 ### AI_BOT_SEARCH_BLOCKED
-**Severity:** 🟡 warning | **Confidence:** Established | **Impact:** 8 | **Effort:** 1
+**Severity:** 🔴 critical | **Confidence:** Established | **Impact:** 9 | **Effort:** 1
 
 A major AI search bot is disallowed in robots.txt
 
@@ -1116,7 +1116,7 @@ An AI training bot is disallowed in robots.txt
 ---
 
 ### AI_BOT_USER_FETCH_BLOCKED
-**Severity:** 🟡 warning | **Confidence:** Established | **Impact:** 4 | **Effort:** 1
+**Severity:** 🔵 info | **Confidence:** Established | **Impact:** 3 | **Effort:** 1
 
 An AI user-fetch bot is disallowed in robots.txt
 
@@ -1149,7 +1149,7 @@ Important content on this page is not in textual form — it is carried by image
 ---
 
 ### AI_HIGH_VALUE_UNCITED
-**Severity:** 🟡 warning | **Confidence:** Reasonable proxy | **Impact:** 4 | **Effort:** 2 | **Fixability:** content_edit
+**Severity:** 🔵 info | **Confidence:** Heuristic | **Impact:** 2 | **Effort:** 2 | **Fixability:** content_edit
 
 This healthy, content-rich page has zero AI citations despite recent data, suggesting an AI visibility gap.
 
@@ -1160,7 +1160,7 @@ This healthy, content-rich page has zero AI citations despite recent data, sugge
 ---
 
 ### AI_MAIN_CONTENT_LOW_RATIO
-**Severity:** 🟡 warning | **Confidence:** Heuristic | **Impact:** 2 | **Effort:** 1 | **Fixability:** content_edit
+**Severity:** 🔵 info | **Confidence:** Heuristic | **Impact:** 2 | **Effort:** 1 | **Fixability:** content_edit
 
 The main content area contains less than 40% of the page's visible text. Navigation, sidebar, and footer content dominates, making it harder for AI systems and readers to identify the primary content.
 
@@ -1171,7 +1171,7 @@ The main content area contains less than 40% of the page's visible text. Navigat
 ---
 
 ### AI_NO_VISUAL_COMPANION
-**Severity:** 🔵 info | **Confidence:** Reasonable proxy | **Impact:** 1 | **Effort:** 1 | **Fixability:** content_edit
+**Severity:** 🔵 info | **Confidence:** Heuristic | **Impact:** 1 | **Effort:** 1 | **Fixability:** content_edit
 
 A substantial text page (article/service/FAQ) has no images or video to support its content
 
@@ -1182,7 +1182,7 @@ A substantial text page (article/service/FAQ) has no images or video to support 
 ---
 
 ### AI_PREVIEW_BLOCKED_AT_BOT
-**Severity:** 🔵 info | **Confidence:** Established | **Impact:** 3 | **Effort:** 1
+**Severity:** 🟡 warning | **Confidence:** Established | **Impact:** 4 | **Effort:** 1
 
 An X-Robots-Tag directive specifically blocks an AI crawler (e.g. GPTBot, Google-Extended) from indexing this page
 
@@ -1193,7 +1193,7 @@ An X-Robots-Tag directive specifically blocks an AI crawler (e.g. GPTBot, Google
 ---
 
 ### AI_PREVIEW_SUPPRESSED
-**Severity:** 🔵 info | **Confidence:** Established | **Impact:** 3 | **Effort:** 1
+**Severity:** 🟡 warning | **Confidence:** Established | **Impact:** 4 | **Effort:** 1
 
 An X-Robots-Tag response header suppresses this page's search/AI preview (nosnippet or max-snippet:0)
 
@@ -1226,7 +1226,7 @@ Blog or article page has no author byline, rel=author, or JSON-LD author field
 ---
 
 ### BLOG_SECTIONS_MISSING
-**Severity:** 🟡 warning | **Confidence:** Heuristic | **Impact:** 5 | **Effort:** 2 | **Fixability:** content_edit
+**Severity:** 🔵 info | **Confidence:** Heuristic | **Impact:** 2 | **Effort:** 2 | **Fixability:** content_edit
 
 Blog or article page lacks sufficient heading structure for AI citation anchors
 
@@ -1237,7 +1237,7 @@ Blog or article page lacks sufficient heading structure for AI citation anchors
 ---
 
 ### CENTRAL_CLAIM_BURIED
-**Severity:** 🟡 warning | **Confidence:** Heuristic | **Impact:** 5 | **Effort:** 3 | **Fixability:** content_edit
+**Severity:** 🔵 info | **Confidence:** Heuristic | **Impact:** 2 | **Effort:** 3 | **Fixability:** content_edit
 
 The page's main claim or answer does not appear in the first 150 words
 
@@ -1248,7 +1248,7 @@ The page's main claim or answer does not appear in the first 150 words
 ---
 
 ### CHUNKS_NOT_SELF_CONTAINED
-**Severity:** 🟡 warning | **Confidence:** Heuristic | **Impact:** 5 | **Effort:** 4 | **Fixability:** content_edit
+**Severity:** 🔵 info | **Confidence:** Heuristic | **Impact:** 2 | **Effort:** 4 | **Fixability:** content_edit
 
 More than half of the page's H2/H3 sections are not understandable in isolation
 
@@ -1259,7 +1259,7 @@ More than half of the page's H2/H3 sections are not understandable in isolation
 ---
 
 ### CITATIONS_MISSING_SUBSTANTIAL_CONTENT
-**Severity:** 🔵 info | **Confidence:** Reasonable proxy | **Impact:** 3 | **Effort:** 2 | **Fixability:** content_edit
+**Severity:** 🔵 info | **Confidence:** Heuristic | **Impact:** 3 | **Effort:** 2 | **Fixability:** content_edit
 
 Page has 200+ words but no citations or source attribution
 
@@ -1270,7 +1270,7 @@ Page has 200+ words but no citations or source attribution
 ---
 
 ### CITATIONS_ORPHANED
-**Severity:** 🔵 info | **Confidence:** Heuristic | **Impact:** 2 | **Effort:** 1 | **Fixability:** content_edit
+**Severity:** 🔵 info | **Confidence:** Heuristic | **Impact:** 1 | **Effort:** 1 | **Fixability:** content_edit
 
 Page has citations without surrounding context
 
@@ -1281,7 +1281,7 @@ Page has citations without surrounding context
 ---
 
 ### CITATIONS_SOURCES_INACCESSIBLE
-**Severity:** 🟡 warning | **Confidence:** Heuristic | **Impact:** 4 | **Effort:** 3 | **Fixability:** content_edit
+**Severity:** 🔵 info | **Confidence:** Heuristic | **Impact:** 1 | **Effort:** 3 | **Fixability:** content_edit
 
 Page cites sources that are broken or inaccessible
 
@@ -1292,7 +1292,7 @@ Page cites sources that are broken or inaccessible
 ---
 
 ### CODE_BLOCK_MISSING_TECHNICAL
-**Severity:** 🟡 warning | **Confidence:** Heuristic | **Impact:** 4 | **Effort:** 2 | **Fixability:** content_edit
+**Severity:** 🔵 info | **Confidence:** Heuristic | **Impact:** 1 | **Effort:** 2 | **Fixability:** content_edit
 
 Technical how-to/guide page with numbered steps has no <pre> or <code> blocks
 
@@ -1303,7 +1303,7 @@ Technical how-to/guide page with numbered steps has no <pre> or <code> blocks
 ---
 
 ### COMPARISON_TABLE_MISSING
-**Severity:** 🔵 info | **Confidence:** Heuristic | **Impact:** 3 | **Effort:** 2 | **Fixability:** content_edit
+**Severity:** 🔵 info | **Confidence:** Heuristic | **Impact:** 1 | **Effort:** 2 | **Fixability:** content_edit
 
 Page contains comparison language ('vs', 'versus', 'compared to') but no table
 
@@ -1314,7 +1314,7 @@ Page contains comparison language ('vs', 'versus', 'compared to') but no table
 ---
 
 ### CONTACT_INFO_NOT_IN_HTML
-**Severity:** 🟡 warning | **Confidence:** Heuristic | **Impact:** 4 | **Effort:** 2 | **Fixability:** content_edit
+**Severity:** 🟡 warning | **Confidence:** Reasonable proxy | **Impact:** 4 | **Effort:** 2 | **Fixability:** content_edit
 
 **What it is**
 Contact information that exists on the page only as an image (e.g. a phone number in a banner graphic) or that is inserted by client-side JavaScript is invisible to anything reading the raw HTML.
@@ -1330,7 +1330,7 @@ Render contact details as plain HTML text in the footer or a contact block. Opti
 ---
 
 ### CONTENT_CLOAKING_DETECTED
-**Severity:** 🟡 warning | **Confidence:** Reasonable proxy | **Impact:** 8 | **Effort:** 4
+**Severity:** 🟡 warning | **Confidence:** Reasonable proxy | **Impact:** 6 | **Effort:** 4
 
 Rendered content appears to shift the page's topic versus raw HTML — possible cloaking
 
@@ -1341,7 +1341,7 @@ Rendered content appears to shift the page's topic versus raw HTML — possible 
 ---
 
 ### CONTENT_DATE_STALE_VISIBLE
-**Severity:** 🟡 warning | **Confidence:** Reasonable proxy | **Impact:** 4 | **Effort:** 2 | **Fixability:** content_edit
+**Severity:** 🔵 info | **Confidence:** Reasonable proxy | **Impact:** 2 | **Effort:** 2 | **Fixability:** content_edit
 
 Visible/declared modified date is old enough to read as stale for its page type
 
@@ -1352,7 +1352,7 @@ Visible/declared modified date is old enough to read as stale for its page type
 ---
 
 ### CONTENT_IMAGE_HEAVY
-**Severity:** 🔵 info | **Confidence:** Heuristic | **Impact:** 2 | **Effort:** 3 | **Fixability:** content_edit
+**Severity:** 🔵 info | **Confidence:** Heuristic | **Impact:** 1 | **Effort:** 3 | **Fixability:** content_edit
 
 Page has significantly more images than text sections
 
@@ -1363,7 +1363,7 @@ Page has significantly more images than text sections
 ---
 
 ### CONTENT_NOT_EXTRACTABLE_NO_TEXT
-**Severity:** 🟡 warning | **Confidence:** Reasonable proxy | **Impact:** 6 | **Effort:** 4 | **Fixability:** content_edit
+**Severity:** 🔴 critical | **Confidence:** Established | **Impact:** 9 | **Effort:** 4 | **Fixability:** content_edit
 
 Page has no visible text — only images, video, or interactive media
 
@@ -1374,7 +1374,7 @@ Page has no visible text — only images, video, or interactive media
 ---
 
 ### CONTENT_STAT_OUTDATED
-**Severity:** 🔵 info | **Confidence:** Heuristic | **Impact:** 2 | **Effort:** 1 | **Fixability:** content_edit
+**Severity:** 🔵 info | **Confidence:** Heuristic | **Impact:** 1 | **Effort:** 1 | **Fixability:** content_edit
 
 Body text references a year that is ≥24 months old without mentioning the current year.
 
@@ -1396,7 +1396,7 @@ Page has very little text (under 100 words)
 ---
 
 ### CONTENT_UNSTRUCTURED
-**Severity:** 🟡 warning | **Confidence:** Heuristic | **Impact:** 3 | **Effort:** 2 | **Fixability:** content_edit
+**Severity:** 🔵 info | **Confidence:** Reasonable proxy | **Impact:** 3 | **Effort:** 2 | **Fixability:** content_edit
 
 Page has substantial text but no heading structure
 
@@ -1407,7 +1407,7 @@ Page has substantial text but no heading structure
 ---
 
 ### CONVERSATIONAL_H2_MISSING
-**Severity:** 🔵 info | **Confidence:** Heuristic | **Impact:** 4 | **Effort:** 2 | **Fixability:** content_edit
+**Severity:** 🔵 info | **Confidence:** Heuristic | **Impact:** 1 | **Effort:** 2 | **Fixability:** content_edit
 
 H2 headings do not use conversational interrogatives (How, What, Why)
 
@@ -1429,7 +1429,7 @@ Blog or article page has no last-modified date in JSON-LD
 ---
 
 ### DATE_PUBLISHED_MISSING
-**Severity:** 🔵 info | **Confidence:** Reasonable proxy | **Impact:** 3 | **Effort:** 1
+**Severity:** 🔵 info | **Confidence:** Reasonable proxy | **Impact:** 2 | **Effort:** 1
 
 Blog or article page has no publication date in JSON-LD or meta tags
 
@@ -1440,7 +1440,7 @@ Blog or article page has no publication date in JSON-LD or meta tags
 ---
 
 ### DOCUMENT_PROPS_MISSING
-**Severity:** 🟡 warning | **Confidence:** Reasonable proxy | **Impact:** 4 | **Effort:** 2 | **Fixability:** content_edit
+**Severity:** 🔵 info | **Confidence:** Established | **Impact:** 2 | **Effort:** 2 | **Fixability:** content_edit
 
 PDF is missing internal Title or Subject metadata
 
@@ -1451,7 +1451,7 @@ PDF is missing internal Title or Subject metadata
 ---
 
 ### EXTERNAL_CITATIONS_LOW
-**Severity:** 🟡 warning | **Confidence:** Reasonable proxy | **Impact:** 5 | **Effort:** 2 | **Fixability:** content_edit
+**Severity:** 🔵 info | **Confidence:** Heuristic | **Impact:** 3 | **Effort:** 2 | **Fixability:** content_edit
 
 500+ word page has no outbound links to external authoritative sources in body text
 
@@ -1462,7 +1462,7 @@ PDF is missing internal Title or Subject metadata
 ---
 
 ### FAQ_SCHEMA_MISSING
-**Severity:** 🔵 info | **Confidence:** Reasonable proxy | **Impact:** 2 | **Effort:** 2
+**Severity:** 🔵 info | **Confidence:** Established | **Impact:** 2 | **Effort:** 2
 
 Page has an FAQ section but no FAQPage JSON-LD schema
 
@@ -1473,7 +1473,7 @@ Page has an FAQ section but no FAQPage JSON-LD schema
 ---
 
 ### FIRST_VIEWPORT_NO_ANSWER
-**Severity:** 🟡 warning | **Confidence:** Heuristic | **Impact:** 5 | **Effort:** 2 | **Fixability:** content_edit
+**Severity:** 🔵 info | **Confidence:** Heuristic | **Impact:** 2 | **Effort:** 2 | **Fixability:** content_edit
 
 First 200 words contain no direct answer signal (definition, TL;DR, summary phrase)
 
@@ -1484,7 +1484,7 @@ First 200 words contain no direct answer signal (definition, TL;DR, summary phra
 ---
 
 ### GEO_SUMMARY_BURIED
-**Severity:** 🟡 warning | **Confidence:** Heuristic | **Impact:** 5 | **Effort:** 3 | **Fixability:** content_edit
+**Severity:** 🔵 info | **Confidence:** Heuristic | **Impact:** 2 | **Effort:** 3 | **Fixability:** content_edit
 
 The first paragraph or list does not lead its H2 or H3 section — the core answer is pushed below images, media, or preamble
 
@@ -1506,7 +1506,7 @@ A JSON-LD block is present but missing @type or @context (invalid schema)
 ---
 
 ### JSON_LD_MISSING
-**Severity:** 🟡 warning | **Confidence:** Reasonable proxy | **Impact:** 7 | **Effort:** 2
+**Severity:** 🟡 warning | **Confidence:** Reasonable proxy | **Impact:** 4 | **Effort:** 2
 
 No JSON-LD structured data found on this indexable page
 
@@ -1517,7 +1517,7 @@ No JSON-LD structured data found on this indexable page
 ---
 
 ### JS_RENDERED_CONTENT_DIFFERS
-**Severity:** 🟡 warning | **Confidence:** Reasonable proxy | **Impact:** 6 | **Effort:** 4
+**Severity:** 🟡 warning | **Confidence:** Established | **Impact:** 6 | **Effort:** 4
 
 Rendered page contains substantially more content than raw HTML (>20% more tokens)
 
@@ -1528,7 +1528,7 @@ Rendered page contains substantially more content than raw HTML (>20% more token
 ---
 
 ### LINK_PROFILE_PROMOTIONAL
-**Severity:** 🔵 info | **Confidence:** Heuristic | **Impact:** 4 | **Effort:** 2 | **Fixability:** content_edit
+**Severity:** 🔵 info | **Confidence:** Heuristic | **Impact:** 1 | **Effort:** 2 | **Fixability:** content_edit
 
 Over 80% of outbound body-text links point to the same organisation's own domains
 
@@ -1539,7 +1539,7 @@ Over 80% of outbound body-text links point to the same organisation's own domain
 ---
 
 ### LLMS_TXT_INVALID
-**Severity:** 🟡 warning | **Confidence:** Heuristic | **Impact:** 2 | **Effort:** 2 | **Fixability:** content_edit
+**Severity:** 🔵 info | **Confidence:** Heuristic | **Impact:** 1 | **Effort:** 2 | **Fixability:** content_edit
 
 /llms.txt format is invalid
 
@@ -1550,7 +1550,7 @@ Over 80% of outbound body-text links point to the same organisation's own domain
 ---
 
 ### LLMS_TXT_MISSING
-**Severity:** 🔵 info | **Confidence:** Heuristic | **Impact:** 3 | **Effort:** 1 | **Fixability:** content_edit
+**Severity:** 🔵 info | **Confidence:** Heuristic | **Impact:** 1 | **Effort:** 1 | **Fixability:** content_edit
 
 No llms.txt found at root
 
@@ -1561,7 +1561,7 @@ No llms.txt found at root
 ---
 
 ### ORPHAN_CLAIM_TECHNICAL
-**Severity:** 🟡 warning | **Confidence:** Heuristic | **Impact:** 6 | **Effort:** 2 | **Fixability:** content_edit
+**Severity:** 🔵 info | **Confidence:** Heuristic | **Impact:** 3 | **Effort:** 2 | **Fixability:** content_edit
 
 Technical/how-to page has 3+ factual claims not paired with a source link or attribution
 
@@ -1572,7 +1572,7 @@ Technical/how-to page has 3+ factual claims not paired with a source link or att
 ---
 
 ### PROMOTIONAL_CONTENT_INTERRUPTS
-**Severity:** 🔵 info | **Confidence:** Heuristic | **Impact:** 3 | **Effort:** 3 | **Fixability:** content_edit
+**Severity:** 🔵 info | **Confidence:** Heuristic | **Impact:** 1 | **Effort:** 3 | **Fixability:** content_edit
 
 Mid-article sections classified as promotional interrupt the content flow
 
@@ -1583,7 +1583,7 @@ Mid-article sections classified as promotional interrupt the content flow
 ---
 
 ### QUERY_COVERAGE_WEAK
-**Severity:** 🟡 warning | **Confidence:** Heuristic | **Impact:** 5 | **Effort:** 2 | **Fixability:** content_edit
+**Severity:** 🔵 info | **Confidence:** Heuristic | **Impact:** 2 | **Effort:** 2 | **Fixability:** content_edit
 
 Page H1 topic terms are under-represented in the intro or section headings — AI retrieval systems may not associate this page with its target query
 
@@ -1594,7 +1594,7 @@ Page H1 topic terms are under-represented in the intro or section headings — A
 ---
 
 ### QUOTATIONS_MISSING
-**Severity:** 🟡 warning | **Confidence:** Heuristic | **Impact:** 4 | **Effort:** 2 | **Fixability:** content_edit
+**Severity:** 🔵 info | **Confidence:** Heuristic | **Impact:** 3 | **Effort:** 2 | **Fixability:** content_edit
 
 500+ word page contains no direct quotations from named sources
 
@@ -1605,7 +1605,7 @@ Page H1 topic terms are under-represented in the intro or section headings — A
 ---
 
 ### RAW_HTML_JS_DEPENDENT
-**Severity:** 🟡 warning | **Confidence:** Reasonable proxy | **Impact:** 6 | **Effort:** 3
+**Severity:** 🔴 critical | **Confidence:** Established | **Impact:** 9 | **Effort:** 3
 
 Page raw HTML is a JavaScript app shell with near-zero visible text
 
@@ -1616,7 +1616,7 @@ Page raw HTML is a JavaScript app shell with near-zero visible text
 ---
 
 ### SCHEMA_DEPRECATED_TYPE
-**Severity:** 🔵 info | **Confidence:** Reasonable proxy | **Impact:** 2 | **Effort:** 1 | **Fixability:** content_edit
+**Severity:** 🔵 info | **Confidence:** Established | **Impact:** 2 | **Effort:** 1 | **Fixability:** content_edit
 
 Page uses deprecated schema.org types
 
@@ -1627,7 +1627,7 @@ Page uses deprecated schema.org types
 ---
 
 ### SCHEMA_ORG_MISSING
-**Severity:** 🟡 warning | **Confidence:** Reasonable proxy | **Impact:** 5 | **Effort:** 2 | **Fixability:** wp_fixable
+**Severity:** 🟡 warning | **Confidence:** Reasonable proxy | **Impact:** 4 | **Effort:** 2 | **Fixability:** wp_fixable
 
 **What it is**
 Organization schema is the structured-data block that states who you are — name, logo, URL, social profiles, contact points. On the homepage it anchors your entire site's identity in the knowledge graph.
@@ -1643,7 +1643,7 @@ Add a <script type="application/ld+json"> Organization block to your homepage (T
 ---
 
 ### SCHEMA_TYPE_CONFLICT
-**Severity:** 🟡 warning | **Confidence:** Reasonable proxy | **Impact:** 3 | **Effort:** 2 | **Fixability:** content_edit
+**Severity:** 🔵 info | **Confidence:** Reasonable proxy | **Impact:** 2 | **Effort:** 2 | **Fixability:** content_edit
 
 Page declares multiple conflicting schema types
 
@@ -1654,7 +1654,7 @@ Page declares multiple conflicting schema types
 ---
 
 ### SCHEMA_TYPE_MISMATCH
-**Severity:** 🟡 warning | **Confidence:** Reasonable proxy | **Impact:** 4 | **Effort:** 2 | **Fixability:** content_edit
+**Severity:** 🔵 info | **Confidence:** Reasonable proxy | **Impact:** 2 | **Effort:** 2 | **Fixability:** content_edit
 
 Page schema type does not match inferred page type
 
@@ -1665,7 +1665,7 @@ Page schema type does not match inferred page type
 ---
 
 ### SCHEMA_VISIBLE_MISMATCH
-**Severity:** 🟡 warning | **Confidence:** Established | **Impact:** 5 | **Effort:** 2 | **Fixability:** content_edit
+**Severity:** 🟡 warning | **Confidence:** Established | **Impact:** 6 | **Effort:** 2 | **Fixability:** content_edit
 
 A value declared in JSON-LD structured data does not appear in the page's visible text
 
@@ -1676,7 +1676,7 @@ A value declared in JSON-LD structured data does not appear in the page's visibl
 ---
 
 ### SECTION_CROSS_REFERENCES
-**Severity:** 🟡 warning | **Confidence:** Heuristic | **Impact:** 6 | **Effort:** 2 | **Fixability:** content_edit
+**Severity:** 🔵 info | **Confidence:** Heuristic | **Impact:** 1 | **Effort:** 2 | **Fixability:** content_edit
 
 Page contains backward-reference phrases ('as mentioned above', 'as discussed earlier') that break section independence
 
@@ -1687,7 +1687,7 @@ Page contains backward-reference phrases ('as mentioned above', 'as discussed ea
 ---
 
 ### SECTION_VAGUE_OPENER
-**Severity:** 🟡 warning | **Confidence:** Heuristic | **Impact:** 5 | **Effort:** 2 | **Fixability:** content_edit
+**Severity:** 🔵 info | **Confidence:** Heuristic | **Impact:** 1 | **Effort:** 2 | **Fixability:** content_edit
 
 One or more H2/H3 sections begin with a vague demonstrative reference ('This method…', 'It allows…', 'These features…') instead of an explicit subject
 
@@ -1698,7 +1698,7 @@ One or more H2/H3 sections begin with a vague demonstrative reference ('This met
 ---
 
 ### SEMANTIC_DENSITY_LOW
-**Severity:** 🟡 warning | **Confidence:** Heuristic | **Impact:** 3 | **Effort:** 3
+**Severity:** 🔵 info | **Confidence:** Heuristic | **Impact:** 1 | **Effort:** 3
 
 Text-to-HTML ratio is below 10%
 
@@ -1709,7 +1709,7 @@ Text-to-HTML ratio is below 10%
 ---
 
 ### STATISTICS_COUNT_LOW
-**Severity:** 🟡 warning | **Confidence:** Heuristic | **Impact:** 5 | **Effort:** 2 | **Fixability:** content_edit
+**Severity:** 🔵 info | **Confidence:** Heuristic | **Impact:** 3 | **Effort:** 2 | **Fixability:** content_edit
 
 500+ word page contains no statistics (numbers paired with units, percentages, or dates)
 
@@ -1720,7 +1720,7 @@ Text-to-HTML ratio is below 10%
 ---
 
 ### STRUCTURED_ELEMENTS_LOW
-**Severity:** 🔵 info | **Confidence:** Heuristic | **Impact:** 3 | **Effort:** 2 | **Fixability:** content_edit
+**Severity:** 🔵 info | **Confidence:** Heuristic | **Impact:** 1 | **Effort:** 2 | **Fixability:** content_edit
 
 Page has very few structured elements (lists, tables, code blocks) relative to content length
 
@@ -1731,7 +1731,7 @@ Page has very few structured elements (lists, tables, code blocks) relative to c
 ---
 
 ### UA_CONTENT_DIFFERS
-**Severity:** 🟡 warning | **Confidence:** Reasonable proxy | **Impact:** 7 | **Effort:** 3
+**Severity:** 🟡 warning | **Confidence:** Reasonable proxy | **Impact:** 6 | **Effort:** 3
 
 AI crawler user agents (GPTBot, ClaudeBot) receive substantially less content than a browser
 
@@ -1747,7 +1747,7 @@ AI crawler user agents (GPTBot, ClaudeBot) receive substantially less content th
 _1 codes in this category._
 
 ### JS_DEPENDENT_NAVIGATION
-**Severity:** 🟡 warning | **Impact:** 5 | **Effort:** 3
+**Severity:** 🟡 warning | **Impact:** 6 | **Effort:** 3
 
 **What it is**
 A site's navigation menu should be real HTML links that are present the moment the page is delivered. When the menu is built entirely by JavaScript in the browser, the raw HTML an automated client receives has no links to follow.
@@ -1768,7 +1768,7 @@ Use server-side rendering or static-site generation so the <nav> contains real <
 _4 codes in this category._
 
 ### INTERACTIVE_NO_ACCESSIBLE_NAME
-**Severity:** 🟡 warning | **Impact:** 4 | **Effort:** 2
+**Severity:** 🔵 info | **Impact:** 1 | **Effort:** 2
 
 **What it is**
 An accessible name is the label an agent or screen reader announces for a control. A button with only an icon, or an input with no label, has no name.
@@ -1784,7 +1784,7 @@ Add visible text, an aria-label (e.g. aria-label="Search"), a <label for> for fo
 ---
 
 ### LANDMARK_MAIN_MISSING
-**Severity:** 🔵 info | **Impact:** 2 | **Effort:** 2
+**Severity:** 🔵 info | **Impact:** 1 | **Effort:** 2
 
 **What it is**
 The <main> landmark marks the principal content of a page, distinct from the header, navigation, sidebar, and footer.
@@ -1800,7 +1800,7 @@ Wrap your primary content in <main>…</main> (one per page). Most themes have a
 ---
 
 ### LANDMARK_NAV_MISSING
-**Severity:** 🔵 info | **Impact:** 2 | **Effort:** 2
+**Severity:** 🔵 info | **Impact:** 1 | **Effort:** 2
 
 **What it is**
 The <nav> landmark marks a block of navigation links. It tells structural readers 'these links are how you move around the site'.
@@ -1816,7 +1816,7 @@ Wrap your main menu in <nav>…</nav>. Add aria-label if you have more than one 
 ---
 
 ### NON_SEMANTIC_BUTTON
-**Severity:** 🟡 warning | **Impact:** 4 | **Effort:** 3
+**Severity:** 🔵 info | **Impact:** 1 | **Effort:** 3
 
 **What it is**
 Buttons and links should be real <button>/<a> elements. A <div> or <span> with a click handler looks clickable to a sighted mouse user but is invisible as a control to anything reading the page structurally.

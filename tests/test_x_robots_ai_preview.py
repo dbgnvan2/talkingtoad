@@ -114,16 +114,17 @@ class TestRegistryRegistration:
         assert _CATALOGUE["AI_PREVIEW_BLOCKED_AT_BOT"].category == "ai_readiness"
 
     def test_catalogue_severity(self):
-        assert _CATALOGUE["AI_PREVIEW_SUPPRESSED"].severity == "info"
-        assert _CATALOGUE["AI_PREVIEW_BLOCKED_AT_BOT"].severity == "info"
+        # R3: raised to impact 4 (GEO-relevant AI-answer suppression) → warning
+        assert _CATALOGUE["AI_PREVIEW_SUPPRESSED"].severity == "warning"
+        assert _CATALOGUE["AI_PREVIEW_BLOCKED_AT_BOT"].severity == "warning"
 
     def test_codes_in_scoring(self):
         assert "AI_PREVIEW_SUPPRESSED" in _ISSUE_SCORING
         assert "AI_PREVIEW_BLOCKED_AT_BOT" in _ISSUE_SCORING
 
     def test_scoring_values(self):
-        assert _ISSUE_SCORING["AI_PREVIEW_SUPPRESSED"] == (3, 1)
-        assert _ISSUE_SCORING["AI_PREVIEW_BLOCKED_AT_BOT"] == (3, 1)
+        assert _ISSUE_SCORING["AI_PREVIEW_SUPPRESSED"] == (4, 1)  # R3 override (GEO)
+        assert _ISSUE_SCORING["AI_PREVIEW_BLOCKED_AT_BOT"] == (4, 1)
 
     def test_codes_in_confidence(self):
         assert "AI_PREVIEW_SUPPRESSED" in _AI_READINESS_CONFIDENCE

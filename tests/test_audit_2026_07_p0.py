@@ -25,22 +25,21 @@ _PUBLIC_RESOLUTION = [
 ]
 
 
-# ── R2/R5: scoring-value migration locked in (impact, effort) ─────────────────
-_MIGRATED_SCORING = {
-    "BROKEN_LINK_5XX": (7, 2), "CANONICAL_EXTERNAL": (5, 3), "CONTENT_STALE": (3, 3),
-    "EXTERNAL_CITATIONS_LOW": (5, 2), "FAQ_SCHEMA_MISSING": (2, 2), "GEO_SUMMARY_BURIED": (5, 3),
-    "H1_MISSING": (6, 1), "H1_MULTIPLE": (5, 2), "LLMS_TXT_INVALID": (2, 2),
-    "LLMS_TXT_MISSING": (3, 1), "ORPHAN_PAGE": (6, 2), "QUERY_COVERAGE_WEAK": (5, 2),
-    "QUOTATIONS_MISSING": (4, 2), "REDIRECT_302": (4, 2), "SEMANTIC_DENSITY_LOW": (3, 3),
-    "STATISTICS_COUNT_LOW": (5, 2), "THIN_CONTENT": (6, 3), "URL_HAS_SPACES": (5, 2),
-    "URL_HAS_UNDERSCORES": (2, 2), "URL_TOO_LONG": (2, 2),
+# ── R2/R5: effort values from the Phase-4 migration (impacts superseded by R3) ─
+# The R2 IMPACT values were superseded by the R3 triangulated calibration
+# (see tests/test_r3_calibration.py, which asserts impact == derive_impact).
+# The R2 EFFORT changes are unaffected by R3 and are locked here.
+_MIGRATED_EFFORT = {
+    "CANONICAL_EXTERNAL": 3, "CONTENT_STALE": 3, "BROKEN_LINK_5XX": 2,
+    "ORPHAN_PAGE": 2, "THIN_CONTENT": 3, "URL_HAS_SPACES": 2,
+    "URL_HAS_UNDERSCORES": 2, "URL_TOO_LONG": 2,
 }
 
 
-@pytest.mark.parametrize("code,expected", sorted(_MIGRATED_SCORING.items()))
-def test_scoring_migration_applied(code, expected):
-    """The 20 evidence-based Phase-4 scoring changes are present in _ISSUE_SCORING."""
-    assert _ISSUE_SCORING[code] == expected
+@pytest.mark.parametrize("code,effort", sorted(_MIGRATED_EFFORT.items()))
+def test_effort_migration_applied(code, effort):
+    """The Phase-4 effort (scope-rubric) corrections remain in _ISSUE_SCORING."""
+    assert _ISSUE_SCORING[code][1] == effort
 
 
 def test_fixability_corrections_applied():
