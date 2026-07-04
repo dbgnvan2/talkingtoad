@@ -323,14 +323,9 @@ class TestCatalogueLiveness:
         "CITATIONS_MISSING_SUBSTANTIAL_CONTENT",
         "CITATIONS_ORPHANED",
 
-        # ── (c) Scored but UNWIRED — pending remediation R7 (Playwright) ──
-        # run_js_render_checks() has NO non-test caller and no make_issue for
-        # these exists anywhere in api/. They are computed as flags on
-        # JSRenderResult but never consumed into Issues. (The prior comment
-        # claimed "the engine consumes JSRenderResult" — it does not.)
-        "JS_RENDERED_CONTENT_DIFFERS",
-        "CONTENT_CLOAKING_DETECTED",
-        "UA_CONTENT_DIFFERS",
+        # ── (c) R7 WIRED — js_render_issues() (issue_checker.py) emits these
+        #    with literal make_issue when the engine consumes JSRenderResult
+        #    (engine step 7c, Playwright-gated), so they are NOT allowlisted. ──
 
         # ── (d) Not implemented — pending remediation R8 (LLM classifier) ──
         # Catalogue + help present; no static implementation exists yet:

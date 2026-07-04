@@ -180,6 +180,34 @@ def build_page_citations(page: "ParsedPage"):
                          has_footnotes=has_footnote, attribution_style=style)
 
 
+def js_render_issues(result) -> list:
+    """Map a js_renderer.JSRenderResult's flags to issues (audit R7).
+
+    Emits nothing when the renderer errored or was skipped (Playwright absent) —
+    a failed render must never be rendered as a finding.
+    """
+    out: list = []
+    if getattr(result, "error", None):
+        return out
+    if getattr(result, "js_rendered_content_differs", False):
+        out.append(make_issue("JS_RENDERED_CONTENT_DIFFERS", result.url, extra={
+            "added_token_ratio": result.added_token_ratio,
+            "raw_tokens": result.raw_token_count,
+            "rendered_tokens": result.rendered_token_count,
+        }))
+    if getattr(result, "content_cloaking_detected", False):
+        out.append(make_issue("CONTENT_CLOAKING_DETECTED", result.url, extra={
+            "topic_jaccard": result.topic_jaccard,
+        }))
+    if getattr(result, "ua_content_differs", False):
+        out.append(make_issue("UA_CONTENT_DIFFERS", result.url, extra={
+            "gptbot_tokens": result.gptbot_token_count,
+            "claudebot_tokens": result.claudebot_token_count,
+            "rendered_tokens": result.rendered_token_count,
+        }))
+    return out
+
+
 def citation_source_issues(pages: list, inaccessible_urls: set) -> list:
     """Post-crawl: emit CITATIONS_SOURCES_INACCESSIBLE for pages whose cited
     sources are inaccessible (audit R6). *inaccessible_urls* is precomputed via

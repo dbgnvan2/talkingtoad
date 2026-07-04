@@ -35,6 +35,14 @@ WORKDIR /app
 COPY requirements.txt /app/requirements.txt
 RUN pip install --upgrade pip && pip install -r requirements.txt
 
+# R7: Playwright + Chromium enable the JS-render / cloaking / UA-differ GEO
+# checks (api/services/js_renderer.py). Adds ~400MB (chromium + OS deps). The
+# renderer degrades gracefully when absent, so this layer is only required to
+# ENABLE those three checks in production; comment it out to keep the image
+# small if you don't need them.
+RUN pip install "playwright>=1.40,<2" \
+    && playwright install --with-deps chromium
+
 # Copy the application code. Keeping this last keeps the dep-install layer
 # cached between most builds.
 COPY api /app/api

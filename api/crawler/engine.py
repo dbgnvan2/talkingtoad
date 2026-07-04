@@ -892,6 +892,27 @@ async def run_crawl(
         except Exception as e:
             log.warning("citation_accessibility_error", extra={"error": str(e)})
 
+        # ── 7c. JS-render / cloaking checks (R7, Playwright-gated) ───────
+        # run_js_render_checks renders each page with Playwright and compares
+        # raw vs rendered vs AI-user-agent content. Expensive → gated on
+        # Playwright availability + ai_readiness enablement, capped per job.
+        # Degrades to a no-op (emits nothing) when Playwright is absent.
+        try:
+            from api.services.js_renderer import HAS_PLAYWRIGHT, run_js_render_checks
+            from api.crawler.issue_checker import js_render_issues
+            _render_cats = _enabled_categories(settings.enabled_analyses)
+            _render_on = _render_cats is None or "ai_readiness" in _render_cats
+            if HAS_PLAYWRIGHT and _render_on:
+                _JS_RENDER_CAP = 10
+                for p in [pg for pg in html_pages if getattr(pg, "is_indexable", True)][:_JS_RENDER_CAP]:
+                    try:
+                        render_result = await run_js_render_checks(p.url)
+                        all_issues.extend(js_render_issues(render_result))
+                    except Exception:
+                        continue  # one page's render failure must not abort the crawl
+        except Exception as e:
+            log.warning("js_render_error", extra={"error": str(e)})
+
         # ── 8. Apply analysis-toggle category filter ──────────────────────
         allowed = _enabled_categories(settings.enabled_analyses)
         if allowed is not None:
