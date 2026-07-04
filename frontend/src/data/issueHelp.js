@@ -30,7 +30,7 @@ const issueHelp = {
   TITLE_MISSING: {
     title: "Page title missing",
     category: "metadata",
-    severity: "critical",
+    severity: "warning",
     mission_impact: "Google doesn't know what to call this page in search results.",
     definition:
       "This page has no <title> tag in its HTML. Every web page should have a unique " +
@@ -68,7 +68,7 @@ const issueHelp = {
   TITLE_TOO_SHORT: {
     title: "Page title too short",
     category: "metadata",
-    severity: "warning",
+    severity: "info",
     definition:
       "The page title is fewer than 30 characters. Short titles often lack enough context " +
       "to be useful to visitors or search engines.",
@@ -85,7 +85,7 @@ const issueHelp = {
   TITLE_TOO_LONG: {
     title: "Page title too long",
     category: "metadata",
-    severity: "warning",
+    severity: "info",
     definition:
       "The page title exceeds 60 characters. Google typically displays around 50–60 " +
       "characters in search results before cutting the title off with an ellipsis (…).",
@@ -101,7 +101,7 @@ const issueHelp = {
   META_DESC_MISSING: {
     title: "Meta description missing",
     category: "metadata",
-    severity: "critical",
+    severity: "info",
     definition:
       "This page has no meta description tag. The meta description is the short paragraph " +
       "(typically 1–2 sentences) that appears below the page title in search engine results, " +
@@ -119,7 +119,7 @@ const issueHelp = {
   META_DESC_DUPLICATE: {
     title: "Duplicate meta description",
     category: "metadata",
-    severity: "warning",
+    severity: "info",
     definition:
       "The same meta description appears on two or more pages. Each page should have a " +
       "unique description that reflects its specific content.",
@@ -136,7 +136,7 @@ const issueHelp = {
   META_DESC_TOO_SHORT: {
     title: "Meta description too short",
     category: "metadata",
-    severity: "warning",
+    severity: "info",
     definition:
       "The meta description is fewer than 70 characters. Short descriptions leave valuable " +
       "space unused and provide limited context.",
@@ -153,7 +153,7 @@ const issueHelp = {
   META_DESC_TOO_LONG: {
     title: "Meta description too long",
     category: "metadata",
-    severity: "warning",
+    severity: "info",
     definition:
       "The meta description exceeds 160 characters. Search engines typically display around " +
       "155–160 characters before cutting the text off.",
@@ -336,7 +336,7 @@ const issueHelp = {
   AMPHTML_BROKEN: {
     title: "AMP version link is broken",
     category: "crawlability",
-    severity: "warning",
+    severity: "info",
     definition:
       "This page declares an AMP (Accelerated Mobile Pages) version via a " +
       "<link rel=\"amphtml\"> tag, but the AMP URL is not reachable — it returned a " +
@@ -358,7 +358,7 @@ const issueHelp = {
   H1_MISSING: {
     title: "H1 heading missing",
     category: "heading",
-    severity: "critical",
+    severity: "warning",
     definition:
       "This page has no H1 heading tag. An H1 is the main heading of a page — typically " +
       "the largest, most prominent text — and there should be exactly one on every page.",
@@ -375,7 +375,7 @@ const issueHelp = {
   H1_MULTIPLE: {
     title: "Multiple H1 headings",
     category: "heading",
-    severity: "warning",
+    severity: "info",
     definition:
       "This page has more than one H1 tag. Best practice is to use exactly one H1 per " +
       "page — the primary heading that introduces the main topic.",
@@ -391,7 +391,7 @@ const issueHelp = {
   HEADING_SKIP: {
     title: "Heading levels skipped",
     category: "heading",
-    severity: "warning",
+    severity: "info",
     definition:
       "The heading structure on this page skips one or more levels — for example, jumping " +
       "from H1 directly to H3 with no H2 in between, or from H2 to H4.",
@@ -409,7 +409,7 @@ const issueHelp = {
   HEADING_EMPTY: {
     title: "Empty heading tag",
     category: "heading",
-    severity: "warning",
+    severity: "info",
     mission_impact: "Screen readers announce an empty heading, confusing visitors who rely on assistive technology.",
     definition:
       "One or more heading tags (<h2>, <h3>, etc.) on this page contain no text. The tag " +
@@ -433,7 +433,7 @@ const issueHelp = {
   BROKEN_LINK_404: {
     title: "Broken link — page not found (404)",
     category: "broken_link",
-    severity: "critical",
+    severity: "info",
     mission_impact: "Visitors clicking this will see an error page instead of your content.",
     definition:
       "This link points to a page that doesn't exist. The server responded with a " +
@@ -454,7 +454,7 @@ const issueHelp = {
   BROKEN_LINK_410: {
     title: "Broken link — page permanently removed (410)",
     category: "broken_link",
-    severity: "critical",
+    severity: "info",
     definition:
       "This link points to a page that has been permanently and intentionally removed. " +
       "The server returned a '410 Gone' response, which explicitly signals that the content " +
@@ -471,7 +471,7 @@ const issueHelp = {
   BROKEN_LINK_5XX: {
     title: "Broken link — server error (5xx)",
     category: "broken_link",
-    severity: "critical",
+    severity: "info",
     definition:
       "The destination of this link is returning a server error — a 5xx status code such " +
       "as 500 Internal Server Error or 502 Bad Gateway. The server is responding but " +
@@ -488,7 +488,7 @@ const issueHelp = {
   BROKEN_LINK_503: {
     title: "Broken link — 503 Service Unavailable (may be bot protection)",
     category: "broken_link",
-    severity: "warning",
+    severity: "info",
     definition:
       "The destination of this link returned a 503 status code. This is often returned by " +
       "Cloudflare and other CDN providers when they detect automated requests, even when the " +
@@ -612,7 +612,7 @@ const issueHelp = {
   REDIRECT_302: {
     title: "Temporary redirect (302)",
     category: "redirect",
-    severity: "warning",
+    severity: "info",
     definition:
       "This URL responds with a 302 Temporary Redirect. A 302 is intended for genuinely " +
       "temporary moves — it signals to search engines that they should keep the original " +
@@ -630,7 +630,7 @@ const issueHelp = {
   REDIRECT_CHAIN: {
     title: "Redirect chain",
     category: "redirect",
-    severity: "warning",
+    severity: "info",
     definition:
       "This URL redirects to another URL which itself redirects again, creating a chain of " +
       "two or more hops before the visitor reaches the final destination (e.g., A → B → C).",
@@ -666,7 +666,7 @@ const issueHelp = {
   META_REFRESH_REDIRECT: {
     title: "Meta refresh redirect",
     category: "redirect",
-    severity: "warning",
+    severity: "info",
     definition:
       "This page uses an HTML meta tag to automatically redirect visitors to another page " +
       "after a short delay: <meta http-equiv=\"refresh\" content=\"0; url=https://newpage.com\">. " +
@@ -707,7 +707,7 @@ const issueHelp = {
   ROBOTS_BLOCKED: {
     title: "Blocked by robots.txt",
     category: "crawlability",
-    severity: "warning",
+    severity: "critical",
     definition:
       "Your site's robots.txt file contains a rule that prevents search engine crawlers " +
       "from accessing this page. The crawler found this URL by following links but cannot " +
@@ -726,7 +726,7 @@ const issueHelp = {
   NOINDEX_META: {
     title: "Noindex meta tag present",
     category: "crawlability",
-    severity: "warning",
+    severity: "critical",
     mission_impact: "You have a \"Do Not Disturb\" sign on this page; Google is ignoring it.",
     definition:
       "This page contains a meta robots tag instructing search engines not to include it " +
@@ -745,7 +745,7 @@ const issueHelp = {
   NOINDEX_HEADER: {
     title: "Noindex HTTP header present",
     category: "crawlability",
-    severity: "warning",
+    severity: "critical",
     definition:
       "The server is sending an HTTP response header (X-Robots-Tag: noindex) that instructs " +
       "search engines not to index this page. This has the same effect as a noindex meta " +
@@ -782,7 +782,7 @@ const issueHelp = {
   PDF_TOO_LARGE: {
     title: "PDF file too large",
     category: "crawlability",
-    severity: "warning",
+    severity: "info",
     definition:
       "A PDF linked from your site is larger than 5MB. This is detected from the " +
       "Content-Length HTTP header returned by the server.",
@@ -868,7 +868,7 @@ const issueHelp = {
   HTTP_PAGE: {
     title: "Page served over HTTP (not HTTPS)",
     category: "security",
-    severity: "critical",
+    severity: "warning",
     definition:
       "This page is served over HTTP rather than HTTPS. HTTP does not encrypt the " +
       "connection between the visitor's browser and your server, leaving data transmitted " +
@@ -973,7 +973,7 @@ const issueHelp = {
   URL_UPPERCASE: {
     title: "URL contains uppercase letters",
     category: "url_structure",
-    severity: "warning",
+    severity: "info",
     definition:
       "This URL contains uppercase letters in its path — for example, /About-Us instead " +
       "of /about-us. On most web servers, URLs are case-sensitive, meaning /About and " +
@@ -992,7 +992,7 @@ const issueHelp = {
   URL_HAS_SPACES: {
     title: "URL contains encoded spaces",
     category: "url_structure",
-    severity: "warning",
+    severity: "info",
     definition:
       "This URL contains spaces encoded as %20 in the path or query string. Spaces are " +
       "invalid in URLs and must be percent-encoded, but their presence indicates the URL " +
@@ -1051,7 +1051,7 @@ const issueHelp = {
   IMG_ALT_MISSING: {
     title: "Image missing or empty alt text",
     category: "image",
-    severity: "warning",
+    severity: "info",
     mission_impact: "People using screen readers cannot \"see\" what this image is about.",
     definition:
       "This image either has no alt attribute or has an empty/blank alt attribute. " +
@@ -1070,7 +1070,7 @@ const issueHelp = {
   IMG_OVERSIZED: {
     title: "Image file too large",
     category: "image",
-    severity: "warning",
+    severity: "info",
     definition:
       "This image has a file size exceeding 200KB as reported by the server's " +
       "Content-Length header. Large images are one of the most common causes of slow page " +
@@ -1144,7 +1144,7 @@ const issueHelp = {
   SCHEMA_MISSING: {
     title: "No structured data (schema markup) on this page",
     category: "crawlability",
-    severity: "info",
+    severity: "warning",
     definition:
       "This page contains no JSON-LD or microdata structured data markup. Schema markup is a " +
       "standardised vocabulary that helps search engines understand what your content is about " +
@@ -1186,7 +1186,7 @@ const issueHelp = {
   IMG_BROKEN: {
     title: "Broken image",
     category: "image",
-    severity: "critical",
+    severity: "warning",
     mission_impact: "Visitors see a broken image icon instead of your photo or graphic.",
     definition:
       "One or more images on this page have a src URL that returns an error (404 Not Found or " +
@@ -1205,7 +1205,7 @@ const issueHelp = {
   IMG_ALT_TOO_SHORT: {
     title: "Image alt text too short",
     category: "image",
-    severity: "warning",
+    severity: "info",
     definition:
       "This image has alt text, but it's fewer than 5 characters — too brief to meaningfully " +
       "describe the image content. Examples include single words like 'team' or 'logo'.",
@@ -1240,7 +1240,7 @@ const issueHelp = {
   IMG_ALT_GENERIC: {
     title: "Image has generic alt text",
     category: "image",
-    severity: "warning",
+    severity: "info",
     definition:
       "The alt text for this image is a generic placeholder word like 'image', 'photo', " +
       "'picture', 'icon', or 'graphic'. These terms describe what the element is, not what " +
@@ -1258,7 +1258,7 @@ const issueHelp = {
   IMG_ALT_DUP_FILENAME: {
     title: "Alt text duplicates filename",
     category: "image",
-    severity: "warning",
+    severity: "info",
     definition:
       "The alt text for this image is identical (or nearly identical) to its filename. Examples " +
       "include 'DSC_0042' or 'hero-banner-v2'. Filenames rarely describe image content meaningfully.",
@@ -1293,7 +1293,7 @@ const issueHelp = {
   IMG_SLOW_LOAD: {
     title: "Image slow to load",
     category: "image",
-    severity: "warning",
+    severity: "info",
     definition:
       "This image took more than 1 second to download. Slow-loading images can significantly " +
       "delay page rendering and hurt the overall user experience.",
@@ -1310,7 +1310,7 @@ const issueHelp = {
   IMG_OVERSCALED: {
     title: "Image displayed much smaller than actual size",
     category: "image",
-    severity: "warning",
+    severity: "info",
     definition:
       "This image's intrinsic dimensions (width/height in pixels) are more than twice the size " +
       "at which it's displayed on the page. For example, a 2000px wide image displayed at " +
@@ -1399,7 +1399,7 @@ const issueHelp = {
   LINK_EMPTY_ANCHOR: {
     title: "Link has no text",
     category: "metadata",
-    severity: "warning",
+    severity: "info",
     definition:
       "One or more links on this page have no visible text inside them — the <a> tag is empty " +
       "or contains only an image without an alt attribute. Screen readers announce these as " +
@@ -1418,7 +1418,7 @@ const issueHelp = {
   ANCHOR_TEXT_GENERIC: {
     title: "Non-descriptive link text",
     category: "metadata",
-    severity: "warning",
+    severity: "info",
     mission_impact: "Search engines can't tell where your links go, and screen reader users hear unhelpful 'click here' text.",
     definition:
       "One or more links on this page use generic text like 'click here', 'read more', " +
@@ -1456,7 +1456,7 @@ const issueHelp = {
   PAGE_SIZE_LARGE: {
     title: "Page is too large",
     category: "crawlability",
-    severity: "warning",
+    severity: "info",
     definition:
       "The HTML response for this page exceeds 150 KB. This is the raw size of the HTML " +
       "document itself — not counting images, scripts, or stylesheets loaded separately. " +
@@ -1481,7 +1481,7 @@ const issueHelp = {
   LANG_MISSING: {
     title: "No language declared",
     category: "metadata",
-    severity: "warning",
+    severity: "info",
     definition:
       "The page's <html> element is missing a lang attribute (e.g. lang=\"en\"). " +
       "This attribute tells browsers, screen readers, and search engines what language " +
@@ -1499,7 +1499,7 @@ const issueHelp = {
   TITLE_H1_MISMATCH: {
     title: "Title and heading disagree",
     category: "metadata",
-    severity: "warning",
+    severity: "info",
     definition:
       "The page's <title> tag and its H1 heading share no significant words. " +
       "While they don't need to be identical, both should describe the same topic.",
@@ -1517,7 +1517,7 @@ const issueHelp = {
   HTTPS_REDIRECT_MISSING: {
     title: "HTTP not redirected to HTTPS",
     category: "security",
-    severity: "critical",
+    severity: "warning",
     definition:
       "When someone visits your site's http:// address (without the 's'), they are not " +
       "automatically redirected to the secure https:// version. Both addresses currently " +
@@ -1577,7 +1577,7 @@ const issueHelp = {
   LLMS_TXT_INVALID: {
     title: "Invalid AI instruction file",
     category: "ai_readiness",
-    severity: "warning",
+    severity: "info",
     definition:
       "Your /llms.txt file exists but does not follow the standard format. It may " +
       "have the wrong MIME type (not text/plain), be missing required Markdown " +
@@ -1596,7 +1596,7 @@ const issueHelp = {
   SEMANTIC_DENSITY_LOW: {
     title: "High code-to-text ratio",
     category: "ai_readiness",
-    severity: "warning",
+    severity: "info",
     definition:
       "This page has a text-to-HTML ratio of less than 10%. This means the actual " +
       "readable content is dwarfed by the underlying HTML code (scripts, styles, " +
@@ -1614,7 +1614,7 @@ const issueHelp = {
   DOCUMENT_PROPS_MISSING: {
     title: "PDF missing metadata",
     category: "ai_readiness",
-    severity: "warning",
+    severity: "info",
     definition:
       "This PDF document is missing internal 'Title' or 'Subject' properties in its " +
       "metadata. You can view these properties in any PDF reader under File → Properties.",
@@ -1668,7 +1668,7 @@ const issueHelp = {
   BLOG_SECTIONS_MISSING: {
     title: "No section headings for AI citation",
     category: "ai_readiness",
-    severity: "warning",
+    severity: "info",
     definition:
       "This blog or article page has 500+ words but fewer than 3 H2/H3 section headings. " +
       "AI engines like Google AI Overviews, Perplexity, and ChatGPT use headings as citation " +
@@ -1689,7 +1689,7 @@ const issueHelp = {
   AI_BOT_SEARCH_BLOCKED: {
     title: "AI search bot blocked",
     category: "ai_readiness",
-    severity: "warning",
+    severity: "critical",
     definition:
       "Your robots.txt disallows a major AI search bot (OAI-SearchBot from OpenAI, " +
       "Claude-SearchBot from Anthropic, or PerplexityBot). This bot enables ChatGPT, " +
@@ -1729,7 +1729,7 @@ const issueHelp = {
   AI_BOT_USER_FETCH_BLOCKED: {
     title: "AI user-fetch bot blocked",
     category: "ai_readiness",
-    severity: "warning",
+    severity: "info",
     definition:
       "Your robots.txt disallows a user-fetch bot (ChatGPT-User, Claude-User, Perplexity-User) — " +
       "the agents that fetch a page when a person asks an AI assistant about it.",
@@ -1750,7 +1750,7 @@ const issueHelp = {
   AI_BOT_DEPRECATED_DIRECTIVE: {
     title: "Deprecated AI bot name",
     category: "ai_readiness",
-    severity: "warning",
+    severity: "info",
     definition:
       "Your robots.txt references a deprecated AI bot user agent (anthropic-ai or claude-web). " +
       "Anthropic retired these in July 2024 in favour of the current ClaudeBot / Claude-SearchBot / Claude-User architecture.",
@@ -1834,7 +1834,7 @@ const issueHelp = {
   SCHEMA_TYPE_MISMATCH: {
     title: "Schema type doesn't match page content",
     category: "ai_readiness",
-    severity: "warning",
+    severity: "info",
     definition:
       "This page has JSON-LD schema markup, but the schema type (@type) doesn't match the " +
       "page's actual content type. For example, a blog post marked as a 'Product', or a team " +
@@ -1903,7 +1903,7 @@ const issueHelp = {
   SCHEMA_TYPE_CONFLICT: {
     title: "Multiple conflicting schema types",
     category: "ai_readiness",
-    severity: "warning",
+    severity: "info",
     definition:
       "This page declares multiple schema types (@type values) that are semantically " +
       "incompatible or contradictory — for example, marking the same content as both " +
@@ -1956,7 +1956,7 @@ const issueHelp = {
   AI_PREVIEW_SUPPRESSED: {
     title: "AI preview suppressed",
     category: "ai_readiness",
-    severity: "info",
+    severity: "warning",
     confidence: "Established",
     definition:
       "The page uses a directive (nosnippet or max-snippet:0) that prevents AI engines " +
@@ -1980,7 +1980,7 @@ const issueHelp = {
   AI_PREVIEW_BLOCKED_AT_BOT: {
     title: "AI crawler blocked",
     category: "ai_readiness",
-    severity: "info",
+    severity: "warning",
     confidence: "Established",
     definition:
       "The page blocks specific AI crawlers (e.g., GPTBot, Google-Extended) via X-Robots-Tag, " +
@@ -2037,7 +2037,7 @@ const issueHelp = {
   AI_MAIN_CONTENT_LOW_RATIO: {
     title: "Low main content ratio",
     category: "ai_readiness",
-    severity: "warning",
+    severity: "info",
     confidence: "Heuristic",
     definition:
       "The main content area contains less than 40% of the page's visible text. " +
@@ -2068,7 +2068,7 @@ const issueHelp = {
   CONTENT_NOT_EXTRACTABLE_NO_TEXT: {
     title: "No text content",
     category: "ai_readiness",
-    severity: "warning",
+    severity: "critical",
     definition:
       "This page has little or no visible text content. It may be image-only, video-only, " +
       "or based on interactive media (JavaScript canvas, Flash, etc.). AI systems cannot " +
@@ -2087,7 +2087,7 @@ const issueHelp = {
   CONTENT_THIN: {
     title: "Very low word count",
     category: "ai_readiness",
-    severity: "info",
+    severity: "warning",
     definition:
       "This page has fewer than 100 words of text content. While brief pages can serve valid " +
       "purposes (navigation, landing pages, contact forms), they don't contain enough information " +
@@ -2178,7 +2178,7 @@ const issueHelp = {
   CITATIONS_SOURCES_INACCESSIBLE: {
     title: "Inaccessible sources",
     category: "ai_readiness",
-    severity: "warning",
+    severity: "info",
     definition:
       "This page cites sources that are no longer accessible: broken links (404 errors), paywalls, robots.txt " +
       "blocks, or deleted content. Readers and AI systems cannot verify these citations.",
@@ -2195,7 +2195,7 @@ const issueHelp = {
   STATISTICS_COUNT_LOW: {
     title: "No statistics",
     category: "ai_readiness",
-    severity: "warning",
+    severity: "info",
     confidence: "Empirical",
     definition:
       "This 500+ word page contains no statistics — no numbers paired with units, percentages, dates, or counts. " +
@@ -2211,7 +2211,7 @@ const issueHelp = {
   EXTERNAL_CITATIONS_LOW: {
     title: "No external citations",
     category: "ai_readiness",
-    severity: "warning",
+    severity: "info",
     confidence: "Empirical",
     definition:
       "This 500+ word page has no outbound links to external authoritative sources in body text. An external citation " +
@@ -2227,7 +2227,7 @@ const issueHelp = {
   QUOTATIONS_MISSING: {
     title: "No expert quotations",
     category: "ai_readiness",
-    severity: "warning",
+    severity: "info",
     confidence: "Empirical",
     definition:
       "This 500+ word page contains no direct quotations from named sources — no blockquotes and no attribution " +
@@ -2243,7 +2243,7 @@ const issueHelp = {
   ORPHAN_CLAIM_TECHNICAL: {
     title: "Unsourced technical claims",
     category: "ai_readiness",
-    severity: "warning",
+    severity: "info",
     confidence: "Empirical",
     definition:
       "This technical or how-to page has 3 or more factual claims (specific capabilities, numbers, or procedures) " +
@@ -2260,7 +2260,7 @@ const issueHelp = {
   RAW_HTML_JS_DEPENDENT: {
     title: "JS-only content (no SSR)",
     category: "ai_readiness",
-    severity: "warning",
+    severity: "critical",
     confidence: "Mechanistic",
     definition:
       "The raw HTML for this page is a JavaScript app shell — a nearly empty container like <div id='root'> " +
@@ -2324,7 +2324,7 @@ const issueHelp = {
   FIRST_VIEWPORT_NO_ANSWER: {
     title: "No lead answer",
     category: "ai_readiness",
-    severity: "warning",
+    severity: "info",
     confidence: "Mechanistic",
     definition:
       "The first 150 words of this page contain no direct answer signal — no definition ('X is...'), " +
@@ -2386,7 +2386,7 @@ const issueHelp = {
   CODE_BLOCK_MISSING_TECHNICAL: {
     title: "No code blocks in technical guide",
     category: "ai_readiness",
-    severity: "warning",
+    severity: "info",
     confidence: "Mechanistic",
     definition:
       "This technical how-to or guide page has numbered steps but no <pre> or <code> blocks.",
@@ -2415,7 +2415,7 @@ const issueHelp = {
   CHUNKS_NOT_SELF_CONTAINED: {
     title: "Sections lack context",
     category: "ai_readiness",
-    severity: "warning",
+    severity: "info",
     confidence: "Mechanistic",
     definition:
       "More than half of this page's H2/H3 sections are not understandable when read in isolation.",
@@ -2429,7 +2429,7 @@ const issueHelp = {
   CENTRAL_CLAIM_BURIED: {
     title: "Main point buried",
     category: "ai_readiness",
-    severity: "warning",
+    severity: "info",
     confidence: "Mechanistic",
     definition:
       "The central claim or answer of this page does not appear in the first 150 words.",
@@ -2443,7 +2443,7 @@ const issueHelp = {
   GEO_SUMMARY_BURIED: {
     title: "Answer buried under H2/H3",
     category: "ai_readiness",
-    severity: "warning",
+    severity: "info",
     confidence: "Heuristic",
     definition:
       "Under one or more H2 or H3 headings on this page, the first substantive content node " +
@@ -2545,7 +2545,7 @@ const issueHelp = {
   QUERY_COVERAGE_WEAK: {
     title: "Weak Query Coverage",
     category: "ai_readiness",
-    severity: "warning",
+    severity: "info",
     confidence: "Mechanistic",
     definition:
       "The page's H1 topic terms are under-represented in the first 200 words or absent from section headings. AI retrieval systems score pages by how closely the content matches the user's query — if your primary topic language doesn't appear where AI systems look first, the page may be skipped.",
@@ -2558,7 +2558,7 @@ const issueHelp = {
   SECTION_VAGUE_OPENER: {
     title: "Vague Section Openers",
     category: "ai_readiness",
-    severity: "warning",
+    severity: "info",
     confidence: "Mechanistic",
     definition:
       "One or more H2/H3 sections begin with a vague demonstrative reference ('This method…', 'It allows…', 'These features…') instead of naming the subject explicitly. AI systems extract sections as independent passages — a section that opens with 'This approach' cannot be understood without the surrounding context.",
@@ -2571,7 +2571,7 @@ const issueHelp = {
   SECTION_CROSS_REFERENCES: {
     title: "Section Back-References",
     category: "ai_readiness",
-    severity: "warning",
+    severity: "info",
     confidence: "Mechanistic",
     definition:
       "The page contains backward-reference phrases such as 'as mentioned above', 'as discussed earlier', or 'the above approach'. These break section independence — a reader (or AI system) seeing only that passage cannot understand it without the earlier content.",
@@ -2601,7 +2601,7 @@ const issueHelp = {
   CONTENT_DATE_STALE_VISIBLE: {
     title: "Stale visible date",
     category: "ai_readiness",
-    severity: "warning",
+    severity: "info",
     confidence: "Reasonable proxy",
     definition:
       "The visible/declared modified date on this page is old enough that it may appear " +
@@ -2676,7 +2676,7 @@ const issueHelp = {
   AI_HIGH_VALUE_UNCITED: {
     title: "High-value page not cited by AI",
     category: "ai_readiness",
-    severity: "warning",
+    severity: "info",
     confidence: "Reasonable proxy",
     definition:
       "This healthy, content-rich page has zero AI citations despite recent monitoring data, " +
@@ -2736,7 +2736,7 @@ const issueHelp = {
   NON_SEMANTIC_BUTTON: {
     title: "Fake button (div/span)",
     category: "semantic_html",
-    severity: "warning",
+    severity: "info",
     definition:
       "A clickable control on the page is built from a <div> or <span> that carries a click " +
       "handler (or a button-style class plus tabindex) but has no interactive ARIA role. " +
@@ -2805,7 +2805,7 @@ const issueHelp = {
   INTERACTIVE_NO_ACCESSIBLE_NAME: {
     title: "Unlabelled control",
     category: "semantic_html",
-    severity: "warning",
+    severity: "info",
     definition:
       "An interactive element — a <button> or a text-style form field — has no accessible " +
       "name: no visible text, aria-label, title, associated <label>, or placeholder. " +
@@ -2831,7 +2831,7 @@ const issueHelp = {
   PLACEHOLDER_LINK: {
     title: "Dead call-to-action link",
     category: "broken_link",
-    severity: "critical",
+    severity: "info",
     definition:
       "A navigational call-to-action links nowhere — its href is \"#\" or " +
       "\"javascript:void(0)\". The check only flags links that read as CTAs (a button class " +
@@ -2855,7 +2855,7 @@ const issueHelp = {
   WRONG_PLACEHOLDER_LINK: {
     title: "Link to placeholder domain",
     category: "broken_link",
-    severity: "critical",
+    severity: "info",
     definition:
       "A link points at an obvious placeholder destination — example.com, example.org, " +
       "localhost, 127.0.0.1, yourdomain.com, or a bare search-engine homepage used as filler " +

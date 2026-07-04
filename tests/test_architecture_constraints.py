@@ -331,17 +331,57 @@ class TestIssueCodeParity:
     """
 
     @staticmethod
+    def _issue_help_path() -> str:
+        project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        return os.path.join(project_root, "frontend", "src", "data", "issueHelp.js")
+
+    @staticmethod
     def _parse_issue_help_codes() -> set[str]:
         """Extract issue code keys from frontend/src/data/issueHelp.js."""
-        project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        js_path = os.path.join(
-            project_root, "frontend", "src", "data", "issueHelp.js"
-        )
-        with open(js_path) as f:
+        with open(TestIssueCodeParity._issue_help_path()) as f:
             content = f.read()
         # Match patterns like "  CODE_NAME: {" at the start of a line
         codes = re.findall(r"^\s+([A-Z][A-Z0-9_]+):\s*\{", content, re.MULTILINE)
         return set(codes)
+
+    @staticmethod
+    def _parse_issue_help_severities() -> dict[str, str]:
+        """Map each issueHelp.js code to its first ``severity:`` value."""
+        code_re = re.compile(r"^  ([A-Z][A-Z0-9_]+):\s*\{")
+        sev_re = re.compile(r'^\s*severity:\s*"(\w+)"')
+        out: dict[str, str] = {}
+        code = None
+        with open(TestIssueCodeParity._issue_help_path()) as f:
+            for line in f:
+                m = code_re.match(line)
+                if m:
+                    code = m.group(1)
+                    continue
+                s = sev_re.match(line)
+                if s and code and code not in out:
+                    out[code] = s.group(1)
+        return out
+
+    def test_frontend_help_severity_matches_catalogue(self):
+        """issueHelp.js per-code `severity:` labels must equal the backend
+        _CATALOGUE severity (which R3 derives from impact). The help panel
+        renders help.severity via SeverityBadge (ImageAnalysisPanel,
+        AIReadinessPanel), so a stale label shows the wrong badge.
+        """
+        from api.crawler.issue_checker import _CATALOGUE
+
+        help_sev = self._parse_issue_help_severities()
+        drift = {
+            code: (help_sev[code], _CATALOGUE[code].severity)
+            for code in help_sev
+            if code in _CATALOGUE and help_sev[code] != _CATALOGUE[code].severity
+        }
+        assert not drift, (
+            "issueHelp.js severity labels are out of sync with _CATALOGUE "
+            "(help shows first, catalogue second):\n"
+            + "\n".join(f"  {c}: {h} != {b}" for c, (h, b) in sorted(drift.items()))
+            + "\nRe-sync issueHelp.js severities to severity_from_impact / _CATALOGUE."
+        )
 
     def test_every_frontend_code_exists_in_catalogue(self):
         """Every code in issueHelp.js must have a matching _CATALOGUE entry."""
