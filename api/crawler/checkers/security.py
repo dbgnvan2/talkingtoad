@@ -36,10 +36,17 @@ def _check_security(
                                         "https_url": "https://" + url[7:]}))
         return  # HTTPS-only checks below don't apply
 
-    # MIXED_CONTENT
+    # MIXED_CONTENT — report the active/passive breakdown (R2.x #2). Active
+    # resources (script/iframe/stylesheet) are BLOCKED by the browser (real
+    # breakage); passive (img/media) are auto-upgraded or load with a warning.
     if page.mixed_content_count > 0:
+        active = getattr(page, "mixed_content_active_count", 0) or 0
+        passive = getattr(page, "mixed_content_passive_count", 0) or 0
         issues.append(make_issue("MIXED_CONTENT", url,
-                                 extra={"mixed_count": page.mixed_content_count}))
+                                 extra={"mixed_count": page.mixed_content_count,
+                                        "active_count": active,
+                                        "passive_count": passive,
+                                        "has_active": active > 0}))
 
     # MISSING_HSTS — emit once per host
     if page.has_hsts is False:

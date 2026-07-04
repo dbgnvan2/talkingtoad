@@ -152,6 +152,10 @@ def check_cross_page(pages: list[ParsedPage], start_url: str | None = None) -> l
             continue  # homepage is always the entry point
         if norm not in linked_urls:
             issues.append(make_issue("ORPHAN_PAGE", page.url,
-                                     extra={"title": page.title}))
+                                     extra={"title": page.title,
+                                            # R2.x #4: link discovery is raw-HTML only.
+                                            "caveat": "Internal links are discovered from raw HTML; "
+                                            "pages linked only via JavaScript or query-driven "
+                                            "listings (e.g. loop grids) may be false positives."}))
 
     return issues

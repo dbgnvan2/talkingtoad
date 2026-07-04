@@ -6,6 +6,7 @@ Zero-logic move — function bodies are byte-identical to the originals.
 """
 
 from api.crawler.parser import ParsedPage
+from api.crawler.normaliser import looks_like_production
 
 from api.crawler.checkers.registry import Issue, make_issue
 
@@ -13,6 +14,10 @@ from api.crawler.checkers.registry import Issue, make_issue
 def _check_crawlability(page: ParsedPage, issues: list[Issue]) -> None:
     url = page.url
     if not page.is_indexable:
+        # R2.x #5: a live production URL carrying a noindex directive is the
+        # classic "staging block survived the cutover" footgun — flag it so the
+        # owner double-checks intent.
+        staging_leftover = looks_like_production(url)
         # Defensive case/whitespace handling: parsers may surface "HEADER",
         # "Header", or " header " for the same X-Robots-Tag source. A strict
         # `== "header"` lets every non-lowercase variant fall through to the
@@ -27,11 +32,13 @@ def _check_crawlability(page: ParsedPage, issues: list[Issue]) -> None:
         if is_header_source:
             issues.append(make_issue("NOINDEX_HEADER", url,
                                      extra={"source": "X-Robots-Tag HTTP header",
-                                            "directive": page.robots_directive}))
+                                            "directive": page.robots_directive,
+                                            "possible_staging_leftover": staging_leftover}))
         else:
             issues.append(make_issue("NOINDEX_META", url,
                                      extra={"source": "meta robots tag",
-                                            "directive": page.robots_directive}))
+                                            "directive": page.robots_directive,
+                                            "possible_staging_leftover": staging_leftover}))
 
     # ── Tier 1 §4.6: Long paragraphs ────────────────────────────────────────
     # Defensive: `getattr(page, "long_paragraph_count", 0)` returns None when

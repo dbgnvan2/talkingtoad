@@ -32,6 +32,7 @@ from api.crawler.issue_checker import (
 from api.crawler.normaliser import (
     QueryVariantTracker,
     is_admin_path,
+    is_expected_disallow,
     is_same_domain,
     is_wp_noise_path,
     normalise_url,
@@ -426,9 +427,18 @@ async def run_crawl(
                 continue
 
             if robots_data and not robots_data.is_allowed(url):
+                # R2.x #8: don't flag intentional blocks (cart/checkout/account/
+                # search/faceted-filter URLs) — those are correctly disallowed.
+                if is_expected_disallow(url):
+                    log.debug("robots_expected_disallow_skipped", extra={"url": url})
+                    continue
                 log.info("robots_blocked", extra={"url": url})
                 all_issues.append(make_issue("ROBOTS_BLOCKED", url,
-                                           extra={"blocked_url": url}))
+                                           extra={"blocked_url": url,
+                                                  # crawl-blocking, not index-blocking
+                                                  "note": "robots.txt blocks CRAWLING of this URL; "
+                                                  "it does not remove an already-indexed URL. Use a "
+                                                  "noindex directive to remove a page from search."}))
                 continue
 
             if len(all_pages) >= settings.max_pages:

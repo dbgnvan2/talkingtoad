@@ -197,11 +197,16 @@ class TestPerformanceAnalysis:
         assert "IMG_OVERSCALED" not in codes
 
     def test_poor_compression_flagged(self):
-        """IMG_POOR_COMPRESSION should be flagged for high BPP."""
-        # 500KB for 400x400 = 3.125 BPP (way over 0.5 threshold)
-        img = make_image(file_size_bytes=500_000, width=400, height=400)
+        """IMG_POOR_COMPRESSION fires for high BPP on a NON-oversized image.
+
+        (R2.x #3: when an image is also OVERSIZED, compression is suppressed as a
+        consequence — so this tests compression in isolation, under the size cap.)
+        """
+        # 40KB for 100x100 = 4 BPP (over 0.5), well under the 200KB size cap
+        img = make_image(file_size_bytes=40_000, width=100, height=100)
         issues = _check_performance(img, DEFAULT_CONFIG, "test")
         codes = [i.code for i in issues]
+        assert "IMG_OVERSIZED" not in codes  # precondition: not oversized
         assert "IMG_POOR_COMPRESSION" in codes
 
     def test_good_compression_not_flagged(self):
@@ -366,22 +371,25 @@ class TestScoringEngine:
         assert scores["technical_score"] == 50
 
     def test_oversized_reduces_performance(self):
-        """Oversized image should reduce performance score by 30 (+ poor compression + legacy)."""
-        # 300KB for 800x600 = 0.625 BPP (> 0.5 → IMG_POOR_COMPRESSION -20)
-        # jpeg > 50KB → IMG_FORMAT_LEGACY -10
-        # Total: -30 -20 -10 = -60 → score 40
+        """Oversized image: OVERSIZED (-30) + FORMAT_LEGACY (-10). POOR_COMPRESSION
+        is a consequence of oversizing and is suppressed (R2.x #3) → score 60."""
+        # 300KB for 800x600 (>200KB cap); jpeg > 50KB → legacy
         img = make_image(file_size_bytes=300_000)
         issues, scores = analyze_image(img)
-        assert scores["performance_score"] == 40
+        codes = [i.code for i in issues]
+        assert "IMG_OVERSIZED" in codes and "IMG_POOR_COMPRESSION" not in codes
+        assert scores["performance_score"] == 60
 
-    def test_multiple_issues_stack(self):
-        """Multiple issues should stack their penalties."""
-        # Oversized (-30) + slow (-25) + poor compression (-20) + legacy format (-10)
-        # 300KB for 800x600 = 0.625 BPP, jpeg > 50KB
-        # Total: -30 -25 -20 -10 = -85 → score 15
+    def test_consequences_suppressed_under_oversized(self):
+        """R2.x #3: a big + slow + poorly-compressed image charges the root cause
+        (OVERSIZED) once; SLOW_LOAD and POOR_COMPRESSION (consequences) suppressed."""
         img = make_image(file_size_bytes=300_000, load_time_ms=1500)
         issues, scores = analyze_image(img)
-        assert scores["performance_score"] == 15  # 100 - 30 - 25 - 20 - 10
+        codes = [i.code for i in issues]
+        assert "IMG_OVERSIZED" in codes and "IMG_FORMAT_LEGACY" in codes
+        assert "IMG_SLOW_LOAD" not in codes
+        assert "IMG_POOR_COMPRESSION" not in codes
+        assert scores["performance_score"] == 60  # 100 - 30 (oversized) - 10 (legacy)
 
     def test_scores_dont_go_negative(self):
         """Scores should bottom out at 0, not go negative."""
@@ -476,5 +484,8 @@ class TestAnalyzeImageIntegration:
         codes = [i.code for i in issues]
         assert "IMG_ALT_MISSING" in codes
         assert "IMG_OVERSIZED" in codes
-        assert "IMG_SLOW_LOAD" in codes
-        assert scores["overall_score"] < 60
+        # R2.x #3: SLOW_LOAD is a consequence of the oversize → suppressed here.
+        assert "IMG_SLOW_LOAD" not in codes
+        # Still clearly degraded (missing alt + oversized + legacy), just no longer
+        # double-charged for the slow-load consequence.
+        assert scores["overall_score"] < 80

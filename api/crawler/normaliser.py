@@ -220,6 +220,62 @@ def is_wp_noise_path(url: str) -> bool:
 is_wp_archive_path = is_wp_noise_path
 
 
+# Host segments that indicate a non-production environment (audit R2.x #5).
+_NONPROD_HOST_MARKERS = frozenset({
+    "staging", "stage", "dev", "develop", "development", "test", "testing",
+    "uat", "qa", "preprod", "preview", "sandbox", "demo", "local",
+})
+_NONPROD_HOST_SUFFIXES = (".local", ".test", ".localhost", ".internal", ".dev")
+
+
+def looks_like_production(url: str) -> bool:
+    """Best-effort: does *url*'s host look like a live production site (vs a
+    staging/dev/test environment)? Used to escalate index-blocking directives as
+    a possible leftover staging config (audit R2.x #5).
+    """
+    host = urlparse(url).netloc.split("@")[-1].split(":")[0].lower()
+    if not host or host in ("localhost", "127.0.0.1", "::1"):
+        return False
+    if host.endswith(_NONPROD_HOST_SUFFIXES):
+        return False
+    labels = host.split(".")
+    # A non-prod marker as its own label (staging.example.com, example.dev.acme.com)
+    if any(lbl in _NONPROD_HOST_MARKERS for lbl in labels):
+        return False
+    # …or as a leading token of the first label (staging-www.example.com)
+    first = labels[0]
+    if any(first.startswith(m + "-") or first.startswith(m + ".") for m in _NONPROD_HOST_MARKERS):
+        return False
+    return True
+
+
+# Query/path signals for intentionally-disallowed URLs that are NOT SEO problems
+# when robots.txt blocks them (carts, checkouts, faceted search) — audit R2.x #8.
+_EXPECTED_DISALLOW_PATH_SEGMENTS = (
+    "/cart", "/checkout", "/basket", "/wishlist", "/my-account", "/account",
+    "/search", "/wp-json",
+)
+_EXPECTED_DISALLOW_QUERY_KEYS = frozenset({
+    "add-to-cart", "orderby", "filter", "filtering", "min_price", "max_price",
+    "s", "search", "sort", "query", "q",
+})
+
+
+def is_expected_disallow(url: str) -> bool:
+    """Return True if a robots.txt-disallowed *url* is an intentional block
+    (cart/checkout/account/search/faceted-filter) rather than a real
+    indexability problem — so ROBOTS_BLOCKED isn't a false positive."""
+    parsed = urlparse(url)
+    path = parsed.path.lower().rstrip("/")
+    if any(seg in path for seg in _EXPECTED_DISALLOW_PATH_SEGMENTS):
+        return True
+    if parsed.query:
+        keys = {p.split("=", 1)[0].lower() for p in parsed.query.split("&") if p}
+        if keys & _EXPECTED_DISALLOW_QUERY_KEYS:
+            return True
+    return False
+
+
 class QueryVariantTracker:
     """Track unique query-string variants per path within a crawl job.
 

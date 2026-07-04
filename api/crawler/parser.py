@@ -13,6 +13,7 @@ from bs4 import BeautifulSoup
 
 from api.crawler.fetcher import FetchResult
 from api.crawler.normaliser import is_same_domain
+from api.services.ai_bots import AI_BOTS, normalize_user_agent
 
 logger = logging.getLogger(__name__)
 
@@ -77,7 +78,9 @@ class ParsedPage:
     meta_refresh_url: str | None = None
 
     # Security signals (pre-computed during parse to avoid re-parsing HTML in issue_checker)
-    mixed_content_count: int = 0         # HTTP resources on an HTTPS page
+    mixed_content_count: int = 0         # HTTP resources on an HTTPS page (active + passive)
+    mixed_content_active_count: int = 0  # script/iframe/stylesheet — browser-BLOCKED
+    mixed_content_passive_count: int = 0 # img/media — auto-upgraded / warning only
     unsafe_cross_origin_count: int = 0   # target=_blank without noopener/noreferrer
     has_hsts: bool | None = None         # None = HTTP page; True/False = HTTPS page
 
@@ -173,10 +176,10 @@ class ParsedPage:
     contact_info_in_text: bool | None = None   # None unless homepage
 
 
-_AI_BOT_NAMES = frozenset({
-    "gptbot", "google-extended", "claudebot", "anthropic-ai",
-    "ccbot", "perplexitybot", "bytespider", "cohere-ai",
-})
+# Derived from the single AI-bot source of truth (api/services/ai_bots.py) so the
+# X-Robots-Tag AI-directive parser and the robots.txt AI-bot checker can't diverge
+# (audit R2.x #7). Includes both current and deprecated names, normalised.
+_AI_BOT_NAMES = frozenset(normalize_user_agent(name) for name in AI_BOTS)
 
 
 def _parse_x_robots_ai_directives(headers: dict[str, str]) -> tuple[bool, bool, str, str]:
@@ -437,6 +440,8 @@ def parse_page(
         amphtml_url=_extract_link_rel(soup, "amphtml"),
         meta_refresh_url=_extract_meta_refresh_url(soup),
         mixed_content_count=_count_mixed_content(soup, page_url),
+        mixed_content_active_count=_count_mixed_content_active(soup, page_url),
+        mixed_content_passive_count=_count_mixed_content_passive(soup, page_url),
         unsafe_cross_origin_count=_count_unsafe_cross_origin(soup, page_url),
         has_hsts=_check_hsts(result.headers, page_url),
         img_missing_alt_count=_count_img_missing_alt(soup),
@@ -763,33 +768,47 @@ def _extract_meta_refresh_url(soup: BeautifulSoup) -> str | None:
     return content[idx:].strip() or None
 
 
-_MIXED_CONTENT_TAGS = {
-    "img": "src",
-    "script": "src",
-    "iframe": "src",
-}
+# Active mixed content = executable/render-blocking resources the browser BLOCKS
+# outright on an https page (script, iframe, stylesheet). Passive = display media
+# the browser auto-upgrades or loads with a warning (img/av). Split so the report
+# can distinguish a broken page from a cosmetic warning (audit R2.x #2).
+_MIXED_ACTIVE_TAGS = {"script": "src", "iframe": "src"}
+_MIXED_PASSIVE_TAGS = {"img": "src", "audio": "src", "video": "src", "source": "src"}
 
 
-def _count_mixed_content(soup: BeautifulSoup, page_url: str) -> int:
-    """Count HTTP resources on an HTTPS page (mixed content)."""
+def _count_http_src(soup: BeautifulSoup, tagmap: dict[str, str]) -> int:
+    n = 0
+    for tag_name, attr in tagmap.items():
+        for tag in soup.find_all(tag_name):
+            if (tag.get(attr) or "").startswith("http://"):
+                n += 1
+    return n
+
+
+def _count_mixed_content_active(soup: BeautifulSoup, page_url: str) -> int:
+    """http:// script/iframe/stylesheet on an https page (browser-blocked)."""
     if not page_url.startswith("https://"):
         return 0
-    count = 0
-    for tag_name, attr in _MIXED_CONTENT_TAGS.items():
-        for tag in soup.find_all(tag_name):
-            val = tag.get(attr, "")
-            if val.startswith("http://"):
-                count += 1
-    # Stylesheets via <link rel="stylesheet">
+    n = _count_http_src(soup, _MIXED_ACTIVE_TAGS)
     for tag in soup.find_all("link"):
         rel = tag.get("rel", [])
         if isinstance(rel, str):
             rel = [rel]
-        if "stylesheet" in [r.lower() for r in rel]:
-            href = tag.get("href", "")
-            if href.startswith("http://"):
-                count += 1
-    return count
+        if "stylesheet" in [r.lower() for r in rel] and (tag.get("href") or "").startswith("http://"):
+            n += 1
+    return n
+
+
+def _count_mixed_content_passive(soup: BeautifulSoup, page_url: str) -> int:
+    """http:// img/media on an https page (auto-upgraded / loaded with a warning)."""
+    if not page_url.startswith("https://"):
+        return 0
+    return _count_http_src(soup, _MIXED_PASSIVE_TAGS)
+
+
+def _count_mixed_content(soup: BeautifulSoup, page_url: str) -> int:
+    """Total mixed-content resources (active + passive). Backward-compatible."""
+    return _count_mixed_content_active(soup, page_url) + _count_mixed_content_passive(soup, page_url)
 
 
 def _count_unsafe_cross_origin(soup: BeautifulSoup, page_url: str) -> int:
@@ -895,21 +914,18 @@ def _find_empty_anchors(soup: BeautifulSoup, page_url: str = "") -> list[dict]:
         href = tag["href"].strip()
         if not href or href.startswith(("#", "javascript:", "mailto:", "tel:", "data:")):
             continue
-        # Check visible text
-        if tag.get_text(strip=True):
+        # An anchor has a name if ANY accessible-name source is present: visible
+        # text, aria-label, title, aria-labelledby, child img[alt], or child
+        # aria-label. Reuse the shared helper so this stays consistent with the
+        # interactive-element check (audit R2.x #1 — previously missed
+        # aria-labelledby / title / child aria-label, causing icon-link FPs).
+        if _accessible_name(tag):
             continue
-        # Allow img-only links with an alt attribute as valid
-        child_imgs = tag.find_all("img")
-        if child_imgs and any(img.get("alt", "").strip() for img in child_imgs):
-            continue
-        # Resolve relative hrefs to absolute URLs
         absolute = urljoin(page_url, href) if page_url else href
-        aria_label = (tag.get("aria-label") or "").strip() or None
-        has_children = len(tag.find_all()) > 0
         found.append({
             "href": absolute,
-            "aria_label": aria_label,
-            "has_children": has_children,
+            "aria_label": None,      # anchors with any accessible name are excluded above
+            "has_children": len(tag.find_all()) > 0,
         })
     return found
 

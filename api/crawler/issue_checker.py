@@ -153,6 +153,12 @@ def check_page(
     """
     issues: list[Issue] = []
     url = page.url
+    # Page type drives the freshness cadence (R2.x #6). Computed once; defaults
+    # to "unknown" if classification errors so checks still run.
+    try:
+        page_type = infer_page_type(page)
+    except Exception:
+        page_type = "unknown"
 
     # Pages with noindex directives are intentionally excluded from search — skip SEO
     # checks that would only apply to indexed pages. We still run crawlability checks
@@ -330,18 +336,25 @@ def check_page(
         issues.append(make_issue("HIGH_CRAWL_DEPTH", url,
                                  extra={"crawl_depth": page.crawl_depth}))
 
-    # ── Content staleness ────────────────────────────────────────────────
+    # ── Content staleness (page-type aware, R2.x #6) ─────────────────────────
+    # Use the per-page-type freshness cadence instead of a flat 365 days, so
+    # evergreen pages (team bios = never stale; About/Home = 24mo) aren't nagged
+    # like time-sensitive articles (12mo).
     if page.last_modified and page.is_indexable:
         try:
             from email.utils import parsedate_to_datetime
             from datetime import timezone as _tz
-            lm_dt = parsedate_to_datetime(page.last_modified)
-            if lm_dt.tzinfo is None:
-                lm_dt = lm_dt.replace(tzinfo=_tz.utc)
-            age_days = (datetime.now(_tz.utc) - lm_dt).days
-            if age_days > 365:
-                issues.append(make_issue("CONTENT_STALE", url,
-                    extra={"last_modified": page.last_modified, "age_days": age_days}))
+            from api.crawler.checkers.ai_readiness import _PAGE_TYPE_CADENCE
+            cadence_months = _PAGE_TYPE_CADENCE.get(page_type, 24)
+            if cadence_months is not None:  # None ⇒ evergreen, never stale
+                lm_dt = parsedate_to_datetime(page.last_modified)
+                if lm_dt.tzinfo is None:
+                    lm_dt = lm_dt.replace(tzinfo=_tz.utc)
+                age_days = (datetime.now(_tz.utc) - lm_dt).days
+                if age_days > cadence_months * 30:
+                    issues.append(make_issue("CONTENT_STALE", url,
+                        extra={"last_modified": page.last_modified, "age_days": age_days,
+                               "page_type": page_type, "cadence_months": cadence_months}))
         except Exception:
             pass
 
@@ -633,8 +646,11 @@ def check_page(
                 extra=stale_result,
             ))
 
-    # ── M4.2: CONTENT_STAT_OUTDATED ─────────────────────────────────────────
-    if is_indexable:
+    # ── M4.2: CONTENT_STAT_OUTDATED (page-type aware, R2.x #6) ───────────────
+    # Skip evergreen page types (biographical/team pages) where a dated stat is
+    # not a freshness problem.
+    from api.crawler.checkers.ai_readiness import _PAGE_TYPE_CADENCE as _CADENCE
+    if is_indexable and _CADENCE.get(page_type, 24) is not None:
         _text_window = page.first_1500_words or page.first_600_words or page.first_200_words
         if _text_window:
             from api.crawler.checkers.ai_readiness import detect_outdated_stat

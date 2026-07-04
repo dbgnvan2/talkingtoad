@@ -44,7 +44,11 @@ def check_ai_bot_access(robots_data: RobotsData, start_url: str) -> list[Issue]:
 
     # Check blanket disallow first (highest severity)
     if _is_blanket_disallow(disallowed_by_agent):
-        return [make_issue("AI_BOT_BLANKET_DISALLOW", start_url)]
+        # R2.x #5: a blanket disallow on a live production host is often a
+        # staging robots.txt that survived the cutover — flag for review.
+        from api.crawler.normaliser import looks_like_production
+        return [make_issue("AI_BOT_BLANKET_DISALLOW", start_url,
+                           extra={"possible_staging_leftover": looks_like_production(start_url)})]
 
     # Check for deprecated directives in any rules
     if _check_deprecated_directives(all_agents_mentioned):

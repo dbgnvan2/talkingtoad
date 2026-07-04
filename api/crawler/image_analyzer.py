@@ -49,6 +49,7 @@ def analyze_image(
     img: ImageInfo,
     config: dict | None = None,
     job_id: str = "",
+    lcp_urls: set[str] | None = None,
 ) -> tuple[list[Issue], dict]:
     """
     Analyze a single image and return issues + scores.
@@ -68,7 +69,7 @@ def analyze_image(
     issues.extend(_check_alt_text(img, cfg, job_id))
 
     # SIZE & PERFORMANCE
-    issues.extend(_check_performance(img, cfg, job_id))
+    issues.extend(_check_performance(img, cfg, job_id, lcp_urls))
 
     # FORMAT ANALYSIS
     issues.extend(_check_format(img, cfg, job_id))
@@ -100,9 +101,21 @@ def analyze_batch(
     """
     all_issues = []
 
+    # Likely-LCP heuristic (R2.x #3): the heaviest image per page is the best
+    # no-render proxy for the Largest Contentful Paint element. Marked in the
+    # performance-issue extras so the report can prioritise it.
+    lcp_urls: set[str] = set()
+    by_page: dict[str, ImageInfo] = {}
+    for img in images:
+        key = img.page_url or ""
+        cur = by_page.get(key)
+        if cur is None or (img.file_size_bytes or 0) > (cur.file_size_bytes or 0):
+            by_page[key] = img
+    lcp_urls = {im.url for im in by_page.values() if im.url}
+
     # Analyze each image individually
     for img in images:
-        issues, scores = analyze_image(img, config, job_id)
+        issues, scores = analyze_image(img, config, job_id, lcp_urls)
         all_issues.extend(issues)
 
         # Update image with scores
@@ -226,65 +239,61 @@ def _check_alt_text(img: ImageInfo, cfg: dict, job_id: str) -> list[Issue]:
 # ---------------------------------------------------------------------------
 
 
-def _check_performance(img: ImageInfo, cfg: dict, job_id: str) -> list[Issue]:
-    """Check performance issues."""
-    issues = []
+def _check_performance(
+    img: ImageInfo, cfg: dict, job_id: str, lcp_urls: set[str] | None = None
+) -> list[Issue]:
+    """Check performance issues with consequence-precedence (audit R2.x #3).
 
-    # IMG_OVERSIZED
-    if img.file_size_bytes:
-        limit_bytes = cfg["max_image_size_kb"] * 1024
-        if img.file_size_bytes > limit_bytes:
-            issues.append(make_issue(
-                "IMG_OVERSIZED", img.page_url,
-                job_id=job_id,
-                extra={
-                    "image_url": img.url,
-                    "size_kb": round(img.file_size_bytes / 1024, 1),
-                    "limit_kb": cfg["max_image_size_kb"],
-                }
-            ))
+    A single bad image previously emitted up to four codes. The root causes are
+    IMG_OVERSIZED (file too big) and IMG_OVERSCALED (serving more pixels than
+    displayed); IMG_SLOW_LOAD and IMG_POOR_COMPRESSION are usually *consequences*
+    of those. We charge the root cause and suppress the consequence it explains,
+    so one problem = one finding. ``lcp_urls`` marks the page's likely
+    Largest-Contentful-Paint image so the report can prioritise it.
+    """
+    issues: list[Issue] = []
+    is_lcp = bool(lcp_urls and img.url in lcp_urls)
 
-    # IMG_SLOW_LOAD
-    if img.load_time_ms and img.load_time_ms > cfg["slow_load_threshold_ms"]:
+    # ── Root cause: IMG_OVERSIZED (file weight) ──────────────────────────────
+    oversized = bool(img.file_size_bytes and img.file_size_bytes > cfg["max_image_size_kb"] * 1024)
+    if oversized:
         issues.append(make_issue(
-            "IMG_SLOW_LOAD", img.page_url,
-            job_id=job_id,
-            extra={
-                "image_url": img.url,
-                "load_time_ms": img.load_time_ms,
-                "threshold_ms": cfg["slow_load_threshold_ms"],
-            }
+            "IMG_OVERSIZED", img.page_url, job_id=job_id,
+            extra={"image_url": img.url, "size_kb": round(img.file_size_bytes / 1024, 1),
+                   "limit_kb": cfg["max_image_size_kb"], "likely_lcp": is_lcp},
         ))
 
-    # IMG_OVERSCALED
+    # ── Root cause: IMG_OVERSCALED (intrinsic ≫ rendered) ────────────────────
+    overscaled = False
     if img.width and img.rendered_width and img.rendered_width > 0:
         ratio = img.width / img.rendered_width
         if ratio > cfg["overscale_ratio"]:
+            overscaled = True
             issues.append(make_issue(
-                "IMG_OVERSCALED", img.page_url,
-                job_id=job_id,
-                extra={
-                    "image_url": img.url,
-                    "intrinsic_width": img.width,
-                    "rendered_width": img.rendered_width,
-                    "ratio": round(ratio, 1),
-                }
+                "IMG_OVERSCALED", img.page_url, job_id=job_id,
+                extra={"image_url": img.url, "intrinsic_width": img.width,
+                       "rendered_width": img.rendered_width, "ratio": round(ratio, 1),
+                       "likely_lcp": is_lcp},
             ))
 
-    # IMG_POOR_COMPRESSION
-    if img.file_size_bytes and img.width and img.height:
+    # ── Consequence: IMG_SLOW_LOAD — suppressed if a root cause explains it ──
+    if not (oversized or overscaled) and img.load_time_ms and img.load_time_ms > cfg["slow_load_threshold_ms"]:
+        issues.append(make_issue(
+            "IMG_SLOW_LOAD", img.page_url, job_id=job_id,
+            extra={"image_url": img.url, "load_time_ms": img.load_time_ms,
+                   "threshold_ms": cfg["slow_load_threshold_ms"], "likely_lcp": is_lcp},
+        ))
+
+    # ── Consequence: IMG_POOR_COMPRESSION — suppressed if already OVERSIZED ──
+    if not oversized and img.file_size_bytes and img.width and img.height:
         pixels = img.width * img.height
         if pixels > 0:
             bpp = img.file_size_bytes / pixels
             if bpp > cfg["bpp_threshold"]:
                 issues.append(make_issue(
-                    "IMG_POOR_COMPRESSION", img.page_url,
-                    job_id=job_id,
-                    extra={
-                        "image_url": img.url,
-                        "bpp": round(bpp, 2),
-                        "threshold": cfg["bpp_threshold"],
-                    }
+                    "IMG_POOR_COMPRESSION", img.page_url, job_id=job_id,
+                    extra={"image_url": img.url, "bpp": round(bpp, 2),
+                           "threshold": cfg["bpp_threshold"], "likely_lcp": is_lcp},
                 ))
 
     return issues
