@@ -333,7 +333,7 @@ export default function Home() {
           <p className="text-center text-xs text-gray-400 mb-2">or scan a single page</p>
           <form onSubmit={handleScanPage} className="flex gap-2">
             <input
-              type="url"
+              type="text"
               required
               inputMode="url"
               placeholder="https://example.org/specific-page"

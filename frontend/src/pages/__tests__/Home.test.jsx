@@ -42,6 +42,17 @@ describe('Home page', () => {
     })
   })
 
+  it('scan inputs are type=text so a bare domain is not blocked by the browser', async () => {
+    // Regression: a type="url" input rejects "livingsystems.ca" with the native
+    // "Please enter a URL" before our normaliser can add https://.
+    global.fetch.mockImplementation(() => mockFetchResponse([]))
+    renderWithProviders(<Home />)
+    await waitFor(() => {
+      expect(screen.getByPlaceholderText('example.org')).toHaveAttribute('type', 'text')
+      expect(screen.getByPlaceholderText(/specific-page/i)).toHaveAttribute('type', 'text')
+    })
+  })
+
   it('renders analysis toggles', async () => {
     global.fetch.mockImplementation(() => mockFetchResponse([]))
     renderWithProviders(<Home />)
