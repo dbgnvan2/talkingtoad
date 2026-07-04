@@ -677,6 +677,33 @@ class TestIssuesForRedirect:
         assert "REDIRECT_TRAILING_SLASH" in codes
         assert "REDIRECT_301" not in codes
 
+    def test_trailing_slash_with_origin_in_chain_not_a_chain(self):
+        # Real-world WordPress case (livingsystems.ca, firing-rate triage 2026-07-04):
+        # the client reports the request URL itself as the first chain entry, so a
+        # plain /post → /post/ redirect arrives as chain=[origin]. That must still be
+        # classified as REDIRECT_TRAILING_SLASH (−0), NOT INTERNAL_REDIRECT_301 (−2) +
+        # REDIRECT_CHAIN (−2), which fired on ~every page.
+        issues = issues_for_redirect(
+            "https://example.com/post", 301, ["https://example.com/post"],
+            final_url="https://example.com/post/",
+            base_url="https://example.com/",
+        )
+        codes = _codes(issues)
+        assert "REDIRECT_TRAILING_SLASH" in codes
+        assert "REDIRECT_CHAIN" not in codes
+        assert "INTERNAL_REDIRECT_301" not in codes
+
+    def test_real_chain_with_origin_prefix_still_flagged(self):
+        # A genuine 2-hop chain that also carries the origin as first entry: the
+        # origin is stripped, but the real intermediate B survives → REDIRECT_CHAIN.
+        issues = issues_for_redirect(
+            "https://example.com/a", 301,
+            ["https://example.com/a", "https://example.com/b"],
+            final_url="https://example.com/c",
+            base_url="https://example.com/",
+        )
+        assert "REDIRECT_CHAIN" in _codes(issues)
+
     def test_case_normalise_only_emits_case_issue(self):
         issues = issues_for_redirect(
             "https://example.com/About-Us", 301, ["https://example.com/about-us"],

@@ -61,3 +61,22 @@ def test_real_hidden_name_still_flagged():
 def test_visible_name_not_flagged():
     blocks = [{"@type": "Person", "name": "Jane Smith"}]
     assert check_schema_visible_mismatch(blocks, "Our therapist Jane Smith helps families.") == []
+
+
+# ── #4 SCHEMA_VISIBLE_MISMATCH: WP author Person node is byline metadata ────────
+def test_author_person_node_not_flagged():
+    """A WP SEO-plugin author node (@id .../author/...#schema-author) carries the
+    post author's byline, not on-page content — its name must not fire even though
+    it's a real display name absent from an unrelated page's body.
+    Verified on livingsystems.ca team pages (firing-rate triage 2026-07-04)."""
+    blocks = [{"@type": "Person",
+               "@id": "https://livingsystems.ca/author/davegallowaymg/#schema-author",
+               "name": "Dave Galloway"}]
+    assert check_schema_visible_mismatch(blocks, "This page is about Leila Howard, RCC.") == []
+
+
+def test_subject_person_node_still_flagged():
+    """A subject Person node (no author @id) genuinely absent from the page still
+    fires — the fix is targeted to author metadata, not all Person nodes."""
+    blocks = [{"@type": "Person", "@id": "https://site/team/jane/#person", "name": "Jane Smith"}]
+    assert "Person.name" in check_schema_visible_mismatch(blocks, "Unrelated body text about therapy.")

@@ -112,7 +112,18 @@ def issues_for_redirect(
     # to the same definition of "real chain".
     #
     # (QA Cycle R V1.)
-    real_intermediates = [h for h in redirect_chain if h != final_url]
+    #
+    # Also exclude any hop equal to the ORIGINAL url: some clients report the
+    # request URL itself as the first entry of redirect_chain, which made a plain
+    # `url → url/` trailing-slash redirect look like a real intermediate hop. That
+    # blocked the auto-correction branch below and fired INTERNAL_REDIRECT_301 +
+    # REDIRECT_CHAIN (−2 −2) on ~every WordPress page. A hop matching the origin
+    # (ignoring a trailing slash) is not a real detour. (Firing-rate triage
+    # 2026-07-04, verified on livingsystems.ca.)
+    real_intermediates = [
+        h for h in redirect_chain
+        if h != final_url and h.rstrip("/") != url.rstrip("/")
+    ]
 
     # Detect whether the redirect is one that CMSes and servers handle automatically,
     # so we can flag it as informational rather than actionable. Only applies

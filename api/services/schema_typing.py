@@ -138,6 +138,22 @@ def _is_machine_identifier(value: str) -> bool:
     return ("@" in v and "." in v.split("@")[-1]) or v.startswith(("http://", "https://", "www."))
 
 
+def _is_author_publisher_node(block: dict) -> bool:
+    """True if this node is an author/publisher *metadata* Person injected by a WP
+    SEO plugin (Yoast/RankMath), not the page's subject.
+
+    These carry an ``@id`` like ``https://site/author/<user>/#schema-author`` and
+    a ``name`` that is the post author's byline — never expected in the visible
+    body of an unrelated page (e.g. a team-member profile whose author is the site
+    owner). Checking their name against page text false-positived SCHEMA_VISIBLE_
+    MISMATCH (−6) on ~64% of pages. The page's *subject* Person (a team page about
+    that person) has a different @id and its name IS visible, so it still fires
+    correctly when genuinely absent. (Firing-rate triage 2026-07-04, verified on
+    livingsystems.ca.)"""
+    node_id = block.get("@id")
+    return isinstance(node_id, str) and "author" in node_id.lower()
+
+
 def _assemble_address(block: dict) -> str | None:
     """Assemble a PostalAddress block into a single comparable string.
 
@@ -178,6 +194,10 @@ def _check_block_fields(
         return
 
     for type_key in types_to_check:
+        # A WP SEO-plugin author/publisher Person node carries byline metadata,
+        # not on-page display content — skip its name-visibility check.
+        if type_key == "person" and _is_author_publisher_node(block):
+            continue
         # Standard field checks
         for field_name, label in _SCHEMA_FIELDS_TO_CHECK.get(type_key, []):
             value = block.get(field_name)

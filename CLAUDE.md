@@ -301,6 +301,19 @@ pytest tests/ -v
 | File | Purpose |
 |---|---|
 | `PLAN-V3.0.md` | v3.0 plan: 11 milestones, release phasing |
-| `PLAN.md` | Original pre-v3 implementation plan |
-| `TODO.md` | Technical debt and future improvements |
-| `REVIEW_SPEC.md` | Code review specification |
+|| `PLAN.md` | Original pre-v3 implementation plan |
+|| `TODO.md` | Technical debt and future improvements |
+|| `REVIEW_SPEC.md` | Code review specification |
+
+---
+
+## Global standards
+
+Read the relevant file from `~/.claude/standards/` before starting work:
+
+| Standard | When |
+|---|---|
+| `llm-integration.md` | Any prompt building, model selection, or coaching response handling |
+| `external-api.md` | Any LLM API call — timeouts, error handling, retry logic |
+| `security.md` | API keys must be in config/env — never in source |
+| `file-maintainability.md` | Any new module or significant refactor |
