@@ -16,8 +16,16 @@ origin: User question ("Perhaps a schema generation?") + Gemini "AI clarity via 
 > **re-fetches** the page (SSRF-safe) and re-extracts `faq_blocks` — this supersedes the spec's
 > original "no re-fetch" line (C4), matching how the other `/api/ai/*` endpoints already work.
 > `faq_blocks` now carries the answer **text** (added in the A+B change) for schema building.
-> Full suite 1867 passed. **FRONTEND (C5) NOT yet built** — awaiting a GUI-placement decision
-> from the user (where the "Generate FAQ schema" action appears), per the CLAUDE.md GUI rule.
+> Full suite 1867 passed.
+>
+> **FRONTEND (C5) IMPLEMENTED 2026-07-04** (user-directed: popup modal with copy + save). New
+> `frontend/src/components/FaqSchemaModal.jsx` — a modal that calls the endpoint and shows the
+> FAQPage JSON-LD with **Copy snippet** (the `<script type="application/ld+json">` block),
+> **Download .html** (paste-ready script block), and **Download .json** (raw structured data);
+> renders distinct loading / error / refused states. Triggered by a **Generate FAQ Schema** button
+> in the per-page `PageDetail` view (Results.jsx), shown only when the page has `FAQ_SCHEMA_MISSING`.
+> `getFaqSchema` added to `api.js`. Tests: `FaqSchemaModal.test.jsx` (success / refused / error).
+> Frontend suite 184 passed; lint 0 errors; production build clean.
 
 When a page has a real FAQ but no `FAQPage` structured data (`FAQ_SCHEMA_MISSING` fires), generate
 **ready-to-paste FAQPage JSON-LD** from the Q&A pairs already extracted in feature A, and surface it as

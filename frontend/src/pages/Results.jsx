@@ -9,6 +9,7 @@ import SettingsPanel from '../components/SettingsPanel.jsx'
 import GeoSettings from '../components/GeoSettings.jsx'
 import ImageAnalysisPanel from '../components/ImageAnalysisPanel.jsx'
 import AIReadinessPanel from '../components/AIReadinessPanel.jsx'
+import FaqSchemaModal from '../components/FaqSchemaModal.jsx'
 import CategoryPanel from '../components/CategoryPanel.jsx'
 import SeverityPanel from '../components/SeverityPanel.jsx'
 import ByPagePanel from '../components/ByPagePanel.jsx'
@@ -562,6 +563,7 @@ function PageDetail({ jobId, pageUrl, onRescan }) {
   const [aiRecommendations, setAiRecommendations] = useState(null)
   const [loadingAI, setLoadingAI] = useState(false)
   const [rescanning, setRescanning] = useState(false)
+  const [showFaqSchema, setShowFaqSchema] = useState(false)
 
   const load = useCallback(() => {
     getPageIssues(jobId, pageUrl).then(setData).catch(() => {})
@@ -626,7 +628,15 @@ function PageDetail({ jobId, pageUrl, onRescan }) {
       )}
 
       {/* AI Recommendations Button */}
-      <div className="flex justify-end">
+      <div className="flex justify-end gap-2">
+        {allIssues.some(i => i.issue_code === 'FAQ_SCHEMA_MISSING') && (
+          <button
+            onClick={() => setShowFaqSchema(true)}
+            className="px-4 py-2 bg-green-600 text-white rounded-lg text-sm font-bold hover:bg-green-700 transition-all"
+          >
+            Generate FAQ Schema
+          </button>
+        )}
         <button
           onClick={handleGetAIRecommendations}
           disabled={loadingAI}
@@ -635,6 +645,10 @@ function PageDetail({ jobId, pageUrl, onRescan }) {
           {loadingAI ? 'Analyzing...' : 'Get AI Recommendations'}
         </button>
       </div>
+
+      {showFaqSchema && (
+        <FaqSchemaModal jobId={jobId} pageUrl={pageUrl} onClose={() => setShowFaqSchema(false)} />
+      )}
 
       {/* AI Recommendations Display */}
       {aiRecommendations && (

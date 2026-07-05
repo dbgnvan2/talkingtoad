@@ -536,6 +536,17 @@ export async function getPageAdvisor(jobId, pageUrl) {
   return checkResponse(res)
 }
 
+// FAQPage JSON-LD generator — returns { jsonld, question_count, refused, reason }
+// (or { error }). Copy/export only; the backend never writes to WordPress.
+export async function getFaqSchema(jobId, pageUrl) {
+  const res = await fetch('/api/ai/faq-schema', {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify({ job_id: jobId, page_url: pageUrl })
+  })
+  return checkResponse(res)
+}
+
 // AI Site Advisor
 export async function getSiteAdvisor(jobId) {
   const res = await fetch('/api/ai/site-advisor', {
