@@ -1590,9 +1590,11 @@ def _extract_faq_blocks(soup: BeautifulSoup) -> list[dict]:
         if key in seen:
             return
         seen.add(key)
+        ans = (answer_text or "").strip()
         blocks.append({
             "question": q,
-            "answer_char_count": len((answer_text or "").strip()),
+            "answer": ans,                 # text present in RAW HTML (for schema generation)
+            "answer_char_count": len(ans),  # visibility signal for FAQ_ANSWERS_NOT_IN_HTML
             "container": container,
         })
 

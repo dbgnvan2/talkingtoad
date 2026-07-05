@@ -565,3 +565,42 @@ async def geo_llm_checks(request: Request, body: GeoLlmChecksRequest):
             for i in issues
         ],
     }
+
+
+class FaqSchemaRequest(BaseModel):
+    job_id: str
+    page_url: str
+
+
+@router.post("/faq-schema")
+async def generate_faq_schema(request: Request, body: FaqSchemaRequest, store=Depends(get_store)):
+    """Generate ready-to-paste FAQPage JSON-LD from the page's FAQ Q&A pairs.
+
+    Generate-and-advise only: the response is copy/export text — this endpoint
+    NEVER writes to WordPress. FAQ answer text is not persisted in the crawl, so
+    the page is re-fetched (SSRF-safe) and re-extracted; schema is built only
+    from answers present in the HTML (never fabricated).
+
+    Spec: docs/pending/2026-07-04_faq-schema-generator.md
+    """
+    from bs4 import BeautifulSoup
+    from api.crawler.fetcher import fetch_page, make_client
+    from api.crawler.parser import _extract_faq_blocks
+    from api.services.faq_schema_generator import generate_faqpage_schema
+
+    # Confirm the page belongs to this crawl (also scopes us to a crawled domain).
+    page_data, _ = await store.get_page_issues_by_url(body.job_id, body.page_url)
+    if not page_data:
+        return {"error": f"Page not found: {body.page_url}"}
+
+    async with make_client() as client:
+        result = await fetch_page(body.page_url, client)
+    if not result or result.status_code >= 400 or not result.html:
+        status = getattr(result, "status_code", 0) if result else 0
+        return {
+            "jsonld": None, "question_count": 0, "refused": True,
+            "reason": f"Could not fetch the page to read its FAQ (status {status}).",
+        }
+
+    faq_blocks = _extract_faq_blocks(BeautifulSoup(result.html, "lxml"))
+    return generate_faqpage_schema(faq_blocks)

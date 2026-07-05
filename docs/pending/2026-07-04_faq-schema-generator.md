@@ -9,6 +9,16 @@ origin: User question ("Perhaps a schema generation?") + Gemini "AI clarity via 
 
 # FAQPage schema generator (generate-and-advise)
 
+> **BACKEND IMPLEMENTED 2026-07-04.** Service `api/services/faq_schema_generator.py`
+> (`generate_faqpage_schema`) + endpoint `POST /api/ai/faq-schema` shipped with tests
+> (`tests/test_faq_schema_generator.py`, 9 cases incl. the P14 sanitisation adversarial and the
+> 3 endpoint contract tests). Design note: raw page content is not persisted, so the endpoint
+> **re-fetches** the page (SSRF-safe) and re-extracts `faq_blocks` — this supersedes the spec's
+> original "no re-fetch" line (C4), matching how the other `/api/ai/*` endpoints already work.
+> `faq_blocks` now carries the answer **text** (added in the A+B change) for schema building.
+> Full suite 1867 passed. **FRONTEND (C5) NOT yet built** — awaiting a GUI-placement decision
+> from the user (where the "Generate FAQ schema" action appears), per the CLAUDE.md GUI rule.
+
 When a page has a real FAQ but no `FAQPage` structured data (`FAQ_SCHEMA_MISSING` fires), generate
 **ready-to-paste FAQPage JSON-LD** from the Q&A pairs already extracted in feature A, and surface it as
 advisor output the user copies into Rank Math / Yoast / a custom-HTML block. This is the "fix" side of the

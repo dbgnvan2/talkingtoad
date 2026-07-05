@@ -97,6 +97,7 @@ same doc's §9 verification matrix.
 | GET | `/api/ai/test` | Test connectivity to AI provider (Gemini/OpenAI). |
 | POST | `/api/ai/page-advisor` | Get AI-generated SEO recommendations for a specific page. |
 | POST | `/api/ai/site-advisor` | Get AI-generated site-wide SEO recommendations. |
+| POST | `/api/ai/faq-schema` | Generate ready-to-paste FAQPage JSON-LD from the page's FAQ Q&A (`{job_id, page_url}` → `{jsonld, question_count, refused, reason}`). Re-fetches the page (SSRF-safe); builds schema only from answers present in the HTML — refuses (never fabricates) if answers are JS-only. Copy/export only; never writes to WordPress. |
 
 ## AI Citation Ingestion (M5)
 
