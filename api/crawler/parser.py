@@ -175,6 +175,12 @@ class ParsedPage:
     # WP5 — homepage contact info readable as text
     contact_info_in_text: bool | None = None   # None unless homepage
 
+    # FAQ detection (2026-07-04): accordion/disclosure-aware FAQ Q&A pairs.
+    # Each: {"question": str, "answer_char_count": int, "container": str}.
+    # Deduped by normalized question. Populated at parse time; consumed by the
+    # GEO.5.2 FAQ_SCHEMA_MISSING check and the FAQ_ANSWERS_NOT_IN_HTML check.
+    faq_blocks: list[dict] | None = None
+
 
 # Derived from the single AI-bot source of truth (api/services/ai_bots.py) so the
 # X-Robots-Tag AI-directive parser and the robots.txt AI-bot checker can't diverge
@@ -497,6 +503,7 @@ def parse_page(
         unnamed_interactive=_unnamed_interactive,
         placeholder_links=_placeholder_links,
         contact_info_in_text=_contact_in_text,
+        faq_blocks=_extract_faq_blocks(soup),
     )
 
 
@@ -1532,6 +1539,107 @@ def _count_structured_elements(soup: BeautifulSoup) -> int:
     codes = [c for c in soup.find_all("code") if not c.find_parent("pre")]
     total += len(codes)
     return total
+
+
+# FAQ detection (2026-07-04): accordion/disclosure-aware Q&A extraction.
+# A "question" is a title whose text ends with "?" — this keeps the extractor
+# FAQ-specific, so a feature/spec accordion (statement titles) is ignored and
+# cannot trip FAQ_SCHEMA_MISSING. ``answer_char_count`` measures answer text
+# present in the RAW HTML: 0/near-0 means the answer is injected by JS on click
+# and is invisible to non-rendering AI crawlers (FAQ_ANSWERS_NOT_IN_HTML).
+_FAQ_MIN_QUESTION_LEN = 6  # ignore a bare "?" or single glyph
+
+
+def _text_excluding(el, exclude=None) -> str:
+    """Visible text of *el*, skipping <script>/<style> and any text inside the
+    optional *exclude* subtree. Non-mutating — never alters the shared soup."""
+    parts = []
+    for t in el.find_all(string=True):
+        parent = t.parent
+        if parent is not None and parent.name in ("script", "style"):
+            continue
+        if exclude is not None and exclude in t.parents:
+            continue
+        s = t.strip()
+        if s:
+            parts.append(s)
+    return " ".join(parts)
+
+
+def _looks_like_faq_question(text: str) -> bool:
+    text = (text or "").strip()
+    return len(text) >= _FAQ_MIN_QUESTION_LEN and text.endswith("?")
+
+
+def _extract_faq_blocks(soup: BeautifulSoup) -> list[dict]:
+    """Extract FAQ Q&A candidate pairs from disclosure/accordion widgets and
+    question headings.
+
+    Returns ``[{"question": str, "answer_char_count": int, "container": str}, …]``
+    deduped by normalized question text (Elementor emits mobile + desktop copies).
+    Only titles ending in "?" count as questions.
+    """
+    blocks: list[dict] = []
+    seen: set[str] = set()
+
+    def _add(question: str, answer_text: str, container: str) -> None:
+        q = " ".join((question or "").split())
+        if not _looks_like_faq_question(q):
+            return
+        key = q.lower()
+        if key in seen:
+            return
+        seen.add(key)
+        blocks.append({
+            "question": q,
+            "answer_char_count": len((answer_text or "").strip()),
+            "container": container,
+        })
+
+    # (a) native <details>/<summary> and Elementor nested accordion (also <details>)
+    for d in soup.find_all("details"):
+        summ = d.find("summary")
+        title_el = summ or d.select_one(
+            ".e-n-accordion-item-title-text, .e-n-accordion-item-title")
+        if title_el is None:
+            continue
+        _add(_text_excluding(title_el), _text_excluding(d, exclude=title_el),
+             "details" if summ is not None else "accordion")
+
+    # (b) Elementor nested-accordion items that are NOT <details> (older markup)
+    for item in soup.select(".e-n-accordion-item"):
+        if getattr(item, "name", None) == "details":
+            continue  # already handled in (a)
+        title_el = item.select_one(
+            ".e-n-accordion-item-title-text, .e-n-accordion-item-title")
+        if title_el is None:
+            continue
+        _add(_text_excluding(title_el), _text_excluding(item, exclude=title_el), "accordion")
+
+    # (c) legacy Elementor toggle / tab widgets
+    for title_el in soup.select(".elementor-toggle-title, .elementor-tab-title"):
+        content = None
+        aria = title_el.get("aria-controls")
+        if aria:
+            content = soup.find(id=aria)
+        if content is None:
+            content = title_el.find_next(class_=re.compile(r"elementor-(toggle|tab)-content"))
+        ans = _text_excluding(content) if content is not None else ""
+        _add(_text_excluding(title_el), ans, "toggle")
+
+    # (d) heading-based questions: <h?>…?</h?> with following siblings as answer
+    for h in soup.find_all(["h1", "h2", "h3", "h4", "h5", "h6"]):
+        q = _text_excluding(h)
+        if not _looks_like_faq_question(q):
+            continue
+        parts = []
+        for sib in h.find_next_siblings():
+            if getattr(sib, "name", None) in ("h1", "h2", "h3", "h4", "h5", "h6"):
+                break
+            parts.append(_text_excluding(sib))
+        _add(q, " ".join(p for p in parts if p).strip(), "heading")
+
+    return blocks
 
 
 def _extract_first_n_words(soup: BeautifulSoup, n: int) -> str | None:

@@ -16,7 +16,7 @@ Lightweight web-based SEO crawler for nonprofit organisations — Screaming-Frog
 - **GitHub:** https://github.com/dbgnvan2/talkingtoad
 - **Specs index:** `docs/specs/README.md`
 - **Current version:** 3.0.0 (shipped — git tag `v3.0`). Milestone ledger: `PLAN-V3.0-UNIFIED.md`. Shipped-feature history lives in `docs/legacy_changelog.md` — not here.
-- **Issue catalogue:** 151 codes — source of truth `api/crawler/checkers/registry.py` (`_CATALOGUE` / `_ISSUE_SCORING` / `_AI_READINESS_CONFIDENCE`), surfaced in `docs/issue-codes.md`.
+- **Issue catalogue:** 152 codes — source of truth `api/crawler/checkers/registry.py` (`_CATALOGUE` / `_ISSUE_SCORING` / `_AI_READINESS_CONFIDENCE`), surfaced in `docs/issue-codes.md`.
 - **Parked / not shipped:** multi-tenant / per-customer AI keys / Identity Model (`docs/TODO-MULTITENANT.md`); SERP-Discovery (separate repo).
 
 ---

@@ -101,6 +101,10 @@ impossible.
 | `FIRST_VIEWPORT_NO_ANSWER` activates at word count | > 200 | `api/crawler/checkers/ai_readiness.py` `_run_geo_checks` |
 | Long-paragraph detection | > 150 words | `api/crawler/parser.py:1113` `_count_long_paragraphs` |
 | GEO Conversational H2 minimum | word_count ≥ 300 | `api/crawler/issue_checker.py` `check_page` (conversational-H2 block) |
+| `FAQ_SCHEMA_MISSING` question count trigger | ≥ 3 (or a "FAQ" heading present) | `api/crawler/checkers/ai_readiness.py` `_run_geo_checks` |
+| `FAQ_ANSWERS_NOT_IN_HTML` answer-present minimum | ≥ 40 chars in raw HTML | `api/crawler/checkers/ai_readiness.py` `_FAQ_ANSWER_MIN_CHARS` |
+| `FAQ_ANSWERS_NOT_IN_HTML` fire condition | ≥ 2 missing **and** ≥ 50% of FAQ answers | `api/crawler/checkers/ai_readiness.py` `_run_geo_checks` |
+| FAQ question detection | accordion/`<details>`/heading titles ending in `?` | `api/crawler/parser.py` `_extract_faq_blocks` |
 
 ## Content extraction windows (ParsedPage)
 

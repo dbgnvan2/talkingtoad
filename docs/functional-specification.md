@@ -536,6 +536,21 @@ Google-Extended, blanket-disallow, Allow overrides, 5xx/404). JS-content
 absence is `RAW_HTML_JS_DEPENDENT`; FAQ-schema gap is `FAQ_SCHEMA_MISSING`;
 content date is `DATE_PUBLISHED_MISSING`.
 
+**FAQ detection (accordion-aware + AI-visibility, 2026-07-04).** FAQ questions
+are extracted at parse time by `_extract_faq_blocks` (`parser.py` → `page.faq_blocks`)
+from native `<details>/<summary>`, Elementor nested accordions
+(`.e-n-accordion-item-title-text`), legacy toggle/tab widgets, and `<h?>` headings —
+any title ending in `?`, deduped by normalized text (Elementor emits mobile+desktop
+copies). This fixed a silent false-negative where `FAQ_SCHEMA_MISSING` only counted
+`<h?>` questions and missed accordion FAQs with no literal "FAQ" heading; its `extra`
+now reports an accurate `question_count` + per-container `sources` (was a misleading
+`question_headings: 0`). Because the crawler reads raw HTML with no JS — exactly what a
+non-rendering AI crawler sees — a new check **`FAQ_ANSWERS_NOT_IN_HTML`** (ai_readiness,
+impact 4) fires when FAQ question titles are present but ≥ 2 (and ≥ 50%) of their answer
+bodies are absent from source (< 40 chars), i.e. JS-injected on click and invisible to
+AI. It is cluster-suppressed under `RAW_HTML_JS_DEPENDENT` when the whole page is a JS
+shell (same root cause). Per the never-fabricate rule, it only reports absence.
+
 #### Agent Health score
 
 A second headline number alongside the SEO Health Score, surfaced in the

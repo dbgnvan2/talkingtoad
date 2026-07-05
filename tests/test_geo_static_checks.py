@@ -430,6 +430,8 @@ def test_faq_schema_missing_fires_on_faq_heading():
 
 
 def test_faq_schema_missing_fires_on_question_headings():
+    # Detection is now accordion-aware via page.faq_blocks (populated by the
+    # parser, which captures <h?>…?</h?> questions as container="heading").
     page = _page(
         headings_outline=[
             {"level": 1, "text": "Guide"},
@@ -439,6 +441,11 @@ def test_faq_schema_missing_fires_on_question_headings():
         ],
         schema_types=[],
     )
+    page.faq_blocks = [
+        {"question": "What is X?", "answer_char_count": 120, "container": "heading"},
+        {"question": "How does Y work?", "answer_char_count": 120, "container": "heading"},
+        {"question": "When should I use Z?", "answer_char_count": 120, "container": "heading"},
+    ]
     assert "FAQ_SCHEMA_MISSING" in _codes(page)
 
 

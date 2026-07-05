@@ -251,6 +251,7 @@ _ISSUE_SCORING: dict[str, tuple[int, int]] = {
     # v2.1 GEO Analyzer: Conventional checks
     "JSON_LD_INVALID":            (4,  2),
     "FAQ_SCHEMA_MISSING":         (2, 2),
+    "FAQ_ANSWERS_NOT_IN_HTML":    (4, 3),
     "PROMOTIONAL_CONTENT_INTERRUPTS": (1, 3),
     "AI_TXT_MISSING":             (1,  1),
     # Tier 1 GEO heuristics (spec §4.3–4.6)
@@ -354,6 +355,7 @@ _CALIBRATION: dict[str, tuple[str, str, bool]] = {
     "EXTERNAL_LINK_SKIPPED": ("Heuristic", "none", False),
     "EXTERNAL_LINK_TIMEOUT": ("Heuristic", "small", False),
     "FAQ_SCHEMA_MISSING": ("Established", "small", False),
+    "FAQ_ANSWERS_NOT_IN_HTML": ("Reasonable proxy", "moderate", False),
     "FAVICON_MISSING": ("Established", "small", False),
     "FIRST_VIEWPORT_NO_ANSWER": ("Heuristic", "moderate", False),
     "GEO_SUMMARY_BURIED": ("Heuristic", "moderate", False),
@@ -1549,6 +1551,17 @@ _CATALOGUE: dict[str, _IssueSpec] = {
         human_description="FAQ Without Schema",
         fixability="developer_needed",
     ),
+    "FAQ_ANSWERS_NOT_IN_HTML": _IssueSpec(
+        category="ai_readiness", severity="warning",
+        description="FAQ questions are in the HTML but their answers are not — the answer text "
+                    "only appears after a JavaScript click, so AI crawlers (which don't click) can't read it",
+        recommendation="Serve FAQ answer text in the page's HTML source, not injected on click. Use a "
+                       "native accordion block (or an accordion plugin) that outputs the answer text "
+                       "directly to the source, so AI systems and search engines can read every answer.",
+        human_description="FAQ Answers Hidden From AI",
+        fixability="developer_needed",
+        confidence_label="Reasonable proxy",
+    ),
     "PROMOTIONAL_CONTENT_INTERRUPTS": _IssueSpec(
         category="ai_readiness", severity="info",
         description="Mid-article sections classified as promotional interrupt the content flow",
@@ -1898,6 +1911,7 @@ _AI_READINESS_CONFIDENCE: dict[str, str] = {
     "DOCUMENT_PROPS_MISSING": "Established",
     "EXTERNAL_CITATIONS_LOW": "Heuristic",
     "FAQ_SCHEMA_MISSING": "Established",
+    "FAQ_ANSWERS_NOT_IN_HTML": "Reasonable proxy",
     "FIRST_VIEWPORT_NO_ANSWER": "Heuristic",
     "GEO_SUMMARY_BURIED": "Heuristic",
     "JSON_LD_INVALID": "Reasonable proxy",

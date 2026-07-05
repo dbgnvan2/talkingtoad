@@ -8,7 +8,7 @@ generator: scripts/generate_issue_codes_doc.py
 
 > **This file is auto-generated.** Do not edit by hand — your changes will be overwritten the next time the generator runs. To update an issue code, edit `api/crawler/issue_checker.py` (`_CATALOGUE`, `_ISSUE_SCORING`, `_AI_READINESS_CONFIDENCE`) and re-run `python scripts/generate_issue_codes_doc.py`.
 
-**151 issue codes** across 13 categories.
+**152 issue codes** across 13 categories.
 
 ## Table of contents
 
@@ -22,7 +22,7 @@ generator: scripts/generate_issue_codes_doc.py
 - [SECURITY](#security) (6)
 - [URL_STRUCTURE](#url_structure) (4)
 - [IMAGE](#image) (14)
-- [AI_READINESS](#ai_readiness) (62)
+- [AI_READINESS](#ai_readiness) (63)
 - [RENDERING](#rendering) (1)
 - [SEMANTIC_HTML](#semantic_html) (4)
 
@@ -1047,7 +1047,7 @@ Image takes too long to load (over 1 second)
 
 Site readiness for AI search engines (Google AI Overviews, ChatGPT, Perplexity, etc.). Every code in this category carries a confidence label per the v2.0 spec: **Established** (vendor-confirmed effect), **Reasonable proxy** (industry consensus + Google's published best practices), **Heuristic** (industry consensus only, no vendor confirmation).
 
-_62 codes in this category._
+_63 codes in this category._
 
 ### AI_BOT_BLANKET_DISALLOW
 **Severity:** 🔴 critical | **Confidence:** Established | **Impact:** 9 | **Effort:** 1
@@ -1458,6 +1458,17 @@ PDF is missing internal Title or Subject metadata
 **Recommendation:** Add links to authoritative external sources (.gov, .edu, research papers, official docs). Aggarwal et al. (2023) found citations measurably increase AI engine quotability.
 
 **Plain-English:** No External Citations
+
+---
+
+### FAQ_ANSWERS_NOT_IN_HTML
+**Severity:** 🟡 warning | **Confidence:** Reasonable proxy | **Impact:** 4 | **Effort:** 3
+
+FAQ questions are in the HTML but their answers are not — the answer text only appears after a JavaScript click, so AI crawlers (which don't click) can't read it
+
+**Recommendation:** Serve FAQ answer text in the page's HTML source, not injected on click. Use a native accordion block (or an accordion plugin) that outputs the answer text directly to the source, so AI systems and search engines can read every answer.
+
+**Plain-English:** FAQ Answers Hidden From AI
 
 ---
 

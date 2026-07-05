@@ -18,6 +18,11 @@ from api.crawler.checkers.registry import Issue, make_issue
 
 logger = logging.getLogger(__name__)
 
+# FAQ_ANSWERS_NOT_IN_HTML: a FAQ answer with fewer than this many characters of
+# text present in the RAW HTML is treated as absent (JS-injected on click).
+# See docs/thresholds.md.
+_FAQ_ANSWER_MIN_CHARS = 40
+
 
 def _run_geo_checks(page: "ParsedPage", url: str, issues: list) -> None:
     """Run all v2.1 GEO Analyzer static checks (called from check_page)."""
@@ -186,15 +191,41 @@ def _run_geo_checks(page: "ParsedPage", url: str, issues: list) -> None:
             }))
 
     # ── GEO.5.2: FAQ section without FAQPage schema ─────────────────────────
+    # Questions are detected accordion-aware at parse time (page.faq_blocks) so
+    # Elementor/Gutenberg <details>/accordion FAQs are counted, not just <h?>
+    # questions. Fixes the silent false-negative where an accordion FAQ with no
+    # literal "FAQ" heading was missed (audit 2026-07-04).
     _FAQ_RE = re.compile(r"\bfrequently\s+asked\s+questions?\b|\bfaq\b", re.I)
-    _Q_RE = re.compile(r"^(what|how|why|when|where|who|which|can|do|does|is|are)\b.*\?$", re.I)
+    faq_blocks = page.faq_blocks or []
     if "FAQPage" not in schema_types:
         has_faq_heading = any(_FAQ_RE.search(h.get("text", "")) for h in headings)
-        question_headings = [h for h in headings if _Q_RE.match(h.get("text", "").strip())]
-        if has_faq_heading or len(question_headings) >= 3:
+        question_count = len(faq_blocks)
+        sources: dict[str, int] = {}
+        for b in faq_blocks:
+            c = b.get("container", "other")
+            sources[c] = sources.get(c, 0) + 1
+        if has_faq_heading or question_count >= 3:
             issues.append(make_issue("FAQ_SCHEMA_MISSING", url, extra={
                 "faq_heading": has_faq_heading,
-                "question_headings": len(question_headings),
+                "question_count": question_count,
+                "sources": sources,
+            }))
+
+    # ── FAQ answers absent from raw HTML (JS-hydrated → invisible to AI) ─────
+    # The crawler reads raw HTML with no JS, exactly as a non-rendering AI crawler
+    # does. If FAQ question titles are present but their answer bodies are not,
+    # the answers are injected on click and no AI/search bot can read them.
+    if faq_blocks:
+        missing = [b for b in faq_blocks
+                   if b.get("answer_char_count", 0) < _FAQ_ANSWER_MIN_CHARS]
+        total = len(faq_blocks)
+        # Require a systematic pattern (>=2 and >=half) so a single genuinely
+        # terse answer doesn't false-positive; N-of-M announced in extra.
+        if len(missing) >= 2 and len(missing) >= 0.5 * total:
+            issues.append(make_issue("FAQ_ANSWERS_NOT_IN_HTML", url, extra={
+                "affected": len(missing),
+                "total": total,
+                "examples": [b["question"] for b in missing[:3]],
             }))
 
     # ── GEO.2.2: Structured elements count (metric only — no pass/fail) ─────

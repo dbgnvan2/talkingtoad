@@ -2514,6 +2514,19 @@ const issueHelp = {
       "Add FAQPage JSON-LD schema mirroring your visible FAQ content. Validate with Google's Rich Results Test.",
   },
 
+  FAQ_ANSWERS_NOT_IN_HTML: {
+    title: "FAQ answers hidden from AI",
+    category: "ai_readiness",
+    severity: "warning",
+    confidence: "Reasonable proxy",
+    definition:
+      "Your FAQ question titles are in the page's HTML, but the answer text is not — it only appears after a JavaScript click. AI crawlers and search bots don't click, so they can't read your answers.",
+    impact:
+      "Evidence tier: Reasonable proxy. Content that only exists after a JS interaction is invisible to non-rendering AI crawlers, so your FAQ answers can't be cited or indexed.",
+    fix:
+      "Serve the answer text directly in the HTML source. Use a native accordion block (or an accordion plugin) that outputs answers to the source instead of injecting them on click, then confirm by searching the page source (Ctrl+U) for an answer phrase.",
+  },
+
   PROMOTIONAL_CONTENT_INTERRUPTS: {
     title: "Promotional content in article",
     category: "ai_readiness",

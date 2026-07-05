@@ -64,7 +64,10 @@ _CLUSTER_SUPPRESSION: dict[str, frozenset[str]] = {
     # nav is unusable for the same reason its content is).
     "RAW_HTML_JS_DEPENDENT": frozenset(
         {"AI_CONTENT_NOT_IN_TEXT", "CONTENT_NOT_EXTRACTABLE_NO_TEXT",
-         "CONTACT_INFO_NOT_IN_HTML", "JS_DEPENDENT_NAVIGATION"}
+         "CONTACT_INFO_NOT_IN_HTML", "JS_DEPENDENT_NAVIGATION",
+         # a JS-shell page's FAQ answers are missing for the same root cause;
+         # charge the page-wide code once, not the narrow FAQ one too.
+         "FAQ_ANSWERS_NOT_IN_HTML"}
     ),
     # too few words → THIN_CONTENT and CONTENT_THIN are the same finding
     "THIN_CONTENT": frozenset({"CONTENT_THIN"}),
