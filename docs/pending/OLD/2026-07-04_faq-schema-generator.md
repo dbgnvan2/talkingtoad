@@ -3,7 +3,7 @@ status: pending — AWAITING APPROVAL (do not implement until approved)
 proposed: 2026-07-04
 author: Claude Code (Opus 4.8)
 scope: New "generate & advise" feature — FAQPage JSON-LD generator. NO auto-inject via WP API (WP safety rule).
-depends-on: docs/pending/2026-07-04_faq-detection-accordion-aivisibility.md (A+B — provides page.faq_blocks with real answer text)
+depends-on: docs/pending/OLD/2026-07-04_faq-detection-accordion-aivisibility.md (A+B — provides page.faq_blocks with real answer text)
 origin: User question ("Perhaps a schema generation?") + Gemini "AI clarity via FAQ Schema" discussion
 ---
 

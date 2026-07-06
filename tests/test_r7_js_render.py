@@ -1,6 +1,6 @@
 """R7 — JS-render trio wired in (audit remediation, 2026-07-04).
 
-Spec: docs/pending/2026-07-04_r7-js-render.md
+Spec: docs/pending/OLD/2026-07-04_r7-js-render.md
 The renderer itself needs Playwright; here we test the flag→issue mapping and the
 graceful no-op when the render errored / Playwright is absent.
 """

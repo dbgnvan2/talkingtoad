@@ -2,7 +2,7 @@
 
 Purpose: Build schema.org FAQPage structured data from FAQ Q&A pairs extracted
          from a page's RAW HTML, for the user to paste into their SEO plugin.
-Spec:    docs/pending/2026-07-04_faq-schema-generator.md
+Spec:    docs/pending/OLD/2026-07-04_faq-schema-generator.md
 Tests:   tests/test_faq_schema_generator.py
 
 Safety / rules:

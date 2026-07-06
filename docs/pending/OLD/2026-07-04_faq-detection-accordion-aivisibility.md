@@ -4,7 +4,7 @@ proposed: 2026-07-04
 author: Claude Code (Opus 4.8)
 scope: Phase-1 detection precision + ONE new issue code (B). Impact is derived via _CALIBRATION — no hand-edited scores.
 origin: Page-by-page accuracy audit of livingsystems.ca (/counselling/, /training-2/) + Gemini "AI agents finding FAQs" discussion
-companion: docs/pending/2026-07-04_faq-schema-generator.md (feature C, separate proposal)
+companion: docs/pending/OLD/2026-07-04_faq-schema-generator.md (feature C, separate proposal)
 ---
 
 # FAQ detection hardening (accordion-aware) + AI-visibility check

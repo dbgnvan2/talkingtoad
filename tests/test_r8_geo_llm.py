@@ -1,6 +1,6 @@
 """R8 — LLM-driven GEO checks (audit remediation, 2026-07-04).
 
-Spec: docs/pending/2026-07-04_r8-geo-llm.md
+Spec: docs/pending/OLD/2026-07-04_r8-geo-llm.md
 No real LLM calls — the network layer is mocked. Focus: structured-verdict
 parsing (L4) and the P14 error-as-content guard.
 """

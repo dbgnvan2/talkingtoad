@@ -1,6 +1,6 @@
 """R6 — real citation parser + source accessibility (audit remediation, 2026-07-04).
 
-Spec: docs/pending/2026-07-04_r6-citation-parser.md
+Spec: docs/pending/OLD/2026-07-04_r6-citation-parser.md
 Adversarial (P7): a well-cited page must NOT be flagged; only genuinely uncited
 pages fire CITATIONS_MISSING_SUBSTANTIAL_CONTENT.
 """

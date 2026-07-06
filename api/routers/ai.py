@@ -581,7 +581,7 @@ async def generate_faq_schema(request: Request, body: FaqSchemaRequest, store=De
     the page is re-fetched (SSRF-safe) and re-extracted; schema is built only
     from answers present in the HTML (never fabricated).
 
-    Spec: docs/pending/2026-07-04_faq-schema-generator.md
+    Spec: docs/pending/OLD/2026-07-04_faq-schema-generator.md
     """
     from bs4 import BeautifulSoup
     from api.crawler.fetcher import fetch_page, make_client

@@ -1,6 +1,6 @@
 """R2.x detection-precision fixes (audit remediation, 2026-07-04).
 
-Spec: docs/pending/2026-07-04_r2x-detection-precision.md
+Spec: docs/pending/OLD/2026-07-04_r2x-detection-precision.md
 No scoring changes — these verify what fires / what's reported.
 """
 

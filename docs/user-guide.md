@@ -88,13 +88,27 @@ Results are grouped by type:
 | **Rendering** | Navigation/content that only appears after JavaScript runs (invisible to AI crawlers) |
 | **Semantic HTML** | Fake buttons (div/span), unlabelled controls, missing `<main>`/`<nav>` landmarks |
 
+#### Noindex pages
+
+Pages marked **noindex** are deliberately hidden from search engines, so TalkingToad does not penalise them for content or SEO issues — the only finding reported for such a page is the noindex tag itself. This keeps intentionally-hidden pages (thank-you pages, staging drafts) from cluttering your results with fixes you don't need.
+
+#### Site-wide issues counted once
+
+Some problems affect your whole site rather than a single page — serving pages over **HTTP instead of HTTPS**, missing **www canonicalization**, a missing **HSTS** header, or **mixed content**. These site-scoped issues are counted **once per site**, not once per page, so a single misconfiguration doesn't inflate your issue total across hundreds of pages.
+
 ### Top 5 Priority Fixes
 
 The summary tab shows your five highest-priority issues to fix first. Each issue has an **Impact** score (how badly it hurts SEO) and an **Effort** score (how hard it is to fix). The priority ranking combines both.
 
+### Quick Wins
+
+Alongside the priority list you'll see a separate **Quick Wins** list. These are issues that are both **high impact** and **low effort** — the easy, high-value fixes that give you the most improvement for the least work. Quick Wins are picked independently of the priority ranking, so it's worth scanning this list even after you've worked through your Top Priority Fixes.
+
 ### Severity Colours
 
-- 🔴 **Critical** — Fix these first; they directly harm your search visibility
+After the 2026-07 severity recalibration, most issues now surface as **Info** — only page-fatal problems (such as `noindex` on a page you want indexed, or redirect loops) remain **Critical**. **Broken links** are now scored as **minor** (low impact) rather than critical: they're worth fixing, but they rarely sink your search visibility on their own.
+
+- 🔴 **Critical** — Fix these first; they directly harm your search visibility (reserved for page-fatal problems)
 - 🟡 **Warning** — Should be fixed; will improve your results
 - 🔵 **Info** — Worth knowing; low urgency
 
@@ -149,9 +163,21 @@ TalkingToad auto-detects whether you are using **Yoast SEO** or **Rank Math** an
 
 ---
 
+## FAQ Schema Generator
+
+If a page has a list of frequently-asked questions and answers, TalkingToad can generate **Schema.org FAQPage** structured data (JSON-LD) for it. Open the page's details and click the **Generate FAQ Schema** option — a modal shows ready-to-paste JSON-LD you can add to the page. Adding this markup helps AI assistants and search engines understand your Q&A content, improving your AI/GEO visibility.
+
+The schema is built only from answers that already appear in the page's HTML; TalkingToad never invents answers, and it does not write anything back to your site — the output is copy/paste only.
+
+---
+
 ## Exporting Results
 
 Click **Export CSV** on any results tab to download the data as a spreadsheet. You can share this with your web developer or use it to track progress over time.
+
+### Scoring model version
+
+Each audit is stamped with a **scoring-model version** (currently `2026-07-06-r5`). Because scoring rules evolve, this stamp lets you tell whether two audits used the same rules — results are directly comparable only when their scoring-model versions match.
 
 ---
 

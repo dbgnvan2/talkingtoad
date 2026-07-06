@@ -3,7 +3,7 @@ status: pending (authorized batch — audit remediation R2.x)
 proposed: 2026-07-04
 author: Claude Code (Opus 4.8)
 scope: Phase-1 detection-precision fixes; NO scoring changes (impact is derived via _CALIBRATION)
-companion: docs/review/2026-07-03_remediation-plan.md (R2.x) · 2026-07-03_code-audit-report.md (Phase 1)
+companion: docs/review/OLD/2026-07-03_remediation-plan.md (R2.x) · 2026-07-03_code-audit-report.md (Phase 1)
 ---
 
 # R2.x — detection-precision fixes (batch)

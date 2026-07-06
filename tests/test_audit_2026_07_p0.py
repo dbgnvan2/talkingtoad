@@ -1,7 +1,7 @@
 """Tests for the 2026-07-03 audit P0 correctness bugs + Phase 5 code-quality fixes.
 
 Each test maps to a remediation item in
-docs/review/2026-07-03_remediation-plan.md. See that plan + the audit report
+docs/review/OLD/2026-07-03_remediation-plan.md. See that plan + the audit report
 for the finding each fix addresses.
 """
 

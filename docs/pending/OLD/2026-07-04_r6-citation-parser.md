@@ -2,7 +2,7 @@
 status: IMPLEMENTED 2026-07-04 (audit remediation R6)
 author: Claude Code (Opus 4.8)
 scope: real citation parser + source-accessibility check; re-enable the quarantined citation codes
-companion: docs/review/2026-07-03_remediation-plan.md (R6) · code-audit-report §2.2
+companion: docs/review/OLD/2026-07-03_remediation-plan.md (R6) · code-audit-report §2.2
 ---
 
 # R6 — real citation parser (un-quarantine)

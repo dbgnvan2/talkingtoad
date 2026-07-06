@@ -1,6 +1,6 @@
 ---
 status: current
-last_reviewed: 2026-06-01
+last_reviewed: 2026-07-06
 ---
 # TalkingToad — Functional Specification
 
@@ -614,6 +614,41 @@ two placeholder-link codes. Serialised as `summary.agent_health_score` (int
 impact). More failing agent checks never raise the score (monotonic
 non-increasing).
 
+### 4.10 Citation source parsing (R6, engine step 7b)
+
+Real citations are extracted from each parsed page by `build_page_citations`
+(`issue_checker.py`): an external body link to a non-social source, with the
+anchor text captured as context (a bare-URL link becomes an orphan citation)
+and the attribution style (`footnote` / `inline` / `mixed` / `none`) inferred
+from the visible text. Post-crawl, `check_source_accessibility`
+(`api/services/citation_model.py`, capped at 30 URLs) probes the cited source
+URLs, and `citation_source_issues` emits **`CITATIONS_SOURCES_INACCESSIBLE`**
+for pages whose cited sources cannot be reached. Per the never-fabricate rule
+only real, parsed citations are considered. → `tests/test_r6_citations.py`
+
+### 4.11 JS-render / cloaking checks (R7, engine step 7c, Playwright-gated)
+
+`js_render_issues` (`issue_checker.py`) maps a `JSRenderResult` from the
+optional Playwright renderer to issues, gated on `HAS_PLAYWRIGHT`: the step is
+silently skipped when Playwright is absent and emits nothing on a render error
+(a failed render is never reported as a finding). It can fire
+**`JS_RENDERED_CONTENT_DIFFERS`** (significant content only appears after JS
+runs), **`CONTENT_CLOAKING_DETECTED`** (rendered topic diverges from raw HTML),
+and **`UA_CONTENT_DIFFERS`** (content served to AI-crawler user agents differs
+from the rendered page). → `tests/test_r7_js_render.py`
+
+### 4.12 GEO-LLM checks (R8, `POST /api/ai/geo-llm-checks`)
+
+Opt-in, LLM-driven GEO checks for a single page (one LLM call). The endpoint
+re-fetches and parses the page for its body text (the store does not persist
+it), then `classify_geo_llm`/`parse_geo_verdict` (`api/services/geo_llm.py`)
+classify it. `geo_llm_issues` maps the verdict to three codes —
+**`CENTRAL_CLAIM_BURIED`**, **`CHUNKS_NOT_SELF_CONTAINED`**, and
+**`PROMOTIONAL_CONTENT_INTERRUPTS`**. A failed or refused LLM response yields an
+empty verdict, never a spurious finding (P14); pages under 200 words are
+short-circuited with a `note`. Request `{page_url, job_id?}` → `{verdict,
+issues: [{code, severity, priority_rank}]}`. → `tests/test_r8_geo_llm.py`
+
 ---
 
 ## 5. Fix capabilities
@@ -666,6 +701,7 @@ Generate or retrieve curated `/llms.txt` content from crawl data.
 **Generate-and-suggest features (No direct WP mutation):**
 - **FAQ Generator (`POST /api/ai/geo-faq`):** Produces Schema.org `FAQPage` JSON-LD to capture long-tail, high-intent queries. Uses a hybrid engine with a deterministic template default and an opt-in `AIRouter` enrichment mode. Enforces a ≥6-word rule for all generated queries.
 - **Entity Schema Factory (`POST /api/geo/entity-schema`):** Deterministically constructs a nested `Organization -> Service -> FAQPage` JSON-LD block linking the organisation to its authoritative entity via `sameAs` (e.g. Wikipedia URL sourced from `GeoConfig`).
+- **Page FAQ Schema Generator (`POST /api/ai/faq-schema`):** Generates ready-to-paste Schema.org `FAQPage` JSON-LD for a single crawled page from its actual on-page Q&A. `generate_faqpage_schema` (`api/services/faq_schema_generator.py`) builds the schema only from answers present in the HTML — the page is re-fetched (SSRF-safe) and re-extracted via `_extract_faq_blocks` because answer text is not persisted in the crawl. Copy/export only; never writes to WordPress; refuses (`refused: true`) rather than fabricating when answers are JS-only. Request `{job_id, page_url}` → `{jsonld, question_count, refused, reason}`. → `tests/test_faq_schema_generator.py`
 
 ---
 
@@ -731,6 +767,18 @@ Every section header and every issue card in the Page Audit panel shows a visibl
 **Section-level help:** `CollapsibleSection` accepts a `helpContent` prop `{what, why, how}`. A `?` button after the section title toggles an inline blue panel. Content lives in `frontend/src/data/sectionHelp.js` (four entries: `page_metadata`, `headings_structure`, `issues_found`, `ai_recommendations`). `AIRecommendationsPanel` has its own inline `?` button using the same pattern.
 
 **Issue-level help:** `?` button added to the IssueCard header row (between Fix button and `···`), always visible when help content exists for the code. Clicking toggles `showHelp` — same state used by the "Show Help" action in `···`. Source content: `issueHelp.js` (140 entries, unchanged).
+
+### 6.9 Page-priority work queue (`GET /api/crawl/{job_id}/page-priority`)
+
+Ranks a job's crawled pages into a prioritised work queue by the Authority
+Matrix (§4.8): Vulnerable Stars first, then Traffic Decay / Staleness, then
+worst-health, with Hidden Gems surfaced as opportunities. Per-page health is
+computed via the canonical capped-and-suppressed model (`compute_page_health`,
+R5.0) rather than a raw impact sum. `refresh_trigger.rank_pages` performs the
+ordering, and `evaluate_refresh` produces each page's review flag; the queue
+works with **or without** GSC data — a page with no Performance Ledger records
+is ranked by health alone. Returns `{pages: [{url, health_score, gsc,
+review_flag: {flagged, reasons}}], total}`. → `tests/test_page_priority.py`
 
 ---
 

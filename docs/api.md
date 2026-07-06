@@ -40,6 +40,7 @@ same doc's §9 verification matrix.
 | GET | `/api/crawl/{job_id}/results` | Retrieve paginated results. |
 | GET | `/api/crawl/{job_id}/results/{category}` | Results filtered by category. |
 | POST | `/api/crawl/{job_id}/rescan-url?url={url}` | Re-fetch a single page, rerun checks, update stored issues. Sends cache-bypass headers. |
+| GET | `/api/crawl/{job_id}/page-priority` | Page Priority Work Queue: ranks the job's crawled pages by the Authority Matrix (Vulnerable Stars first, then Traffic Decay/Staleness, then worst-health; Hidden Gems surfaced as opportunities). Works with or without GSC data. Returns `{pages: [{url, health_score, gsc, review_flag: {flagged, reasons}, ...}], total}`. |
 
 ## Export
 
@@ -121,6 +122,7 @@ LLM-based content analysis for Generative Engine Optimization. Produces a struct
 |---|---|---|
 | POST | `/api/ai/geo-report` | Generate (or return cached) GEO report for a job's URL. See schema below. |
 | POST | `/api/ai/geo-faq` | Generate Schema.org FAQPage JSON-LD from a domain's GeoConfig. See schema below. |
+| POST | `/api/ai/geo-llm-checks` | R8: opt-in LLM-driven GEO checks for a single page (one LLM call). Re-fetches + parses the page for its body text, then classifies. Body: `{page_url, job_id?}`. Returns `{verdict, issues: [{code, severity, priority_rank}]}` — the three checks are `CENTRAL_CLAIM_BURIED`, `CHUNKS_NOT_SELF_CONTAINED`, `PROMOTIONAL_CONTENT_INTERRUPTS`. A failed/refused LLM response yields an empty verdict, never a spurious finding; pages under 200 words return an empty verdict with a `note`. |
 | POST | `/api/geo/entity-schema` | Generate nested Schema.org Organization JSON-LD from a domain's GeoConfig. See schema below. |
 | GET | `/api/geo/ai-model` | List available AI models and the currently selected model. |
 | POST | `/api/geo/ai-model` | Set the AI model for GEO analysis. Body: `{"model_id": "gpt-4o"}`. |

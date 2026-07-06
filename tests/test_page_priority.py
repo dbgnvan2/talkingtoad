@@ -2,7 +2,7 @@
 
 The ranking helpers in api/services/refresh_trigger.py are pure/deterministic.
 The endpoint GET /api/crawl/{job_id}/page-priority assembles health + GSC +
-ReviewFlag and ranks. Spec: docs/pending/2026-06-01_page_priority_work_queue.md
+ReviewFlag and ranks. Spec: docs/pending/OLD/2026-06-01_page_priority_work_queue.md
 """
 
 from api.services.refresh_trigger import (

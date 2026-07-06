@@ -74,7 +74,7 @@ structural half shipped; the high-variance impact recalibration is held for a se
 
 Both expert opinions (Gemini + Fable) received and triangulated with the audit (130/151 codes
 converged; 21 divergences adjudicated). Adopted Fable's synthesis (hard-capped Model B). Spec:
-`docs/pending/2026-07-03_r3-FINAL-calibration.md`.
+`docs/pending/OLD/2026-07-03_r3-FINAL-calibration.md`.
 - **R3.1** — 120 impacts recalibrated; impact now **derived** from a `_CALIBRATION` record via
   `derive_impact()` (matrix + Aggarwal measured lane + page-fatal 10-tier + documented overrides);
   `_AI_READINESS_CONFIDENCE` regenerated.

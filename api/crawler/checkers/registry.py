@@ -301,7 +301,7 @@ _ISSUE_SCORING: dict[str, tuple[int, int]] = {
 # reviews (Gemini + Fable) + audit. impact is DERIVED from (confidence x effect)
 # via the Model-B matrix, with an Aggarwal "measured" lane and a documented
 # override set. test_r3_calibration.py asserts _ISSUE_SCORING matches this.
-# Spec: docs/pending/2026-07-03_r3-FINAL-calibration.md
+# Spec: docs/pending/OLD/2026-07-03_r3-FINAL-calibration.md
 # ---------------------------------------------------------------------------
 _IMPACT_MATRIX: dict[tuple[str, str], int] = {
     ("Heuristic", "none"): 0,

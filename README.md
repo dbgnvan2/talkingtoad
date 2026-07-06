@@ -6,9 +6,10 @@ TalkingToad helps you identify technical SEO issues on your website and — for 
 
 ## 🚀 Key Features
 
-- **Async SEO Crawler:** Scans up to 500 pages for 140+ SEO issue codes.
+- **Async SEO Crawler:** Scans up to 500 pages for 152 SEO issue codes, using a recalibrated severity model where only page-fatal problems surface as Critical.
 - **WordPress Fix Manager:** One-click fixes for page titles, meta descriptions, headings, and image alt text.
 - **AI-Readiness Audit:** Checks how well your content is prepared for AI search engines (GEO optimization).
+- **FAQ / GEO Schema Generator:** Generates ready-to-paste Schema.org FAQPage JSON-LD from a page's Q&A to improve AI/GEO visibility.
 - **Image Intelligence:** Vision-AI powered image analysis and automatic optimization.
 - **Professional Reporting:** Export results as tabbed Excel workbooks or professional PDF audits.
 

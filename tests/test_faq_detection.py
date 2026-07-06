@@ -1,6 +1,6 @@
 """FAQ detection hardening — accordion-aware detection (A) + AI-visibility check (B).
 
-Spec: docs/pending/2026-07-04_faq-detection-accordion-aivisibility.md
+Spec: docs/pending/OLD/2026-07-04_faq-detection-accordion-aivisibility.md
 Origin: page-by-page accuracy audit of livingsystems.ca (Elementor nested-accordion FAQ)
         where FAQ_SCHEMA_MISSING reported `question_headings: 0` despite 7 real questions.
 """

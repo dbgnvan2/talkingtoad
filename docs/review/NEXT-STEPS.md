@@ -29,7 +29,7 @@ existing helper at `parser.py:1254-1270` — handles `aria-labelledby`/`title`/`
 caveat; staging-vs-production awareness for `NOINDEX_*`/`AI_BOT_BLANKET_DISALLOW`; freshness page-type
 awareness for `CONTENT_STALE`/`CONTENT_STAT_OUTDATED`; unify the AI-bot tables (`parser.py:176`
 `_AI_BOT_NAMES` vs `ai_bots.py:AI_BOTS`); `ROBOTS_BLOCKED` expected-disallow allow-list.
-**Paste to start:** *"Read docs/review/NEXT-STEPS.md item 1 and docs/review/2026-07-03_remediation-plan.md (R2.x / R6-pre). Implement the R2.x detection-precision fixes with tests, one micro-spec covering the batch. Don't change scoring."*
+**Paste to start:** *"Read docs/review/NEXT-STEPS.md item 1 and docs/review/OLD/2026-07-03_remediation-plan.md (R2.x / R6-pre). Implement the R2.x detection-precision fixes with tests, one micro-spec covering the batch. Don't change scoring."*
 
 ### 2. R6 — real citation parser
 **Why:** the 3 citation codes are quarantined (fed hardcoded-empty data). Wire a real parser so

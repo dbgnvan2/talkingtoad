@@ -2,7 +2,7 @@
 status: pending-approval (implementation plan)
 proposed: 2026-07-03
 author: Claude Code (Opus 4.8) — triangulation of TWO independent expert opinions + audit
-sources: Gemini R3 report ; Fable/Claude R3 report ; docs/review/2026-07-03_code-audit-report.md
+sources: Gemini R3 report ; Fable/Claude R3 report ; docs/review/OLD/2026-07-03_code-audit-report.md
 supersedes: docs/pending/2026-07-03_r3-model-b-calibration.md (single-opinion draft)
 governance: SPEC ONLY — changes every score; owner sign-off required before code
 ---

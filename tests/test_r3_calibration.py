@@ -1,7 +1,7 @@
 """R3 calibration (2026-07-03) — triangulated Model B: derived impact, derived
 severity, priority formula, quick-win flag.
 
-Spec: docs/pending/2026-07-03_r3-FINAL-calibration.md
+Spec: docs/pending/OLD/2026-07-03_r3-FINAL-calibration.md
 """
 
 import pytest

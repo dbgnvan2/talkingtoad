@@ -2,7 +2,7 @@
 
 > **How to use:** Place this file in the repo (suggested: `docs/review/`) together with the 11 companion documents listed below, then start Claude Code at the repo root and give it this instruction:
 >
-> *"Read docs/review/CLAUDE_CODE_AUDIT_PROMPT.md and execute it."*
+> *"Read docs/review/OLD/CLAUDE_CODE_AUDIT_PROMPT.md and execute it."*
 
 ---
 

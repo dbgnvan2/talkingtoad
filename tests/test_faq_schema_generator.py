@@ -1,6 +1,6 @@
 """FAQPage schema generator (feature C).
 
-Spec: docs/pending/2026-07-04_faq-schema-generator.md
+Spec: docs/pending/OLD/2026-07-04_faq-schema-generator.md
 Generate-and-advise: builds FAQPage JSON-LD from answers present in the HTML,
 never fabricates, never writes to WordPress.
 """
