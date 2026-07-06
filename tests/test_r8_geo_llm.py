@@ -7,8 +7,9 @@ parsing (L4) and the P14 error-as-content guard.
 
 import pytest
 
+from api.services.ai_analyzer import AIAnalysisError
 from api.services.geo_llm import (
-    classify_geo_llm, geo_llm_issues, parse_geo_verdict, _is_ai_error,
+    classify_geo_llm, geo_llm_issues, parse_geo_verdict,
 )
 
 
@@ -37,15 +38,38 @@ def test_parse_non_bool_values_ignored():
 
 
 # ── P14 error-as-content guard ────────────────────────────────────────────────
-@pytest.mark.parametrize("s", [
-    "AI analysis skipped: No API key configured",
-    "Error calling AI: timeout",
-    "AI analysis failed: boom",
-    "",
-])
-def test_error_strings_are_not_content(s):
-    assert _is_ai_error(s) is True
-    assert parse_geo_verdict(s) == {}  # never parsed as a verdict
+@pytest.mark.parametrize("s", ["", "   ", "not json at all", "{broken"])
+def test_garbage_is_not_content(s):
+    # parse_geo_verdict never turns empty/garbage into a verdict (L4).
+    assert parse_geo_verdict(s) == {}
+
+
+@pytest.mark.asyncio
+async def test_call_llm_failure_raises_not_returns_sentinel(monkeypatch):
+    """P14: on provider failure, _call_llm RAISES AIAnalysisError — it does not
+    return an error string that could be parsed as a verdict."""
+    from api.services import ai_analyzer
+    from api.services.geo_llm import _call_llm
+
+    async def boom(*a, **k):
+        raise RuntimeError("provider down")
+
+    monkeypatch.setattr(ai_analyzer.ai_router, "call_text", boom)
+    with pytest.raises(AIAnalysisError):
+        await _call_llm("some page text")
+
+
+@pytest.mark.asyncio
+async def test_classify_returns_empty_on_llm_failure(monkeypatch):
+    """P14 load-bearing: a raised AIAnalysisError must yield an EMPTY verdict —
+    the error must never surface as a finding/content."""
+    async def boom(text):
+        raise AIAnalysisError("GEO LLM classification failed: no key")
+    monkeypatch.setattr("api.services.geo_llm._call_llm", boom)
+    v = await classify_geo_llm("some long page text")
+    assert v == {}
+    # And no issues are emitted from an empty verdict:
+    assert geo_llm_issues("https://x.test/", v) == []
 
 
 # ── classify_geo_llm (LLM layer mocked) ───────────────────────────────────────

@@ -11,6 +11,11 @@ model selection — no hardcoded model IDs, per llm-integration.md L1):
 Standards: llm-integration.md (L4 structured output + parse; P14 error-as-content
 guard) and external-api.md (the router owns timeout/retry). A failed/refused LLM
 response is NEVER rendered as a finding.
+
+P14: the LLM layer (``_call_llm``) raises :class:`AIAnalysisError` on any failure
+instead of returning a sentinel error *string* — so an error can never be parsed
+as a verdict. ``classify_geo_llm`` catches it and yields an empty verdict (``{}``),
+``parse_geo_verdict`` still defends against empty/garbage/non-JSON output (L4).
 """
 
 from __future__ import annotations
@@ -19,6 +24,7 @@ import json
 import logging
 
 from api.crawler.checkers.registry import make_issue
+from api.services.ai_analyzer import AIAnalysisError
 
 logger = logging.getLogger(__name__)
 
@@ -29,10 +35,6 @@ _CODE = {
     "promotional_content_interrupts": "PROMOTIONAL_CONTENT_INTERRUPTS",
 }
 _KEYS = tuple(_CODE)
-
-# P14: analyze_with_ai / our _call_llm return error STRINGS on failure. These
-# prefixes mark "this is an error, not content" — never parse them as a verdict.
-_ERROR_PREFIXES = ("ai analysis skipped", "error calling ai", "ai analysis failed")
 
 _MAX_TEXT_CHARS = 6000
 
@@ -52,17 +54,14 @@ _PROMPT = (
 )
 
 
-def _is_ai_error(s: str) -> bool:
-    return (not s) or any(s.strip().lower().startswith(p) for p in _ERROR_PREFIXES)
-
-
 def parse_geo_verdict(raw: str) -> dict:
     """Extract the ``{key: bool}`` verdict from an LLM response.
 
-    Returns ``{}`` for an error/refusal string (P14) or any unparseable / non-JSON
-    output (L4) — the caller then emits nothing. Only boolean values are kept.
+    Returns ``{}`` for empty output or any unparseable / non-JSON output (L4) —
+    the caller then emits nothing. Only boolean values are kept. (Errors no
+    longer arrive here as strings — ``_call_llm`` raises AIAnalysisError, P14.)
     """
-    if _is_ai_error(raw):
+    if not raw or not raw.strip():
         return {}
     try:
         start = raw.index("{")
@@ -77,8 +76,12 @@ def parse_geo_verdict(raw: str) -> dict:
 
 async def _call_llm(text: str) -> str:
     """Run the classifier prompt through the existing AI router. Reuses
-    ai_analyzer's config-driven model (no hardcoded ID). Never raises — returns
-    an error-sentinel string on failure, which ``parse_geo_verdict`` filters (P14).
+    ai_analyzer's config-driven model (no hardcoded ID).
+
+    Returns the raw LLM response string on success. Raises
+    :class:`AIAnalysisError` on any failure (no key, provider error, timeout).
+    (P14) It no longer returns an error-sentinel string that could be parsed
+    as a verdict — failure is unambiguous and handled by ``classify_geo_llm``.
     """
     try:
         from api.services.ai_analyzer import (
@@ -96,12 +99,20 @@ async def _call_llm(text: str) -> str:
         return response.content
     except Exception as exc:  # ProviderAuthError, timeouts, etc.
         logger.warning("geo_llm_failed", extra={"error": str(exc)})
-        return f"AI analysis failed: {exc}"
+        raise AIAnalysisError(f"GEO LLM classification failed: {exc}") from exc
 
 
 async def classify_geo_llm(text: str) -> dict:
-    """Return the ``{key: bool}`` GEO verdict for *text* (``{}`` on any failure)."""
-    return parse_geo_verdict(await _call_llm(text))
+    """Return the ``{key: bool}`` GEO verdict for *text* (``{}`` on any failure).
+
+    P14: a failed/refused LLM call raises AIAnalysisError inside ``_call_llm``;
+    we catch it and return an empty verdict so no spurious finding is emitted.
+    """
+    try:
+        raw = await _call_llm(text)
+    except AIAnalysisError:
+        return {}
+    return parse_geo_verdict(raw)
 
 
 def geo_llm_issues(url: str, verdict: dict) -> list:

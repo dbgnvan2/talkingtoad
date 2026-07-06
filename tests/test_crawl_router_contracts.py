@@ -336,3 +336,45 @@ class TestAgentReadinessContract:
         assert any(a["code"] == "NON_SEMANTIC_BUTTON" for a in body["agent_issues"])
         for a in body["agent_issues"]:
             assert "code" in a and "severity" in a and "tier" in a
+
+
+# ===================================================================
+# P14: executive-summary must never store/return an AI error as content
+# ===================================================================
+
+
+class TestExecutiveSummaryAIErrorNotContent:
+    """When analyze_with_ai raises AIAnalysisError, the endpoint must return an
+    AI_UNAVAILABLE error (503) and must NOT cache/return the error text as the
+    `summary` content on the job (P14 error-as-content)."""
+
+    @pytest.mark.asyncio
+    async def test_ai_error_returns_503_and_is_not_cached(
+        self, seeded_job, auth_headers, test_store, monkeypatch
+    ):
+        from api.services.ai_analyzer import AIAnalysisError
+
+        api_client, job_id = seeded_job
+
+        async def boom(prompt_key, context):
+            raise AIAnalysisError("Error calling AI: provider unreachable")
+
+        # The endpoint imports analyze_with_ai from the source module at call
+        # time, so patch it there.
+        monkeypatch.setattr(
+            "api.services.ai_analyzer.analyze_with_ai", boom
+        )
+
+        r = await api_client.get(
+            f"/api/crawl/{job_id}/executive-summary", headers=auth_headers
+        )
+        assert r.status_code == 503
+        body = r.json()
+        # Error is surfaced in the error channel, not as `summary` content.
+        assert "summary" not in body
+
+        # Load-bearing: the error string must NOT have been cached on the job.
+        job = await test_store.get_job(job_id)
+        assert not job.executive_summary, (
+            "AI error string must never be cached as the job's executive_summary"
+        )

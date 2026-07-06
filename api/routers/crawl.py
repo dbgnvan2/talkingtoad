@@ -1157,7 +1157,7 @@ async def get_executive_summary(
 
     # Generate via AI
     try:
-        from api.services.ai_analyzer import analyze_with_ai
+        from api.services.ai_analyzer import AIAnalysisError, analyze_with_ai
         summary = await store.get_summary(job_id)
         issues = await store.get_all_issues(job_id)
         top_issues_list = sorted(issues, key=lambda i: -(i.priority_rank or 0))
@@ -1170,12 +1170,17 @@ async def get_executive_summary(
             "warnings": summary.get("by_severity", {}).get("warning", 0),
             "top_issues": top_3,
         }
+        # P14: analyze_with_ai raises AIAnalysisError on failure. Only a real
+        # summary string reaches update_job / the response — an error is never
+        # cached on the job or returned as `summary` content.
         result = await analyze_with_ai("executive_summary", context)
 
         # Cache it on the job
         await store.update_job(job_id, executive_summary=result)
 
         return {"summary": result, "cached": False}
+    except AIAnalysisError as exc:
+        return _err("AI_UNAVAILABLE", f"Could not generate summary: {str(exc)}", 503)
     except Exception as exc:
         return _err("AI_UNAVAILABLE", f"Could not generate summary: {str(exc)}", 503)
 
@@ -1308,7 +1313,7 @@ async def export_pdf_report(
     # Try to generate AI executive summary (optional — skipped if no API keys)
     executive_summary = None
     try:
-        from api.services.ai_analyzer import analyze_with_ai
+        from api.services.ai_analyzer import AIAnalysisError, analyze_with_ai
         top_issues_list = sorted(issues, key=lambda i: -(i.priority_rank or 0))
         top_3 = ", ".join(dict.fromkeys(i.human_description or i.issue_code for i in top_issues_list[:5]))
         ai_context = {
@@ -1318,7 +1323,11 @@ async def export_pdf_report(
             "warnings": summary.get("by_severity", {}).get("warning", 0),
             "top_issues": top_3,
         }
+        # P14: on failure analyze_with_ai raises; executive_summary stays None
+        # so the PDF never renders an error string as report content.
         executive_summary = await analyze_with_ai("executive_summary", ai_context)
+    except AIAnalysisError as exc:
+        logger.info("ai_summary_skipped", extra={"reason": str(exc)})
     except Exception as exc:
         logger.info("ai_summary_skipped", extra={"reason": str(exc)})
 

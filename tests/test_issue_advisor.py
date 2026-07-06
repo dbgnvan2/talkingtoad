@@ -359,9 +359,13 @@ async def test_issue_advisor_no_api_key_returns_error_not_suggestion(api_client,
     url = "https://livingsystems.ca/"
     await _seed_page(test_store, job_id, url)
 
-    # Simulate analyze_with_ai returning the no-key error string
+    # P14: analyze_with_ai raises AIAnalysisError when no key is configured.
+    from api.services.ai_analyzer import AIAnalysisError
+
     async def mock_analyze(prompt_key, context):
-        return "AI analysis skipped: No API key configured (GEMINI_API_KEY or OPENAI_API_KEY)."
+        raise AIAnalysisError(
+            "AI analysis skipped: No API key configured (GEMINI_API_KEY or OPENAI_API_KEY)."
+        )
 
     monkeypatch.setattr("api.routers.ai.analyze_with_ai", mock_analyze)
 
@@ -382,8 +386,60 @@ async def test_issue_advisor_no_api_key_returns_error_not_suggestion(api_client,
     data = response.json()
     # Must surface as an error, not as a suggestion the user would copy
     assert "error" in data, "Error string must return as {error:} not as suggestion content"
+    # P14 load-bearing: the error text must NEVER appear as `suggestion` content.
+    assert "suggestion" not in data, "error must not be rendered as a suggestion"
+    assert "No API key configured" in data["error"]
     assert data.get("suggestion") is None, "suggestion field must be absent when AI call fails"
     assert "skipped" in data["error"] or "No API key" in data["error"]
+
+
+@pytest.mark.asyncio
+async def test_page_advisor_ai_error_routed_not_rendered(api_client, test_store, auth_headers, monkeypatch):
+    """P14: when analyze_with_ai raises, /page-advisor returns {error:} and the
+    error text never appears in `recommendations` as if it were AI content."""
+    from api.services.ai_analyzer import AIAnalysisError
+    job_id = "job-page-advisor-err"
+    url = "https://livingsystems.ca/"
+    await _seed_page(test_store, job_id, url)
+
+    async def boom(prompt_key, context):
+        raise AIAnalysisError("Error calling AI: provider unreachable")
+    monkeypatch.setattr("api.routers.ai.analyze_with_ai", boom)
+
+    response = await api_client.post(
+        "/api/ai/page-advisor", headers=auth_headers,
+        json={"job_id": job_id, "page_url": url},
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert "error" in data
+    assert "provider unreachable" in data["error"]
+    # Load-bearing: error must NOT be rendered as recommendations content.
+    assert "recommendations" not in data
+
+
+@pytest.mark.asyncio
+async def test_site_advisor_ai_error_routed_not_rendered(api_client, test_store, auth_headers, monkeypatch):
+    """P14: when analyze_with_ai raises, /site-advisor returns {error:} and the
+    error text never appears in `recommendations` as if it were AI content."""
+    from api.services.ai_analyzer import AIAnalysisError
+    job_id = "job-site-advisor-err"
+    url = "https://livingsystems.ca/"
+    await _seed_page(test_store, job_id, url)
+
+    async def boom(prompt_key, context):
+        raise AIAnalysisError("Error calling AI: provider unreachable")
+    monkeypatch.setattr("api.routers.ai.analyze_with_ai", boom)
+
+    response = await api_client.post(
+        "/api/ai/site-advisor", headers=auth_headers,
+        json={"job_id": job_id},
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert "error" in data
+    assert "provider unreachable" in data["error"]
+    assert "recommendations" not in data
 
 
 def test_ai_text_suggestion_codes_excludes_non_text_issues():

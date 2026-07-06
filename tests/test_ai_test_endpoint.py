@@ -61,15 +61,16 @@ async def test_ai_test_success_shape_no_api_key_read(api_client, auth_headers, m
 
 @pytest.mark.asyncio
 async def test_ai_test_failure_shape_no_api_key_read(api_client, auth_headers, monkeypatch):
-    """Failure path: provider returns an error sentinel string -> success:false
-    with the message, and still no api_key_read.
+    """Failure path (P14): analyze_with_ai RAISES AIAnalysisError -> success:false
+    with the message routed to the error channel, no `sample`, no api_key_read.
 
-    Note (P14): analyze_with_ai signals failure via a sentinel string matched by
-    str.startswith rather than raising. The endpoint routes it correctly, but the
-    mixed-mode str return is a latent error-as-content pattern — noted, not fixed.
+    The error text must never appear as `sample` (content). It is routed only to
+    `message`, which the frontend renders in the error/status channel.
     """
+    from api.services.ai_analyzer import AIAnalysisError
+
     async def fake_analyze(prompt_key, context):
-        return "Error calling AI: provider unreachable"
+        raise AIAnalysisError("Error calling AI: provider unreachable")
 
     monkeypatch.setattr("api.routers.ai.analyze_with_ai", fake_analyze)
 
@@ -79,5 +80,6 @@ async def test_ai_test_failure_shape_no_api_key_read(api_client, auth_headers, m
     data = response.json()
     assert data["success"] is False
     assert "Error calling AI" in data["message"]
+    # Error text is NOT rendered as content:
     assert "sample" not in data
     assert "api_key_read" not in data

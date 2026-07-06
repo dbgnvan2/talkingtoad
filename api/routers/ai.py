@@ -9,7 +9,11 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
 from api.routers.crawl import get_store
-from api.services.ai_analyzer import analyze_with_ai, analyze_image_with_geo
+from api.services.ai_analyzer import (
+    AIAnalysisError,
+    analyze_with_ai,
+    analyze_image_with_geo,
+)
 from api.services.auth import require_auth
 from api.services.rate_limiter import AI_ANALYSIS_LIMIT, limiter
 
@@ -90,14 +94,15 @@ async def analyze_page(request: Request, body: AIAnalysisRequest, store=Depends(
         return {"error": f"Invalid analysis type: {body.analysis_type}"}
 
     import json, re as _re
-    raw = await analyze_with_ai(body.analysis_type, context)
+    # P14: analyze_with_ai raises AIAnalysisError on any failure (no key,
+    # timeout, provider error). Route the error to the {error:} channel so it
+    # is never returned as a `suggestion` the user would copy as content.
+    try:
+        raw = await analyze_with_ai(body.analysis_type, context)
+    except AIAnalysisError as exc:
+        return {"error": str(exc)}
 
     if body.analysis_type == "issue_advisor":
-        # C1: Detect error strings from analyze_with_ai (no key, timeout, etc.)
-        # and route them as error responses rather than presenting them as suggestions.
-        if raw.startswith("AI analysis skipped") or raw.startswith("Error calling AI"):
-            return {"error": raw}
-
         # Strip markdown fences the model sometimes wraps around JSON
         cleaned = raw.strip()
         if cleaned.startswith("```"):
@@ -158,18 +163,14 @@ async def test_ai_connection():
     }
     try:
         suggestion = await analyze_with_ai("title_meta_optimize", context)
-        # Check if the result is an error message from the service
-        if suggestion.startswith("AI analysis skipped") or suggestion.startswith("Error calling"):
-            return {
-                "success": False,
-                "message": suggestion,
-            }
-
         return {
             "success": True,
             "message": "AI connection successful!",
             "sample": suggestion,
         }
+    except AIAnalysisError as exc:
+        # P14: failure now arrives as an exception, not a sentinel string.
+        return {"success": False, "message": str(exc)}
     except Exception as exc:
         return {"success": False, "message": str(exc)}
 
@@ -218,7 +219,12 @@ async def get_page_advisor(request: Request, body: PageAdvisorRequest, store=Dep
     # Get AI recommendations
     import json
     import re
-    suggestion = await analyze_with_ai("page_advisor", context)
+    # P14: on failure, return an {error:} response — never let the error text
+    # flow into `recommendations` as if it were an AI suggestion.
+    try:
+        suggestion = await analyze_with_ai("page_advisor", context)
+    except AIAnalysisError as exc:
+        return {"page_url": body.page_url, "error": str(exc)}
 
     # Strip markdown code blocks if present (```json ... ``` or ``` ... ```)
     cleaned = suggestion.strip()
@@ -278,7 +284,12 @@ async def get_site_advisor(request: Request, body: SiteAdvisorRequest, store=Dep
     # Get AI recommendations
     import json
     import re
-    suggestion = await analyze_with_ai("site_advisor", context)
+    # P14: on failure, return an {error:} response — never let the error text
+    # flow into `recommendations` as if it were an AI suggestion.
+    try:
+        suggestion = await analyze_with_ai("site_advisor", context)
+    except AIAnalysisError as exc:
+        return {"job_id": body.job_id, "error": str(exc)}
 
     # Strip markdown code blocks if present (```json ... ``` or ``` ... ```)
     cleaned = suggestion.strip()

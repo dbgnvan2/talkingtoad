@@ -12,14 +12,16 @@ uniformly. The previous direct-to-httpx call sites
 been removed — provider drivers under ``api/services/providers/``
 handle HTTP, base64 encoding, response parsing, and token extraction.
 
-Public API preserved exactly:
-    - ``analyze_with_ai(prompt_key, context) -> str``
+Public API:
+    - ``analyze_with_ai(prompt_key, context) -> str`` (raises AIAnalysisError on failure)
     - ``analyze_image_with_ai(image_url, current_alt) -> dict``
     - ``analyze_image_with_geo(image_url, page_h1, surrounding_text, geo_config) -> dict``
 
 When AIRouter raises ``ProviderAuthError`` (no customer key + no env
-key), each public function maps it back to its pre-Cycle-BB
-"AI analysis skipped" shape so callers see identical behaviour.
+key), the image functions map it back to their pre-Cycle-BB error-shaped
+dict (``success: False`` / ``issues: ["NO_API_KEY"]``). ``analyze_with_ai``
+raises :class:`AIAnalysisError` on any failure (P14 fix — it no longer
+returns a sentinel error *string* that a caller could render as content).
 """
 
 import json
@@ -43,6 +45,23 @@ from api.services.ai_router import (
 load_dotenv()
 
 logger = logging.getLogger(__name__)
+
+
+class AIAnalysisError(Exception):
+    """Raised by :func:`analyze_with_ai` when a text analysis cannot be
+    completed (no provider key, provider/API error, timeout, or a prompt
+    template that is missing a context key).
+
+    P14 (error-as-content): this replaces the previous mixed-mode contract
+    where failure was signalled by returning a sentinel *string*
+    ("AI analysis skipped …", "Error calling AI: …"). Because success and
+    failure were both ``str``, callers could — and did — render an error
+    message as if it were AI content. Raising instead makes failure
+    unambiguous: a caller can only obtain a string by succeeding, and must
+    explicitly ``except AIAnalysisError`` to route the failure to an error
+    channel (``{"error": ...}``, ``success: False``, a skipped/None result),
+    never to displayed or stored content.
+    """
 
 
 # ---------------------------------------------------------------------------
@@ -285,9 +304,15 @@ async def _fetch_image_bytes(image_url: str) -> tuple[bytes, str]:
 async def analyze_with_ai(prompt_key: str, context: dict[str, Any]) -> str:
     """Send a request to the configured LLM using a prompt from the library.
 
-    Returns the LLM's response text. When no AI provider is configured,
-    returns a "skipped" string (preserves pre-Cycle-BB behaviour so that
-    callers expecting a string never see an exception).
+    Returns the LLM's response text on success (a plain suggestion string).
+
+    Raises:
+        ValueError: if ``prompt_key`` is not in the prompt library.
+        AIAnalysisError: for every runtime failure — no provider key
+            configured, provider/API error, timeout, or a prompt template
+            missing a required context key. (P14) Failure is signalled ONLY
+            by this exception; the return value is never an error string, so
+            callers cannot accidentally render an error as content.
     """
     if prompt_key not in PROMPT_LIBRARY:
         raise ValueError(f"Unknown prompt key: {prompt_key}")
@@ -297,7 +322,7 @@ async def analyze_with_ai(prompt_key: str, context: dict[str, Any]) -> str:
         prompt = prompt_template.format(**context)
     except KeyError as exc:
         logger.error("ai_analysis_prompt_key_error", extra={"prompt_key": prompt_key, "missing_key": str(exc)})
-        return f"Error calling AI: prompt template missing key {exc}"
+        raise AIAnalysisError(f"Prompt template missing key {exc}") from exc
 
     _provider, cfg = _pick_model(_DEFAULT_TEXT_MODEL_BY_PROVIDER)
     # Schema codes ask the model to write a full JSON-LD <script> block which
@@ -319,15 +344,15 @@ async def analyze_with_ai(prompt_key: str, context: dict[str, Any]) -> str:
             model_config=cfg,
         )
         return response.content
-    except ProviderAuthError:
+    except ProviderAuthError as exc:
         logger.warning("ai_analysis_skipped_no_key")
-        return (
+        raise AIAnalysisError(
             "AI analysis skipped: No API key configured "
             "(GEMINI_API_KEY or OPENAI_API_KEY)."
-        )
+        ) from exc
     except Exception as exc:
         logger.error("ai_analysis_failed", extra={"error": str(exc)})
-        return f"Error calling AI: {str(exc)}"
+        raise AIAnalysisError(f"Error calling AI: {str(exc)}") from exc
 
 
 # ---------------------------------------------------------------------------
