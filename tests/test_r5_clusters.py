@@ -124,6 +124,33 @@ def test_clusters_never_touch_security_redirect():
                 )
 
 
+# ── V1 (R3.4 closeout) blanket-robots suppression parent ─────────────────────
+def test_v1_blanket_robots_suppresses_only_present_children():
+    """V1 / R3.4: AI_BOT_BLANKET_DISALLOW is a suppression parent over its
+    per-bot children — but only the children ACTUALLY PRESENT on the page are
+    suppressed (a globally-charged sibling that isn't on the page is untouched),
+    and the cluster never reaches a security/redirect code."""
+    parent = "AI_BOT_BLANKET_DISALLOW"
+    all_children = _CLUSTER_SUPPRESSION[parent]
+    assert all_children == frozenset({
+        "AI_BOT_SEARCH_BLOCKED", "AI_BOT_USER_FETCH_BLOCKED",
+        "ROBOTS_BLOCKED", "AI_BOT_NO_AI_DIRECTIVES",
+    })
+
+    # Only the SUBSET of children present on the page is suppressed.
+    present = {parent, "AI_BOT_SEARCH_BLOCKED", "ROBOTS_BLOCKED"}
+    assert page_suppressed_codes(present) == {"AI_BOT_SEARCH_BLOCKED", "ROBOTS_BLOCKED"}
+    # An absent child (AI_BOT_USER_FETCH_BLOCKED) is not conjured into the drop set.
+    assert "AI_BOT_USER_FETCH_BLOCKED" not in page_suppressed_codes(present)
+
+    # Parent absent ⇒ no suppression at all.
+    assert page_suppressed_codes({"AI_BOT_SEARCH_BLOCKED", "ROBOTS_BLOCKED"}) == set()
+
+    # None of the children are in a security/redirect category (never suppressed).
+    for child in all_children:
+        assert _CATALOGUE[child].category not in {"security", "redirect"}
+
+
 # ── R5.3 noindex scope-reduction ──────────────────────────────────────────────
 def test_noindex_scope_reduction():
     """R5.3.1 / spec §10(g): a noindexed page with many content issues across

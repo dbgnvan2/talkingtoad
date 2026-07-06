@@ -5,7 +5,10 @@ Spec: docs/specs/ai-readiness/v2-extended-module.md § 3.4
 
 import pytest
 from api.crawler.parser import ParsedPage
-from api.services.schema_typing import validate_schema_typing
+from api.services.schema_typing import (
+    check_schema_visible_mismatch,
+    validate_schema_typing,
+)
 
 
 def _make_page(url, *, title=None, schema_types=None, **kw):
@@ -146,3 +149,60 @@ class TestCaseInsensitivity:
         is_appropriate, issue = validate_schema_typing(page)
         # Should match despite case difference
         assert is_appropriate is True or (is_appropriate is False and "schema_mismatch" in issue or "schema_conflict" in issue)
+
+
+class TestSchemaVisibleMismatchThemeArtifact:
+    """V2 (docs/pending/2026-07-06_deploy-gate-validation.md#V2).
+
+    SCHEMA_VISIBLE_MISMATCH was a confirmed FALSE POSITIVE on livingsystems.ca:
+    the WP SEO plugin injects an author-byline ``Person`` node into the JSON-LD
+    ``@graph`` whose ``name`` is the site owner ("Dave Galloway") and is never in
+    the visible copy of an unrelated page. The existing guard skipped author
+    nodes whose ``@id`` contains ``author`` (``…/author/…/#schema-author``) but
+    MISSED the sibling graph-node form ``…/#/schema/person/<hash>`` that carries
+    the SAME byline — so the check fired site-wide on theme-injected schema.
+    """
+
+    # The two real author-node @id shapes seen on the live site.
+    _GRAPH_PERSON_ID = (
+        "https://livingsystems.ca/#/schema/person/b49ad57b5a0d83f2fe854689f29746f2"
+    )
+    _CLASSIC_AUTHOR_ID = "https://livingsystems.ca/author/dave-galloway/#schema-author"
+
+    def test_visible_mismatch_no_fp_theme_schema(self):
+        """Adversarial: theme-injected author ``Person`` nodes whose name is NOT
+        in visible copy must NOT fire SCHEMA_VISIBLE_MISMATCH (either @id form).
+        """
+        visible = "Societal Emotional Process with Lois Walker. An episode."
+        graph_author = {
+            "@type": "Person",
+            "name": "Dave Galloway",
+            "@id": self._GRAPH_PERSON_ID,
+        }
+        classic_author = {
+            "@type": "Person",
+            "name": "Dave Galloway",
+            "@id": self._CLASSIC_AUTHOR_ID,
+        }
+        # Neither author-metadata node fires, even though the byline is absent.
+        assert check_schema_visible_mismatch([graph_author], visible) == []
+        assert check_schema_visible_mismatch([classic_author], visible) == []
+        # And nested inside an @graph (the real shape).
+        graphed = {"@graph": [graph_author, classic_author]}
+        assert check_schema_visible_mismatch([graphed], visible) == []
+
+    def test_visible_mismatch_still_fires_on_true_subject_person(self):
+        """True-positive preserved (anti-P7): a SUBJECT ``Person`` node — a normal
+        page-content @id, name genuinely absent from the copy — MUST still fire.
+        The suppression is narrow to author-metadata @id forms, not all Persons.
+        """
+        subject_person = {
+            "@type": "Person",
+            "name": "Jane Practitioner",
+            "@id": "https://example.com/team/jane#person",
+        }
+        visible = "Our clinic offers counselling. Contact us to book a session."
+        assert check_schema_visible_mismatch([subject_person], visible) == ["Person.name"]
+        # And when the subject IS visible, it does not fire.
+        visible_ok = "Meet Jane Practitioner, our lead counsellor."
+        assert check_schema_visible_mismatch([subject_person], visible_ok) == []

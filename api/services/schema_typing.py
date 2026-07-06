@@ -142,16 +142,26 @@ def _is_author_publisher_node(block: dict) -> bool:
     """True if this node is an author/publisher *metadata* Person injected by a WP
     SEO plugin (Yoast/RankMath), not the page's subject.
 
-    These carry an ``@id`` like ``https://site/author/<user>/#schema-author`` and
-    a ``name`` that is the post author's byline — never expected in the visible
+    These carry an ``@id`` in one of two SEO-plugin forms:
+      - ``https://site/author/<user>/#schema-author`` (the author permalink node), or
+      - ``https://site/#/schema/person/<hash>`` (the sibling @graph Person node
+        the plugin emits for the SAME author byline).
+    Their ``name`` is the post author's byline — never expected in the visible
     body of an unrelated page (e.g. a team-member profile whose author is the site
     owner). Checking their name against page text false-positived SCHEMA_VISIBLE_
-    MISMATCH (−6) on ~64% of pages. The page's *subject* Person (a team page about
-    that person) has a different @id and its name IS visible, so it still fires
-    correctly when genuinely absent. (Firing-rate triage 2026-07-04, verified on
-    livingsystems.ca.)"""
+    MISMATCH on the majority of pages. The page's *subject* Person (a page about
+    that person) has an ordinary @id and its name IS visible, so it still fires
+    correctly when genuinely absent. (Firing-rate triage 2026-07-04; V2 graph-node
+    form added 2026-07-06 — both verified on livingsystems.ca.)"""
     node_id = block.get("@id")
-    return isinstance(node_id, str) and "author" in node_id.lower()
+    if not isinstance(node_id, str):
+        return False
+    lowered = node_id.lower()
+    # ``author`` covers the /author/<user>/#schema-author permalink node; the
+    # ``/schema/person/`` graph-node form is the plugin's identity Person for the
+    # same byline. A genuine subject Person uses a plain fragment @id (e.g.
+    # ``…/team/jane#person``) and does NOT contain ``/schema/person/``.
+    return "author" in lowered or "/schema/person/" in lowered
 
 
 def _assemble_address(block: dict) -> str | None:

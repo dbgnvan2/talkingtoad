@@ -53,18 +53,35 @@ scored but unimplemented (need an LLM classifier). Build on the existing Gemini/
 guard P14). Document per-crawl cost/latency.
 **Paste to start:** *"Read docs/review/NEXT-STEPS.md item 4. Implement R8: the 3 LLM-driven GEO checks via an LLM classifier on the existing AI integration. Micro-spec first; tests must cover the error-as-content guard (P14) and a structured verdict."*
 
-### 5. Deploy-gate — validation crawl of livingsystems.ca (before/after)
+### 5. Deploy-gate — validation crawl of livingsystems.ca (before/after)  — MOSTLY DONE (V-series 2026-07-06)
 **Why:** the whole R2/R3 recalibration + Path-A store parity should be validated on real data before
 production deploy — scores will **rise** (intended correction). Run a crawl, capture site/page
 HealthScores, sanity-check the distribution, and correlate against GSC (Authority Matrix) where
 possible. No code change expected; produce a short before/after report in `docs/review/`.
-**Paste to start:** *"Read docs/review/NEXT-STEPS.md item 5. Run a validation crawl of livingsystems.ca and produce a before/after HealthScore report; flag any code whose new score looks wrong on real data."*
+**Status (2026-07-06, V-series):**
+- V3 before/after crawl **DONE** — real full crawl (119 pages, max_pages=120): site health
+  **73 → 88 (+15)**, warnings 453 → 166, info 477 → 764. Artifact:
+  `docs/review/2026-07-06_full-crawl-before-after.md`
+  (`scripts/before_after_healthscore.py`; tests `tests/test_before_after_report.py`).
+- V2 `SCHEMA_VISIBLE_MISMATCH` flag from the 07-04 crawl — **confirmed FALSE POSITIVE** (WP SEO-plugin
+  author-byline `Person` graph node, @id `…/#/schema/person/<hash>`). Detector fixed in
+  `api/services/schema_typing.py` (`_is_author_publisher_node`), weight unchanged. Adversarial test
+  `tests/test_schema_typing.py::test_visible_mismatch_no_fp_theme_schema`.
+- V4 Authority-Matrix — logic + synthetic report **DONE** (`scripts/gsc_authority_matrix.py`,
+  `tests/test_gsc_authority_matrix.py`, `docs/review/2026-07-06_gsc-authority-matrix.md`); the **LIVE
+  run is BLOCKED-ON-CONNECTION** (owner must connect GSC via the Connections panel / `GET
+  /api/gsc/connect` first, then re-run the script in that server process).
+**Do NOT archive this file until V4's live run has been done.**
 
 ---
 
 ## Optional / lower priority
-- **R3.4** — extra scoring-time suppression clusters (blanket-robots suppresses per-bot children; a
-  `NOINDEX_*` page suppresses discoverability/content checks). Largely moot now that impacts are low;
-  do only if real crawls show residual stacking.
+- **R3.4 — CLOSED (V1, 2026-07-06).** The extra scoring-time suppression clusters shipped under R5:
+  the blanket-robots parent `AI_BOT_BLANKET_DISALLOW` suppresses its per-bot children
+  (`AI_BOT_SEARCH_BLOCKED`, `AI_BOT_USER_FETCH_BLOCKED`, `ROBOTS_BLOCKED`, `AI_BOT_NO_AI_DIRECTIVES`)
+  in `api/services/job_store_base.py:_CLUSTER_SUPPRESSION`, and `NOINDEX_*` scope-reduction is live
+  (`_noindex_reduced_codes`, exempts security/redirect). Evidence: `tests/test_r5_clusters.py`
+  (`test_cluster_suppresses_children[robots]`, `test_clusters_never_touch_security_redirect`, and the
+  V1 case `test_v1_blanket_robots_suppresses_only_present_children`). No further work.
 - **Pre-existing, unrelated:** the 3 `test_usage_aggregation.py` failures (billing/cost code) predate
   this audit — worth a separate look, not part of the scoring work.
