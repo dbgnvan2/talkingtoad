@@ -6,6 +6,7 @@ import FixManager from '../components/FixManager.jsx'
 import FixInlinePanel, { FIXABLE_CODES } from '../components/FixInlinePanel.jsx'
 import FixBrokenLinkPanel, { FIXABLE_LINK_CODES } from '../components/FixBrokenLinkPanel.jsx'
 import SettingsPanel from '../components/SettingsPanel.jsx'
+import ConnectionsPanel from '../components/ConnectionsPanel.jsx'
 import GeoSettings from '../components/GeoSettings.jsx'
 import ImageAnalysisPanel from '../components/ImageAnalysisPanel.jsx'
 import AIReadinessPanel from '../components/AIReadinessPanel.jsx'
@@ -95,6 +96,7 @@ export default function Results() {
   const [focusedPageUrl, setFocusedPageUrl] = useState(null)
   const [showPdfModal, setShowPdfModal] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
+  const [showConnections, setShowConnections] = useState(false)
   const [showGeoSettings, setShowGeoSettings] = useState(false)
   const [showCategoryHelp, setShowCategoryHelp] = useState(null) // category key when help modal is open
 
@@ -152,6 +154,7 @@ export default function Results() {
         <div className="flex gap-2">
           {csvError && <span className="text-red-600 text-xs self-center mr-2">{csvError}</span>}
           <button onClick={() => setShowSettings(true)} className="px-3 py-1.5 bg-white border border-gray-300 rounded-lg text-xs font-bold shadow-sm" title="Display Settings" aria-label="Display settings">⚙</button>
+          <button onClick={() => setShowConnections(true)} className="px-3 py-1.5 bg-white border border-gray-300 rounded-lg text-xs font-bold shadow-sm" title="Test Connections" aria-label="Connections">Connections</button>
           <button onClick={() => setShowGeoSettings(true)} className="px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-bold shadow-sm" title="GEO Settings">GEO</button>
           <button onClick={() => downloadCsv(jobId).catch(() => setCsvError('CSV failed'))} className="px-3 py-1.5 bg-white border border-gray-300 rounded-lg text-xs font-bold shadow-sm">CSV</button>
           <button onClick={() => downloadExcelReport(jobId).catch(() => setCsvError('Excel failed'))} className="px-3 py-1.5 bg-white border border-gray-300 rounded-lg text-xs font-bold shadow-sm">Excel</button>
@@ -245,6 +248,10 @@ export default function Results() {
 
       {showSettings && (
         <SettingsPanel onClose={() => setShowSettings(false)} />
+      )}
+
+      {showConnections && (
+        <ConnectionsPanel onClose={() => setShowConnections(false)} />
       )}
 
       {showGeoSettings && (

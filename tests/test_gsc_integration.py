@@ -340,6 +340,20 @@ class TestGscStatus:
         assert data["connected"] is True
         assert len(data["properties"]) == 1
 
+    @pytest.mark.asyncio
+    async def test_status_response_contract_fields(self, gsc_client, gsc_env):
+        """Frontend contract (ConnectionsPanel): /api/gsc/status always returns
+        `connected` and `properties`. Locks the shape the panel reads.
+
+        Spec: docs/pending/2026-07-06_connections-panel.md
+        """
+        resp = await gsc_client.get("/api/gsc/status")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "connected" in data
+        assert "properties" in data
+        assert isinstance(data["properties"], list)
+
 
 class TestGscDisconnect:
     @pytest.mark.asyncio

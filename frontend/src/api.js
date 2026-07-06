@@ -491,6 +491,16 @@ export async function testAI() {
   return checkResponse(res)
 }
 
+// ConnectionsPanel "Test LLM connection" — GET /api/ai/test.
+// Returns { success, message } plus { sample } on success. The backend no
+// longer sends api_key_read (contract dropped 2026-07-06).
+export async function testLlmConnection() {
+  const res = await fetch('/api/ai/test', {
+    headers: authHeaders(),
+  })
+  return checkResponse(res)
+}
+
 // v1.9image: Image Analysis API
 export async function getImages(jobId, { page = 1, limit = 50, sortBy = 'score' } = {}) {
   const params = new URLSearchParams({ page, limit, sort_by: sortBy })

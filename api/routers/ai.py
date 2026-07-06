@@ -145,10 +145,12 @@ async def analyze_page(request: Request, body: AIAnalysisRequest, store=Depends(
 
 @router.get("/test")
 async def test_ai_connection():
-    """Verify that the configured AI provider is reachable and responsive."""
-    import os
-    api_key_read = os.getenv("API_KEY_READ", "Not found")
+    """Verify that the configured AI provider is reachable and responsive.
 
+    Frontend contract (ConnectionsPanel): returns {success, message} plus
+    {sample} on success. The former `api_key_read` diagnostic field was dropped
+    (2026-07-06) — it leaked env-var state to the client and no consumer read it.
+    """
     context = {
         "title": "Test Title",
         "meta_description": "Test Description",
@@ -161,17 +163,15 @@ async def test_ai_connection():
             return {
                 "success": False,
                 "message": suggestion,
-                "api_key_read": api_key_read
             }
 
         return {
             "success": True,
             "message": "AI connection successful!",
             "sample": suggestion,
-            "api_key_read": api_key_read
         }
     except Exception as exc:
-        return {"success": False, "message": str(exc), "api_key_read": api_key_read}
+        return {"success": False, "message": str(exc)}
 
 
 class PageAdvisorRequest(BaseModel):
