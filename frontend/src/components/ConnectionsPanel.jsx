@@ -107,8 +107,31 @@ export default function ConnectionsPanel({ onClose }) {
                 <div className="text-sm text-amber-700 bg-amber-50 border border-amber-100 rounded-lg p-3">
                   <p className="font-bold">Configured but not connected</p>
                   <p className="mt-1 text-xs text-amber-800">
-                    GSC is set up on the server but no account is linked yet. Connect it from the
-                    GSC Insights panel below the results.
+                    The GSC OAuth client is set up on the server, but no Google account is linked
+                    yet. Linking is a one-time step and lives on a crawl's Results page:
+                  </p>
+                  <ol className="mt-2 text-xs text-amber-800 list-decimal list-outside pl-4 space-y-1">
+                    <li>
+                      Run a crawl of your site first — Search Console data is matched page by page,
+                      so there must be a crawl to attach it to.
+                    </li>
+                    <li>
+                      On that crawl's Results page, scroll to the{' '}
+                      <span className="font-semibold">Google Search Console</span> panel and click{' '}
+                      <span className="font-semibold">Connect</span>.
+                    </li>
+                    <li>
+                      Sign in with a Google account that has Search Console access to this site, and
+                      grant consent on Google's screen.
+                    </li>
+                    <li>
+                      You'll return connected. Choose your property to pull in performance data, then
+                      re-run this test to confirm it shows{' '}
+                      <span className="font-semibold">Connected</span>.
+                    </li>
+                  </ol>
+                  <p className="mt-2 text-xs text-amber-800">
+                    The link is shared for the whole app, so you only do this once — not per crawl.
                   </p>
                 </div>
               )
