@@ -46,6 +46,12 @@ async def _seed(store: SQLiteJobStore, *records: dict) -> None:
             "output_token_count": 50,
             "cost_estimate_usd": 0.01,
             "success": True,
+            # Stamp seeded rows inside the fixed May–June 2026 query window
+            # used by the aggregation tests. Without this, record_ai_usage
+            # defaults the timestamp to now(), so once wall-clock time passes
+            # 2026-06-30 the seeded rows fall outside the window and the
+            # aggregation returns empty (stale-date test rot, P4).
+            "timestamp": "2026-05-15T00:00:00+00:00",
         }
         full.update(rec)
         await store.record_ai_usage(full)
