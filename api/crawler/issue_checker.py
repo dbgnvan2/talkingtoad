@@ -45,6 +45,8 @@ from api.crawler.checkers.registry import (  # noqa: F401
     _PDF_SIZE_LIMIT,
     _IMAGE_SIZE_LIMIT_KB,
     make_issue,
+    issue_scope,
+    severity_from_impact,
     _sig_words,
     _titles_mismatch,
 )

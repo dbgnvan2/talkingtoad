@@ -39,7 +39,10 @@ def test_suppresses_children_when_parent_present():
 
 
 def test_no_suppression_when_parent_absent():
-    assert page_suppressed_codes({"JSON_LD_MISSING", "SCHEMA_ORG_MISSING"}) == set()
+    # SCHEMA_ORG_MISSING is a child of BOTH SCHEMA_MISSING and (R5.2) of
+    # JSON_LD_MISSING; with neither parent present it must not be suppressed.
+    # H1_MISSING is unrelated to any cluster.
+    assert page_suppressed_codes({"SCHEMA_ORG_MISSING", "H1_MISSING"}) == set()
 
 
 def test_only_present_children_suppressed():
@@ -72,10 +75,13 @@ def test_duplicate_pair_not_triple_charged():
 
 
 def test_thin_content_pick_one():
+    # R5.2 §6.15: CONTENT_THIN (<100 words) is the elected parent; THIN_CONTENT
+    # is suppressed. (Both carry impact 4, so the score is unchanged; the flip
+    # only changes which code is charged.)
     p = "https://x/"
     per_page = {p: [_r("THIN_CONTENT"), _r("CONTENT_THIN")]}
     site, _ = compute_impact_health([p], per_page, dict(_NO_SEV))
-    assert site == 100 - _imp("THIN_CONTENT")
+    assert site == 100 - _imp("CONTENT_THIN")
 
 
 def test_job_level_suppression_of_parent_frees_children():
@@ -107,20 +113,30 @@ def test_broken_link_per_occurrence_capped():
 
 def test_page_fatal_bypasses_cap():
     """A page-fatal code's impact is charged on top of (not merged into) the
-    capped category total, so a broken page scores worse than the cap alone."""
+    capped category total, so a broken page scores worse than the cap alone.
+
+    Uses PAGE_TIMEOUT (fatal, crawlability) rather than a NOINDEX_* code so the
+    R5.3 noindex scope-reduction does not fire and silence the metadata category
+    — this test isolates the cap-bypass mechanism, not noindex reduction.
+    """
     p = "https://x/"
-    assert "NOINDEX_META" in _PAGE_FATAL_CODES
-    # NOINDEX (fatal) + a maxed-out (over-cap) metadata category
+    assert "PAGE_TIMEOUT" in _PAGE_FATAL_CODES
+    # PAGE_TIMEOUT (fatal) + a maxed-out (over-cap) metadata category
     meta = [_r("META_DESC_DUPLICATE") for _ in range(15)]
-    rows = [_r("NOINDEX_META")] + meta
+    rows = [_r("PAGE_TIMEOUT")] + meta
     site, _ = compute_impact_health([p], {p: rows}, dict(_NO_SEV))
-    assert site == 100 - _imp("NOINDEX_META") - _CATEGORY_IMPACT_CAP
+    assert site == 100 - _imp("PAGE_TIMEOUT") - _CATEGORY_IMPACT_CAP
 
 
 def test_fatal_sum_not_capped():
-    """Multiple page-fatal codes sum uncapped (unlike a normal category)."""
+    """Multiple page-fatal codes sum uncapped (unlike a normal category).
+
+    Uses non-noindex, page-scoped fatal codes so neither R5.3 noindex reduction
+    nor R5.1 site-scope (single-page representative aside) interferes with the
+    pure "fatals sum uncapped" property under test.
+    """
     p = "https://x/"
-    fatal = [_r("NOINDEX_META"), _r("ROBOTS_BLOCKED"), _r("HTTP_PAGE")]  # all fatal, sum > 20
+    fatal = [_r("PAGE_TIMEOUT"), _r("ROBOTS_BLOCKED"), _r("REDIRECT_LOOP")]  # all fatal, sum > 20
     total = sum(i for _, i, _ in fatal)
     assert total > _CATEGORY_IMPACT_CAP
     site, _ = compute_impact_health([p], {p: fatal}, dict(_NO_SEV))

@@ -141,6 +141,13 @@ Single extraction path = no buffer-agreement bugs.
 | Agent Health score | `max(0, 100 − Σ impact)` over agent-relevant issues, averaged per page | `api/services/job_store_base.py` `_compute_agent_health_score` |
 | Agent-relevant set | categories `ai_readiness` / `rendering` / `semantic_html` ∪ codes `PLACEHOLDER_LINK`, `WRONG_PLACEHOLDER_LINK` | `api/services/job_store_base.py` `_is_agent_issue` |
 
+**R5 scope behaviors (2026-07-06, `scoring_model_version = "2026-07-06-r5"`).** No numeric bound changed —
+the per-category cap stays **20** (row above). Two scope rules affect *how many times* an impact is charged,
+not the cap value: (a) **site-scoped** codes (`HTTP_PAGE`, `HTTPS_REDIRECT_MISSING`, `MIXED_CONTENT`,
+`MISSING_HSTS`, `WWW_CANONICALIZATION`) deduct once per site, not per page; (b) **noindex scope-reduction** —
+a page with `NOINDEX_META`/`NOINDEX_HEADER` charges only the noindex code plus any `security`/`redirect`
+codes; all other page-scoped codes on that page contribute 0. See functional-specification §4.0.1.
+
 ## AI provider configuration
 
 | Threshold | Value | Source |

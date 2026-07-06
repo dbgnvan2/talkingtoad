@@ -119,6 +119,7 @@ per-cycle** — every new feature now ships its explainer. Two shapes are repres
 > | GA4 | Entity Schema Factory (tool) | ✅ |
 > | M6 | GSC Performance-Health loop (tool: Authority Matrix + Review-for-Improvements flag) | ✅ (GSCInsightsPanel 5-part explainer shipped in M6.4) |
 > | Agent-readiness P1 | `JS_DEPENDENT_NAVIGATION`, `NON_SEMANTIC_BUTTON`, `LANDMARK_MAIN_MISSING`, `LANDMARK_NAV_MISSING`, `INTERACTIVE_NO_ACCESSIBLE_NAME`, `PLACEHOLDER_LINK`, `WRONG_PLACEHOLDER_LINK`, `SCHEMA_ORG_MISSING`, `CONTACT_INFO_NOT_IN_HTML` | ✅ (all 9 ship full 6-part explainers in issueHelp.js) |
+> | R5 (scoring model `2026-07-06-r5`) | *No new codes* — scoring-behavior change: unified page-health path (R5.0), `scope: page\|site` + site-scoped single deduction (R5.1), extended suppression clusters + noindex scope-reduction (R5.2/R5.3), Quick-Wins list + `quick_win`/`scope` serialized (R5.4), runtime-derived severity (R5.5), `scoring_model_version` stamp (R5.6). No V4 explainer needed (existing codes keep their explainers; the "how it can mislead" surface is the before/after crawl deploy gate). See functional-specification §4.0.1. | n/a (no new code) |
 >
 > **Takeaway for the v4 content pass:** newer codes are the proof-of-concept; scope the
 > pass as "bring the ~120 pre-2026-05 codes up to the M3.1 entry shape," not "write all

@@ -10,6 +10,8 @@ from uuid import uuid4
 
 from pydantic import BaseModel, Field
 
+from api.crawler.checkers.registry import SCORING_MODEL_VERSION
+
 
 class CrawlSettings(BaseModel):
     """Per-job crawler configuration (spec §5.1)."""
@@ -72,3 +74,8 @@ class CrawlJob(BaseModel):
     executive_summary: str | None = None
     # v2.1 GEO Analyzer report (cached after first generation)
     geo_report: dict | None = None
+    # R5.6 (external spec §8.4) — the scoring-model version that produced this
+    # audit. Defaults to the current SCORING_MODEL_VERSION so every new job is
+    # stamped at creation from a single source of truth. Legacy audits saved
+    # before this field existed read back as None.
+    scoring_model_version: str | None = SCORING_MODEL_VERSION

@@ -12,10 +12,10 @@ integrity of this file is enforced by five CI parity invariants — see
 
 Single source of truth for:
     - ``Issue`` dataclass and ``_IssueSpec`` dataclass
-    - ``_ISSUE_SCORING`` (impact, effort) by code — 151 codes
-    - ``_CATALOGUE`` (every issue spec) — 151 codes
-    - ``_AI_READINESS_CONFIDENCE`` (confidence labels) — 62 codes
-      (of 151 total; the 89 non-ai_readiness codes carry no confidence label)
+    - ``_ISSUE_SCORING`` (impact, effort) by code — 152 codes
+    - ``_CATALOGUE`` (every issue spec) — 152 codes
+    - ``_AI_READINESS_CONFIDENCE`` (confidence labels) — 63 codes
+      (of 152 total; the 89 non-ai_readiness codes carry no confidence label)
     - ``_STOP_WORDS`` and ``_GENERIC_ANCHOR_TEXTS`` (shared helpers)
     - Size-limit constants
     - ``make_issue()`` factory, ``_sig_words()``, ``_titles_mismatch()``
@@ -26,6 +26,17 @@ and every domain checker depend on this being one module.
 
 import re
 from dataclasses import dataclass
+from typing import Literal
+
+# ---------------------------------------------------------------------------
+# Scoring-model version (R5.6 / external spec §8.4)
+# ---------------------------------------------------------------------------
+# Single source of truth for the scoring-model version stamped on every saved
+# audit (see CrawlJob.scoring_model_version). Bump this whenever the scoring
+# model — impact/effort tables, derivation matrix, suppression clusters,
+# site-scope rules, or the category cap — changes, so a stored report records
+# which model produced it. Read as None on legacy audits saved before the stamp.
+SCORING_MODEL_VERSION = "2026-07-06-r5"
 
 # ---------------------------------------------------------------------------
 # Generic anchor text patterns (Step 3a)
@@ -74,6 +85,12 @@ class _IssueSpec:
     severity: str
     description: str
     recommendation: str
+    # R5.1 — scoring scope. "page": the finding is charged on the page it was
+    # found. "site": the finding is a property of the whole site (TLS/host
+    # config) and is charged ONCE site-wide at the worst-affected page — see
+    # api/services/job_store_base.py::_site_scope_representatives. Scoring-only;
+    # the issue still appears on every page where it was detected.
+    scope: Literal["page", "site"] = "page"
     human_description: str = ""   # plain-English label for nonprofit staff
     what_it_is: str = ""
     impact_desc: str = ""
@@ -91,7 +108,7 @@ class _IssueSpec:
 # ---------------------------------------------------------------------------
 # v1.5 Priority scoring table (impact, effort) per issue code
 # ---------------------------------------------------------------------------
-# priority_rank = (impact × 10) − (effort × 2)
+# priority_rank = (impact × 10) − (effort × 6)
 # Impact 1–10: how badly the issue hurts SEO / UX
 # Effort  1–5: how hard it is to fix (1 = trivial, 5 = major dev work)
 
@@ -490,6 +507,31 @@ def severity_from_impact(impact: int) -> str:
     return "critical" if impact >= 8 else ("warning" if impact >= 4 else "info")
 
 
+# R5.1 — codes whose finding is a property of the whole site, not one page.
+# The scope lives on each ``_IssueSpec`` (below); this frozenset is the
+# authoritative declaration and the catalogue entries must agree with it (an
+# architecture-style test can cross-check). See job_store_base for how a
+# site-scoped code is charged exactly once, site-wide.
+_SITE_SCOPED_CODES: frozenset[str] = frozenset({
+    "HTTP_PAGE",
+    "HTTPS_REDIRECT_MISSING",
+    "MIXED_CONTENT",
+    "MISSING_HSTS",
+    "WWW_CANONICALIZATION",
+})
+
+
+def issue_scope(code: str) -> str:
+    """Return the scoring scope (``"page"`` | ``"site"``) for a catalogue code.
+
+    Reads the ``scope`` field off the ``_IssueSpec``; unknown codes default to
+    ``"page"`` (the safe, per-page default) rather than raising, so callers on a
+    scoring hot-path never blow up on a stray code.
+    """
+    spec = _CATALOGUE.get(code)
+    return spec.scope if spec is not None else "page"
+
+
 _CATALOGUE: dict[str, _IssueSpec] = {
     # ── Metadata ──────────────────────────────────────────────────────────
     "TITLE_MISSING": _IssueSpec(
@@ -862,21 +904,21 @@ _CATALOGUE: dict[str, _IssueSpec] = {
     ),
     # ── Security (§E1) ────────────────────────────────────────────────────
     "HTTP_PAGE": _IssueSpec(
-        category="security", severity="warning",
+        category="security", severity="warning", scope="site",
         description="Page is served over HTTP, not HTTPS",
         recommendation="Migrate to HTTPS and configure a server-side 301 redirect from HTTP to HTTPS.",
         human_description="Unsecured Page",
         fixability="developer_needed",
     ),
     "MIXED_CONTENT": _IssueSpec(
-        category="security", severity="warning",
+        category="security", severity="warning", scope="site",
         description="HTTPS page loads resources over HTTP",
         recommendation="Update all resource URLs to use HTTPS. Check images, scripts, stylesheets, and iframes.",
         human_description="Partially Unsecured Page",
         fixability="developer_needed",
     ),
     "MISSING_HSTS": _IssueSpec(
-        category="security", severity="info",
+        category="security", severity="info", scope="site",
         description="HTTPS page is missing the Strict-Transport-Security header",
         recommendation="Add Strict-Transport-Security: max-age=31536000; includeSubDomains to all HTTPS responses.",
         human_description="Security Header Missing",
@@ -890,7 +932,7 @@ _CATALOGUE: dict[str, _IssueSpec] = {
         fixability="developer_needed",
     ),
     "WWW_CANONICALIZATION": _IssueSpec(
-        category="security", severity="warning",
+        category="security", severity="warning", scope="site",
         description="Both www and non-www versions of the site resolve without redirecting to each other",
         recommendation="Configure a 301 redirect so one version (www or non-www) redirects to the other. This consolidates link equity and avoids duplicate content.",
         human_description="www/non-www Not Consolidated",
@@ -1101,7 +1143,7 @@ _CATALOGUE: dict[str, _IssueSpec] = {
         fixability="wp_fixable",
     ),
     "HTTPS_REDIRECT_MISSING": _IssueSpec(
-        category="security", severity="warning",
+        category="security", severity="warning", scope="site",
         description="HTTP version of the site does not redirect to HTTPS",
         recommendation="Configure a server-side 301 redirect from http:// to https:// for all URLs on your domain. "
                        "Without this, visitors who type your address without 'https' will reach an insecure version "
@@ -1980,10 +2022,15 @@ def make_issue(
     # Prefer the spec-attached confidence_label if set (lets individual
     # codes override the lookup); otherwise read from the centralised map.
     confidence_label = spec.confidence_label or _AI_READINESS_CONFIDENCE.get(code)
+    # R5.5 — severity is DERIVED from impact at runtime, not copied from the
+    # stored _IssueSpec.severity literal. severity_from_impact is the single
+    # source of truth (R3); a parity test keeps the stored literals equal to the
+    # derived value, so this changes no current output — it only removes the
+    # possibility of a drifted literal leaking a wrong severity into a live issue.
     return Issue(
         code=code,
         category=spec.category,
-        severity=spec.severity,
+        severity=severity_from_impact(impact),
         description=spec.description,
         recommendation=spec.recommendation,
         page_url=page_url,

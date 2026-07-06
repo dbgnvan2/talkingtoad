@@ -115,11 +115,17 @@ async def ingest_ai_citations(
     # ── Emit AI_CITED_PAGE / AI_HIGH_VALUE_UNCITED issues ─────────────────
     # Compute per-page health from existing issues to determine eligibility
     all_issues = await store.get_all_issues(job_id)
-    impact_by_url: dict[str, int] = {}
+    # Per-page health via the canonical capped+suppressed model (R5.0), not a
+    # raw ``100 − Σ impact`` sum.
+    from api.services.job_store_base import compute_page_health
+
+    rows_by_url: dict[str, list[tuple[str, int, str]]] = {}
     for issue in all_issues:
         if issue.page_url:
             norm_url = issue.page_url.rstrip("/")
-            impact_by_url[norm_url] = impact_by_url.get(norm_url, 0) + issue.impact
+            rows_by_url.setdefault(norm_url, []).append(
+                (issue.issue_code, issue.impact or 0, issue.category or "")
+            )
 
     today = datetime.now(timezone.utc).date()
     new_issues: list[Issue] = []
@@ -135,8 +141,7 @@ async def ingest_ai_citations(
         elif page.ai_citation_count_30d == 0:
             # AI_HIGH_VALUE_UNCITED: only if page is healthy + content-rich + recent ingest
             norm_url = page.url.rstrip("/")
-            total_impact = impact_by_url.get(norm_url, 0)
-            page_score = max(0, 100 - total_impact)
+            page_score = compute_page_health(rows_by_url.get(norm_url, []))
             word_count = page.word_count or 0
 
             if page_score >= 80 and word_count > 300 and page.ai_citation_last_updated:

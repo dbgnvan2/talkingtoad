@@ -98,6 +98,7 @@ class RedisJobStore:
             "sitemap_url_found", "sitemap_url_count",
             "executive_summary",
             "geo_report",
+            "scoring_model_version",
         }
         unknown = set(fields) - _ALLOWED
         if unknown:
@@ -568,6 +569,8 @@ class RedisJobStore:
             "error_message": job.error_message or "",
             "settings_json": job.settings.model_dump_json(),
             "llms_txt_custom": job.llms_txt_custom or "",
+            # R5.6 — "" sentinel for None; read back via `or None` below.
+            "scoring_model_version": job.scoring_model_version or "",
         }
 
     def _mapping_to_job(self, m: dict) -> CrawlJob:
@@ -585,6 +588,8 @@ class RedisJobStore:
             error_message=m.get("error_message") or None,
             settings=CrawlSettings(**settings_data),
             llms_txt_custom=m.get("llms_txt_custom") or None,
+            # R5.6 — legacy hashes lack this key; "" and missing both → None.
+            scoring_model_version=m.get("scoring_model_version") or None,
         )
 
     def _issue_to_dict(self, i: Issue) -> dict:

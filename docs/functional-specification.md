@@ -118,7 +118,10 @@ and acceptance criteria for the journey as a whole.
 - **Page Health = `max(0, 100 − deduction)`**; **Site Health = mean of page scores**. Computed by
   the single shared function `job_store_base.compute_impact_health`, used by **both** the SQLite
   (dev) and Redis (prod) stores so the two cannot diverge (the pre-v1.5 density model survives only
-  as its internal fallback). *(Audit 2026-07-03, Path A.)*
+  as its internal fallback). *(Audit 2026-07-03, Path A.)* **(R5.0)** The two former raw-uncapped-sum
+  paths in `crawl.py` and `citations.py` now route through this same canonical capped-and-suppressed
+  function, so all three health-score paths agree
+  (`tests/test_scoring_paths_unified.py::test_all_health_paths_agree`).
 - **Deduction = per-category caps + page-fatal bypass** *(audit R3 structural fix):* after cluster
   suppression, each category's charged impact is capped at **20** so correlated minor issues (and
   per-occurrence codes like many `BROKEN_LINK_*` on one page) can't stack a page to 0; **page-fatal
@@ -132,7 +135,9 @@ and acceptance criteria for the journey as a whole.
   `SCHEMA_MISSING` ⊳ {`JSON_LD_MISSING`, `SCHEMA_ORG_MISSING`};
   `TITLE_META_DUPLICATE_PAIR` ⊳ {`TITLE_DUPLICATE`, `META_DESC_DUPLICATE`};
   `RAW_HTML_JS_DEPENDENT` ⊳ {`AI_CONTENT_NOT_IN_TEXT`, `CONTENT_NOT_EXTRACTABLE_NO_TEXT`, `CONTACT_INFO_NOT_IN_HTML`};
-  `THIN_CONTENT` ⊳ {`CONTENT_THIN`}.
+  `THIN_CONTENT` ⊳ {`CONTENT_THIN`}. **(R5.2)** The suppression clusters were extended per the R5
+  spec (including the three former "merge" clusters — answer-first, chunk, social — re-cast as
+  suppress-children so no code is deleted); see §4.0.1 for the full R5 scoring behavior.
 - The Summary tab loads within 2 seconds of crawl completion.
 
 ### Journey B — Review and triage issues
@@ -356,7 +361,7 @@ High-level inventory. Each row maps to detailed sections later.
 
 ## 4. Audit capabilities
 
-The crawler emits **151 distinct issue codes** organised into 13
+The crawler emits **152 distinct issue codes** organised into 13
 categories. Each code has: impact (0–10), effort (0–5), fixability
 (`wp_fixable` / `content_edit` / `developer_needed`), and a confidence label.
 
@@ -408,6 +413,52 @@ Agent-readiness WP4 (`PLACEHOLDER_LINK`, `WRONG_PLACEHOLDER_LINK`) lives in
 `links.py`, WP2 (`JS_DEPENDENT_NAVIGATION`) in `crawlability.py`, and WP5
 (`SCHEMA_ORG_MISSING`, `CONTACT_INFO_NOT_IN_HTML`) in `metadata.py`. The
 underlying signals are pre-computed on `ParsedPage` at parse time.
+
+### 4.0.1 Scoring model R5 (2026-07-06)
+
+The R5 scoring change (`scoring_model_version = "2026-07-06-r5"`) finished the safe remainder of the
+external scoring spec on top of the R3/R4 calibration. It changes **how the health score is computed**,
+not which codes exist — all 152 codes are retained (the spec's proposed merges/deletions were declined;
+the former "merge" clusters are re-cast as suppress-children). Per-target occurrence counting (external §2)
+and the proposed cap increase to 25 were both declined by the owner; the category cap stays **20**.
+
+- **R5.0 — Unified page-health computation.** There is now a single capped-and-suppressed deduction path.
+  The two former raw-uncapped-sum paths in `crawl.py` and `citations.py` route through
+  `job_store_base.compute_impact_health`, so the summary endpoint, the citations endpoint, and the
+  function itself all return the same score for a given page.
+  → `tests/test_scoring_paths_unified.py::test_all_health_paths_agree`
+- **R5.1 — Site-scope.** `_IssueSpec` gains a `scope: page|site` field (default `page`). The TLS /
+  site-config codes `HTTP_PAGE`, `HTTPS_REDIRECT_MISSING`, `MIXED_CONTENT`, `MISSING_HSTS`,
+  `WWW_CANONICALIZATION` are `scope="site"`: a site-scoped finding deducts **once per site** (worst-affected
+  representative page), never repeatedly across every page. `scope` is serialized in `_issue_dict()`.
+  → `tests/test_site_scope.py::test_site_codes_declared_site_scope`,
+  `::test_site_scope_single_deduction`, `::test_page_issues_include_scope`
+- **R5.2 — Extended suppression clusters.** The R5 spec's clusters were ported into the suppression map
+  (scoring-only; children stay visible and contribute 0 when the parent is present). The three former
+  "merge" clusters (answer-first, chunk, social) are implemented as suppress-children — one existing
+  parent elected, siblings → 0 — so no code is deleted. No cluster suppresses a `security` or `redirect`
+  code. → `tests/test_r5_clusters.py::test_cluster_<name>_suppresses_children`,
+  `::test_clusters_never_touch_security_redirect`
+- **R5.3 — Noindex scope-reduction.** When `NOINDEX_META`/`NOINDEX_HEADER` fires on a page, all other
+  page-scoped codes on that page contribute 0 **except** the `security` and `redirect` categories (and the
+  noindex code itself) — a noindexed page is not penalised for content issues no one will index.
+  → `tests/test_r5_clusters.py::test_noindex_scope_reduction`
+- **R5.4 — Quick Wins.** The `quick_win` flag (`impact ≥ 4 AND effort ≤ 1`) is serialized in
+  `_issue_dict()`, and the results/summary endpoint exposes a Quick-Wins list independent of priority
+  ordering. → `tests/test_quick_wins.py::test_issue_dict_includes_quick_win`,
+  `::test_summary_exposes_quick_wins_list`. *(Surfacing Quick Wins as the default landing view is a GUI
+  change deferred pending explicit owner sign-off.)*
+- **R5.5 — Severity derived at runtime.** `make_issue` derives severity via `severity_from_impact(impact)`
+  rather than copying the stored `_IssueSpec.severity` literal, so severity can never drift from impact.
+  → `tests/test_r5_severity.py::test_make_issue_severity_is_derived`
+- **R5.6 — Scoring-model version stamp.** `CrawlJob` carries `scoring_model_version` (`"2026-07-06-r5"`),
+  stamped on every saved audit and exposed in the summary response; audits predating the field read as
+  `null`. → `tests/test_scoring_version.py::test_audit_carries_scoring_model_version`,
+  `::test_summary_exposes_scoring_model_version`
+
+**Deploy note.** Site-scoping the TLS codes and the noindex reduction mean multi-page HTTP-site and
+noindexed-page scores **rise once** under R5. A before/after crawl (per the R3 precedent) is the manual
+deploy gate; monotonicity is preserved (`test_agent_score_monotonic_non_increasing` stays green).
 
 ### 4.1 Metadata category
 

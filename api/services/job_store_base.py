@@ -55,22 +55,88 @@ def _density_health_score(by_severity: dict[str, int], pages_crawled: int) -> in
 # Spec: docs/pending/2026-07-03_r4-cluster-suppression.md
 # ---------------------------------------------------------------------------
 _CLUSTER_SUPPRESSION: dict[str, frozenset[str]] = {
-    # no structured data → charge SCHEMA_MISSING once
+    # no structured data → charge SCHEMA_MISSING once (R4). Kept as a parent;
+    # per the owner "keep all codes" decision SCHEMA_MISSING stays in the
+    # catalogue and remains a suppression parent alongside JSON_LD_MISSING.
     "SCHEMA_MISSING": frozenset({"JSON_LD_MISSING", "SCHEMA_ORG_MISSING"}),
+    # ── R5.2 §6.2 no JSON-LD → JSON_LD_MISSING is the root cause for the whole
+    # structured-data family; every schema-detail finding is downstream of it.
+    "JSON_LD_MISSING": frozenset({
+        "SCHEMA_ORG_MISSING", "FAQ_SCHEMA_MISSING", "DATE_PUBLISHED_MISSING",
+        "DATE_MODIFIED_MISSING", "SCHEMA_TYPE_CONFLICT", "SCHEMA_TYPE_MISMATCH",
+        "SCHEMA_VISIBLE_MISMATCH", "SCHEMA_DEPRECATED_TYPE", "JSON_LD_INVALID",
+    }),
     # page duplicated (both title+meta) → charge the pair once
     "TITLE_META_DUPLICATE_PAIR": frozenset({"TITLE_DUPLICATE", "META_DESC_DUPLICATE"}),
-    # whole page is a JS shell → its symptoms are the same root cause.
+    # ── §6.1 whole page is a JS shell → its symptoms are the same root cause.
     # JS_DEPENDENT_NAVIGATION added per the Gemini R3 report (a JS shell page's
-    # nav is unusable for the same reason its content is).
+    # nav is unusable for the same reason its content is). R5.2 extends this to
+    # the spec §6.1 set (render-diff, low semantic density, unstructured, thin).
     "RAW_HTML_JS_DEPENDENT": frozenset(
         {"AI_CONTENT_NOT_IN_TEXT", "CONTENT_NOT_EXTRACTABLE_NO_TEXT",
          "CONTACT_INFO_NOT_IN_HTML", "JS_DEPENDENT_NAVIGATION",
          # a JS-shell page's FAQ answers are missing for the same root cause;
          # charge the page-wide code once, not the narrow FAQ one too.
-         "FAQ_ANSWERS_NOT_IN_HTML"}
+         "FAQ_ANSWERS_NOT_IN_HTML",
+         # R5.2 §6.1 additions
+         "JS_RENDERED_CONTENT_DIFFERS", "SEMANTIC_DENSITY_LOW",
+         "CONTENT_UNSTRUCTURED", "THIN_CONTENT", "CONTENT_THIN"}
     ),
-    # too few words → THIN_CONTENT and CONTENT_THIN are the same finding
-    "THIN_CONTENT": frozenset({"CONTENT_THIN"}),
+    # ── §6.15 thin page → CONTENT_THIN (<100 words) is the STRICT SUBSET of
+    # THIN_CONTENT (<300 words). When the stricter code fires, the broader
+    # thin-ness codes are the same root cause. NOTE the direction: R4 had
+    # THIN_CONTENT→{CONTENT_THIN}; §6.15 reverses it (CONTENT_THIN is parent)
+    # so a <100-word page is charged once, at the stricter code.
+    "CONTENT_THIN": frozenset({
+        "THIN_CONTENT", "CONTENT_UNSTRUCTURED", "STRUCTURED_ELEMENTS_LOW",
+        "SEMANTIC_DENSITY_LOW",
+    }),
+    # ── §6.4 answer-first family (elected parent: CENTRAL_CLAIM_BURIED). All
+    # three measure the same "the answer isn't up top" heuristic three ways;
+    # keep all codes but charge the elected parent once.
+    "CENTRAL_CLAIM_BURIED": frozenset({
+        "FIRST_VIEWPORT_NO_ANSWER", "GEO_SUMMARY_BURIED",
+    }),
+    # ── §6.5 sourcing/citations → no citations at all is the root cause;
+    # the narrower citation-quality findings are downstream.
+    "CITATIONS_MISSING_SUBSTANTIAL_CONTENT": frozenset({
+        "EXTERNAL_CITATIONS_LOW", "ORPHAN_CLAIM_TECHNICAL", "QUOTATIONS_MISSING",
+        "LINK_PROFILE_PROMOTIONAL", "CITATIONS_ORPHANED",
+        "CITATIONS_SOURCES_INACCESSIBLE",
+    }),
+    # ── §6.6 chunk self-containment (elected parent: CHUNKS_NOT_SELF_CONTAINED).
+    # Three phrase detectors of the same theory; charge the elected parent once.
+    "CHUNKS_NOT_SELF_CONTAINED": frozenset({
+        "SECTION_CROSS_REFERENCES", "SECTION_VAGUE_OPENER",
+    }),
+    # ── §6.8 heavy image → IMG_OVERSIZED is the root cause; the other
+    # image-weight findings co-occur on an oversized image.
+    "IMG_OVERSIZED": frozenset({
+        "IMG_POOR_COMPRESSION", "IMG_OVERSCALED", "IMG_FORMAT_LEGACY",
+        "IMG_SLOW_LOAD", "IMG_NO_SRCSET",
+    }),
+    # ── §6.9 alt-text family. Missing alt is the root cause for images with no
+    # alt; generic alt is the root cause for defective alt. IMG_ALT_TOO_LONG
+    # stays independent (opposite failure mode — not a child of either).
+    "IMG_ALT_MISSING": frozenset({"IMG_ALT_TOO_SHORT"}),
+    "IMG_ALT_GENERIC": frozenset({
+        "IMG_ALT_TOO_SHORT", "IMG_ALT_DUP_FILENAME", "IMG_ALT_MISUSED",
+    }),
+    # ── §6.10 social meta (elected parent: OG_TITLE_MISSING). A single missing
+    # plugin setting drives all four; charge the elected parent once.
+    "OG_TITLE_MISSING": frozenset({
+        "OG_DESC_MISSING", "OG_IMAGE_MISSING", "TWITTER_CARD_MISSING",
+    }),
+    # ── §6.11 blanket robots disallow is the root cause for the narrower
+    # bot-blocking findings.
+    "AI_BOT_BLANKET_DISALLOW": frozenset({
+        "AI_BOT_SEARCH_BLOCKED", "AI_BOT_USER_FETCH_BLOCKED", "ROBOTS_BLOCKED",
+        "AI_BOT_NO_AI_DIRECTIVES",
+    }),
+    # ── §6.13 redirect chain suppresses the single-hop redirect codes for the
+    # same source. INTERNAL_REDIRECT_301 stays independent (distinct condition —
+    # the link source). This is the ONLY cluster that may touch `redirect`.
+    "REDIRECT_CHAIN": frozenset({"REDIRECT_301", "REDIRECT_302"}),
 }
 
 # ---------------------------------------------------------------------------
@@ -88,6 +154,88 @@ _PAGE_FATAL_CODES: frozenset[str] = frozenset({
     "NOINDEX_META", "NOINDEX_HEADER", "ROBOTS_BLOCKED", "PAGE_TIMEOUT",
     "HTTP_PAGE", "HTTPS_REDIRECT_MISSING", "REDIRECT_LOOP", "LOGIN_REDIRECT",
 })
+
+
+# ---------------------------------------------------------------------------
+# R5.3 — Noindex scope-reduction (external spec §6.12).
+# A noindex'd page is deliberately hidden from search/AI, so its content-quality
+# issues (thin content, missing metadata, weak headings, …) don't matter — only
+# the noindex itself, plus anything that is a genuine risk regardless of
+# indexing status: security and redirect problems. When NOINDEX_META or
+# NOINDEX_HEADER fires on a page, every OTHER page-scoped code on that page
+# contributes 0, EXCEPT codes in the ``security`` / ``redirect`` categories and
+# the noindex code itself. Scoring-only: issues stay visible in the list.
+# ---------------------------------------------------------------------------
+_NOINDEX_CODES: frozenset[str] = frozenset({"NOINDEX_META", "NOINDEX_HEADER"})
+_NOINDEX_EXEMPT_CATEGORIES: frozenset[str] = frozenset({"security", "redirect"})
+
+
+def _noindex_reduced_codes(rows: list[tuple[str, int, str]]) -> set[str]:
+    """Return the codes on a page that a noindex silences (contribute 0).
+
+    Empty unless a noindex code is present. When present, every code is dropped
+    except the noindex code(s) themselves and any code in an exempt category
+    (``security`` / ``redirect``). Pure/deterministic.
+    """
+    codes_on_page = {c for c, _, _ in rows}
+    if not (_NOINDEX_CODES & codes_on_page):
+        return set()
+    drop: set[str] = set()
+    for code, _imp, category in rows:
+        if code in _NOINDEX_CODES:
+            continue
+        if category in _NOINDEX_EXEMPT_CATEGORIES:
+            continue
+        drop.add(code)
+    return drop
+
+
+# ---------------------------------------------------------------------------
+# R5.1 — Site-scope (external spec §6.3).
+# Some findings are properties of the whole SITE, not of an individual page:
+# a missing HTTPS redirect, serving the site over plain HTTP, a missing HSTS
+# header, mixed content, or a non-canonical www/non-www host. Charging them on
+# every page double-counts a single root cause across a large crawl. A
+# site-scoped code deducts ONCE site-wide, at the worst-affected representative
+# page — every other page ignores it entirely (including its page-fatal
+# flooring: only the representative page may be floored by a site-scoped fatal
+# code like HTTP_PAGE). Scoring-only: issues stay visible per page in the list.
+# ---------------------------------------------------------------------------
+
+
+def _is_site_scoped(code: str) -> bool:
+    """True if a code is declared ``scope="site"`` in the issue catalogue."""
+    # Imported lazily to avoid a module-load cycle (registry imports models
+    # which import nothing here, but the store is imported very early).
+    from api.crawler.checkers.registry import issue_scope
+
+    return issue_scope(code) == "site"
+
+
+def _site_scope_representatives(
+    page_norm_urls: list[str],
+    per_page_issues: dict[str, list[tuple[str, int, str]]],
+    suppressed_codes: set[str] | None,
+) -> dict[str, str]:
+    """Elect ONE representative page per site-scoped code (the worst-affected).
+
+    "Worst-affected" = the page where the code carries the highest impact; ties
+    broken deterministically by URL order in ``page_norm_urls`` so the choice is
+    stable across runs. Returns ``{code: representative_url}`` covering only the
+    site-scoped codes actually present after job-level suppression.
+    """
+    # code -> (best_impact, best_url) with URL order as the tiebreak.
+    best: dict[str, tuple[int, str]] = {}
+    for url in page_norm_urls:
+        for c, imp, _cat in per_page_issues.get(url, []):
+            if suppressed_codes and c in suppressed_codes:
+                continue
+            if not _is_site_scoped(c):
+                continue
+            cur = best.get(c)
+            if cur is None or imp > cur[0]:
+                best[c] = (imp, url)
+    return {code: url for code, (_, url) in best.items()}
 
 
 def page_suppressed_codes(codes_on_page: set[str]) -> set[str]:
@@ -118,6 +266,38 @@ def _page_deduction(rows: list[tuple[str, int, str]]) -> int:
             by_cat[category] = by_cat.get(category, 0) + impact
     capped = sum(min(_CATEGORY_IMPACT_CAP, s) for s in by_cat.values())
     return fatal + capped
+
+
+def _charged_page_rows(rows: list[tuple[str, int, str]]) -> list[tuple[str, int, str]]:
+    """Apply the scoring-time page transforms (cluster suppression and noindex
+    scope-reduction) to a page's ``(code, impact, category)`` rows and return
+    only the rows that are actually charged.
+
+    Suppressed children (a cluster parent is present) and codes silenced by a
+    noindex on the page are dropped here — issues stay visible in the list; only
+    the health score is affected. Pure/deterministic.
+    """
+    codes_on_page = {c for c, _, _ in rows}
+    drop = page_suppressed_codes(codes_on_page)
+    reduced = _noindex_reduced_codes(rows)
+    drop |= reduced
+    return [(c, imp, cat) for c, imp, cat in rows if c not in drop]
+
+
+def compute_page_health(rows: list[tuple[str, int, str]]) -> int:
+    """Canonical health score (0–100) for ONE page in isolation.
+
+    ``rows`` is the list of ``(issue_code, impact, category)`` tuples charged to
+    the page (one entry per issue row). Applies R4 cluster suppression, the
+    noindex scope-reduction (R5.3), the per-category cap, and the page-fatal
+    bypass — the exact same transform ``compute_impact_health`` applies per page.
+
+    SINGLE SOURCE OF TRUTH for a single page's score: the summary/refresh
+    endpoint and the citations endpoint both call this so they cannot diverge
+    from the canonical site model (audit R5.0: they previously used raw
+    ``100 − Σ impact`` sums that ignored cap + suppression).
+    """
+    return max(0, 100 - _page_deduction(_charged_page_rows(rows)))
 
 
 def compute_impact_health(
@@ -152,13 +332,24 @@ def compute_impact_health(
     if not page_norm_urls:
         return 100, 0
 
+    # R5.1 — site-scoped codes deduct ONCE site-wide (at the worst-affected
+    # representative page), never from other pages. Elect the representative
+    # page per site-scoped code before scoring, then strip that code from every
+    # other page's rows so only the representative is charged (and only it can
+    # be floored by a site-scoped page-fatal code such as HTTP_PAGE).
+    rep_page = _site_scope_representatives(page_norm_urls, per_page_issues, suppressed_codes)
+
     page_scores: list[int] = []
     for url in page_norm_urls:
         rows = per_page_issues.get(url, [])
         if suppressed_codes:
             rows = [(c, imp, cat) for c, imp, cat in rows if c not in suppressed_codes]
-        drop = page_suppressed_codes({c for c, _, _ in rows})
-        charged = [(c, imp, cat) for c, imp, cat in rows if c not in drop]
+        # Drop site-scoped codes that belong to another page's representative.
+        rows = [
+            (c, imp, cat) for c, imp, cat in rows
+            if not (_is_site_scoped(c) and rep_page.get(c) != url)
+        ]
+        charged = _charged_page_rows(rows)
         page_scores.append(max(0, 100 - _page_deduction(charged)))
     return round(sum(page_scores) / len(page_scores)), len(page_scores)
 

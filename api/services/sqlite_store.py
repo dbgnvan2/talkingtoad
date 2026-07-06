@@ -93,6 +93,7 @@ class SQLiteJobStore:
             ("sitemap_url_count", "INTEGER"),
             ("executive_summary", "TEXT"),
             ("geo_report", "TEXT"),
+            ("scoring_model_version", "TEXT"),
         ]
         for col, col_type in job_columns:
             try:
@@ -161,8 +162,9 @@ class SQLiteJobStore:
             """
             INSERT INTO crawl_jobs
               (job_id, target_url, sitemap_url, status, pages_crawled, pages_total,
-               current_url, started_at, completed_at, error_message, settings_json)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+               current_url, started_at, completed_at, error_message, settings_json,
+               scoring_model_version)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 job.job_id,
@@ -176,6 +178,7 @@ class SQLiteJobStore:
                 job.completed_at.isoformat() if job.completed_at else None,
                 job.error_message,
                 job.settings.model_dump_json(),
+                job.scoring_model_version,
             ),
         )
         await self._db.commit()
@@ -223,6 +226,7 @@ class SQLiteJobStore:
             "sitemap_url_found", "sitemap_url_count",
             "executive_summary",
             "geo_report",
+            "scoring_model_version",
         }
         unknown = set(fields) - _ALLOWED
         if unknown:
@@ -1572,6 +1576,8 @@ def _row_to_job(row: dict) -> CrawlJob:
         llms_txt_custom=row.get("llms_txt_custom"),
         executive_summary=row.get("executive_summary"),
         geo_report=json.loads(row["geo_report"]) if row.get("geo_report") else None,
+        # R5.6 — legacy rows predate this column; .get() yields None (no crash).
+        scoring_model_version=row.get("scoring_model_version"),
     )
 
 

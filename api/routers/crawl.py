@@ -34,7 +34,7 @@ from api.crawler.engine import (
     _guess_format_from_url, _extract_filename,
 )
 from api.crawler.fetcher import is_ssrf_safe, fetch_page, make_client, _RESCAN_TIMEOUT
-from api.crawler.issue_checker import Issue as EngIssue, check_page, issue_for_status, make_issue
+from api.crawler.issue_checker import Issue as EngIssue, check_page, issue_for_status, issue_scope, make_issue
 from api.crawler.normaliser import normalise_url
 from api.crawler.parser import ParsedPage as EngPage, parse_page
 from api.models.issue import PHASE_1_CATEGORIES, Issue
@@ -616,11 +616,24 @@ async def get_results(
     summary = await store.get_summary(job_id)
     total_pages = max(1, math.ceil(total / limit))
 
+    # R5.4 — Quick-Wins list: every issue satisfying impact>=4 AND effort<=1,
+    # independent of the paginated `issues` slice and of priority ordering. The
+    # membership predicate is the Issue.quick_win computed field (single source
+    # of truth), so this can never diverge from the per-issue `quick_win` flag.
+    all_issues = await store.get_all_issues(job_id)
+    quick_wins = _apply_exempt_anchors(
+        [_issue_dict(i) for i in all_issues if i.quick_win], exempt_urls
+    )
+
     return {
         "job_id": job_id,
         "summary": summary,
         "pagination": {"page": page, "limit": limit, "total_issues": total, "total_pages": total_pages},
         "issues": issue_dicts,
+        "quick_wins": quick_wins,
+        # R5.6 — scoring-model version stamp for this audit (None on legacy
+        # audits saved before the field existed).
+        "scoring_model_version": job.scoring_model_version,
     }
 
 
@@ -1188,18 +1201,24 @@ async def get_page_priority(
     pages = await store.get_pages(job_id)
     issues = await store.get_all_issues(job_id)
 
-    # Per-page health from summed issue impact (same convention as M5/M6).
-    impact_by_url: dict[str, int] = {}
+    # Per-page health via the canonical capped+suppressed model (R5.0) — NOT a
+    # raw ``100 − Σ impact`` sum (which ignored the category cap and cluster
+    # suppression and diverged from compute_impact_health).
+    from api.services.job_store_base import compute_page_health
+
+    rows_by_url: dict[str, list[tuple[str, int, str]]] = {}
     for issue in issues:
         if issue.page_url:
             key = issue.page_url.rstrip("/")
-            impact_by_url[key] = impact_by_url.get(key, 0) + (issue.impact or 0)
+            rows_by_url.setdefault(key, []).append(
+                (issue.issue_code, issue.impact or 0, issue.category or "")
+            )
 
     today = datetime.now(timezone.utc).date()
     rows: list[dict] = []
     for page in pages:
         key = page.url.rstrip("/")
-        health_score = max(0, 100 - impact_by_url.get(key, 0))
+        health_score = compute_page_health(rows_by_url.get(key, []))
         records = await store.get_performance_records(url=page.url)
         flag = evaluate_refresh(records, health_score, today=today)
         latest = sorted(records, key=lambda r: r.period)[-1] if records else None
@@ -1413,6 +1432,14 @@ def _issue_dict(issue: Issue) -> dict:
         # Frontends that render ai_readiness issues depend on this
         # confidence_label to surface the evidence-strength badge.
         "confidence_label": issue.confidence_label,
+        # R5.1 — scoring scope ("page" | "site"). Derived from the catalogue by
+        # code (scope is a static property of the code, not stored per row) so
+        # the frontend can flag a site-wide finding that is deducted only once.
+        "scope": issue_scope(issue.issue_code),
+        # R5.4 — quick-win flag (impact>=4 AND effort<=1). Derived on the Issue
+        # model (computed_field) so it is always consistent with impact/effort;
+        # serialised here so both list endpoints can surface a Quick-Wins badge.
+        "quick_win": issue.quick_win,
     }
 
 
