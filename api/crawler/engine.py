@@ -308,7 +308,7 @@ async def run_crawl(
                     issue.description = f"/llms.txt must have MIME type text/plain (got {content_type})"
                     all_issues.append(issue)
                 
-                body = llms_res.html or ""
+                body = llms_res.text or llms_res.html or ""
                 has_h1 = "# " in body
                 has_blockquote = "\n> " in body or body.startswith("> ")
                 urls = re.findall(r"https?://\S+", body)

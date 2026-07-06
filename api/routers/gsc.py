@@ -169,16 +169,16 @@ async def gsc_status():
 
     creds_json = _load_creds()
     if not creds_json:
-        return {"connected": False, "properties": []}
+        return {"connected": False, "properties": [], "configured": True}
 
     try:
         from google.oauth2.credentials import Credentials
         creds = Credentials.from_authorized_user_info(json.loads(creds_json))
         properties = list_properties(creds)
-        return {"connected": True, "properties": properties}
+        return {"connected": True, "properties": properties, "configured": True}
     except Exception as e:
         logger.error("Failed to list GSC properties: %s", e)
-        return {"connected": False, "properties": []}
+        return {"connected": False, "properties": [], "configured": True}
 
 
 @router.post("/disconnect")

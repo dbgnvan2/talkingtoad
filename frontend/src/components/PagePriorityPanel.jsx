@@ -59,13 +59,22 @@ export default function PagePriorityPanel({ jobId }) {
             Which pages to improve first — ranked by traffic value vs. structural health.
           </p>
         </div>
-        <button
-          onClick={load}
-          disabled={loading}
-          className="px-4 py-2 text-sm font-bold bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 disabled:opacity-50"
-        >
-          {loading ? 'Ranking…' : pages ? 'Refresh' : '▶ Rank pages'}
-        </button>
+        {pages && !loading ? (
+          <button
+            onClick={() => setPages(null)}
+            className="px-4 py-2 text-sm font-bold bg-gray-100 text-gray-600 rounded-xl hover:bg-gray-200"
+          >
+            Hide
+          </button>
+        ) : (
+          <button
+            onClick={load}
+            disabled={loading}
+            className="px-4 py-2 text-sm font-bold bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 disabled:opacity-50"
+          >
+            {loading ? 'Ranking…' : '▶ Rank pages'}
+          </button>
+        )}
       </div>
 
       {showHelp && (

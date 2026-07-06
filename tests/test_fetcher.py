@@ -330,3 +330,65 @@ class TestFetchPagePreCheck:
 
         assert result.status_code == 200
         assert result.error is None
+
+
+# ---------------------------------------------------------------------------
+# text/* body decoding (llms.txt / ai.txt fix)
+# ---------------------------------------------------------------------------
+
+
+class TestTextBodyDecoding:
+    """A text/plain response (e.g. llms.txt) must decode into .text so the
+    engine's structural checks can read it — .html stays None."""
+
+    _FAKE_PUBLIC = [
+        (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 0)),
+    ]
+
+    @pytest.mark.asyncio
+    async def test_text_plain_populates_text_not_html(self):
+        import httpx
+        from api.crawler.fetcher import fetch_page
+
+        body = b"# Title\n\n> Summary\n\nhttps://example.com/a\n"
+
+        def _ok(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(
+                200,
+                headers={"Content-Type": "text/plain; charset=utf-8"},
+                content=body,
+            )
+
+        transport = httpx.MockTransport(_ok)
+        with patch("api.crawler.fetcher.socket.getaddrinfo", return_value=self._FAKE_PUBLIC):
+            async with httpx.AsyncClient(transport=transport) as client:
+                result = await fetch_page("https://example.com/llms.txt", client)
+
+        assert result.status_code == 200
+        assert result.html is None
+        assert result.text == body.decode("utf-8")
+
+    @pytest.mark.asyncio
+    async def test_text_body_respects_size_bound(self):
+        """A text/* body larger than _MAX_HTML_BYTES must not be decoded."""
+        import httpx
+        from api.crawler import fetcher
+        from api.crawler.fetcher import fetch_page
+
+        oversized = b"x" * (fetcher._MAX_HTML_BYTES + 1)
+
+        def _ok(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(
+                200,
+                headers={"Content-Type": "text/plain"},
+                content=oversized,
+            )
+
+        transport = httpx.MockTransport(_ok)
+        with patch("api.crawler.fetcher.socket.getaddrinfo", return_value=self._FAKE_PUBLIC):
+            async with httpx.AsyncClient(transport=transport) as client:
+                result = await fetch_page("https://example.com/llms.txt", client)
+
+        assert result.status_code == 200
+        assert result.text is None
+        assert result.html is None

@@ -655,3 +655,58 @@ class TestWwwCanonicalization:
 
         www_issues = [i for i in result.issues if i.code == "WWW_CANONICALIZATION"]
         assert len(www_issues) == 0
+
+
+# ── llms.txt text/plain body validation (fetcher .text fix) ───────────────────
+
+class TestLlmsTxtValidation:
+    """A well-formed text/plain llms.txt must NOT be flagged LLMS_TXT_INVALID.
+
+    Regression: fetch_page only decoded HTML/PDF bodies, leaving .html None for
+    text/plain, so every valid llms.txt was flagged invalid. Now fetch_page
+    populates .text and the engine reads text or html. These run through the
+    REAL fetch_page (respx) so the whole decode path is exercised.
+    """
+
+    _VALID_LLMS = (
+        "# Example Nonprofit\n\n"
+        "> A short summary of what this organization does for AI assistants.\n\n"
+        "## Key pages\n"
+        "- https://example.com/about\n"
+        "- https://example.com/programs\n"
+    )
+
+    @pytest.mark.asyncio
+    async def test_valid_llms_txt_not_flagged(self):
+        with respx.mock:
+            _mock_standard_setup(respx.mock)
+            respx.get("https://example.com/llms.txt").mock(
+                return_value=httpx.Response(
+                    200, text=self._VALID_LLMS,
+                    headers={"content-type": "text/plain; charset=utf-8"},
+                )
+            )
+
+            settings = CrawlSettings(crawl_delay_ms=0, max_pages=5)
+            result = await run_crawl("job-llms-valid", BASE_URL, settings)
+
+        invalid = [i for i in result.issues if i.code == "LLMS_TXT_INVALID"]
+        assert invalid == [], f"valid llms.txt wrongly flagged: {[i.description for i in invalid]}"
+
+    @pytest.mark.asyncio
+    async def test_garbage_llms_txt_still_flagged(self):
+        """Adversarial: a text/plain body missing H1/blockquote/URLs must flag."""
+        with respx.mock:
+            _mock_standard_setup(respx.mock)
+            respx.get("https://example.com/llms.txt").mock(
+                return_value=httpx.Response(
+                    200, text="just some random prose with no structure at all",
+                    headers={"content-type": "text/plain"},
+                )
+            )
+
+            settings = CrawlSettings(crawl_delay_ms=0, max_pages=5)
+            result = await run_crawl("job-llms-garbage", BASE_URL, settings)
+
+        invalid = [i for i in result.issues if i.code == "LLMS_TXT_INVALID"]
+        assert len(invalid) >= 1

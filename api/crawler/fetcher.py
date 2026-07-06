@@ -86,6 +86,8 @@ class FetchResult:
             (same as status_code when there are no redirects).
         headers: Response headers from the final response.
         html: Response body text, or None if the response was not HTML or request failed.
+        text: Decoded body for non-HTML text/* responses (e.g. text/plain llms.txt),
+            or None. HTML bodies go to ``html``, not here.
         redirect_chain: Ordered list of intermediate URLs visited (not including final_url).
         is_login_redirect: True if a redirect in the chain pointed to a login path.
         error: Error message if the request failed, None on success.
@@ -97,6 +99,7 @@ class FetchResult:
     first_status_code: int = 0
     headers: dict[str, str] = field(default_factory=dict)
     html: str | None = None
+    text: str | None = None          # decoded body for non-HTML text/* (e.g. text/plain llms.txt)
     content: bytes | None = None     # raw response body for non-HTML (e.g. PDFs)
     content_type: str = ""           # normalised value from Content-Type header
     redirect_chain: list[str] = field(default_factory=list)
@@ -194,16 +197,22 @@ async def fetch_page(
                 content_type = response.headers.get("content-type", "").split(";")[0].strip().lower()
 
                 html: str | None = None
+                text: str | None = None
                 is_html = "html" in content_type
                 is_pdf = "pdf" in content_type
+                # Non-HTML text/* bodies (llms.txt, ai.txt, robots.txt) must be
+                # decoded so structural checks in engine.py can read them.
+                is_text = content_type.startswith("text/") and not is_html
                 result_size = 0
 
-                if not is_head and (is_html or is_pdf):
+                if not is_head and (is_html or is_pdf or is_text):
                     raw = await response.aread()
                     result_size = len(raw)
                     if len(raw) <= _MAX_HTML_BYTES:
                         if is_html:
                             html = raw.decode(response.encoding or "utf-8", errors="replace")
+                        elif is_text:
+                            text = raw.decode(response.encoding or "utf-8", errors="replace")
                         result_content = raw if is_pdf else None
                     else:
                         logger.warning(
@@ -225,6 +234,7 @@ async def fetch_page(
                     first_status_code=first_status,
                     headers=dict(response.headers),
                     html=html,
+                    text=text,
                     content=result_content,
                     content_type=content_type,
                     redirect_chain=redirect_chain,

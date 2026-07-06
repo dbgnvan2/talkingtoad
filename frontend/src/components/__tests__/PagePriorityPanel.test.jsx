@@ -42,6 +42,34 @@ describe('PagePriorityPanel', () => {
     expect(screen.getAllByText('—').length).toBeGreaterThan(0)
   })
 
+  it('shows a Hide control after ranking that collapses the table', async () => {
+    global.fetch.mockImplementation(() =>
+      Promise.resolve({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({
+          pages: [
+            { url: 'https://x/a', health_score: 40, gsc: { clicks: 5, impressions: 200 }, review_flag: { flagged: true, reasons: [] }, priority_rank: 1, bucket: 'Vulnerable Star' },
+          ],
+          total: 1,
+        }),
+      })
+    )
+    renderWithProviders(<PagePriorityPanel jobId="job1" />)
+    fireEvent.click(screen.getByText(/Rank pages/))
+    await waitFor(() => expect(screen.getByText('https://x/a')).toBeInTheDocument())
+
+    // No misleading "Refresh"; a Hide control is offered instead.
+    expect(screen.queryByText(/Refresh/)).not.toBeInTheDocument()
+    const hide = screen.getByText('Hide')
+    expect(hide).toBeInTheDocument()
+
+    // Clicking Hide collapses the table and restores the Rank pages button.
+    fireEvent.click(hide)
+    expect(screen.queryByText('https://x/a')).not.toBeInTheDocument()
+    expect(screen.getByText(/Rank pages/)).toBeInTheDocument()
+  })
+
   it('shows an error state when the request fails', async () => {
     global.fetch.mockImplementation(() => Promise.resolve({ ok: false, status: 500, json: () => Promise.resolve({ error: { message: 'boom' } }) }))
     renderWithProviders(<PagePriorityPanel jobId="job1" />)

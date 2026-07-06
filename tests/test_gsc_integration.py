@@ -313,6 +313,9 @@ class TestGscStatus:
         data = resp.json()
         assert data["connected"] is False
         assert data["properties"] == []
+        # configured-but-not-connected must be distinguishable from
+        # genuinely-not-configured (503) so the panel shows the Connect button.
+        assert data["configured"] is True
 
     @pytest.mark.asyncio
     async def test_connected_with_creds(self, gsc_client, gsc_env):
@@ -339,6 +342,7 @@ class TestGscStatus:
         data = resp.json()
         assert data["connected"] is True
         assert len(data["properties"]) == 1
+        assert data["configured"] is True
 
     @pytest.mark.asyncio
     async def test_status_response_contract_fields(self, gsc_client, gsc_env):
