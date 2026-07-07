@@ -129,6 +129,28 @@ def _normalize(text: str) -> str:
     return " ".join(text.lower().split())
 
 
+# Max characters kept for a mismatched schema value shown in the report.
+# Longer values are truncated with a trailing ellipsis so the UI stays compact.
+_MISMATCH_VALUE_MAX_CHARS = 120
+
+
+def _truncate_value(value: str) -> str:
+    """Collapse whitespace and truncate a schema value for display.
+
+    Values longer than ``_MISMATCH_VALUE_MAX_CHARS`` are cut and given a
+    trailing '…' so a long FAQ answer or address doesn't bloat the report.
+    """
+    collapsed = " ".join(value.split())
+    if len(collapsed) > _MISMATCH_VALUE_MAX_CHARS:
+        return collapsed[:_MISMATCH_VALUE_MAX_CHARS] + "…"
+    return collapsed
+
+
+def _record_mismatch(mismatched: list[dict], field: str, value: str) -> None:
+    """Append a ``{"field", "value"}`` record with the value truncated."""
+    mismatched.append({"field": field, "value": _truncate_value(value)})
+
+
 def _is_machine_identifier(value: str) -> bool:
     """True if *value* is a machine identifier (email / URL) rather than display
     content. SEO plugins inject author/publisher Person nodes whose ``name`` is
@@ -190,11 +212,16 @@ def _assemble_address(block: dict) -> str | None:
 def _check_block_fields(
     block: dict,
     normalized_visible: str,
-    mismatched: list[str],
+    mismatched: list[dict],
     *,
     prefix: str = "",
 ) -> None:
-    """Check a single schema block's fields against visible text."""
+    """Check a single schema block's fields against visible text.
+
+    Records each mismatch as a ``{"field": <label>, "value": <schema value>}``
+    dict (value truncated to ``_MISMATCH_VALUE_MAX_CHARS``) so the report can
+    show WHAT declared value was missing, not just the field name.
+    """
     block_type = block.get("@type", "")
     if isinstance(block_type, list):
         types_to_check = [t.lower() for t in block_type if isinstance(t, str)]
@@ -216,7 +243,7 @@ def _check_block_fields(
             if _is_machine_identifier(value):
                 continue  # email/URL identifier, not display content
             if _normalize(value) not in normalized_visible:
-                mismatched.append(f"{prefix}{label}")
+                _record_mismatch(mismatched, f"{prefix}{label}", value)
 
         # LocalBusiness.address — special assembly
         if type_key == "localbusiness":
@@ -225,7 +252,9 @@ def _check_block_fields(
                 # Check each non-empty part individually; if ANY part is missing,
                 # flag. But for the label, use the whole address.
                 if _normalize(addr_str) not in normalized_visible:
-                    mismatched.append(f"{prefix}LocalBusiness.address")
+                    _record_mismatch(
+                        mismatched, f"{prefix}LocalBusiness.address", addr_str
+                    )
 
         # FAQPage.mainEntity — array of Question objects
         if type_key == "faqpage":
@@ -238,23 +267,29 @@ def _check_block_fields(
                     name = item.get("name")
                     if isinstance(name, str) and name.strip():
                         if _normalize(name) not in normalized_visible:
-                            mismatched.append(f"{prefix}FAQPage.mainEntity[{idx}].name")
+                            _record_mismatch(
+                                mismatched,
+                                f"{prefix}FAQPage.mainEntity[{idx}].name",
+                                name,
+                            )
                     # acceptedAnswer.text
                     accepted = item.get("acceptedAnswer")
                     if isinstance(accepted, dict):
                         ans_text = accepted.get("text")
                         if isinstance(ans_text, str) and ans_text.strip():
                             if _normalize(ans_text) not in normalized_visible:
-                                mismatched.append(
-                                    f"{prefix}FAQPage.mainEntity[{idx}].acceptedAnswer.text"
+                                _record_mismatch(
+                                    mismatched,
+                                    f"{prefix}FAQPage.mainEntity[{idx}].acceptedAnswer.text",
+                                    ans_text,
                                 )
 
 
 def check_schema_visible_mismatch(
     schema_blocks: list[dict],
     visible_text: str,
-) -> list[str]:
-    """Return labels of JSON-LD fields whose values are not in *visible_text*.
+) -> list[dict]:
+    """Return JSON-LD field/value pairs whose values are not in *visible_text*.
 
     Args:
         schema_blocks: Flattened list of JSON-LD objects (already unwrapped
@@ -262,16 +297,19 @@ def check_schema_visible_mismatch(
         visible_text: Full visible text of the page (``soup.get_text()``).
 
     Returns:
-        List of field labels like ``"Article.headline"``,
-        ``"FAQPage.mainEntity[0].name"``, etc. Empty list means all checked
-        values are visible. Callers should pass the result to ParsedPage's
-        ``schema_visible_mismatch_fields``.
+        List of ``{"field": <label>, "value": <schema value>}`` dicts — e.g.
+        ``{"field": "Article.headline", "value": "SEO Tips for Nonprofits"}``.
+        ``value`` is the exact schema string that failed the visible-text check
+        (for address → the assembled address; for FAQ → the question name /
+        answer text), truncated to 120 chars with a trailing '…' if longer.
+        Empty list means all checked values are visible. Callers should pass the
+        result to ParsedPage's ``schema_visible_mismatch_fields``.
     """
     if not schema_blocks or not visible_text:
         return []
 
     normalized_visible = _normalize(visible_text)
-    mismatched: list[str] = []
+    mismatched: list[dict] = []
 
     for block in schema_blocks:
         if not isinstance(block, dict):

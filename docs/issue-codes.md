@@ -1680,7 +1680,8 @@ Page schema type does not match inferred page type
 
 A value declared in JSON-LD structured data does not appear in the page's visible text
 
-**Recommendation:** Make sure every value in your structured data (headline, name, FAQ answers, address) is also present in the visible page content — Google requires markup to match what users see.
+**How to fix**
+For each field listed below, compare the schema value with the page. If the value is correct but missing from the page, add it to the visible content (heading, paragraph, FAQ, or address block). If the page is correct, update the JSON-LD in your SEO plugin so its value matches the visible text.
 
 **Plain-English:** Schema Not in Visible Text
 

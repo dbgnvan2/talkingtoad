@@ -143,8 +143,9 @@ class ParsedPage:
     # M3.1: SCHEMA_VISIBLE_MISMATCH pre-computed field.
     # None → no JSON-LD on the page (or not computed / error).
     # []   → schema present, every checked value is visible.
-    # [..] → list of field labels whose declared values are absent.
-    schema_visible_mismatch_fields: list[str] | None = None
+    # [..] → list of {"field": <label>, "value": <schema value>} dicts whose
+    #        declared values are absent from the visible text.
+    schema_visible_mismatch_fields: list[dict] | None = None
 
     # M3.2: AI_CONTENT_NOT_IN_TEXT pre-computed field.
     # None → not flagged (content is sufficiently textual).
@@ -352,8 +353,8 @@ def parse_page(
 
     # M3.1: SCHEMA_VISIBLE_MISMATCH — pre-compute at parse time where
     # soup (and therefore full visible text) is in scope. The result is a
-    # compact list of mismatched field labels stored on ParsedPage.
-    schema_visible_mismatch_fields: list[str] | None = None
+    # compact list of {"field", "value"} dicts stored on ParsedPage.
+    schema_visible_mismatch_fields: list[dict] | None = None
     _schema_blocks = _extract_schema_blocks(soup)
     if _schema_blocks:
         try:

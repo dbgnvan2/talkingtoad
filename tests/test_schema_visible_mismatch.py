@@ -9,6 +9,11 @@ from api.crawler.parser import ParsedPage
 from api.crawler.issue_checker import check_page, make_issue
 
 
+def _fields(result):
+    """Extract the field labels from the list[dict] mismatch result."""
+    return [item["field"] for item in result]
+
+
 # ---------------------------------------------------------------------------
 # Helper
 # ---------------------------------------------------------------------------
@@ -99,25 +104,33 @@ class TestAbsentValueFlagged:
         blocks = [{"@type": "Article", "headline": "SEO Tips for Nonprofits"}]
         visible = "Welcome to our charity website. We offer many services."
         result = check_schema_visible_mismatch(blocks, visible)
-        assert "Article.headline" in result
+        assert "Article.headline" in _fields(result)
+
+    def test_article_headline_captures_value(self):
+        """The mismatch record carries the exact schema value, not just the label."""
+        blocks = [{"@type": "Article", "headline": "SEO Tips for Nonprofits"}]
+        visible = "Welcome to our charity website. We offer many services."
+        result = check_schema_visible_mismatch(blocks, visible)
+        assert {"field": "Article.headline",
+                "value": "SEO Tips for Nonprofits"} in result
 
     def test_product_name_absent(self):
         blocks = [{"@type": "Product", "name": "Premium SEO Package"}]
         visible = "We provide great services for your organisation."
         result = check_schema_visible_mismatch(blocks, visible)
-        assert "Product.name" in result
+        assert "Product.name" in _fields(result)
 
     def test_person_name_absent(self):
         blocks = [{"@type": "Person", "name": "Dr. John Doe"}]
         visible = "Our team of experts is here to help you."
         result = check_schema_visible_mismatch(blocks, visible)
-        assert "Person.name" in result
+        assert "Person.name" in _fields(result)
 
     def test_organization_name_absent(self):
         blocks = [{"@type": "Organization", "name": "Invisible Corp"}]
         visible = "Welcome to our website about counselling."
         result = check_schema_visible_mismatch(blocks, visible)
-        assert "Organization.name" in result
+        assert "Organization.name" in _fields(result)
 
     def test_faq_partial_mismatch(self):
         """One FAQ answer visible, another not — only the missing one is listed."""
@@ -136,10 +149,16 @@ class TestAbsentValueFlagged:
         }]
         visible = "What is therapy? Therapy is a treatment process. Contact us for pricing."
         result = check_schema_visible_mismatch(blocks, visible)
-        assert "FAQPage.mainEntity[0].name" not in result
-        assert "FAQPage.mainEntity[0].acceptedAnswer.text" not in result
-        assert "FAQPage.mainEntity[1].name" in result
-        assert "FAQPage.mainEntity[1].acceptedAnswer.text" in result
+        fields = _fields(result)
+        assert "FAQPage.mainEntity[0].name" not in fields
+        assert "FAQPage.mainEntity[0].acceptedAnswer.text" not in fields
+        assert "FAQPage.mainEntity[1].name" in fields
+        assert "FAQPage.mainEntity[1].acceptedAnswer.text" in fields
+        # The captured value is the actual missing question/answer text.
+        assert {"field": "FAQPage.mainEntity[1].name",
+                "value": "How much does it cost?"} in result
+        assert {"field": "FAQPage.mainEntity[1].acceptedAnswer.text",
+                "value": "Sessions start at $150."} in result
 
     def test_localbusiness_address_absent(self):
         blocks = [{
@@ -154,8 +173,12 @@ class TestAbsentValueFlagged:
         }]
         visible = "Test Clinic is a great place. Come visit us!"
         result = check_schema_visible_mismatch(blocks, visible)
-        assert "LocalBusiness.address" in result
-        assert "LocalBusiness.name" not in result  # name IS visible
+        fields = _fields(result)
+        assert "LocalBusiness.address" in fields
+        assert "LocalBusiness.name" not in fields  # name IS visible
+        # The captured value is the assembled address string.
+        assert {"field": "LocalBusiness.address",
+                "value": "123 Main St Vancouver BC V5K 1A1"} in result
 
     def test_graph_nested_organization(self):
         """Organization nested inside @graph should also be checked."""
@@ -165,7 +188,33 @@ class TestAbsentValueFlagged:
         ]
         visible = "Welcome to My Site. We do good things."
         result = check_schema_visible_mismatch(blocks, visible)
-        assert "Organization.name" in result
+        assert "Organization.name" in _fields(result)
+
+
+class TestValueTruncation:
+    """Long schema values are truncated to 120 chars with a trailing ellipsis."""
+
+    def test_long_value_truncated(self):
+        long_answer = "A" * 200
+        blocks = [{
+            "@type": "FAQPage",
+            "mainEntity": [{
+                "name": "Long question?",
+                "acceptedAnswer": {"text": long_answer},
+            }],
+        }]
+        visible = "Nothing relevant on this page."
+        result = check_schema_visible_mismatch(blocks, visible)
+        rec = next(r for r in result
+                   if r["field"] == "FAQPage.mainEntity[0].acceptedAnswer.text")
+        assert rec["value"] == "A" * 120 + "…"
+        assert len(rec["value"]) == 121  # 120 chars + the ellipsis
+
+    def test_short_value_not_truncated(self):
+        blocks = [{"@type": "Article", "headline": "Short Headline"}]
+        result = check_schema_visible_mismatch(blocks, "Unrelated content.")
+        assert result[0]["value"] == "Short Headline"
+        assert "…" not in result[0]["value"]
 
 
 class TestAdversarialNormalization:
@@ -250,7 +299,7 @@ class TestMalformedInput:
         visible = "This page has different content."
         result = check_schema_visible_mismatch(blocks, visible)
         # Article.headline should appear (only once, not duplicated)
-        assert "Article.headline" in result
+        assert "Article.headline" in _fields(result)
 
     def test_faq_main_entity_not_list(self):
         """mainEntity as a non-list → no crash."""
@@ -281,7 +330,7 @@ class TestLocalBusinessAddress:
         }]
         visible = "Visit us at 123 Main St, Vancouver, BC."
         result = check_schema_visible_mismatch(blocks, visible)
-        assert "LocalBusiness.address" not in result
+        assert "LocalBusiness.address" not in _fields(result)
 
     def test_address_as_string_missing(self):
         blocks = [{
@@ -290,7 +339,7 @@ class TestLocalBusinessAddress:
         }]
         visible = "We are located somewhere nice."
         result = check_schema_visible_mismatch(blocks, visible)
-        assert "LocalBusiness.address" in result
+        assert "LocalBusiness.address" in _fields(result)
 
     def test_address_empty_string(self):
         blocks = [{"@type": "LocalBusiness", "address": ""}]
@@ -315,14 +364,35 @@ class TestIssueCheckerIntegration:
 
     def test_emits_when_mismatched(self):
         page = _make_page(
-            schema_visible_mismatch_fields=["Article.headline"],
+            schema_visible_mismatch_fields=[
+                {"field": "Article.headline", "value": "SEO Tips for Nonprofits"}
+            ],
             schema_types=["Article"],
         )
         issues = check_page(page)
         codes = [i.code for i in issues]
         assert "SCHEMA_VISIBLE_MISMATCH" in codes
         mismatch_issue = next(i for i in issues if i.code == "SCHEMA_VISIBLE_MISMATCH")
-        assert mismatch_issue.extra["mismatched_fields"] == ["Article.headline"]
+        assert mismatch_issue.extra["mismatched_fields"] == [
+            {"field": "Article.headline", "value": "SEO Tips for Nonprofits"}
+        ]
+
+    def test_emitted_extra_is_list_of_field_value_dicts(self):
+        """The emitted issue's extra.mismatched_fields is a list of {field, value}."""
+        page = _make_page(
+            schema_visible_mismatch_fields=[
+                {"field": "Article.headline", "value": "Hidden Headline"},
+                {"field": "Person.name", "value": "Dr. Jane Doe"},
+            ],
+            schema_types=["Article", "Person"],
+        )
+        issues = check_page(page)
+        mismatch_issue = next(i for i in issues if i.code == "SCHEMA_VISIBLE_MISMATCH")
+        fields = mismatch_issue.extra["mismatched_fields"]
+        assert isinstance(fields, list) and len(fields) == 2
+        for item in fields:
+            assert set(item.keys()) == {"field", "value"}
+            assert isinstance(item["field"], str) and isinstance(item["value"], str)
 
     def test_not_emitted_when_empty_list(self):
         """Empty list means all values are visible — no issue."""
@@ -346,7 +416,9 @@ class TestIssueCheckerIntegration:
 
     def test_issue_has_correct_category_and_severity(self):
         page = _make_page(
-            schema_visible_mismatch_fields=["Product.name"],
+            schema_visible_mismatch_fields=[
+                {"field": "Product.name", "value": "Premium Package"}
+            ],
             schema_types=["Product"],
         )
         issues = check_page(page)
@@ -356,7 +428,9 @@ class TestIssueCheckerIntegration:
 
     def test_issue_has_confidence_label(self):
         page = _make_page(
-            schema_visible_mismatch_fields=["Person.name"],
+            schema_visible_mismatch_fields=[
+                {"field": "Person.name", "value": "Dr. Jane Smith"}
+            ],
             schema_types=["Person"],
         )
         issues = check_page(page)
@@ -366,8 +440,8 @@ class TestIssueCheckerIntegration:
     def test_multiple_mismatched_fields(self):
         page = _make_page(
             schema_visible_mismatch_fields=[
-                "Article.headline",
-                "FAQPage.mainEntity[0].name",
+                {"field": "Article.headline", "value": "Hidden Headline"},
+                {"field": "FAQPage.mainEntity[0].name", "value": "A question?"},
             ],
             schema_types=["Article", "FAQPage"],
         )

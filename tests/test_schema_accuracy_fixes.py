@@ -12,6 +12,11 @@ from tests.test_issue_checker import _page
 from api.crawler.issue_checker import check_page
 
 
+def _fields(result):
+    """Extract the field labels from the list[dict] mismatch result."""
+    return [item["field"] for item in result]
+
+
 # ── #1 JSON_LD_INVALID: @graph children inherit @context ──────────────────────
 def test_graph_nodes_without_context_are_valid():
     """Nodes flattened out of an @graph have @type but no per-node @context
@@ -55,7 +60,7 @@ def test_url_person_name_not_flagged():
 def test_real_hidden_name_still_flagged():
     """A genuine display name absent from the page still fires (true positive)."""
     blocks = [{"@type": "Person", "name": "Jane Smith"}]
-    assert "Person.name" in check_schema_visible_mismatch(blocks, "Totally unrelated body text.")
+    assert "Person.name" in _fields(check_schema_visible_mismatch(blocks, "Totally unrelated body text."))
 
 
 def test_visible_name_not_flagged():
@@ -79,4 +84,4 @@ def test_subject_person_node_still_flagged():
     """A subject Person node (no author @id) genuinely absent from the page still
     fires — the fix is targeted to author metadata, not all Person nodes."""
     blocks = [{"@type": "Person", "@id": "https://site/team/jane/#person", "name": "Jane Smith"}]
-    assert "Person.name" in check_schema_visible_mismatch(blocks, "Unrelated body text about therapy.")
+    assert "Person.name" in _fields(check_schema_visible_mismatch(blocks, "Unrelated body text about therapy."))

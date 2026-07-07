@@ -952,7 +952,7 @@ function HeadingsPanel({ jobId, pageUrl, headings, onUpdate }) {
   )
 }
 
-function IssueCard({ issue: iss, jobId, pageUrl, isOpen, onToggleFix, onFixComplete }) {
+export function IssueCard({ issue: iss, jobId, pageUrl, isOpen, onToggleFix, onFixComplete }) {
   const { getFontClass } = useTheme()
   const toast = useToast()
   const [showActions, setShowActions] = useState(false)
@@ -1307,6 +1307,36 @@ function IssueCard({ issue: iss, jobId, pageUrl, isOpen, onToggleFix, onFixCompl
               <div className="bg-amber-400 h-full" style={{ width: `${(iss.extra.breakdown.svg_kb / iss.extra.breakdown.html_total_kb) * 100}%` }} title={`SVG: ${iss.extra.breakdown.svg_kb} KB`} />
             </div>
           )}
+        </div>
+      )}
+
+      {/* Schema-vs-visible-text mismatch (SCHEMA_VISIBLE_MISMATCH) —
+          show each mismatched field and the exact schema value not on the page. */}
+      {Array.isArray(iss.extra?.mismatched_fields) && iss.extra.mismatched_fields.length > 0 && (
+        <div className="mt-3 p-4 bg-amber-50 border border-amber-200 rounded-lg">
+          <p className="text-sm font-bold text-amber-800 mb-2">
+            {iss.extra.mismatched_fields.length} schema value{iss.extra.mismatched_fields.length !== 1 ? 's' : ''} not found in the page's visible text:
+          </p>
+          <ul className="space-y-1">
+            {iss.extra.mismatched_fields.map((item, idx) => {
+              // Defensive: legacy runs may have stored plain strings.
+              if (typeof item === 'string') {
+                return (
+                  <li key={`${item}-${idx}`} className="p-2 bg-white rounded-lg border border-amber-100 text-sm text-gray-700">
+                    <span className="font-mono font-bold text-amber-900">{item}</span> — not on the page
+                  </li>
+                )
+              }
+              return (
+                <li key={`${item.field}-${idx}`} className="p-2 bg-white rounded-lg border border-amber-100 text-sm text-gray-700">
+                  <span className="font-mono font-bold text-amber-900">{item.field}</span>
+                  {' — schema says '}
+                  <span className="italic text-gray-800">"{item.value}"</span>
+                  {' — not on the page'}
+                </li>
+              )
+            })}
+          </ul>
         </div>
       )}
 

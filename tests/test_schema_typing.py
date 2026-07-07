@@ -202,7 +202,9 @@ class TestSchemaVisibleMismatchThemeArtifact:
             "@id": "https://example.com/team/jane#person",
         }
         visible = "Our clinic offers counselling. Contact us to book a session."
-        assert check_schema_visible_mismatch([subject_person], visible) == ["Person.name"]
+        assert check_schema_visible_mismatch([subject_person], visible) == [
+            {"field": "Person.name", "value": "Jane Practitioner"}
+        ]
         # And when the subject IS visible, it does not fire.
         visible_ok = "Meet Jane Practitioner, our lead counsellor."
         assert check_schema_visible_mismatch([subject_person], visible_ok) == []

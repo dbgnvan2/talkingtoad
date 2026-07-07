@@ -636,7 +636,7 @@ def check_page(
             logger.warning("schema_typing_error", extra={"url": url, "error": str(e)})
 
     # ── Schema Visible Mismatch (M3.1) ──────────────────────────────────────────
-    # Pre-computed at parse time — the field is a list of mismatch labels.
+    # Pre-computed at parse time — the field is a list of {"field", "value"} dicts.
     if page.schema_visible_mismatch_fields:
         issues.append(make_issue("SCHEMA_VISIBLE_MISMATCH", url,
                                  extra={"mismatched_fields": page.schema_visible_mismatch_fields}))

@@ -1306,11 +1306,16 @@ _CATALOGUE: dict[str, _IssueSpec] = {
     "SCHEMA_VISIBLE_MISMATCH": _IssueSpec(
         category="ai_readiness", severity="warning",
         description="A value declared in JSON-LD structured data does not appear in the page's visible text",
-        recommendation="Make sure every value in your structured data (headline, name, FAQ answers, "
-                       "address) is also present in the visible page content — Google requires "
-                       "markup to match what users see.",
+        recommendation="The report lists each mismatched field and the exact schema value that "
+                       "isn't on the page. For each one, either add that text to the visible page "
+                       "content or correct the schema so it matches what visitors see — Google "
+                       "requires markup to match the on-page content.",
         human_description="Schema Not in Visible Text",
         fixability="content_edit",
+        how_to_fix="For each field listed below, compare the schema value with the page. If the "
+                   "value is correct but missing from the page, add it to the visible content "
+                   "(heading, paragraph, FAQ, or address block). If the page is correct, update "
+                   "the JSON-LD in your SEO plugin so its value matches the visible text.",
     ),
     # M3.2: Content not in textual form (Reasonable proxy — Google "make content textual")
     "AI_CONTENT_NOT_IN_TEXT": _IssueSpec(
