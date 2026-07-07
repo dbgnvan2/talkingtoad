@@ -349,7 +349,7 @@ class TestGscStatus:
         """Frontend contract (ConnectionsPanel): /api/gsc/status always returns
         `connected` and `properties`. Locks the shape the panel reads.
 
-        Spec: docs/pending/2026-07-06_connections-panel.md
+        Spec: docs/pending/OLD/2026-07-06_connections-panel.md
         """
         resp = await gsc_client.get("/api/gsc/status")
         assert resp.status_code == 200

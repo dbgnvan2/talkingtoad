@@ -11,6 +11,7 @@ TalkingToad helps you identify technical SEO issues on your website and — for 
 - **AI-Readiness Audit:** Checks how well your content is prepared for AI search engines (GEO optimization).
 - **FAQ / GEO Schema Generator:** Generates ready-to-paste Schema.org FAQPage JSON-LD from a page's Q&A to improve AI/GEO visibility.
 - **Image Intelligence:** Vision-AI powered image analysis and automatic optimization.
+- **Search Console Integration:** Optional Google Search Console link (app-wide, one-time OAuth) blends real search performance into the priority ranking; a built-in Connections panel tests AI-provider and GSC connectivity.
 - **Professional Reporting:** Export results as tabbed Excel workbooks or professional PDF audits.
 
 ---

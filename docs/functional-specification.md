@@ -516,7 +516,7 @@ External link checking, redirect chain detection, login redirects.
 All ai_readiness codes carry a confidence label per the spec:
 
 - **Established** (9 codes) — robots.txt / AI bot directives, plus direct markup validation:
-  - `SCHEMA_VISIBLE_MISMATCH` — A value declared in JSON-LD structured data does not appear in the page's visible text.
+  - `SCHEMA_VISIBLE_MISMATCH` — A value declared in JSON-LD structured data does not appear in the page's visible text. The author/publisher-node guard (`_is_author_publisher_node`, `api/services/schema_typing.py`) excludes structural nodes — including the WordPress SEO-plugin byline `Person` node (`/schema/person/<hash>` `@id`) — so a legitimate author graph-node does not fire the check site-wide (V2 false-positive fix, 2026-07-06). → adversarial + true-positive-preserved tests.
   - `AI_PREVIEW_SUPPRESSED` — X-Robots-Tag suppresses search/AI previews (`nosnippet` or `max-snippet:0`).
   - `AI_PREVIEW_BLOCKED_AT_BOT` — X-Robots-Tag directive specifically blocks an AI crawler (e.g. GPTBot).
   - `AI_CITED_PAGE` — Page has ingested AI citation count > 0 (informational positive signal).
@@ -537,6 +537,8 @@ All ai_readiness codes carry a confidence label per the spec:
 - Schema blocks (`schema_blocks`) accurately flatten `@graph` nesting, with comprehensive handling for malformed JSON and arrays of objects at the root.
 - Passage heuristics (e.g. `PARA_TOO_LONG`) explicitly strip structural chrome (`script`, `style`, `nav`, `header`, `footer`, `aside`) before counting to eliminate boilerplate false positives.
 - `STATISTICS_COUNT_LOW` and `QUOTATIONS_MISSING` evaluate occurrences over a generous 1500-word window, preventing false penalties on longer articles.
+- `LLMS_TXT_INVALID` validity follows the **llmstxt.org spec**, not stricter invented rules: after stripping a leading UTF-8 BOM, a file is `INVALID` only when it has **no Markdown H1 `# Title`** (soft-404 / non-Markdown body). A summary, section links, and link count are all optional — there is **no blockquote requirement, no minimum-URL requirement, and no 20-URL cap** — and no `text/plain` MIME requirement (see §4.6 fetcher note). This clears false flags on standard Yoast-generated files. A missing file is `LLMS_TXT_MISSING`; a soft-404 body still flags. → `docs/thresholds.md`, regenerated `docs/issue-codes.md`.
+- **Fetcher body decoding.** `fetch_page` (`api/crawler/fetcher.py`) decodes non-HTML `text/*` bodies into `FetchResult.text` (size-bounded), so `text/plain` files such as `/llms.txt` are validated against real content rather than an empty body (2026-07-06 P2/P3 fix).
 
 ### 4.7 Other categories
 
@@ -779,6 +781,40 @@ ordering, and `evaluate_refresh` produces each page's review flag; the queue
 works with **or without** GSC data — a page with no Performance Ledger records
 is ranked by health alone. Returns `{pages: [{url, health_score, gsc,
 review_flag: {flagged, reasons}}], total}`. → `tests/test_page_priority.py`
+
+**Frontend — Hide control.** The Page Priority panel's loaded-state action is a **Hide**
+button that collapses and clears the ranked table; re-opening the panel re-ranks from the
+current crawl. (It replaced a misleading "Refresh" button that only re-displayed the same
+crawl's numbers without re-scanning.) → `frontend`: `PagePriority.test.jsx` "Hide collapses".
+
+### 6.10 AI-error contract (P14) and Connections panel
+
+**Error contract.** `analyze_with_ai` (`api/services/ai_analyzer.py`) and `geo_llm._call_llm`
+**raise a typed `AIAnalysisError`** on any provider failure (auth error, API error, missing
+prompt-context key) — they never return an error-sentinel string as content. Every caller
+catches it and routes to its error channel: `/api/ai/analyze` → 503, `/page-advisor` /
+`/site-advisor` → `{error}` field, and the `crawl.py` executive-summary path skips (never caches
+the error onto the job). The former `str.startswith` sentinel checks and
+`geo_llm._is_ai_error`/`_ERROR_PREFIXES` were deleted. → `tests/test_ai_test_endpoint.py`,
+adversarial "provider error never appears as content" tests. *(Spec:
+`docs/pending/OLD/2026-07-06_p14-ai-error-contract.md`.)*
+
+**Connections panel.** A `ConnectionsPanel` modal (opened from the Results header, alongside
+Display Settings / GEO) lets the operator verify the two external integrations without leaving
+the results view. No new endpoints were added; both reuse existing bearer-auth GET routes.
+
+- **Test LLM — `GET /api/ai/test`.** Runs a real round-trip against the configured provider.
+  Response contract: `{success: bool, message: str}` plus `{sample}` on success. The former
+  `api_key_read` diagnostic field was **dropped** from the response. → `tests/test_ai_test_endpoint.py`.
+- **Test GSC — `GET /api/gsc/status`.** Reports connection state. Response contract:
+  `{connected: bool, properties: [...], configured: bool}`. `configured: true` is returned on all
+  three 200 paths (no-creds, success, except-fallback); the `_require_gsc_configured()` 503 path
+  (GSC env not configured) maps to `configured: false` on the client, so the panel distinguishes
+  configured-but-unlinked (shows **Connect**) from genuinely-not-configured (quiet empty state).
+  GSC is linked **app-wide, one-time** via the OAuth `Connect` flow (§4.8). →
+  `tests/test_gsc_integration.py::TestGscStatus::test_status_response_contract_fields`.
+  *(Spec: `docs/pending/OLD/2026-07-06_connections-panel.md`,
+  `docs/pending/OLD/2026-07-06_ui-and-detection-fixes.md`.)*
 
 ---
 

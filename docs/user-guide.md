@@ -112,6 +112,33 @@ After the 2026-07 severity recalibration, most issues now surface as **Info** �
 - 🟡 **Warning** — Should be fixed; will improve your results
 - 🔵 **Info** — Worth knowing; low urgency
 
+### Page Priority queue
+
+The **Page Priority** panel ranks the crawled pages so you know which ones to work on first. When you're done reviewing the ranked list, click **Hide** to collapse it and clear the table; re-opening the panel re-ranks the pages honestly from the current crawl. (The button used to read "Refresh" but only re-displayed the same crawl's numbers without re-scanning — "Hide" makes what it does clear.)
+
+### llms.txt validation
+
+If your site publishes an `/llms.txt` file, TalkingToad now validates it against the **llmstxt.org specification** rather than stricter invented rules. Only a top-level `# Title` heading is required for the file to be considered valid — a summary, section links, and the number of links are all **optional**, and there is no cap on how many links you may list. A standard plugin-generated file (for example one produced by Yoast) will validate cleanly. A soft-404 or non-Markdown body is still flagged.
+
+---
+
+## Connecting external services
+
+The **Connections** panel (opened from the Results header) lets you check that TalkingToad can reach the two external services it uses, without leaving the results view.
+
+- **Test LLM connection** — runs a real round-trip against your configured AI provider (Gemini/OpenAI) and reports success or the exact error. Use this if AI-powered suggestions aren't appearing.
+- **Test GSC connection** — checks whether Google Search Console is connected and lists the properties TalkingToad can see.
+
+### Connecting Google Search Console
+
+Linking Google Search Console lets TalkingToad blend real search-performance data (clicks, impressions) into its authority analysis. The link is **app-wide and one-time** — once connected, every crawl can use it.
+
+1. Run a crawl and open the **Results** page.
+2. Open the **GSC** panel (or the Connections panel).
+3. Click **Connect** and complete the Google sign-in / consent flow.
+
+If TalkingToad is configured for GSC but not yet linked, the panel shows a **Connect** button with step-by-step guidance. If GSC hasn't been configured on this install at all, the panel stays quietly empty (there is nothing to connect to yet).
+
 ---
 
 ## Fix Manager (WordPress Sites)

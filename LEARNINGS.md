@@ -82,6 +82,106 @@
 
 Newest first. Format: **Issue → Root cause → What would have caught it → Fix → Pattern.**
 
+- **2026-07-06 — `analyze_with_ai` returned provider errors as `str`, rendered as AI content.**
+  - *Issue:* `api/services/ai_analyzer.py::analyze_with_ai` signalled failure by **returning a sentinel
+    error string** (`"AI analysis skipped: …"`, `"Error calling AI: …"`) rather than raising. Because
+    success and failure were both `str`, callers rendered the error as if it were AI output:
+    `/api/ai/analyze` returned it directly as `suggestion` (no guard at all); `/page-advisor` and
+    `/site-advisor` fed it into recommendations; and the `crawl.py` executive-summary path **cached the
+    error string onto the job** and served it as the summary.
+  - *Root cause:* A mixed-mode `str` interface — the same return type for content and for failure — with
+    ad-hoc `str.startswith`/`_is_ai_error` sentinel checks that several callers simply never made.
+  - *What would have caught it:* An adversarial test forcing a provider error and asserting it never
+    appears as content in any response or on the job (P14 checklist item 15).
+  - *Fix:* `analyze_with_ai` (and `geo_llm._call_llm`) now raise a typed `AIAnalysisError` on failure;
+    every caller catches it and routes to its error channel (503 / `{error}` field / skip). Deleted all
+    `startswith`-sentinel checks and `geo_llm._is_ai_error`/`_ERROR_PREFIXES`. Adversarial tests added.
+    Spec: `docs/pending/OLD/2026-07-06_p14-ai-error-contract.md`.
+  - *Pattern:* **P14** — error state returned as string, rendered as content. Resolves the standing
+    "error-as-content" class for the AI path; new AI callsites must let `AIAnalysisError` propagate.
+
+- **2026-07-06 — R5: three divergent page-health computations; only one was capped + suppressed.**
+  - *Issue:* The category-cap (20) and cluster/noindex suppression logic lived in **one** of three
+    health-score computations. `crawl.py` and `citations.py` each recomputed health from a **raw
+    uncapped sum**, so the same crawl could report different scores depending on which endpoint served it,
+    and suppression/cap never applied on those two paths.
+  - *Root cause:* A scoring rule was added to one sibling and its siblings were left on the old raw-sum
+    path (classic drift across duplicated computations).
+  - *What would have caught it:* A parity test asserting all health-score entry points agree on the same
+    fixture (`tests/test_scoring_paths_unified.py`).
+  - *Fix:* Unified all three onto a single capped + suppressed path; `crawl.py`/`citations.py` no longer
+    recompute a raw sum. Added `scope: page|site` (site-config codes deduct once per site), extended
+    suppression clusters + noindex scope-reduction, a Quick-Wins list, runtime-derived severity, and a
+    `scoring_model_version` stamp (legacy rows read null). Spec: functional-spec §4.0.1.
+  - *Pattern:* **P3/P5** — enumerate all siblings; a scoring change must be applied class-wide, not to
+    one of N parallel computations.
+
+- **2026-07-06 — `SCHEMA_VISIBLE_MISMATCH` false-positive from a WP SEO-plugin author graph-node.**
+  - *Issue:* WordPress SEO plugins inject the byline author as a sibling `/schema/person/<hash>` graph
+    node. This slipped `_is_author_publisher_node`, so `SCHEMA_VISIBLE_MISMATCH` fired **site-wide** on
+    every page — a looks-wrong-but-is-right input scored as a failure.
+  - *Root cause:* The author/publisher-node guard didn't recognise the plugin's hashed-`@id` Person node
+    shape, so a legitimate structural node was treated as a spurious schema mismatch.
+  - *What would have caught it:* An adversarial fixture using the real WP `/schema/person/<hash>` node
+    asserting no `SCHEMA_VISIBLE_MISMATCH`, alongside a true-positive-preserved test.
+  - *Fix:* Extended the guard in `api/services/schema_typing.py` (weight unchanged); added both the
+    adversarial and true-positive tests. Confirmed on a real crawl (livingsystems.ca) where site health
+    rose 73→88 once the FP cleared. Spec: `docs/pending/2026-07-06_deploy-gate-validation.md` (V2).
+  - *Pattern:* **P7** — a detector that false-positives on a valid input; add the adversarial case.
+
+- **2026-07-06 — llms.txt validator was stricter than the llmstxt.org spec.**
+  - *Issue:* `LLMS_TXT_INVALID` required a `>` blockquote summary and ≥1 URL, capped URLs at 20, and
+    hard-required `text/plain` — none of which the llmstxt.org spec mandates (only the `# Title` H1 is
+    required; summary, sections, and link count are optional, no cap). A standard Yoast-generated file
+    (H1 + plain summary + 50 links, no blockquote, leading UTF-8 BOM) was wrongly flagged.
+  - *Root cause:* Invented editorial validity rules hardcoded in the checker, plus a leading UTF-8 BOM
+    that defeated the H1 detection so even the one real requirement mis-fired.
+  - *What would have caught it:* A regression test using the exact Yoast shape (BOM + H1 + plain summary
+    + sections + 50 links) asserting it validates clean, with soft-404 still flagged.
+  - *Fix:* Strip a leading BOM, then flag `INVALID` only when there is no Markdown H1 title (soft-404 /
+    non-Markdown body). Removed the blockquote, min-URL, 20-URL cap, and MIME requirements. Updated the
+    `LLMS_TXT_INVALID` recommendation, `docs/thresholds.md`, and regenerated `docs/issue-codes.md`.
+  - *Pattern:* **P7** (a check that fails a looks-right-**and-is-right** input) + **P4** (editorial rule
+    hardcoded in logic; now aligned to the external spec).
+
+- **2026-07-06 — `/api/gsc/status` omitted `configured`, giving a dead-end Connect UI.**
+  - *Issue:* `gsc_status()` returned `{connected, properties}` but no `configured` field on its 200
+    paths. The panel read `!status.configured` (which was `undefined`) as "not configured" and never
+    rendered the **Connect** button in the configured-but-not-linked state — a permanent dead end.
+  - *Root cause:* A response missing a field the frontend keys on; the serializer and the frontend
+    contract had drifted (the 503 "not configured" path was distinct from the 200 "configured but
+    unlinked" state the field was meant to express).
+  - *What would have caught it:* An API-contract test asserting `/api/gsc/status` 200 responses include
+    `configured: true` (now `tests/test_gsc_integration.py::TestGscStatus::test_status_response_contract_fields`).
+  - *Fix:* Added `"configured": True` to all three 200 responses (no-creds, success, except-fallback);
+    the `_require_gsc_configured()` 503 path (→ `configured:false` on the client) is unchanged.
+  - *Pattern:* **P6/serialization** — a status response must carry every field the frontend keys on;
+    verify the contract, don't assume the client can infer a missing field.
+
+- **2026-07-06 — `fetch_page` dropped `text/plain` bodies, so llms.txt/ai.txt saw empty content.**
+  - *Issue:* `fetch_page` only decoded HTML/PDF bodies. For a `text/plain` response (a real llms.txt),
+    `.html` was `None`, so the llms.txt check saw an empty body and validated it as empty → `INVALID`.
+  - *Root cause:* A narrow content-type scope — only two body types were ever decoded — silently
+    discarded every other text body with no signal.
+  - *What would have caught it:* A fetcher test decoding a `text/plain` response and asserting the body
+    is preserved (plus a size bound); an llms.txt respx test using a real plain-text file.
+  - *Fix:* Added a `text: str | None` field to `FetchResult`; non-HEAD `text/*` (non-HTML) bodies are now
+    decoded into `.text`, and the llms.txt check reads it. Size-bounded like the HTML path.
+  - *Pattern:* **P2/P3** — silent drop on a narrow-scope assumption; enumerate the content types a data
+    path must handle rather than assuming one or two are complete.
+
+- **2026-07-06 — usage-aggregation tests rotted as wall-clock time advanced (test-only).**
+  - *Issue:* The `_seed` helper omitted a timestamp, so `record_ai_usage` stamped rows at `now()`. Once
+    real time passed the tests' fixed `2026-05-01..06-30` query window, seeded rows fell outside it, the
+    aggregation returned empty, and three assertions failed — with no production bug.
+  - *Root cause:* A test fixture depending on wall-clock `now()` against a hardcoded date window; the two
+    dates drifted apart as the calendar advanced (a P4/P8-flavoured testing smell).
+  - *What would have caught it:* Running the suite after the window's end date — or, structurally, seeding
+    rows at a timestamp explicitly inside the query window rather than at `now()`.
+  - *Fix:* Stamp seeded rows inside the fixed window. Test-only; no production change.
+  - *Pattern:* **P4/P8 (testing)** — a hardcoded date window plus `now()`-stamped fixtures is a
+    time-bomb; pin fixture timestamps relative to the window under test.
+
 - **2026-06-22 — Agent-readiness spec's "new" codes collided with already-shipped codes.**
   - *Issue:* The approved micro-spec (written against a v2.6 baseline) listed `SCHEMA_FAQ_MISSING`,
     `JS_DEPENDENT_CONTENT`, `SCHEMA_MISSING`, and `NO_DATE_ON_CONTENT` as **new** codes, but the repo had

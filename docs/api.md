@@ -95,7 +95,7 @@ same doc's §9 verification matrix.
 | Method | Endpoint | Description |
 |---|---|---|
 | POST | `/api/ai/analyze` | Analyze a page using AI and provide remediation suggestions. |
-| GET | `/api/ai/test` | Test connectivity to AI provider (Gemini/OpenAI). |
+| GET | `/api/ai/test` | Test connectivity to AI provider (Gemini/OpenAI). Response: `{success: bool, message: str}` plus `{sample}` on success. (No `api_key_read` field.) Used by the Connections panel's "Test LLM" button. On provider failure `analyze_with_ai` raises `AIAnalysisError`; the endpoint returns `{success: false, message}` — an error is never surfaced as content. |
 | POST | `/api/ai/page-advisor` | Get AI-generated SEO recommendations for a specific page. |
 | POST | `/api/ai/site-advisor` | Get AI-generated site-wide SEO recommendations. |
 | POST | `/api/ai/faq-schema` | Generate ready-to-paste FAQPage JSON-LD from the page's FAQ Q&A (`{job_id, page_url}` → `{jsonld, question_count, refused, reason}`). Re-fetches the page (SSRF-safe); builds schema only from answers present in the HTML — refuses (never fabricates) if answers are JS-only. Copy/export only; never writes to WordPress. |
@@ -643,14 +643,23 @@ All endpoints require `Authorization: Bearer <token>`.
 
 ### GET `/api/gsc/status`
 
+Connection status for the Connections / GSC panel. `configured: true` is returned on every 200
+response (whether or not credentials are stored) so the frontend can distinguish
+configured-but-unlinked (renders the **Connect** button) from genuinely-not-configured. When the
+GSC environment is not configured at all, the endpoint returns **503**, which the client maps to
+`configured: false`.
+
 ```json
 {
   "connected": true,
   "properties": [
     {"site_url": "https://www.example.com/", "permission_level": "siteOwner"}
-  ]
+  ],
+  "configured": true
 }
 ```
+
+Not-yet-linked (env configured, no stored creds): `{"connected": false, "properties": [], "configured": true}`.
 
 ### POST `/api/gsc/ingest`
 

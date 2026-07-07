@@ -1,6 +1,6 @@
 """API-contract tests for GET /api/ai/test (ConnectionsPanel).
 
-Spec: docs/pending/2026-07-06_connections-panel.md
+Spec: docs/pending/OLD/2026-07-06_connections-panel.md
 
 These lock the frontend contract for the Connections panel's "Test LLM
 connection" button:
