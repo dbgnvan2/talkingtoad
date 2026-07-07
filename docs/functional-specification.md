@@ -465,7 +465,12 @@ deploy gate; monotonicity is preserved (`test_agent_score_monotonic_non_increasi
 Title, meta description, OG tags, canonical, favicon. Notable codes:
 - `TITLE_MISSING` (critical) — page has no `<title>` tag
 - `TITLE_TOO_LONG` (warning) — title >60 chars
-- `TITLE_DUPLICATE` (warning) — same title on ≥2 pages
+- `TITLE_DUPLICATE` (warning) — same title on ≥2 pages. Pages that set
+  `rel=canonical` to a *different* URL (e.g. paginated archive pages 2/3 that
+  canonical → page 1) are excluded from duplicate grouping — they have
+  self-declared as a secondary view and are not flagged (nor listed in another
+  page's `duplicate_urls`). Same exclusion applies to `META_DESC_DUPLICATE` and
+  `TITLE_META_DUPLICATE_PAIR`.
 - `META_DESC_MISSING`, `META_DESC_TOO_LONG`
 - `OG_TITLE_MISSING`, `OG_DESC_MISSING`, `OG_IMAGE_MISSING`
 - `TWITTER_CARD_MISSING`

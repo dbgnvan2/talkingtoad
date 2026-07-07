@@ -269,6 +269,88 @@ class TestCanonicalChecks:
 
 
 # ---------------------------------------------------------------------------
+# Canonical-respecting duplicate detection — paginated listing pages that
+# canonical → page 1 must NOT be flagged as title/meta duplicates.
+# ---------------------------------------------------------------------------
+
+class TestCanonicalRespectingDuplicates:
+    _DUP_CODES = {"TITLE_DUPLICATE", "META_DESC_DUPLICATE", "TITLE_META_DUPLICATE_PAIR"}
+
+    def test_pagination_canonical_to_page1_not_flagged_duplicate(self):
+        """Pages 2/3 canonicaling to page 1 must not be flagged as duplicates,
+        and page 1 (self-canonical) must not be flagged as duplicated-by them."""
+        shared_title = "Podcasts | Living Systems"
+        shared_meta = "The Living Systems podcast archive." + " x" * 40
+        page_a = _page(url="https://example.com/podcast/", title=shared_title,
+                       meta_description=shared_meta,
+                       canonical_url="https://example.com/podcast/")  # self-canonical
+        page_b = _page(url="https://example.com/podcast/2/", title=shared_title,
+                       meta_description=shared_meta,
+                       canonical_url="https://example.com/podcast/")  # → page 1
+        page_c = _page(url="https://example.com/podcast/3/", title=shared_title,
+                       meta_description=shared_meta,
+                       canonical_url="https://example.com/podcast/")  # → page 1
+        cross_issues = check_cross_page([page_a, page_b, page_c])
+        dup_issues = [i for i in cross_issues if i.code in self._DUP_CODES]
+        assert dup_issues == [], (
+            f"Paginated pages should not be flagged: {[(i.code, i.url) for i in dup_issues]}"
+        )
+
+    def test_real_duplicate_still_flagged_no_canonical(self):
+        """Adversarial: two genuinely-duplicate pages with NO canonical must
+        STILL fire TITLE_DUPLICATE — the fix must not hide real duplicates."""
+        page_a = _page(url="https://example.com/a", title="Shared Title",
+                       meta_description="A" * 80, canonical_url=None)
+        page_b = _page(url="https://example.com/b", title="Shared Title",
+                       meta_description="A" * 80, canonical_url=None)
+        codes = _codes(check_cross_page([page_a, page_b]))
+        assert "TITLE_DUPLICATE" in codes
+        assert "META_DESC_DUPLICATE" in codes
+        assert "TITLE_META_DUPLICATE_PAIR" in codes
+
+    def test_real_duplicate_still_flagged_self_canonical(self):
+        """Adversarial: two duplicate pages each SELF-canonical must still be
+        flagged — self-canonical is not a declaration of secondary status."""
+        page_a = _page(url="https://example.com/a", title="Shared Title",
+                       meta_description="A" * 80,
+                       canonical_url="https://example.com/a")
+        page_b = _page(url="https://example.com/b", title="Shared Title",
+                       meta_description="A" * 80,
+                       canonical_url="https://example.com/b")
+        codes = _codes(check_cross_page([page_a, page_b]))
+        assert "TITLE_DUPLICATE" in codes
+        assert "TITLE_META_DUPLICATE_PAIR" in codes
+
+    def test_canonicaling_page_not_in_others_duplicate_urls(self):
+        """A page canonicaling to a different URL must never appear in another
+        page's duplicate_urls list."""
+        shared_title = "Shared"
+        shared_meta = "A" * 80
+        # Two self-canonical duplicates (A, B) that SHOULD flag each other,
+        # plus a paginated page C canonicaling to A that must not pollute lists.
+        page_a = _page(url="https://example.com/a", title=shared_title,
+                       meta_description=shared_meta,
+                       canonical_url="https://example.com/a")
+        page_b = _page(url="https://example.com/b", title=shared_title,
+                       meta_description=shared_meta,
+                       canonical_url="https://example.com/b")
+        page_c = _page(url="https://example.com/a/2/", title=shared_title,
+                       meta_description=shared_meta,
+                       canonical_url="https://example.com/a")
+        cross_issues = check_cross_page([page_a, page_b, page_c])
+        c_url = "https://example.com/a/2/"
+        for issue in cross_issues:
+            dup_urls = issue.extra.get("duplicate_urls", []) if issue.extra else []
+            assert c_url not in dup_urls, (
+                f"Canonicaling page {c_url} leaked into {issue.code} duplicate_urls"
+            )
+        # C itself must not be flagged.
+        assert not [i for i in cross_issues if i.page_url == c_url and i.code in self._DUP_CODES]
+        # A and B still flag each other (real duplicate not hidden).
+        assert "TITLE_DUPLICATE" in _codes(cross_issues)
+
+
+# ---------------------------------------------------------------------------
 # Favicon check
 # ---------------------------------------------------------------------------
 

@@ -46,6 +46,22 @@ def check_cross_page(pages: list[ParsedPage], start_url: str | None = None) -> l
         if page.redirect_url or (300 <= page.status_code < 400):
             continue
 
+        # Skip pages that declare a DIFFERENT canonical URL — they have
+        # explicitly announced themselves as a secondary view of another
+        # page (e.g. paginated archive pages /list/2/, /list/3/ that
+        # canonical → /list/). Flagging such a page as a duplicate of the
+        # very page it canonicals to is a false positive. A page whose
+        # canonical is None, or self-referencing, stays in the grouping
+        # (the CANONICAL_MISSING near-duplicate path is unchanged).
+        if page.canonical_url is not None:
+            try:
+                if normalise_url(page.canonical_url) != normalise_url(page.url):
+                    continue
+            except Exception:
+                # If either URL can't be normalised, fall through and keep
+                # the page in the grouping rather than silently dropping it.
+                pass
+
         # Normalise both sides: a whitespace-only title is functionally
         # empty and must NOT bucket-up with other whitespace-only titles
         # as TITLE_DUPLICATE (`bool("   ")` is True — the original
