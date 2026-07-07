@@ -952,8 +952,9 @@ export async function gscStatus() {
     headers: authHeaders(),
   })
   if (res.status === 503) {
-    return { connected: false, properties: [], configured: false }
+    return { connected: false, properties: [], configured: false, account_email: null }
   }
+  // account_email passes through unchanged from the backend /status payload.
   return checkResponse(res)
 }
 

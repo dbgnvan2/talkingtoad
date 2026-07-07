@@ -32,7 +32,16 @@ CLIENT_CONFIG = {
     }
 }
 
-SCOPES = ["https://www.googleapis.com/auth/webmasters.readonly"]
+# webmasters.readonly is the functional scope. openid + userinfo.email are
+# standard non-sensitive scopes used only to identify which Google account
+# connected (surfaced as "Connected as ..." in the panel). Adding them means
+# existing users reconnect once to populate the account email; connections
+# made before this change keep working (email shows null until reconnect).
+SCOPES = [
+    "https://www.googleapis.com/auth/webmasters.readonly",
+    "openid",
+    "https://www.googleapis.com/auth/userinfo.email",
+]
 
 
 def build_flow(state: Optional[str] = None) -> Flow:

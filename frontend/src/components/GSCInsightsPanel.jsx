@@ -6,7 +6,39 @@ const V4_EXPLAINER = {
   why: "It's the reality check \u2014 it tells you which technically-healthy pages actually earn traffic, so you fix the pages that matter, and whether your GEO work is being cited.",
   goodVsBad: 'A healthy page with high impressions but low clicks = a title/answerability problem to fix; a healthy page with zero traffic = a "Hidden Gem" to re-target.',
   misleading: 'GSC data lags ~2\u20133 days and a brand-new/low-traffic site may show zero rows \u2014 absence of data is not a failure.',
-  howToUse: 'Connect \u2192 pick your siteOwner property \u2192 Ingest \u2192 review the flagged pages.',
+  howToUse: 'Connect \u2192 pick a property you Own or have Full access to \u2192 Ingest \u2192 review the flagged pages.',
+}
+
+// Map Google's permissionLevel to a short human label.
+const PERMISSION_LABELS = {
+  siteOwner: 'Owner',
+  siteFullUser: 'Full',
+  siteRestrictedUser: 'Restricted',
+  siteUnverifiedUser: 'Unverified',
+}
+
+// Ranking for the smart default: higher wins. Anything unknown ranks lowest.
+const PERMISSION_RANK = {
+  siteOwner: 4,
+  siteFullUser: 3,
+  siteRestrictedUser: 2,
+  siteUnverifiedUser: 1,
+}
+
+function permissionLabel(level) {
+  return PERMISSION_LABELS[level] || level
+}
+
+// Pick the property with the BEST permission level (Owner > Full > Restricted >
+// Unverified). Ties keep original order — so we never auto-select a property the
+// connected account can't actually query.
+function bestProperty(properties) {
+  if (!properties || properties.length === 0) return null
+  return properties.reduce((best, p) => {
+    const rank = PERMISSION_RANK[p.permission_level] || 0
+    const bestRank = PERMISSION_RANK[best.permission_level] || 0
+    return rank > bestRank ? p : best
+  }, properties[0])
 }
 
 function GSCInsightsPanel({ jobId }) {
@@ -26,8 +58,7 @@ function GSCInsightsPanel({ jobId }) {
       const data = await gscStatus()
       setStatus(data)
       if (data.connected && data.properties?.length > 0) {
-        const siteOwner = data.properties.find(p => p.permission_level === 'siteOwner')
-        setSelectedProperty(siteOwner || data.properties[0])
+        setSelectedProperty(bestProperty(data.properties))
       }
     } catch (err) {
       setError(err.message)
@@ -125,7 +156,7 @@ function GSCInsightsPanel({ jobId }) {
   // Connected — full panel
   return (
     <div className="bg-white rounded-lg shadow p-6">
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex items-center justify-between mb-1">
         <h3 className="text-lg font-semibold text-gray-900">Google Search Console</h3>
         <button
           onClick={() => setShowExplainer(!showExplainer)}
@@ -135,6 +166,14 @@ function GSCInsightsPanel({ jobId }) {
           {showExplainer ? 'Hide' : 'Learn more'} ?
         </button>
       </div>
+
+      {status.account_email ? (
+        <p className="text-sm text-gray-600 mb-4">Connected as {status.account_email}</p>
+      ) : (
+        <p className="text-sm text-gray-400 mb-4">
+          Account not identified — reconnect to show which Google account is connected.
+        </p>
+      )}
 
       {showExplainer && (
         <div className="mb-4 p-3 bg-blue-50 rounded text-sm text-gray-700 space-y-2">
@@ -159,10 +198,19 @@ function GSCInsightsPanel({ jobId }) {
           >
             {status.properties.map(prop => (
               <option key={prop.site_url} value={prop.site_url}>
-                {prop.site_url} {prop.permission_level === 'siteOwner' ? '(Owner)' : ''}
+                {prop.site_url} — {permissionLabel(prop.permission_level)}
               </option>
             ))}
           </select>
+          {selectedProperty &&
+            (selectedProperty.permission_level === 'siteUnverifiedUser' ||
+              selectedProperty.permission_level === 'siteRestrictedUser') && (
+              <p className="mt-1 text-sm text-amber-600">
+                Your connected account has limited access to this property — ingest may be
+                denied. Pick a property marked Owner/Full, or grant this account access in
+                Search Console.
+              </p>
+            )}
         </div>
 
         <div className="flex space-x-3">

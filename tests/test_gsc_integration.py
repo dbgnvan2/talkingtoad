@@ -258,6 +258,25 @@ class TestGscConnect:
             "https://accounts.google.com"
         )
 
+    @pytest.mark.asyncio
+    async def test_connect_forces_select_account(self, gsc_client, gsc_env):
+        """Connect must build authorization_url with prompt=select_account so
+        Google always shows the account picker (no silent default-account reuse).
+        """
+        with patch("api.routers.gsc.build_flow") as mock_build:
+            mock_flow = MagicMock()
+            mock_flow.authorization_url.return_value = (
+                "https://accounts.google.com/o/oauth2/auth?state=test",
+                "test",
+            )
+            mock_flow.code_verifier = "test_verifier"
+            mock_build.return_value = mock_flow
+
+            await gsc_client.get("/api/gsc/connect", follow_redirects=False)
+
+        _, kwargs = mock_flow.authorization_url.call_args
+        assert kwargs.get("prompt") == "select_account consent"
+
 
 class TestGscCallback:
     @pytest.mark.asyncio
@@ -284,6 +303,42 @@ class TestGscCallback:
 
         assert resp.status_code == 200
         assert "GSC Connected" in resp.text
+
+    @pytest.mark.asyncio
+    async def test_callback_stores_creds_when_email_fetch_raises(
+        self, gsc_client, gsc_env
+    ):
+        """The best-effort account-email fetch MUST NOT break connect: if it
+        raises, creds are still stored and the callback returns 200.
+        """
+        from api.routers.gsc import _pkce_store, _load_creds
+
+        _pkce_store["test_state2"] = {
+            "code_verifier": "test_verifier",
+            "state": "test_state2",
+        }
+
+        with patch("api.routers.gsc.build_flow") as mock_build, \
+             patch(
+                 "api.routers.gsc._fetch_account_email",
+                 side_effect=RuntimeError("id_token decode failed"),
+             ):
+            mock_flow = MagicMock()
+            mock_flow.credentials.to_json.return_value = json.dumps(
+                {"token": "fake", "refresh_token": "fake_refresh"}
+            )
+            mock_build.return_value = mock_flow
+
+            resp = await gsc_client.get(
+                "/api/gsc/callback",
+                params={"code": "test_code", "state": "test_state2"},
+            )
+
+        # The email fetch raising must not surface as a 500 to the user.
+        assert resp.status_code == 200
+        assert "GSC Connected" in resp.text
+        # Creds were still persisted.
+        assert _load_creds() is not None
 
     @pytest.mark.asyncio
     async def test_callback_error(self, gsc_client, gsc_env):
@@ -343,6 +398,45 @@ class TestGscStatus:
         assert data["connected"] is True
         assert len(data["properties"]) == 1
         assert data["configured"] is True
+
+    @pytest.mark.asyncio
+    async def test_status_includes_account_email(self, gsc_client, gsc_env):
+        """/status returns account_email: the stored email when present, else null.
+
+        Frontend renders "Connected as {account_email}" from this field.
+        """
+        fake_creds_json = json.dumps({
+            "token": "fake", "refresh_token": "r",
+            "client_id": "test-id", "client_secret": "test-secret",
+        })
+        # With a stored email.
+        with patch("api.routers.gsc._load_creds") as mock_load, \
+             patch("api.routers.gsc.list_properties") as mock_list, \
+             patch(
+                 "api.routers.gsc._load_account_email",
+                 return_value="owner@example.org",
+             ):
+            mock_load.return_value = fake_creds_json
+            mock_list.return_value = [
+                {"site_url": "https://example.com/", "permission_level": "siteOwner"}
+            ]
+            resp = await gsc_client.get("/api/gsc/status")
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "account_email" in data
+        assert data["account_email"] == "owner@example.org"
+
+        # Legacy stored creds (no email) -> null.
+        with patch("api.routers.gsc._load_creds") as mock_load, \
+             patch("api.routers.gsc.list_properties") as mock_list, \
+             patch("api.routers.gsc._load_account_email", return_value=None):
+            mock_load.return_value = fake_creds_json
+            mock_list.return_value = []
+            resp = await gsc_client.get("/api/gsc/status")
+
+        assert resp.status_code == 200
+        assert resp.json()["account_email"] is None
 
     @pytest.mark.asyncio
     async def test_status_response_contract_fields(self, gsc_client, gsc_env):

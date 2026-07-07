@@ -100,6 +100,101 @@ describe('GSCInsightsPanel', () => {
     })
   })
 
+  it('dropdown options show permission-level labels', async () => {
+    const mockProperties = [
+      { site_url: 'https://example.com', permission_level: 'siteOwner' },
+      { site_url: 'https://full.example.com', permission_level: 'siteFullUser' },
+      { site_url: 'https://res.example.com', permission_level: 'siteRestrictedUser' },
+      { site_url: 'sc-domain:example.com', permission_level: 'siteUnverifiedUser' },
+    ]
+    global.fetch.mockImplementation(() =>
+      mockFetchResponse({ connected: true, properties: mockProperties, configured: true })
+    )
+
+    renderWithProviders(<GSCInsightsPanel jobId="test-job" />)
+
+    await waitFor(() =>
+      expect(screen.getByText('Ingest Performance Data')).toBeInTheDocument()
+    )
+
+    const options = screen.getAllByRole('option')
+    const texts = options.map(o => o.textContent)
+    expect(texts).toContain('https://example.com — Owner')
+    expect(texts).toContain('https://full.example.com — Full')
+    expect(texts).toContain('https://res.example.com — Restricted')
+    expect(texts).toContain('sc-domain:example.com — Unverified')
+  })
+
+  it('auto-selects the best-permission property (Full over an unverified first)', async () => {
+    // Unverified property comes FIRST — the old default (properties[0]) would
+    // have picked it, causing 403s. Smart default must pick the Full one.
+    const mockProperties = [
+      { site_url: 'sc-domain:example.com', permission_level: 'siteUnverifiedUser' },
+      { site_url: 'https://example.com/', permission_level: 'siteFullUser' },
+    ]
+    global.fetch.mockImplementation(() =>
+      mockFetchResponse({ connected: true, properties: mockProperties, configured: true })
+    )
+
+    renderWithProviders(<GSCInsightsPanel jobId="test-job" />)
+
+    await waitFor(() =>
+      expect(screen.getByText('Ingest Performance Data')).toBeInTheDocument()
+    )
+
+    const select = screen.getByRole('combobox')
+    expect(select.value).toBe('https://example.com/')
+  })
+
+  it('shows limited-access hint when the selected property is unverified', async () => {
+    const mockProperties = [
+      { site_url: 'sc-domain:example.com', permission_level: 'siteUnverifiedUser' },
+    ]
+    global.fetch.mockImplementation(() =>
+      mockFetchResponse({ connected: true, properties: mockProperties, configured: true })
+    )
+
+    renderWithProviders(<GSCInsightsPanel jobId="test-job" />)
+
+    await waitFor(() =>
+      expect(screen.getByText(/limited access to this property/i)).toBeInTheDocument()
+    )
+  })
+
+  it('shows "Connected as {email}" when account_email is present', async () => {
+    global.fetch.mockImplementation(() =>
+      mockFetchResponse({
+        connected: true,
+        properties: [{ site_url: 'https://example.com', permission_level: 'siteOwner' }],
+        configured: true,
+        account_email: 'owner@example.org',
+      })
+    )
+
+    renderWithProviders(<GSCInsightsPanel jobId="test-job" />)
+
+    await waitFor(() =>
+      expect(screen.getByText('Connected as owner@example.org')).toBeInTheDocument()
+    )
+  })
+
+  it('shows "account not identified" hint when account_email is null', async () => {
+    global.fetch.mockImplementation(() =>
+      mockFetchResponse({
+        connected: true,
+        properties: [{ site_url: 'https://example.com', permission_level: 'siteOwner' }],
+        configured: true,
+        account_email: null,
+      })
+    )
+
+    renderWithProviders(<GSCInsightsPanel jobId="test-job" />)
+
+    await waitFor(() =>
+      expect(screen.getByText(/account not identified/i)).toBeInTheDocument()
+    )
+  })
+
   it('renders Learn more explainer toggle', async () => {
     global.fetch.mockImplementation(() =>
       mockFetchResponse({

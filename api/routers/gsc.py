@@ -90,10 +90,19 @@ def _decrypt_creds(encrypted: str) -> str:
 _creds_cache: dict[str, str] = {}  # in-memory fallback for test/dev
 
 
-def _store_creds(creds_json: str) -> None:
-    """Store encrypted credentials."""
+def _store_creds(creds_json: str, account_email: Optional[str] = None) -> None:
+    """Store encrypted credentials plus the connected account email (best-effort).
+
+    The account email is stored in a separate cache slot; legacy stored creds
+    (written before this field existed) leave it absent -> _load_account_email
+    returns None. Existing callers of _load_creds() are unaffected.
+    """
     encrypted = _encrypt_creds(creds_json)
     _creds_cache["gsc_credentials"] = encrypted
+    if account_email:
+        _creds_cache["gsc_account_email"] = account_email
+    else:
+        _creds_cache.pop("gsc_account_email", None)
 
 
 def _load_creds() -> Optional[str]:
@@ -104,9 +113,41 @@ def _load_creds() -> Optional[str]:
     return _decrypt_creds(encrypted)
 
 
+def _load_account_email() -> Optional[str]:
+    """Return the connected Google account email, or None (legacy/unknown)."""
+    return _creds_cache.get("gsc_account_email")
+
+
+def _fetch_account_email(flow) -> Optional[str]:
+    """Best-effort: derive the connected account email after fetch_token.
+
+    Wrapped entirely so ANY failure returns None — the connect flow must still
+    succeed and store creds even if the email cannot be identified.
+    """
+    try:
+        import google.auth.transport.requests
+        from google.oauth2 import id_token
+
+        client_id = os.environ.get("GSC_OAUTH_CLIENT_ID", "")
+        id_tok = getattr(flow.credentials, "id_token", None)
+        if id_tok and client_id:
+            info = id_token.verify_oauth2_token(
+                id_tok,
+                google.auth.transport.requests.Request(),
+                client_id,
+            )
+            email = info.get("email")
+            if email:
+                return email
+    except Exception as e:  # noqa: BLE001 — best-effort, never break connect
+        logger.info("Could not identify GSC account email (continuing): %s", e)
+    return None
+
+
 def _delete_creds() -> None:
     """Remove stored credentials."""
     _creds_cache.pop("gsc_credentials", None)
+    _creds_cache.pop("gsc_account_email", None)
 
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
@@ -121,7 +162,10 @@ async def gsc_connect():
     authorization_url, state = flow.authorization_url(
         access_type="offline",
         include_granted_scopes="true",
-        prompt="consent",
+        # "select_account" forces Google to always show the account picker so
+        # the user knows (and can change) which Google account they connect as —
+        # no silent reuse of the browser's default account.
+        prompt="select_account consent",
     )
 
     # Persist PKCE code_verifier + state (CRITICAL: Google rejects the
@@ -152,9 +196,18 @@ async def gsc_callback(
 
     flow.fetch_token(code=code)
 
+    # Best-effort: identify the connected account email. MUST NOT break connect.
+    # _fetch_account_email is internally guarded; the call site is guarded too so
+    # even an unexpected failure here can never prevent creds from being stored.
+    try:
+        account_email = _fetch_account_email(flow)
+    except Exception as e:  # noqa: BLE001 — connect must survive any email failure
+        logger.info("Account-email fetch failed (continuing): %s", e)
+        account_email = None
+
     # Store credentials (never log token values)
     creds_json = flow.credentials.to_json()
-    _store_creds(creds_json)
+    _store_creds(creds_json, account_email=account_email)
 
     return HTMLResponse(
         content="<h1>GSC Connected!</h1><p>You can close this window.</p>",
@@ -169,16 +222,31 @@ async def gsc_status():
 
     creds_json = _load_creds()
     if not creds_json:
-        return {"connected": False, "properties": [], "configured": True}
+        return {
+            "connected": False,
+            "properties": [],
+            "configured": True,
+            "account_email": None,
+        }
 
     try:
         from google.oauth2.credentials import Credentials
         creds = Credentials.from_authorized_user_info(json.loads(creds_json))
         properties = list_properties(creds)
-        return {"connected": True, "properties": properties, "configured": True}
+        return {
+            "connected": True,
+            "properties": properties,
+            "configured": True,
+            "account_email": _load_account_email(),
+        }
     except Exception as e:
         logger.error("Failed to list GSC properties: %s", e)
-        return {"connected": False, "properties": [], "configured": True}
+        return {
+            "connected": False,
+            "properties": [],
+            "configured": True,
+            "account_email": None,
+        }
 
 
 @router.post("/disconnect")

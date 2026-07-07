@@ -82,6 +82,13 @@
 
 Newest first. Format: **Issue → Root cause → What would have caught it → Fix → Pattern.**
 
+- **2026-07-06 — GSC ingest sent `sites/undefined/...` → HTTP 400.**
+  - *Issue:* After connecting Search Console, "Ingest" queried `sites/undefined/searchAnalytics/query` and Google rejected `http://undefined` as an invalid site URL.
+  - *Root cause:* `list_properties()` returns snake_case `{site_url, permission_level}` (the app's API convention), but `GSCInsightsPanel.jsx` read camelCase `p.siteUrl`/`permissionLevel` → `undefined`. The panel's own test masked it by mocking a fictional camelCase shape, so it stayed green.
+  - *What would have caught it:* an API-contract test asserting the panel consumes the *real* `/api/gsc/status` field names, and a test that Ingest sends a real `site_url` (never `undefined`).
+  - *Fix:* panel reads `site_url`/`permission_level`; test mocks corrected to the real snake_case contract + a regression asserting the ingest URL never contains `undefined`.
+  - *Pattern:* P6/serialization — a frontend/backend field-name mismatch with the test mocking a shape the backend never returns. Sibling of the `/api/gsc/status` missing-`configured` bug.
+
 - **2026-07-06 — `analyze_with_ai` returned provider errors as `str`, rendered as AI content.**
   - *Issue:* `api/services/ai_analyzer.py::analyze_with_ai` signalled failure by **returning a sentinel
     error string** (`"AI analysis skipped: …"`, `"Error calling AI: …"`) rather than raising. Because

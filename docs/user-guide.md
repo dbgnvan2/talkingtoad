@@ -135,7 +135,11 @@ Linking Google Search Console lets TalkingToad blend real search-performance dat
 
 1. Run a crawl and open the **Results** page.
 2. Open the **GSC** panel (or the Connections panel).
-3. Click **Connect** and complete the Google sign-in / consent flow.
+3. Click **Connect**. Google always shows the account picker, so you choose exactly which Google account TalkingToad connects as.
+
+TalkingToad connects as **one** Google account — the panel shows **"Connected as {your email}"** so you always know which account is in use. (Accounts linked before this feature show "account not identified" until you reconnect once.)
+
+Each property in the dropdown is labelled with your access level — **Owner**, **Full**, **Restricted**, or **Unverified**. TalkingToad auto-selects the property you have the strongest access to. **The account you connect as must be an Owner or Full user of the property you pick** — if you select a Restricted or Unverified property, ingest may be denied and the panel warns you. Either pick an Owner/Full property or grant this account access in Search Console.
 
 If TalkingToad is configured for GSC but not yet linked, the panel shows a **Connect** button with step-by-step guidance. If GSC hasn't been configured on this install at all, the panel stays quietly empty (there is nothing to connect to yet).
 
