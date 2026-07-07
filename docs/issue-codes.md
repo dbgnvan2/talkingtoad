@@ -1554,7 +1554,7 @@ Over 80% of outbound body-text links point to the same organisation's own domain
 
 /llms.txt format is invalid
 
-**Recommendation:** Ensure your /llms.txt uses text/plain MIME type and includes a Markdown-style H1 title, a blockquote summary, and a list of high-value URLs (max 20).
+**Recommendation:** Per llmstxt.org, the only required element is a Markdown '# Title' H1 heading; a '>' summary and '## Section' link lists are optional and there is no URL cap. Make sure the file is served as Markdown/plain text and isn't returning a normal web page (soft 404).
 
 **Plain-English:** Invalid AI Instruction File
 

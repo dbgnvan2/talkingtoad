@@ -27,6 +27,33 @@ bounded by `_MAX_HTML_BYTES`. `engine.py` llms.txt check reads
   (valid file not flagged; adversarial garbage still flagged — both via real
   fetch_page + respx).
 
+## Fix B.2 — llms.txt validation aligned to llmstxt.org (false positives on valid files)
+Follow-on to Fix B. Even after the decode fix, the `engine.py` llms.txt check
+(`else:` body-validation block) still false-positived on spec-valid files. Per
+https://llmstxt.org the ONLY required element is a Markdown `# Title` H1; the
+`>` blockquote summary, detail text, `##` link sections and link count are all
+OPTIONAL (no cap). The old code wrongly required text/plain MIME + a `>`
+blockquote + ≥1 URL and flagged >20 URLs. Real Yoast-generated files
+(e.g. livingsystems.ca/llms.txt: H1 + plain-text summary + 14 `##` sections +
+50 links, no blockquote, text/plain, leading UTF-8 BOM) were falsely flagged.
+- Change: replaced the whole body-validation block with a single check —
+  strip a leading UTF-8 BOM, then flag `LLMS_TXT_INVALID` only when there is no
+  `^# \S` H1 line (soft-404 / non-Markdown). The `LLMS_TXT_MISSING` branch
+  (status ≠ 200) is unchanged.
+- `registry.py` `LLMS_TXT_INVALID` recommendation rewritten to state the spec
+  (H1 required; `>` summary and `##` sections optional; no URL cap; ensure
+  served as Markdown/plain text, not a soft-404). `docs/issue-codes.md`
+  regenerated via `scripts/generate_issue_codes_doc.py`; `docs/thresholds.md`
+  llms.txt row corrected (removed the "> 20 URLs → INVALID" rule).
+- Tests (`tests/test_crawl_engine.py::TestLlmsTxtValidation`):
+  `test_yoast_style_llms_txt_valid_no_blockquote_50_links` (regression: BOM +
+  H1 + plain-text summary + 5 `##` sections + 50 links, text/plain → NOT
+  flagged; exercises `.lstrip('﻿')`), `test_h1_only_no_links_no_blockquote_valid`
+  (optional elements → valid), `test_soft_404_html_body_flagged_invalid`
+  (adversarial: HTML no-`# ` body → INVALID), `test_missing_llms_txt_flagged_missing`
+  (404 → MISSING, unchanged). The old "garbage still flagged" test was replaced —
+  an H1-bearing body with no blockquote is now correctly VALID.
+
 ## Fix C — Page Priority "Refresh" misleading + no way to close
 `PagePriorityPanel.jsx`: once ranked, the action is a subtle gray **Hide**
 button that collapses the table via `setPages(null)`. `▶ Rank pages` (indigo)

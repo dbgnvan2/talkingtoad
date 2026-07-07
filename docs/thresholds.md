@@ -128,7 +128,7 @@ Single extraction path = no buffer-agreement bugs.
 | JS render timeout | 5 seconds | `api/services/js_renderer.py:38` `_PLAYWRIGHT_TIMEOUT_MS` |
 | Top-N keyword window for Jaccard | 10 keywords | `api/services/js_renderer.py:41` `_TOP_N_KEYWORDS` |
 | AI bot reference table max age before "stale" warning | 365 days | `api/services/ai_bots.py` `MAX_AGE_DAYS` (v2.0 spec §3.2) |
-| llms.txt URL count limit | > 20 URLs → INVALID | `api/crawler/engine.py` (post-fetch validation) |
+| llms.txt validity (per llmstxt.org) | Only a Markdown `# Title` H1 required; `>` summary, `##` sections and link count are optional (no cap). Missing H1 → INVALID | `api/crawler/engine.py` (post-fetch validation) |
 
 ## Health score formula
 

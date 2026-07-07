@@ -660,12 +660,17 @@ class TestWwwCanonicalization:
 # ── llms.txt text/plain body validation (fetcher .text fix) ───────────────────
 
 class TestLlmsTxtValidation:
-    """A well-formed text/plain llms.txt must NOT be flagged LLMS_TXT_INVALID.
+    """llms.txt validity per https://llmstxt.org.
 
-    Regression: fetch_page only decoded HTML/PDF bodies, leaving .html None for
-    text/plain, so every valid llms.txt was flagged invalid. Now fetch_page
-    populates .text and the engine reads text or html. These run through the
-    REAL fetch_page (respx) so the whole decode path is exercised.
+    The spec's ONLY required element is the H1 project-title line ("# Name").
+    A '>' blockquote summary, detail text, '##' link sections, and the link
+    count are all OPTIONAL — the spec sets no cap. The engine therefore only
+    flags LLMS_TXT_INVALID when the body has no '# Title' H1 at all (a soft-404
+    web page or non-Markdown file). These run through the REAL fetch_page
+    (respx) so the whole decode path is exercised.
+
+    Earlier the checker required text/plain MIME + a '>' blockquote + >=1 URL
+    and capped links at 20 — all false positives against real generators.
     """
 
     _VALID_LLMS = (
@@ -675,6 +680,25 @@ class TestLlmsTxtValidation:
         "- https://example.com/about\n"
         "- https://example.com/programs\n"
     )
+
+    @staticmethod
+    def _yoast_style_body() -> str:
+        """A real Yoast-generated llms.txt shape: leading UTF-8 BOM, H1,
+        plain-text summary paragraph (NOT a '>' blockquote), several '##'
+        section headers, and ~50 '- [name](url): desc' links."""
+        links = "\n".join(
+            f"- [Page {i}](https://example.com/page-{i}): Description for page {i}."
+            for i in range(1, 51)
+        )
+        sections = "\n\n".join(
+            f"## Section {s}\n{links}" for s in range(1, 6)
+        )
+        return (
+            "﻿# Living Systems\n\n"
+            "Living Systems is a consultancy helping organizations adapt. "
+            "This plain-text summary is not a Markdown blockquote.\n\n"
+            f"{sections}\n"
+        )
 
     @pytest.mark.asyncio
     async def test_valid_llms_txt_not_flagged(self):
@@ -694,19 +718,82 @@ class TestLlmsTxtValidation:
         assert invalid == [], f"valid llms.txt wrongly flagged: {[i.description for i in invalid]}"
 
     @pytest.mark.asyncio
-    async def test_garbage_llms_txt_still_flagged(self):
-        """Adversarial: a text/plain body missing H1/blockquote/URLs must flag."""
+    async def test_yoast_style_llms_txt_valid_no_blockquote_50_links(self):
+        """Regression for the exact reported bug (livingsystems.ca/llms.txt):
+        leading UTF-8 BOM, H1, plain-text summary (no '>' blockquote), many
+        '##' sections and ~50 links, served text/plain. Must NOT be flagged
+        LLMS_TXT_INVALID nor LLMS_TXT_MISSING. The BOM case exercises the
+        .lstrip('﻿') — without it the H1 regex would not match and this
+        would flag INVALID."""
         with respx.mock:
             _mock_standard_setup(respx.mock)
             respx.get("https://example.com/llms.txt").mock(
                 return_value=httpx.Response(
-                    200, text="just some random prose with no structure at all",
+                    200, text=self._yoast_style_body(),
+                    headers={"content-type": "text/plain; charset=utf-8"},
+                )
+            )
+
+            settings = CrawlSettings(crawl_delay_ms=0, max_pages=5)
+            result = await run_crawl("job-llms-yoast", BASE_URL, settings)
+
+        invalid = [i for i in result.issues if i.code == "LLMS_TXT_INVALID"]
+        missing = [i for i in result.issues if i.code == "LLMS_TXT_MISSING"]
+        assert invalid == [], f"Yoast-style llms.txt wrongly flagged INVALID: {[i.description for i in invalid]}"
+        assert missing == [], "Yoast-style llms.txt (status 200) wrongly flagged MISSING"
+
+    @pytest.mark.asyncio
+    async def test_h1_only_no_links_no_blockquote_valid(self):
+        """A body with a '# H1' but zero links and no blockquote is VALID —
+        the summary and link sections are optional per the spec."""
+        with respx.mock:
+            _mock_standard_setup(respx.mock)
+            respx.get("https://example.com/llms.txt").mock(
+                return_value=httpx.Response(
+                    200, text="# Just A Title\n",
                     headers={"content-type": "text/plain"},
                 )
             )
 
             settings = CrawlSettings(crawl_delay_ms=0, max_pages=5)
-            result = await run_crawl("job-llms-garbage", BASE_URL, settings)
+            result = await run_crawl("job-llms-h1only", BASE_URL, settings)
 
         invalid = [i for i in result.issues if i.code == "LLMS_TXT_INVALID"]
-        assert len(invalid) >= 1
+        assert invalid == [], f"H1-only llms.txt wrongly flagged: {[i.description for i in invalid]}"
+
+    @pytest.mark.asyncio
+    async def test_soft_404_html_body_flagged_invalid(self):
+        """Adversarial: a soft-404 — an HTML web page with no Markdown '# '
+        title line — must flag LLMS_TXT_INVALID."""
+        with respx.mock:
+            _mock_standard_setup(respx.mock)
+            respx.get("https://example.com/llms.txt").mock(
+                return_value=httpx.Response(
+                    200,
+                    text="<html><body><h1>Page not found</h1>The page you requested does not exist.</body></html>",
+                    headers={"content-type": "text/html"},
+                )
+            )
+
+            settings = CrawlSettings(crawl_delay_ms=0, max_pages=5)
+            result = await run_crawl("job-llms-soft404", BASE_URL, settings)
+
+        invalid = [i for i in result.issues if i.code == "LLMS_TXT_INVALID"]
+        assert len(invalid) >= 1, "soft-404 HTML body should flag LLMS_TXT_INVALID"
+
+    @pytest.mark.asyncio
+    async def test_missing_llms_txt_flagged_missing(self):
+        """A 404 status → LLMS_TXT_MISSING (not INVALID), unchanged behaviour."""
+        with respx.mock:
+            _mock_standard_setup(respx.mock)
+            respx.get("https://example.com/llms.txt").mock(
+                return_value=httpx.Response(404, text="not found")
+            )
+
+            settings = CrawlSettings(crawl_delay_ms=0, max_pages=5)
+            result = await run_crawl("job-llms-missing", BASE_URL, settings)
+
+        missing = [i for i in result.issues if i.code == "LLMS_TXT_MISSING"]
+        invalid = [i for i in result.issues if i.code == "LLMS_TXT_INVALID"]
+        assert len(missing) >= 1, "404 llms.txt should flag LLMS_TXT_MISSING"
+        assert invalid == [], "404 llms.txt should not flag LLMS_TXT_INVALID"

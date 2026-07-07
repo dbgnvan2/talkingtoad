@@ -298,28 +298,24 @@ async def run_crawl(
                                            extra={"expected_url": llms_txt_url,
                                                   "status_code": llms_res.status_code}))
             else:
-                # Validation Logic:
-                # MIME Type: Must be text/plain.
-                # Structure: Verify presence of an H1 title (#), a blockquote summary (>), and a list of key URLs.
-                # Efficiency: Flag if the file contains >20 URLs.
-                content_type = llms_res.headers.get("content-type", "").lower()
-                if "text/plain" not in content_type:
+                # Validity per https://llmstxt.org: an llms.txt is a Markdown
+                # file whose ONLY required element is the H1 project-title line
+                # ("# Name"). A '>' blockquote summary, detail text, '##' link
+                # sections, and the link count are all OPTIONAL — the spec sets
+                # no cap. So the only structural failure we flag is a body that
+                # is not a Markdown llms.txt at all: a soft-404 web page or a
+                # file with no H1 title. (Strip a leading UTF-8 BOM first —
+                # Yoast and other generators emit one before the '#'.)
+                body = (llms_res.text or llms_res.html or "").lstrip("﻿")
+                has_h1 = bool(re.search(r"^# \S", body, re.MULTILINE))
+                if not has_h1:
                     issue = make_issue("LLMS_TXT_INVALID", normalised_start)
-                    issue.description = f"/llms.txt must have MIME type text/plain (got {content_type})"
-                    all_issues.append(issue)
-                
-                body = llms_res.text or llms_res.html or ""
-                has_h1 = "# " in body
-                has_blockquote = "\n> " in body or body.startswith("> ")
-                urls = re.findall(r"https?://\S+", body)
-                
-                if not has_h1 or not has_blockquote or not urls:
-                    issue = make_issue("LLMS_TXT_INVALID", normalised_start)
-                    issue.description = "/llms.txt structure is invalid. Must include H1 (#), blockquote summary (>), and URLs."
-                    all_issues.append(issue)
-                elif len(urls) > 20:
-                    issue = make_issue("LLMS_TXT_INVALID", normalised_start)
-                    issue.description = "/llms.txt contains > 20 URLs. AI cheat sheets should be curated for 10–20 high-value links."
+                    issue.description = (
+                        "/llms.txt is not a valid llms.txt file: it has no "
+                        "'# Title' heading (see https://llmstxt.org). The URL "
+                        "may be returning a normal web page (soft 404) instead "
+                        "of a Markdown file."
+                    )
                     all_issues.append(issue)
         except Exception:
             pass

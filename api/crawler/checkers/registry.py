@@ -1172,8 +1172,10 @@ _CATALOGUE: dict[str, _IssueSpec] = {
     "LLMS_TXT_INVALID": _IssueSpec(
         category="ai_readiness", severity="info",
         description="/llms.txt format is invalid",
-        recommendation="Ensure your /llms.txt uses text/plain MIME type and includes a Markdown-style "
-                       "H1 title, a blockquote summary, and a list of high-value URLs (max 20).",
+        recommendation="Per llmstxt.org, the only required element is a Markdown '# Title' H1 heading; "
+                       "a '>' summary and '## Section' link lists are optional and there is no URL cap. "
+                       "Make sure the file is served as Markdown/plain text and isn't returning a normal "
+                       "web page (soft 404).",
         human_description="Invalid AI Instruction File",
         fixability="content_edit",
     ),
