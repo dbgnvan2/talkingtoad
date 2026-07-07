@@ -26,7 +26,7 @@ function GSCInsightsPanel({ jobId }) {
       const data = await gscStatus()
       setStatus(data)
       if (data.connected && data.properties?.length > 0) {
-        const siteOwner = data.properties.find(p => p.permissionLevel === 'siteOwner')
+        const siteOwner = data.properties.find(p => p.permission_level === 'siteOwner')
         setSelectedProperty(siteOwner || data.properties[0])
       }
     } catch (err) {
@@ -57,7 +57,7 @@ function GSCInsightsPanel({ jobId }) {
     setIngesting(true)
     setError(null)
     try {
-      await gscIngest(selectedProperty.siteUrl, jobId)
+      await gscIngest(selectedProperty.site_url, jobId)
       setIngestDone(true)
     } catch (err) {
       setError(err.message)
@@ -150,16 +150,16 @@ function GSCInsightsPanel({ jobId }) {
         <div>
           <label className="block text-sm font-medium text-gray-700">Property</label>
           <select
-            value={selectedProperty?.siteUrl || ''}
+            value={selectedProperty?.site_url || ''}
             onChange={(e) => {
-              const prop = status.properties.find(p => p.siteUrl === e.target.value)
+              const prop = status.properties.find(p => p.site_url === e.target.value)
               setSelectedProperty(prop)
             }}
             className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md"
           >
             {status.properties.map(prop => (
-              <option key={prop.siteUrl} value={prop.siteUrl}>
-                {prop.siteUrl} {prop.permissionLevel === 'siteOwner' ? '(Owner)' : ''}
+              <option key={prop.site_url} value={prop.site_url}>
+                {prop.site_url} {prop.permission_level === 'siteOwner' ? '(Owner)' : ''}
               </option>
             ))}
           </select>

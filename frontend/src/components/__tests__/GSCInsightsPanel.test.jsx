@@ -47,9 +47,11 @@ describe('GSCInsightsPanel', () => {
   })
 
   it('renders properties and Ingest when connected:true', async () => {
+    // Backend list_properties() returns snake_case (site_url / permission_level) —
+    // the real API contract. The panel must read these exact keys.
     const mockProperties = [
-      { siteUrl: 'https://example.com', permissionLevel: 'siteOwner' },
-      { siteUrl: 'https://sub.example.com', permissionLevel: 'siteFullUser' },
+      { site_url: 'https://example.com', permission_level: 'siteOwner' },
+      { site_url: 'https://sub.example.com', permission_level: 'siteFullUser' },
     ]
     global.fetch.mockImplementation(() =>
       mockFetchResponse({ connected: true, properties: mockProperties, configured: true })
@@ -67,11 +69,42 @@ describe('GSCInsightsPanel', () => {
     expect(select.value).toBe('https://example.com')
   })
 
+  it('Ingest sends the real site_url, never "undefined" (snake_case contract regression)', async () => {
+    // Regression for the GSC ingest bug: backend returns snake_case site_url,
+    // the panel read camelCase siteUrl → undefined → sites/undefined/... 400.
+    const mockProperties = [
+      { site_url: 'https://example.com/', permission_level: 'siteOwner' },
+    ]
+    global.fetch.mockImplementation((url) =>
+      String(url).includes('/api/gsc/ingest')
+        ? mockFetchResponse({ ingested: 1, period: '30d' })
+        : mockFetchResponse({ connected: true, properties: mockProperties, configured: true })
+    )
+
+    renderWithProviders(<GSCInsightsPanel jobId="test-job" />)
+    await waitFor(() =>
+      expect(screen.getByText('Ingest Performance Data')).toBeInTheDocument()
+    )
+
+    const user = userEvent.setup()
+    await user.click(screen.getByText('Ingest Performance Data'))
+
+    await waitFor(() => {
+      const ingestCall = global.fetch.mock.calls.find(([u]) =>
+        String(u).includes('/api/gsc/ingest')
+      )
+      expect(ingestCall).toBeTruthy()
+      const calledUrl = String(ingestCall[0])
+      expect(calledUrl).not.toContain('undefined')
+      expect(calledUrl).toContain('example.com')
+    })
+  })
+
   it('renders Learn more explainer toggle', async () => {
     global.fetch.mockImplementation(() =>
       mockFetchResponse({
         connected: true,
-        properties: [{ siteUrl: 'https://example.com', permissionLevel: 'siteOwner' }],
+        properties: [{ site_url: 'https://example.com', permission_level: 'siteOwner' }],
         configured: true,
       })
     )
