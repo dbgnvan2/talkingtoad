@@ -286,6 +286,38 @@ def make_client(user_agent: str | None = None) -> httpx.AsyncClient:
     )
 
 
+def make_ssrf_guarded_client(user_agent: str | None = None) -> httpx.AsyncClient:
+    """Like :func:`make_client`, but refuses requests/redirects to internal hosts.
+
+    ``fetch_page`` enforces per-hop SSRF checks for the crawl path; auxiliary
+    fetchers (content-type discovery) issue raw ``client.get()`` calls and follow
+    redirects, so they must carry the same guarantee (CLAUDE.md Security Defaults:
+    private/internal IPs blocked at start *and* on every redirect hop). A request
+    hook validates each top-level request URL; a response hook validates each
+    redirect ``Location`` before it is followed — so a public host that 302s to
+    ``169.254.169.254`` / ``10.x`` / ``localhost`` is refused, not fetched.
+    """
+
+    async def _guard_request(request: httpx.Request) -> None:
+        if not is_ssrf_safe(str(request.url)):
+            raise httpx.RequestError(f"SSRF_BLOCKED request to {request.url}", request=request)
+
+    async def _guard_redirect(response: httpx.Response) -> None:
+        if response.is_redirect:
+            loc = response.headers.get("location")
+            if loc and not is_ssrf_safe(str(response.url.join(loc))):
+                raise httpx.RequestError(
+                    f"SSRF_BLOCKED redirect to {loc}", request=response.request
+                )
+
+    return httpx.AsyncClient(
+        headers={"User-Agent": user_agent or _DEFAULT_USER_AGENT},
+        follow_redirects=True,
+        max_redirects=_MAX_REDIRECTS,
+        event_hooks={"request": [_guard_request], "response": [_guard_redirect]},
+    )
+
+
 def _check_login_redirect(urls: list[str]) -> bool:
     """Return True if any URL in *urls* is a login-type path."""
     for url in urls:

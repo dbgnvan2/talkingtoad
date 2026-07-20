@@ -7,6 +7,7 @@ Implements spec §3.1.7.
 import gzip
 import io
 import logging
+import re
 from urllib.parse import urlparse, urljoin
 
 import httpx
@@ -18,6 +19,52 @@ _FETCH_TIMEOUT = 5.0
 _STANDARD_SITEMAP_PATH = "/sitemap.xml"
 
 
+# Child-sitemap filename → content-type classifiers. Two conventions are
+# common and both encode the post type / taxonomy in the child sitemap's name:
+#   • WordPress core (5.5+):  wp-sitemap-posts-{type}-N.xml,
+#                             wp-sitemap-taxonomies-{taxonomy}-N.xml
+#   • Yoast / Rank Math:      {type}-sitemap.xml, {type}-sitemap1.xml
+# The leaf page URLs inside each child are otherwise indistinguishable (a Page
+# and a Post can share an identical permalink shape), so this filename signal is
+# the only reliable way to group sitemap URLs by content type without REST.
+_CORE_POSTS_RE = re.compile(r"^wp-sitemap-posts-([a-z0-9_]+?)(?:-\d+)?$")
+_CORE_TAX_RE = re.compile(r"^wp-sitemap-taxonomies-([a-z0-9_]+?)(?:-\d+)?$")
+_YOAST_RE = re.compile(r"^([a-z0-9_]+?)-sitemap\d*$")
+
+# Taxonomy slugs that represent category archives (grouped under "category").
+_CATEGORY_TAXONOMY_SLUGS: frozenset[str] = frozenset({"category", "categories"})
+
+
+def classify_child_sitemap(url: str) -> str | None:
+    """Return the content-type key encoded in a child sitemap's filename.
+
+    Returns a post-type slug (``"page"``, ``"post"``, or a custom slug like
+    ``"event"``), ``"category"`` for category-archive sitemaps, or ``None`` when
+    the filename carries no recognisable type signal.
+    """
+    seg = url.rstrip("/").rsplit("/", 1)[-1].lower()
+    if seg.endswith(".gz"):
+        seg = seg[:-3]
+    if seg.endswith(".xml"):
+        seg = seg[:-4]
+
+    m = _CORE_POSTS_RE.match(seg)
+    if m:
+        return m.group(1)
+
+    m = _CORE_TAX_RE.match(seg)
+    if m:
+        tax = m.group(1)
+        return "category" if tax in _CATEGORY_TAXONOMY_SLUGS else tax
+
+    m = _YOAST_RE.match(seg)
+    if m:
+        head = m.group(1)
+        return "category" if head in _CATEGORY_TAXONOMY_SLUGS else head
+
+    return None
+
+
 class SitemapResult:
     """Outcome of sitemap discovery and parsing.
 
@@ -26,6 +73,12 @@ class SitemapResult:
         found (bool): True if a sitemap was successfully located and parsed.
         missing_issue (dict | None): ``SITEMAP_MISSING`` issue dict when not found.
         source_url (str | None): The URL from which the sitemap was actually read.
+        grouped (dict[str, list[str]] | None): When the root was a
+            ``<sitemapindex>``, maps each content-type key (from
+            :func:`classify_child_sitemap`) to the leaf URLs of its child
+            sitemap(s). ``None`` for a flat ``<urlset>`` where no per-type signal
+            exists. Used by scan-scoping to build a per-content-type allowlist
+            without the WordPress REST API.
     """
 
     def __init__(
@@ -34,11 +87,13 @@ class SitemapResult:
         found: bool,
         missing_issue: dict | None,
         source_url: str | None,
+        grouped: dict[str, list[str]] | None = None,
     ) -> None:
         self.urls = urls
         self.found = found
         self.missing_issue = missing_issue
         self.source_url = source_url
+        self.grouped = grouped
 
 
 async def fetch_sitemap(
@@ -235,17 +290,27 @@ async def _fetch_and_resolve(
     soup = BeautifulSoup(content, "lxml-xml")
 
     if soup.find("sitemapindex"):
-        # Fetch each child sitemap and aggregate
+        # Fetch each child sitemap and aggregate. We keep both the flat URL list
+        # (unchanged behaviour for existing callers) and a per-content-type
+        # grouping keyed off each child sitemap's filename (for scan-scoping).
         child_urls_raw = [loc.get_text(strip=True) for loc in soup.find_all("loc")]
         all_page_urls: list[str] = []
+        grouped: dict[str, list[str]] = {}
         for child_url in child_urls_raw:
             child_result = await _fetch_and_resolve(child_url, client)
             if child_result is not None:
                 all_page_urls.extend(child_result.urls)
+                type_key = classify_child_sitemap(child_url)
+                if type_key:
+                    grouped.setdefault(type_key, []).extend(child_result.urls)
         if not all_page_urls and not child_urls_raw:
             return None
         return SitemapResult(
-            urls=all_page_urls, found=True, missing_issue=None, source_url=url
+            urls=all_page_urls,
+            found=True,
+            missing_issue=None,
+            source_url=url,
+            grouped=grouped or None,
         )
 
     page_urls = [loc.get_text(strip=True) for loc in soup.find_all("loc")]

@@ -82,6 +82,13 @@
 
 Newest first. Format: **Issue → Root cause → What would have caught it → Fix → Pattern.**
 
+- **2026-07-20 — Scan-scoping discovery bypassed the crawl path's SSRF + retry hardening (caught pre-merge).**
+  - *Issue:* The new content-type discovery (`api/crawler/content_discovery.py`) issued raw `client.get(..., follow_redirects=True)` on a plain `make_client()` and treated any fetch failure as `None`. Two defects: (a) it followed redirects with **no per-hop SSRF check**, so a validated public host could 302 a `/wp-json/` probe or child-sitemap `loc` to `169.254.169.254`/`10.x`/`localhost` and be fetched — bypassing the invariant `fetch_page` enforces; (b) a transient failure mid-pagination ended the collection early (`if not got: break`), silently under-scoping the crawl while it reported success.
+  - *Root cause:* A new class of external calls added alongside `fetch_page` without inheriting its siblings' hardening — no per-hop SSRF re-validation and no transient retry — plus a `None`-means-"done" pagination loop that couldn't tell "collection ended" from "a page failed."
+  - *What would have caught it:* the P5 checklist item ("are there other calls of the same kind? do they all share the hardening?") and a P10 fault-injection test where a mid-pagination page 500s.
+  - *Fix:* added `make_ssrf_guarded_client()` (request + redirect event hooks re-checking `is_ssrf_safe` every hop) and routed discovery/resolution through it; `_get_json` now retries transient conditions with backoff (shares `fetcher._MAX_RETRIES`/`_RETRY_BACKOFF_S`); paginated reads use `X-WP-TotalPages` so a failed page is reported as `truncated`/`scope_notes`, never a silent end. Tests: `test_content_discovery.py` (SSRF request+redirect block, mid-pagination failure) + `scope_notes` surfaced on `/start`.
+  - *Pattern:* **P5** (inconsistent robustness across sibling external calls — here the unhardened sibling was a *security* boundary) + **P1/P2** (transient treated as terminal / silent drop). New external-call sites must route through `fetch_page` or replicate its per-hop-SSRF + retry policy.
+
 - **2026-07-06 — GSC ingest sent `sites/undefined/...` → HTTP 400.**
   - *Issue:* After connecting Search Console, "Ingest" queried `sites/undefined/searchAnalytics/query` and Google rejected `http://undefined` as an invalid site URL.
   - *Root cause:* `list_properties()` returns snake_case `{site_url, permission_level}` (the app's API convention), but `GSCInsightsPanel.jsx` read camelCase `p.siteUrl`/`permissionLevel` → `undefined`. The panel's own test masked it by mocking a fictional camelCase shape, so it stayed green.

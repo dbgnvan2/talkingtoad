@@ -33,7 +33,8 @@ from api.crawler.engine import (
     _check_external_link, _is_bot_blocking_domain, _EXTERNAL_LINK_CAP_PER_PAGE,
     _guess_format_from_url, _extract_filename,
 )
-from api.crawler.fetcher import is_ssrf_safe, fetch_page, make_client, _RESCAN_TIMEOUT
+from api.crawler.content_discovery import discover_scope, resolve_scope_urls
+from api.crawler.fetcher import is_ssrf_safe, fetch_page, make_client, make_ssrf_guarded_client, _RESCAN_TIMEOUT
 from api.crawler.issue_checker import Issue as EngIssue, check_page, issue_for_status, issue_scope, make_issue
 from api.crawler.normaliser import normalise_url
 from api.crawler.parser import ParsedPage as EngPage, parse_page
@@ -442,6 +443,62 @@ async def list_recent_jobs(
     ]
 
 
+def _normalise_and_validate_target(raw: str) -> tuple[str | None, JSONResponse | None]:
+    """Normalise and SSRF-validate a target URL from a request body.
+
+    Returns ``(url, None)`` on success or ``(None, error_response)`` otherwise.
+    Shared by ``/start`` and ``/discover-scope`` so both apply identical
+    scheme-prepend, plausible-host, and SSRF rules.
+    """
+    target_url = (raw or "").strip()
+    # Add the scheme when the user omits it: "example.org" → "https://example.org".
+    # (Bare hosts are the common case for a scan box; only prepend when there is
+    # no scheme at all so we don't mangle a mistyped one like "ftp://…".)
+    if target_url and "://" not in target_url:
+        target_url = "https://" + target_url
+    if not target_url or not target_url.startswith(("http://", "https://")):
+        return None, _err("INVALID_URL", "target_url must be a valid http or https URL.", 422)
+    # Require a plausible host (a dot) so typos like "example" / "not-a-url"
+    # aren't silently turned into an unresolvable https:// target.
+    from urllib.parse import urlparse
+    _host = urlparse(target_url).netloc.split("@")[-1].split(":")[0]
+    if "." not in _host:
+        return None, _err("INVALID_URL", "target_url must include a valid domain (e.g. example.org).", 422)
+    if not is_ssrf_safe(target_url):
+        return None, _err("BLOCKED_URL", "URLs targeting private or internal networks are not allowed.", 403)
+    return target_url, None
+
+
+@router.post("/discover-scope", response_model=None)
+@limiter.limit(CRAWL_START_LIMIT)
+async def discover_scope_endpoint(
+    request: Request,
+    body: dict,
+) -> dict | JSONResponse:
+    """Discover the content types available at a URL (partial-scan setup).
+
+    Read-only: probes the WordPress REST API and/or the site's sitemap. Requires
+    no credentials and writes nothing. Returns ``{is_wordpress, discovery_tier,
+    types[], categories[], category_scope_supported, notes}``.
+    """
+    target_url, err = _normalise_and_validate_target(body.get("target_url", ""))
+    if err is not None:
+        return err
+    # SSRF-guarded client: discovery follows redirects and fetches child-sitemap
+    # / REST URLs, so it must re-check every hop (not just the validated target).
+    async with make_ssrf_guarded_client() as client:
+        result = await discover_scope(target_url, client)
+    logger.info(
+        "scope_discovered",
+        extra={
+            "target_url": target_url,
+            "tier": result["discovery_tier"],
+            "type_count": len(result["types"]),
+        },
+    )
+    return result
+
+
 @router.post("/start", status_code=202, response_model=None)
 @limiter.limit(CRAWL_START_LIMIT)
 async def start_crawl(
@@ -451,27 +508,39 @@ async def start_crawl(
     store: SQLiteJobStore | RedisJobStore = Depends(get_store),
 ) -> dict:
     """Submit a new crawl job (spec §6.4 POST /api/crawl/start)."""
-    target_url = body.get("target_url", "").strip()
-    # Add the scheme when the user omits it: "example.org" → "https://example.org".
-    # (Bare hosts are the common case for a scan box; only prepend when there is
-    # no scheme at all so we don't mangle a mistyped one like "ftp://…".)
-    if target_url and "://" not in target_url:
-        target_url = "https://" + target_url
-    if not target_url or not target_url.startswith(("http://", "https://")):
-        return _err("INVALID_URL", "target_url must be a valid http or https URL.", 422)
-    # Require a plausible host (a dot) so typos like "example" / "not-a-url"
-    # aren't silently turned into an unresolvable https:// target.
-    from urllib.parse import urlparse
-    _host = urlparse(target_url).netloc.split("@")[-1].split(":")[0]
-    if "." not in _host:
-        return _err("INVALID_URL", "target_url must include a valid domain (e.g. example.org).", 422)
-
-    if not is_ssrf_safe(target_url):
-        return _err("BLOCKED_URL", "URLs targeting private or internal networks are not allowed.", 403)
+    target_url, err = _normalise_and_validate_target(body.get("target_url", ""))
+    if err is not None:
+        return err
 
     sitemap_url = body.get("sitemap_url")
     settings_data: dict = body.get("settings") or {}
     settings = CrawlSettings(**{k: v for k, v in settings_data.items() if v is not None})
+
+    # Partial scan: resolve the content-type selection into an authoritative URL
+    # allowlist now, so a bad/empty selection fails fast with a clear message
+    # rather than silently running a full crawl (P2/P6).
+    scope_urls: set[str] | None = None
+    scope_notes: list[str] = []
+    if settings.content_scope.mode == "types":
+        cs = settings.content_scope
+        if not cs.type_keys and not cs.category_ids:
+            return _err("INVALID_SCOPE", "Select at least one content type for a partial scan.", 422)
+        async with make_ssrf_guarded_client() as client:
+            resolved, scope_notes = await resolve_scope_urls(
+                target_url, cs.type_keys, cs.category_ids, client
+            )
+        if not resolved:
+            return _err(
+                "SCOPE_EMPTY",
+                "The selected content types could not be resolved to any pages. "
+                "Try a Full scan, or reselect content types.",
+                422,
+            )
+        scope_urls = resolved
+        logger.info(
+            "scope_resolved",
+            extra={"target_url": target_url, "in_scope": len(scope_urls), "notes": scope_notes},
+        )
 
     job = CrawlJob(
         job_id=str(uuid4()),
@@ -494,6 +563,7 @@ async def start_crawl(
         suppress_h1_strings=settings.suppress_h1_strings,
         suppress_banner_h1=settings.suppress_banner_h1,
         single_page=settings.single_page,
+        scope_urls=scope_urls,
     )
 
     background_tasks.add_task(
@@ -507,11 +577,18 @@ async def start_crawl(
 
     logger.info("crawl_started", extra={"job_id": job.job_id, "target_url": target_url})
 
-    return {
+    resp = {
         "job_id": job.job_id,
         "status": "queued",
         "poll_url": f"/api/crawl/{job.job_id}/status",
     }
+    # Surface partial-scan warnings (a type resolved short, a >5000-item cap, or
+    # category scoping unavailable without REST) to the caller rather than only
+    # to server logs (P9). max_pages usually bites before the 5000 cap, so this
+    # is mostly the "type not found / category unsupported" signal.
+    if scope_notes:
+        resp["scope_notes"] = scope_notes
+    return resp
 
 
 @router.get("/{job_id}", response_model=None)

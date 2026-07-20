@@ -13,6 +13,26 @@ from pydantic import BaseModel, Field
 from api.crawler.checkers.registry import SCORING_MODEL_VERSION
 
 
+class ContentScope(BaseModel):
+    """Scan content-type scoping selection (partial-scan feature).
+
+    Purpose: Restrict a crawl to a user-chosen subset of content types.
+    Spec:    docs/functional-specification.md (Scan content-type scoping)
+    Tests:   tests/test_crawl_scope.py
+
+    ``mode="full"`` reproduces the whole-site crawl exactly (the default, so an
+    omitted block is a no-op). ``mode="types"`` restricts the crawl to Pages,
+    Posts, selected post Categories, and/or Custom Post Types. The resolved URL
+    allowlist is computed server-side from the WordPress REST API or typed
+    sitemaps at crawl-start — never trusted from the client and never guessed
+    from URL patterns.
+    """
+
+    mode: Literal["full", "types"] = "full"
+    type_keys: list[str] = Field(default_factory=list)      # e.g. ["page", "event"]
+    category_ids: list[int] = Field(default_factory=list)   # posts-by-category
+
+
 class CrawlSettings(BaseModel):
     """Per-job crawler configuration (spec §5.1)."""
 
@@ -36,6 +56,8 @@ class CrawlSettings(BaseModel):
     suppress_banner_h1: bool = True
     # Single-page mode: crawl only the exact URL given, no link following
     single_page: bool = False
+    # Content-type scoping (partial scan). Default mode="full" = whole-site crawl.
+    content_scope: ContentScope = Field(default_factory=ContentScope)
     # Report customization
     client_name: str = ""
     prepared_by: str = ""

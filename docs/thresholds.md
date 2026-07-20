@@ -46,6 +46,9 @@ impossible.
 | External link cap per job | 500 | `api/crawler/engine.py:50` `_EXTERNAL_LINK_CAP_PER_JOB` | — |
 | Query variant cap per path | 50 | `api/crawler/normaliser.py` (variant limit) | — |
 | Image HEAD-fetch timeout | 3 seconds | `api/crawler/engine.py:900` | — |
+| Scope-discovery REST timeout | 6 seconds | `api/crawler/content_discovery.py` `_REST_TIMEOUT` | — |
+| Scope-discovery REST page size | 100 items | `api/crawler/content_discovery.py` `_REST_PER_PAGE` | — |
+| Scope-discovery pagination cap | 50 pages (≈5000 URLs/type; drop announced via `scope_notes`) | `api/crawler/content_discovery.py` `_MAX_REST_PAGES` | — |
 | Per-category health-score cap | 20 points | `api/services/job_store_base.py` `_CATEGORY_IMPACT_CAP` | — |
 | Priority-rank formula | `impact×10 − effort×6` | `api/crawler/checkers/registry.py` `make_issue` | — |
 | Quick-win threshold | impact ≥ 4 and effort ≤ 1 | `api/models/issue.py` `Issue.quick_win` | — |

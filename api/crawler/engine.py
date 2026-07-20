@@ -150,6 +150,12 @@ class CrawlSettings:
     ignored_image_patterns: list[str] = field(default_factory=list)
     # Single-page mode: crawl only the exact URL given, no sitemap seeding or link following
     single_page: bool = False
+    # Content-type scoping allowlist (partial scan). None = no scoping (full
+    # crawl). When a set, the crawler visits ONLY these URLs (plus the start URL)
+    # and never follows links or seeds sitemap URLs outside the set. The set is
+    # resolved from an authoritative source (WP REST or typed sitemaps) at the
+    # router layer — the engine never classifies a URL by pattern.
+    scope_urls: set[str] | None = None
 
 
 @dataclass
@@ -171,6 +177,9 @@ class CrawlResult:
     sitemap_found: bool = False
     sitemap_url_found: str | None = None
     sitemap_url_count: int = 0
+    # Number of distinct URLs skipped because they fell outside the selected
+    # content-type scope (partial scan). 0 when no scoping is active.
+    scope_skipped: int = 0
 
 
 # ---------------------------------------------------------------------------
@@ -363,10 +372,21 @@ async def run_crawl(
         # Track which page discovered each URL (for broken link source reporting)
         discovered_from: dict[str, str] = {}
 
+        # Content-type scope allowlist (partial scan). None = no scoping.
+        # The start URL is always allowed so the homepage/summary still resolves.
+        scope_urls = settings.scope_urls
+        scope_skipped_urls: set[str] = set()
+
+        def _in_scope(u: str) -> bool:
+            return scope_urls is None or u == normalised_start or u in scope_urls
+
         # Seed from sitemap — skipped in single_page mode
         if not settings.single_page:
             for norm in sitemap_url_set:
                 if norm != normalised_start and is_same_domain(norm, normalised_start):
+                    if not _in_scope(norm):
+                        scope_skipped_urls.add(norm)
+                        continue
                     queue.append((norm, None))
                     if norm not in depth_map:
                         depth_map[norm] = None
@@ -590,6 +610,11 @@ async def run_crawl(
                     except ValueError:
                         continue
                     if norm not in visited:
+                        # Content-type scope: never follow links outside the
+                        # selected content types (partial scan).
+                        if not _in_scope(norm):
+                            scope_skipped_urls.add(norm)
+                            continue
                         # Only update depth_map if we haven't seen this URL yet
                         # (first discovery via HTML gives the shallowest depth)
                         if norm not in depth_map:
@@ -937,6 +962,15 @@ async def run_crawl(
             if inspect.isawaitable(result_prog):
                 await result_prog
 
+        if scope_urls is not None:
+            log.info(
+                "content_scope_applied",
+                extra={
+                    "in_scope": len(scope_urls),
+                    "skipped_out_of_scope": len(scope_skipped_urls),
+                },
+            )
+
         return CrawlResult(
             job_id=job_id,
             pages=all_pages,
@@ -950,6 +984,7 @@ async def run_crawl(
             sitemap_found=_sitemap_found,
             sitemap_url_found=_sitemap_url_found,
             sitemap_url_count=_sitemap_url_count,
+            scope_skipped=len(scope_skipped_urls),
         )
 
 

@@ -33,7 +33,8 @@ same doc's §9 verification matrix.
 
 | Method | Endpoint | Description |
 |---|---|---|
-| POST | `/api/crawl/start` | Submit a new crawl job. Returns `job_id`. |
+| POST | `/api/crawl/discover-scope` | Partial-scan setup: read-only probe of a URL's content types. Body `{target_url}` → `{is_wordpress, discovery_tier, types[], categories[], category_scope_supported, notes}`. No credentials; SSRF-guarded per hop. |
+| POST | `/api/crawl/start` | Submit a new crawl job. Returns `job_id`. Optional `settings.content_scope = {mode, type_keys[], category_ids[]}` restricts the crawl to selected content types (`mode="types"`); omitted / `mode="full"` crawls the whole site. May return `scope_notes[]`. |
 | POST | `/api/crawl/scan-page?url={url}` | Fetch and analyse a single URL synchronously. Returns `job_id` immediately. |
 | GET | `/api/crawl/{job_id}/status` | Poll job progress and status. |
 | POST | `/api/crawl/{job_id}/cancel` | Cancel a running crawl. |

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useCrawl } from '../hooks/useCrawl.js'
-import { getRecentJobs, scanPage } from '../api.js'
+import { getRecentJobs, scanPage, discoverScope } from '../api.js'
 
 const ANALYSIS_TOGGLES = [
   { key: 'link_integrity', label: 'Link Integrity',  desc: 'Broken links, redirects, and status codes' },
@@ -33,6 +33,14 @@ export default function Home() {
   const [analyses, setAnalyses] = useState(() =>
     Object.fromEntries(ANALYSIS_TOGGLES.map(t => [t.key, true]))
   )
+  // Scan scope (partial-scan feature): 'full' = whole site, 'partial' = a
+  // user-selected subset of content types.
+  const [scanMode, setScanMode] = useState('full')
+  const [scopeLoading, setScopeLoading] = useState(false)
+  const [scopeError, setScopeError] = useState(null)
+  const [scopeData, setScopeData] = useState(null)   // discovery payload
+  const [selectedTypes, setSelectedTypes] = useState({})  // { typeKey: true }
+  const [selectedCats, setSelectedCats] = useState({})    // { categoryId: true }
   const [recentJobs, setRecentJobs] = useState([])
   const [singleUrl, setSingleUrl] = useState('')
   const [singleLoading, setSingleLoading] = useState(false)
@@ -49,8 +57,47 @@ export default function Home() {
     setAnalyses(prev => ({ ...prev, [key]: !prev[key] }))
   }
 
+  const selectedTypeKeys = Object.keys(selectedTypes).filter(k => selectedTypes[k])
+  const selectedCatIds = Object.keys(selectedCats).filter(k => selectedCats[k])
+  const partialInvalid = scanMode === 'partial'
+    && selectedTypeKeys.length === 0 && selectedCatIds.length === 0
+
+  async function runDiscovery() {
+    const finalUrl = normaliseUrl(url)
+    if (!finalUrl) { setScopeError('Enter a website URL first'); return }
+    setScopeLoading(true)
+    setScopeError(null)
+    try {
+      const data = await discoverScope(finalUrl)
+      setScopeData(data)
+      setSelectedTypes({})
+      setSelectedCats({})
+    } catch (err) {
+      setScopeError(err.message || 'Could not read the site')
+      setScopeData(null)
+    } finally {
+      setScopeLoading(false)
+    }
+  }
+
+  function handleModeChange(mode) {
+    setScanMode(mode)
+    if (mode === 'partial' && !scopeData && url.trim() && !scopeLoading) {
+      runDiscovery()
+    }
+  }
+
+  function toggleType(key) {
+    setSelectedTypes(prev => ({ ...prev, [key]: !prev[key] }))
+  }
+
+  function toggleCat(id) {
+    setSelectedCats(prev => ({ ...prev, [id]: !prev[id] }))
+  }
+
   function handleSubmit(e) {
     e.preventDefault()
+    if (partialInvalid) return
     const finalUrl = normaliseUrl(url)
     // Persist for next visit
     localStorage.setItem(SAVED_URL_KEY, finalUrl)
@@ -68,6 +115,15 @@ export default function Home() {
     // Only send if not all selected (null means all)
     if (enabled.length < ANALYSIS_TOGGLES.length) {
       settings.enabled_analyses = enabled
+    }
+    // Partial scan: send the content-type selection. Full scan sends nothing
+    // (default mode="full" reproduces the whole-site crawl).
+    if (scanMode === 'partial') {
+      settings.content_scope = {
+        mode: 'types',
+        type_keys: selectedTypeKeys,
+        category_ids: selectedCatIds.map(Number),
+      }
     }
 
     start(finalUrl, settings)
@@ -193,6 +249,142 @@ export default function Home() {
                 </label>
               ))}
             </div>
+          </div>
+
+          {/* Scan scope — full site vs a subset of content types */}
+          <div>
+            <p className="text-xs font-medium text-gray-600 mb-2">Scan scope</p>
+            <div className="grid grid-cols-2 gap-2">
+              <label className={`flex items-start gap-2 rounded-lg border px-3 py-2 cursor-pointer transition-colors ${
+                scanMode === 'full' ? 'border-green-400 bg-green-50' : 'border-gray-200 bg-white'
+              }`}>
+                <input
+                  type="radio"
+                  name="scanMode"
+                  className="mt-0.5 accent-green-600"
+                  checked={scanMode === 'full'}
+                  onChange={() => handleModeChange('full')}
+                />
+                <span>
+                  <span className="block text-xs font-medium text-gray-700">Full site</span>
+                  <span className="block text-xs text-gray-400">Crawl every page (default)</span>
+                </span>
+              </label>
+              <label className={`flex items-start gap-2 rounded-lg border px-3 py-2 cursor-pointer transition-colors ${
+                scanMode === 'partial' ? 'border-green-400 bg-green-50' : 'border-gray-200 bg-white'
+              }`}>
+                <input
+                  type="radio"
+                  name="scanMode"
+                  className="mt-0.5 accent-green-600"
+                  checked={scanMode === 'partial'}
+                  onChange={() => handleModeChange('partial')}
+                />
+                <span>
+                  <span className="block text-xs font-medium text-gray-700">Choose content types</span>
+                  <span className="block text-xs text-gray-400">Pages, Posts, categories, or custom types</span>
+                </span>
+              </label>
+            </div>
+
+            {scanMode === 'partial' && (
+              <div className="mt-3 rounded-lg border border-gray-200 bg-gray-50 p-3">
+                {scopeLoading && (
+                  <p className="text-xs text-gray-500">Reading the site to find content types…</p>
+                )}
+
+                {!scopeLoading && scopeError && (
+                  <div className="text-xs">
+                    <p className="text-red-600">{scopeError}</p>
+                    <button
+                      type="button"
+                      onClick={runDiscovery}
+                      className="mt-2 text-green-700 font-medium hover:underline"
+                    >
+                      Try again
+                    </button>
+                  </div>
+                )}
+
+                {!scopeLoading && !scopeError && scopeData && scopeData.types.length === 0 && (
+                  <p className="text-xs text-gray-500">
+                    {scopeData.notes || 'No content types could be detected — run a full-site scan instead.'}
+                  </p>
+                )}
+
+                {!scopeLoading && !scopeError && scopeData && scopeData.types.length > 0 && (
+                  <div className="space-y-3">
+                    <div>
+                      <div className="flex items-center justify-between mb-1.5">
+                        <p className="text-xs font-medium text-gray-600">Content types</p>
+                        <button
+                          type="button"
+                          onClick={runDiscovery}
+                          className="text-xs text-gray-400 hover:text-gray-600"
+                        >
+                          Re-detect
+                        </button>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        {scopeData.types.map(t => (
+                          <label
+                            key={t.key}
+                            className={`flex items-center gap-2 rounded-lg border px-3 py-2 cursor-pointer transition-colors ${
+                              selectedTypes[t.key] ? 'border-green-400 bg-green-50' : 'border-gray-200 bg-white'
+                            }`}
+                          >
+                            <input
+                              type="checkbox"
+                              className="accent-green-600"
+                              checked={!!selectedTypes[t.key]}
+                              onChange={() => toggleType(t.key)}
+                            />
+                            <span className="min-w-0">
+                              <span className="block text-xs font-medium text-gray-700 truncate">{t.label}</span>
+                              {t.count != null && (
+                                <span className="block text-xs text-gray-400">{t.count} item{t.count === 1 ? '' : 's'}</span>
+                              )}
+                            </span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+
+                    {scopeData.category_scope_supported && scopeData.categories.length > 0 && (
+                      <div>
+                        <p className="text-xs font-medium text-gray-600 mb-1.5">Posts by category (optional)</p>
+                        <div className="max-h-40 overflow-y-auto grid grid-cols-2 gap-1.5 pr-1">
+                          {scopeData.categories.map(c => (
+                            <label
+                              key={c.id}
+                              className={`flex items-center gap-2 rounded-lg border px-2.5 py-1.5 cursor-pointer transition-colors ${
+                                selectedCats[c.id] ? 'border-green-400 bg-green-50' : 'border-gray-200 bg-white'
+                              }`}
+                            >
+                              <input
+                                type="checkbox"
+                                className="accent-green-600 flex-shrink-0"
+                                checked={!!selectedCats[c.id]}
+                                onChange={() => toggleCat(c.id)}
+                              />
+                              <span className="text-xs text-gray-700 truncate">{c.name}</span>
+                              <span className="text-xs text-gray-400 ml-auto flex-shrink-0">{c.count}</span>
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {scopeData.notes && (
+                      <p className="text-xs text-gray-400">{scopeData.notes}</p>
+                    )}
+                    {partialInvalid && (
+                      <p className="text-xs text-amber-600">Select at least one content type or category to scan.</p>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Crawl settings — collapsed by default */}
@@ -321,7 +513,7 @@ export default function Home() {
 
           <button
             type="submit"
-            disabled={loading || !url.trim()}
+            disabled={loading || !url.trim() || partialInvalid}
             className="w-full bg-green-600 text-white rounded-lg py-2.5 font-medium hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
             {loading ? 'Starting…' : 'Start Crawl'}

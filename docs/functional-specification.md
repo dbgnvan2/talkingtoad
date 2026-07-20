@@ -308,6 +308,7 @@ High-level inventory. Each row maps to detailed sections later.
 | Feature | Capability | Status | Detail section |
 |---|---|---|---|
 | Async crawl engine | Crawls up to 500 pages with rate limiting + robots.txt respect | ✅ Shipped | §4 |
+| Scan content-type scoping | Partial scan by Pages / Posts / category / Custom Post Types via REST or typed sitemaps | ✅ Shipped | §4.9 |
 | 142 issue codes | 140+ SEO and AI-readiness issue checks | ✅ Shipped | §4 |
 | Cross-page duplicate detection | Title / meta / title+meta duplicates across pages | ✅ Shipped | §4 |
 | Confidence labelling | All 60 AI-readiness codes labelled Established/Reasonable-proxy/Heuristic | ✅ Shipped | §4.6 |
@@ -655,6 +656,63 @@ classify it. `geo_llm_issues` maps the verdict to three codes —
 empty verdict, never a spurious finding (P14); pages under 200 words are
 short-circuited with a `note`. Request `{page_url, job_id?}` → `{verdict,
 issues: [{code, severity, priority_rank}]}`. → `tests/test_r8_geo_llm.py`
+
+### 4.9 Scan content-type scoping (partial scan)
+
+Lets the user restrict a crawl to a chosen subset of content types instead of
+the whole site. Flow: enter a URL → choose **Full** (the existing whole-site
+crawl, unchanged) or **Partial** → the app reads the site to discover its
+content types → the user ticks one or more (Pages, Posts, Custom Post Types,
+and/or Posts-by-category) → the crawl runs scoped to exactly that selection.
+
+**Why an authoritative allowlist, not a URL guess.** A URL string cannot
+distinguish a Page from a Post — WordPress permalinks are configurable, so
+`/about/` (Page) and `/our-recap/` (Post) are structurally identical. Scope is
+therefore an explicit URL set built from an authoritative source, never a
+pattern match applied mid-crawl. `tests/test_crawl_scope.py::test_pages_only_excludes_lookalike_post`
+is the adversarial guard: a Post whose permalink mimics a Page is excluded under
+a Pages-only scope (P7).
+
+**Discovery — `POST /api/crawl/discover-scope`** (`api/crawler/content_discovery.py`).
+Read-only, no credentials, degrades across three tiers and returns
+`{is_wordpress, discovery_tier, types[], categories[], category_scope_supported, notes}`:
+- **`rest`** — `/wp-json/` responds → enumerate public content types via
+  `/wp/v2/types` (built-in non-content types excluded, all public CPTs kept) and
+  categories via `/wp/v2/categories`; per-type counts from `X-WP-Total`.
+  Category-by-post scoping supported here.
+- **`sitemap`** — no REST but a typed `<sitemapindex>` exists → classify by child
+  sitemap filename (`page-sitemap.xml`, `wp-sitemap-posts-post-1.xml`, etc. —
+  Yoast/Rank Math and WP-core conventions). Pages/Posts/CPT scoping works;
+  `category_scope_supported=false` (category sitemaps list archives, not member
+  posts).
+- **`none`** — neither (non-WordPress sites) → only a full crawl is offered, with
+  a note explaining why.
+
+**Resolution + enforcement.** `POST /api/crawl/start` accepts
+`settings.content_scope = {mode, type_keys[], category_ids[]}`. When
+`mode="types"`, the server resolves the selection to a normalised, same-domain
+URL allowlist (`resolve_scope_urls`) — REST collections per type / per category,
+or classified sitemap URLs in the sitemap tier. An empty selection returns 422
+`INVALID_SCOPE`; a selection that resolves to nothing returns 422 `SCOPE_EMPTY`
+(never a silent full crawl — P2/P6). The engine
+(`api/crawler/engine.py`) visits only allowlisted URLs plus the start URL
+(always crawled so the homepage/summary resolves), filtering at both the
+sitemap-seed and link-follow sites; distinct out-of-scope URLs are counted
+(`CrawlResult.scope_skipped`) rather than dropped silently. `mode="full"` (the
+default) reproduces the prior whole-site crawl byte-for-byte
+(`tests/test_crawl_scope.py::test_full_mode_crawls_everything`).
+
+**Security & robustness.** Discovery/resolution use an SSRF-guarded httpx client
+(`make_ssrf_guarded_client`) that re-checks every request and redirect hop —
+extending `fetch_page`'s per-hop SSRF guarantee to these auxiliary fetches
+(P5). `_get_json` retries transient failures (network/5xx) with backoff, and
+paginated collection reads use `X-WP-TotalPages` so a mid-pagination failure is
+surfaced as a truncation note (returned as `scope_notes` on `/start`), never
+mistaken for the end of the collection (P1/P9). The resolved allowlist is
+computed server-side and never trusted from the client.
+→ `tests/test_content_discovery.py`, `tests/test_crawl_scope.py`,
+`tests/test_discover_scope_integration.py`,
+`frontend/src/pages/__tests__/Home.scope.test.jsx`
 
 ---
 

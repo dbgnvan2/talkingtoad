@@ -35,6 +35,19 @@ export async function startCrawl(targetUrl, settings = {}) {
   return checkResponse(res)
 }
 
+// Partial-scan setup: discover the content types a site exposes (Pages, Posts,
+// Custom Post Types) and its post categories. Read-only; no credentials needed.
+// Returns { is_wordpress, discovery_tier, types[], categories[],
+// category_scope_supported, notes }.
+export async function discoverScope(targetUrl) {
+  const res = await fetch('/api/crawl/discover-scope', {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify({ target_url: targetUrl }),
+  })
+  return checkResponse(res)
+}
+
 export async function getStatus(jobId) {
   const res = await fetch(`/api/crawl/${jobId}/status`, {
     headers: authHeaders(),
