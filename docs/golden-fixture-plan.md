@@ -1,5 +1,12 @@
 # Golden Fixture Site — plan & scoping
 
+> **Status: MVP built (2026-07-23).** Lives in `tests/golden_site/` (server +
+> `build_pages.py` + `pages/`) driven by `tests/test_golden_site.py`. The real
+> crawl engine runs against the served site and asserts per-page ground truth.
+> Current coverage: **~58 distinct issue codes** across 45 crawled pages. See
+> `tests/golden_site/README.md`. The phase-2 gaps below (images/TLS/JS/PDF/
+> external links) are not yet built.
+
 **Goal:** a controlled test website of *N* pages with a **known ground-truth set
 of issues**, crawled end-to-end by the real engine, so we can assert detection
 is working. Two failure directions, both "something is wrong":
