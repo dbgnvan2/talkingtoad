@@ -55,19 +55,17 @@ def _density_health_score(by_severity: dict[str, int], pages_crawled: int) -> in
 # Spec: docs/pending/2026-07-03_r4-cluster-suppression.md
 # ---------------------------------------------------------------------------
 _CLUSTER_SUPPRESSION: dict[str, frozenset[str]] = {
-    # no structured data → charge SCHEMA_MISSING once (R4). Kept as a parent;
-    # per the owner "keep all codes" decision SCHEMA_MISSING stays in the
-    # catalogue and remains a suppression parent alongside JSON_LD_MISSING.
-    "SCHEMA_MISSING": frozenset({"JSON_LD_MISSING", "SCHEMA_ORG_MISSING"}),
     # ── R5.2 §6.2 no JSON-LD → JSON_LD_MISSING is the root cause for the whole
     # structured-data family; every schema-detail finding is downstream of it.
+    # (§7: SCHEMA_MISSING was deleted as a duplicate of JSON_LD_MISSING, which is
+    # now the sole parent of this family.)
     "JSON_LD_MISSING": frozenset({
         "SCHEMA_ORG_MISSING", "FAQ_SCHEMA_MISSING", "DATE_PUBLISHED_MISSING",
         "DATE_MODIFIED_MISSING", "SCHEMA_TYPE_CONFLICT", "SCHEMA_TYPE_MISMATCH",
         "SCHEMA_VISIBLE_MISMATCH", "SCHEMA_DEPRECATED_TYPE", "JSON_LD_INVALID",
     }),
-    # page duplicated (both title+meta) → charge the pair once
-    "TITLE_META_DUPLICATE_PAIR": frozenset({"TITLE_DUPLICATE", "META_DESC_DUPLICATE"}),
+    # §7: TITLE_META_DUPLICATE_PAIR deleted — TITLE_DUPLICATE and
+    # META_DESC_DUPLICATE now each charge independently (two distinct fixes).
     # ── §6.1 whole page is a JS shell → its symptoms are the same root cause.
     # JS_DEPENDENT_NAVIGATION added per the Gemini R3 report (a JS shell page's
     # nav is unusable for the same reason its content is). R5.2 extends this to
@@ -122,11 +120,8 @@ _CLUSTER_SUPPRESSION: dict[str, frozenset[str]] = {
     "IMG_ALT_GENERIC": frozenset({
         "IMG_ALT_TOO_SHORT", "IMG_ALT_DUP_FILENAME", "IMG_ALT_MISUSED",
     }),
-    # ── §6.10 social meta (elected parent: OG_TITLE_MISSING). A single missing
-    # plugin setting drives all four; charge the elected parent once.
-    "OG_TITLE_MISSING": frozenset({
-        "OG_DESC_MISSING", "OG_IMAGE_MISSING", "TWITTER_CARD_MISSING",
-    }),
+    # ── §6.10 social meta — now a single merged code
+    # (SOCIAL_PREVIEW_METADATA_MISSING, §7), so no suppression needed here.
     # ── §6.11 blanket robots disallow is the root cause for the narrower
     # bot-blocking findings.
     "AI_BOT_BLANKET_DISALLOW": frozenset({

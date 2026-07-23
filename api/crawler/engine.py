@@ -25,6 +25,7 @@ from api.crawler.issue_checker import (
     check_cross_page,
     check_page,
     check_url_structure,
+    collapse_per_target_occurrences,
     issue_for_status,
     issues_for_redirect,
     make_issue,
@@ -933,6 +934,11 @@ async def run_crawl(
                         continue  # one page's render failure must not abort the crawl
         except Exception as e:
             log.warning("js_render_error", extra={"error": str(e)})
+
+        # ── 7.9 §2 per-target counting: collapse broken-link / redirect rows
+        # to one per (page, code) with an occurrence multiplier baked into
+        # impact, before the category filter and save.
+        all_issues = collapse_per_target_occurrences(all_issues)
 
         # ── 8. Apply analysis-toggle category filter ──────────────────────
         allowed = _enabled_categories(settings.enabled_analyses)

@@ -46,10 +46,23 @@ impossible.
 | External link cap per job | 500 | `api/crawler/engine.py:50` `_EXTERNAL_LINK_CAP_PER_JOB` | — |
 | Query variant cap per path | 50 | `api/crawler/normaliser.py` (variant limit) | — |
 | Image HEAD-fetch timeout | 3 seconds | `api/crawler/engine.py:900` | — |
+| Content-discovery REST timeout | 6 seconds | `api/crawler/content_discovery.py` `_REST_TIMEOUT` | — |
+| Scope resolution URL cap per type/category | 5000 (50 pages × 100/page) | `api/crawler/content_discovery.py` `_MAX_REST_PAGES` × `_REST_PER_PAGE` | — |
+| Near-duplicate shingle size (word n-gram) | 5 | `api/crawler/checkers/cross_page.py` `_SHINGLE_SIZE` | `TT_SHINGLE_SIZE` |
+| Near-duplicate min words to judge a page | 150 | `cross_page.py` `_MIN_WORDS_FOR_DUP` | `TT_MIN_WORDS_FOR_DUP` |
+| Near-duplicate Jaccard threshold (NEAR_DUPLICATE_BODY) | 0.80 | `cross_page.py` `_NEAR_DUP_JACCARD` | `TT_NEAR_DUP_JACCARD` |
+| Boilerplate-ratio threshold (BOILERPLATE_RATIO_HIGH) | 0.60 | `cross_page.py` `_BOILERPLATE_RATIO` | `TT_BOILERPLATE_RATIO` |
+| Min pages for site-scoped entity/near-dup checks | 3 | `cross_page.py` `_MIN_PAGES_SITE_CHECKS` | `TT_MIN_PAGES_SITE_CHECKS` |
+| Near-dup exact-Jaccard cap (above ⇒ MinHash prefilter) | 400 pages | `cross_page.py` `_NEARDUP_EXACT_MAX` | `TT_NEARDUP_EXACT_MAX` |
+| Near-dup MinHash permutations (min 1) | 128 | `cross_page.py` `_MINHASH_PERM` | `TT_MINHASH_PERM` |
+| Boilerplate doc-frequency fraction (BOILERPLATE_RATIO_HIGH input) | 0.20 | `cross_page.py` `_BOILERPLATE_DOC_FRACTION` | `TT_BOILERPLATE_DOC_FRACTION` |
+| Near-dup MinHash prefilter margin | 0.15 | `cross_page.py` `_MINHASH_MARGIN` | `TT_MINHASH_MARGIN` |
 | Scope-discovery REST timeout | 6 seconds | `api/crawler/content_discovery.py` `_REST_TIMEOUT` | — |
 | Scope-discovery REST page size | 100 items | `api/crawler/content_discovery.py` `_REST_PER_PAGE` | — |
 | Scope-discovery pagination cap | 50 pages (≈5000 URLs/type; drop announced via `scope_notes`) | `api/crawler/content_discovery.py` `_MAX_REST_PAGES` | — |
 | Per-category health-score cap | 20 points | `api/services/job_store_base.py` `_CATEGORY_IMPACT_CAP` | — |
+| Per-target occurrence multiplier step (§2) | 0.25 per extra occurrence | `api/crawler/checkers/links.py` `_OCC_STEP` | `TT_OCCURRENCE_STEP` |
+| Per-target occurrence multiplier ceiling (§2) | 2.0× | `api/crawler/checkers/links.py` `_OCC_CEIL` | `TT_OCCURRENCE_CEIL` |
 | Priority-rank formula | `impact×10 − effort×6` | `api/crawler/checkers/registry.py` `make_issue` | — |
 | Quick-win threshold | impact ≥ 4 and effort ≤ 1 | `api/models/issue.py` `Issue.quick_win` | — |
 | Severity from impact | ≥8 critical · 4–7 warning · ≤3 info | `registry.py` `severity_from_impact` | — |

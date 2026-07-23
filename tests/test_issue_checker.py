@@ -194,24 +194,25 @@ class TestMetaDescChecks:
 
 class TestOgTagChecks:
     def test_og_title_missing_emits_info(self):
+        # §7: OG_* + TWITTER merged into SOCIAL_PREVIEW_METADATA_MISSING.
         page = _page(og_title=None)
         issues = check_page(page)
-        og_issues = [i for i in issues if i.code == "OG_TITLE_MISSING"]
-        assert len(og_issues) == 1
-        assert og_issues[0].severity == "info"
+        soc = [i for i in issues if i.code == "SOCIAL_PREVIEW_METADATA_MISSING"]
+        assert len(soc) == 1
+        assert soc[0].severity == "info"
+        assert "og:title" in soc[0].extra["missing_tags"]
 
     def test_og_desc_missing_emits_info(self):
         page = _page(og_description=None)
         issues = check_page(page)
-        og_issues = [i for i in issues if i.code == "OG_DESC_MISSING"]
-        assert len(og_issues) == 1
-        assert og_issues[0].severity == "info"
+        soc = [i for i in issues if i.code == "SOCIAL_PREVIEW_METADATA_MISSING"]
+        assert len(soc) == 1
+        assert "og:description" in soc[0].extra["missing_tags"]
 
     def test_og_present_no_issue(self):
         page = _page(og_title="Title", og_description="Desc")
         codes = _codes(check_page(page))
-        assert "OG_TITLE_MISSING" not in codes
-        assert "OG_DESC_MISSING" not in codes
+        assert "SOCIAL_PREVIEW_METADATA_MISSING" not in codes
 
 
 # ---------------------------------------------------------------------------
@@ -274,7 +275,7 @@ class TestCanonicalChecks:
 # ---------------------------------------------------------------------------
 
 class TestCanonicalRespectingDuplicates:
-    _DUP_CODES = {"TITLE_DUPLICATE", "META_DESC_DUPLICATE", "TITLE_META_DUPLICATE_PAIR"}
+    _DUP_CODES = {"TITLE_DUPLICATE", "META_DESC_DUPLICATE"}
 
     def test_pagination_canonical_to_page1_not_flagged_duplicate(self):
         """Pages 2/3 canonicaling to page 1 must not be flagged as duplicates,
@@ -306,7 +307,6 @@ class TestCanonicalRespectingDuplicates:
         codes = _codes(check_cross_page([page_a, page_b]))
         assert "TITLE_DUPLICATE" in codes
         assert "META_DESC_DUPLICATE" in codes
-        assert "TITLE_META_DUPLICATE_PAIR" in codes
 
     def test_real_duplicate_still_flagged_self_canonical(self):
         """Adversarial: two duplicate pages each SELF-canonical must still be
@@ -319,7 +319,6 @@ class TestCanonicalRespectingDuplicates:
                        canonical_url="https://example.com/b")
         codes = _codes(check_cross_page([page_a, page_b]))
         assert "TITLE_DUPLICATE" in codes
-        assert "TITLE_META_DUPLICATE_PAIR" in codes
 
     def test_canonicaling_page_not_in_others_duplicate_urls(self):
         """A page canonicaling to a different URL must never appear in another
@@ -482,8 +481,9 @@ class TestNoindexPageSeoSkip:
     def test_noindex_page_skips_og_checks(self):
         page = _page(is_indexable=False, og_title=None, og_description=None)
         codes = _codes(check_page(page))
-        assert "OG_TITLE_MISSING" not in codes
-        assert "OG_DESC_MISSING" not in codes
+        # OG/social checks live under the `if is_indexable:` block, so a noindex
+        # page skips them (§7: merged into SOCIAL_PREVIEW_METADATA_MISSING).
+        assert "SOCIAL_PREVIEW_METADATA_MISSING" not in codes
 
     def test_noindex_page_skips_h1_check(self):
         page = _page(is_indexable=False, h1_tags=[], headings_outline=[])
@@ -573,7 +573,11 @@ class TestCrossPageDuplicates:
         ]
         issues = check_cross_page(pages)
         codes = _codes(issues)
-        assert "TITLE_META_DUPLICATE_PAIR" in codes
+        # §7: TITLE_META_DUPLICATE_PAIR deleted — the two component codes now
+        # each charge independently (no triple-count).
+        assert "TITLE_DUPLICATE" in codes
+        assert "META_DESC_DUPLICATE" in codes
+        assert "TITLE_META_DUPLICATE_PAIR" not in codes
 
     def test_three_pages_all_flagged_for_duplicate_title(self):
         pages = [
@@ -1103,9 +1107,11 @@ class TestMissingViewportMeta:
 
 class TestSchemaMissing:
     def test_no_schema_on_indexable_page_emits_issue(self):
+        # §7: SCHEMA_MISSING deleted (duplicate of JSON_LD_MISSING, emitted by
+        # the ai_readiness checker). check_page no longer emits SCHEMA_MISSING.
         page = _page(schema_types=[], is_indexable=True)
         codes = _codes(check_page(page))
-        assert "SCHEMA_MISSING" in codes
+        assert "SCHEMA_MISSING" not in codes
 
     def test_schema_present_no_issue(self):
         page = _page(schema_types=["Organization"])
@@ -1653,7 +1659,7 @@ class TestIssueExtraData:
     def test_og_title_missing_includes_title(self):
         page = _page(og_title=None)
         issues = check_page(page)
-        issue = next(i for i in issues if i.code == "OG_TITLE_MISSING")
+        issue = next(i for i in issues if i.code == "SOCIAL_PREVIEW_METADATA_MISSING")
         assert issue.extra is not None
         assert issue.extra.get("title") is not None
 
@@ -1842,19 +1848,20 @@ class TestOgImageMissing:
     def test_og_image_missing_emits_info(self):
         page = _page(og_image=None)
         issues = check_page(page)
-        og_img_issues = [i for i in issues if i.code == "OG_IMAGE_MISSING"]
-        assert len(og_img_issues) == 1
-        assert og_img_issues[0].severity == "info"
+        soc = [i for i in issues if i.code == "SOCIAL_PREVIEW_METADATA_MISSING"]
+        assert len(soc) == 1
+        assert soc[0].severity == "info"
+        assert "og:image" in soc[0].extra["missing_tags"]
 
     def test_og_image_present_no_issue(self):
         page = _page(og_image="https://example.com/img.jpg")
         codes = _codes(check_page(page))
-        assert "OG_IMAGE_MISSING" not in codes
+        assert "SOCIAL_PREVIEW_METADATA_MISSING" not in codes
 
     def test_og_image_empty_string_emits(self):
         page = _page(og_image="")
         codes = _codes(check_page(page))
-        assert "OG_IMAGE_MISSING" in codes
+        assert "SOCIAL_PREVIEW_METADATA_MISSING" in codes
 
 
 # ---------------------------------------------------------------------------
@@ -1865,19 +1872,20 @@ class TestTwitterCardMissing:
     def test_twitter_card_missing_emits_info(self):
         page = _page(twitter_card=None)
         issues = check_page(page)
-        tc_issues = [i for i in issues if i.code == "TWITTER_CARD_MISSING"]
-        assert len(tc_issues) == 1
-        assert tc_issues[0].severity == "info"
+        soc = [i for i in issues if i.code == "SOCIAL_PREVIEW_METADATA_MISSING"]
+        assert len(soc) == 1
+        assert soc[0].severity == "info"
+        assert "twitter:card" in soc[0].extra["missing_tags"]
 
     def test_twitter_card_present_no_issue(self):
         page = _page(twitter_card="summary_large_image")
         codes = _codes(check_page(page))
-        assert "TWITTER_CARD_MISSING" not in codes
+        assert "SOCIAL_PREVIEW_METADATA_MISSING" not in codes
 
     def test_twitter_card_empty_string_emits(self):
         page = _page(twitter_card="")
         codes = _codes(check_page(page))
-        assert "TWITTER_CARD_MISSING" in codes
+        assert "SOCIAL_PREVIEW_METADATA_MISSING" in codes
 
 
 # ---------------------------------------------------------------------------
@@ -2066,8 +2074,7 @@ class TestFixabilityTagging:
         wp_codes = [
             "TITLE_MISSING", "TITLE_TOO_SHORT", "TITLE_TOO_LONG",
             "META_DESC_MISSING", "META_DESC_TOO_SHORT", "META_DESC_TOO_LONG",
-            "OG_TITLE_MISSING", "OG_DESC_MISSING",
-            "NOINDEX_META", "NOT_IN_SITEMAP", "SCHEMA_MISSING",
+            "NOINDEX_META", "NOT_IN_SITEMAP",
             "TITLE_H1_MISMATCH",
             "BROKEN_LINK_404", "BROKEN_LINK_410",  # BROKEN_LINK_5XX -> content_edit (audit R5)
             "IMG_ALT_MISSING", "IMG_ALT_TOO_SHORT", "IMG_ALT_TOO_LONG",
@@ -2084,7 +2091,7 @@ class TestFixabilityTagging:
         content_codes = [
             "H1_MISSING", "H1_MULTIPLE", "HEADING_SKIP", "HEADING_EMPTY",
             "THIN_CONTENT", "LINK_EMPTY_ANCHOR", "ANCHOR_TEXT_GENERIC",
-            "TITLE_DUPLICATE", "META_DESC_DUPLICATE", "TITLE_META_DUPLICATE_PAIR",
+            "TITLE_DUPLICATE", "META_DESC_DUPLICATE", "SOCIAL_PREVIEW_METADATA_MISSING",
             "CONVERSATIONAL_H2_MISSING",
             "LLMS_TXT_MISSING", "LLMS_TXT_INVALID",
             "DOCUMENT_PROPS_MISSING",

@@ -1,0 +1,394 @@
+# TalkingToad — Feature Inventory
+# Auto-generated from codebase scan (2026-07-07).
+# Source of truth: shipped code in api/crawler/checkers/, api/routers/, api/services/, frontend/
+# Each feature lists: what it does, what issue codes support it, status (shipped/partial/planned)
+
+# ──────────────────────────────────────────
+# DOMAIN: Crawl Engine
+# ──────────────────────────────────────────
+crawl_engine:
+  description: "Async BFS web crawler — discovers pages, fetches HTML, parses, follows links"
+  status: shipped
+  endpoints:
+    - "POST /api/crawl/start — submit crawl job"
+    - "GET /api/crawl/{job_id}/status — poll progress"
+    - "POST /api/crawl/{job_id}/cancel — cancel running crawl"
+    - "GET /api/crawl/{job_id}/pages — list crawled pages"
+    - "GET /api/crawl/{job_id}/pages/issues — issues per page"
+    - "POST /api/crawl/{job_id}/rescan-url — re-fetch single page"
+    - "POST /api/crawl/scan-page — single-page job"
+  details:
+    - "BFS crawl with configurable depth, page limit, concurrency"
+    - "Robots.txt parsing and respect"
+    - "XML sitemap discovery and parsing"
+    - "URL normalization and deduplication"
+    - "SSRF safety checks on URLs"
+    - "HTTP header + HTML meta robots extraction"
+    - "Crawl comparison across runs"
+
+crawl_engine_wp_integration:
+  description: "Crawl-aware WordPress site detection and noise filtering"
+  status: shipped
+  details:
+    - "WordPress noise URL detection (wp-json, wp-admin, etc.)"
+    - "WP-specific page type detection (posts, pages, categories)"
+
+# ──────────────────────────────────────────
+# DOMAIN: Issue Detection (152 codes)
+# ──────────────────────────────────────────
+issues_detection:
+  description: "152 issue codes across 13 categories, each with impact/effort scoring"
+  status: shipped
+  categories:
+
+    metadata:
+      description: "Title, meta description, Open Graph, Twitter Card, canonical, favicon, lang"
+      status: shipped
+      codes:
+        - TITLE_MISSING, TITLE_DUPLICATE, TITLE_TOO_SHORT, TITLE_TOO_LONG
+        - META_DESC_MISSING, META_DESC_DUPLICATE, META_DESC_TOO_SHORT, META_DESC_TOO_LONG
+        - SOCIAL_PREVIEW_METADATA_MISSING  # §7 merge of OG_* + TWITTER_CARD
+        - CANONICAL_MISSING, CANONICAL_EXTERNAL, CANONICAL_SELF_MISSING
+        - FAVICON_MISSING, LANG_MISSING
+        - TITLE_H1_MISMATCH  # (§7 deleted: TITLE_META_DUPLICATE_PAIR, SCHEMA_MISSING)
+        - LINK_EMPTY_ANCHOR, ANCHOR_TEXT_GENERIC
+
+    headings:
+      description: "H1 presence, count, level skipping, empty headings"
+      status: shipped
+      codes:
+        - H1_MISSING, H1_MULTIPLE, HEADING_SKIP, HEADING_EMPTY
+
+    broken_links:
+      description: "HTTP status-based broken link detection, placeholder links"
+      status: shipped
+      codes:
+        - BROKEN_LINK_404, BROKEN_LINK_410, BROKEN_LINK_5XX, BROKEN_LINK_503
+        - EXTERNAL_LINK_SKIPPED, EXTERNAL_LINK_TIMEOUT
+        - PLACEHOLDER_LINK, WRONG_PLACEHOLDER_LINK
+
+    redirects:
+      description: "Redirect loop, chain, 301/302, trailing slash, case normalisation"
+      status: shipped
+      codes:
+        - REDIRECT_LOOP, REDIRECT_CHAIN, REDIRECT_301, REDIRECT_302
+        - REDIRECT_TRAILING_SLASH, REDIRECT_CASE_NORMALISE
+        - META_REFRESH_REDIRECT, INTERNAL_REDIRECT_301
+
+    crawlability:
+      description: "Robots.txt, noindex, sitemap, thin content, crawl depth, orphan pages"
+      status: shipped
+      codes:
+        - PAGE_TIMEOUT, LOGIN_REDIRECT, ROBOTS_BLOCKED, NOINDEX_META, NOINDEX_HEADER
+        - NOT_IN_SITEMAP, PDF_TOO_LARGE, PAGINATION_LINKS_PRESENT
+        - THIN_CONTENT, HIGH_CRAWL_DEPTH, ORPHAN_PAGE
+        - CONTENT_STALE, MISSING_VIEWPORT_META, INTERNAL_NOFOLLOW
+        - PAGE_SIZE_LARGE, PARA_TOO_LONG, AMPHTML_BROKEN
+
+    security:
+      description: "HTTP, mixed content, HSTS, cross-origin links, www canonicalisation"
+      status: shipped
+      codes:
+        - HTTP_PAGE, MIXED_CONTENT, MISSING_HSTS, UNSAFE_CROSS_ORIGIN_LINK
+        - WWW_CANONICALIZATION, HTTPS_REDIRECT_MISSING
+
+    url_structure:
+      description: "URL hygiene — uppercase, spaces, underscores, length"
+      status: shipped
+      codes:
+        - URL_UPPERCASE, URL_HAS_SPACES, URL_HAS_UNDERSCORES, URL_TOO_LONG
+
+    images:
+      description: "Alt text quality, file size, compression, format, srcset, broken images"
+      status: shipped
+      codes:
+        - IMG_OVERSIZED, IMG_ALT_MISSING, IMG_ALT_TOO_SHORT, IMG_ALT_TOO_LONG
+        - IMG_ALT_GENERIC, IMG_ALT_DUP_FILENAME, IMG_ALT_MISUSED
+        - IMG_SLOW_LOAD, IMG_OVERSCALED, IMG_POOR_COMPRESSION
+        - IMG_FORMAT_LEGACY, IMG_NO_SRCSET, IMG_DUPLICATE_CONTENT, IMG_BROKEN
+
+    rendering:
+      description: "JS-dependent navigation detection"
+      status: shipped
+      codes:
+        - JS_DEPENDENT_NAVIGATION
+
+    semantic_html:
+      description: "Non-semantic buttons, missing landmarks, accessible names"
+      status: shipped
+      codes:
+        - NON_SEMANTIC_BUTTON, LANDMARK_MAIN_MISSING
+        - LANDMARK_NAV_MISSING, INTERACTIVE_NO_ACCESSIBLE_NAME
+
+    ai_readiness:
+      description: "68 codes — AI bot access, content extractability, citations, GEO signals, schema, freshness"
+      status: shipped
+      codes:
+        - AI_BOT_BLANKET_DISALLOW, AI_BOT_DEPRECATED_DIRECTIVE, AI_BOT_NO_AI_DIRECTIVES
+        - AI_BOT_SEARCH_BLOCKED, AI_BOT_TABLE_STALE, AI_BOT_TRAINING_DISALLOWED
+        - AI_BOT_USER_FETCH_BLOCKED
+        - AI_CITED_PAGE, AI_CONTENT_NOT_IN_TEXT, AI_HIGH_VALUE_UNCITED
+        - AI_MAIN_CONTENT_LOW_RATIO, AI_NO_VISUAL_COMPANION
+        - AI_PREVIEW_BLOCKED_AT_BOT, AI_PREVIEW_SUPPRESSED
+        - AI_TXT_MISSING
+        - CONTENT_CLOAKING_DETECTED, CONTENT_DATE_STALE_VISIBLE
+        - CONTENT_IMAGE_HEAVY, CONTENT_NOT_EXTRACTABLE_NO_TEXT
+        - CONTENT_STAT_OUTDATED, CONTENT_THIN, CONTENT_UNSTRUCTURED
+        - AUTHOR_BYLINE_MISSING, BLOG_SECTIONS_MISSING
+        - CENTRAL_CLAIM_BURIED, CHUNKS_NOT_SELF_CONTAINED
+        - CITATIONS_MISSING_SUBSTANTIAL_CONTENT, CITATIONS_ORPHANED
+        - CITATIONS_SOURCES_INACCESSIBLE
+        - CODE_BLOCK_MISSING_TECHNICAL, COMPARISON_TABLE_MISSING
+        - CONTACT_INFO_NOT_IN_HTML
+        - CONVERSATIONAL_H2_MISSING
+        - DATE_PUBLISHED_MISSING, DATE_MODIFIED_MISSING
+        - DOCUMENT_PROPS_MISSING
+        - EXTERNAL_CITATIONS_LOW, FAQ_SCHEMA_MISSING, FAQ_ANSWERS_NOT_IN_HTML
+        - FIRST_VIEWPORT_NO_ANSWER
+        - GEO_SUMMARY_BURIED
+        - JSON_LD_MISSING, JSON_LD_INVALID
+        - JS_RENDERED_CONTENT_DIFFERS
+        - LINK_PROFILE_PROMOTIONAL
+        - LLMS_TXT_MISSING, LLMS_TXT_INVALID
+        - ORPHAN_CLAIM_TECHNICAL
+        - PROMOTIONAL_CONTENT_INTERRUPTS
+        - QUERY_COVERAGE_WEAK
+        - QUOTATIONS_MISSING
+        - RAW_HTML_JS_DEPENDENT
+        - SCHEMA_DEPRECATED_TYPE, SCHEMA_ORG_MISSING, SCHEMA_TYPE_CONFLICT
+        - SCHEMA_TYPE_MISMATCH, SCHEMA_VISIBLE_MISMATCH
+        - SECTION_CROSS_REFERENCES, SECTION_VAGUE_OPENER
+        - SEMANTIC_DENSITY_LOW
+        - STATISTICS_COUNT_LOW, STRUCTURED_ELEMENTS_LOW
+        - UA_CONTENT_DIFFERS
+        # "Search Everywhere" GEO P1 (brand-entity + body-uniqueness)
+        - ENTITY_NAME_INCONSISTENT, ENTITY_SAMEAS_MISSING, AUTHOR_IDENTITY_INCONSISTENT
+        - NEAR_DUPLICATE_BODY, BOILERPLATE_RATIO_HIGH
+
+# ──────────────────────────────────────────
+# DOMAIN: WordPress Fix Operations
+# ──────────────────────────────────────────
+wp_fixes:
+  description: "End-to-end fix pipeline — generate proposals, approve, apply to WordPress via REST API"
+  status: shipped
+  subdomains:
+
+    title_fixes:
+      description: "Bulk title trimming (site-name suffix removal), single-page title trim"
+      status: shipped
+      endpoints:
+        - "POST /api/fixes/bulk-trim-titles"
+        - "POST /api/fixes/trim-title-one"
+      fixable_codes: TITLE_TOO_LONG, TITLE_DUPLICATE
+
+    heading_fixes:
+      description: "Change heading level, change heading text, H-to-bold conversion, bulk heading level change"
+      status: shipped
+      endpoints:
+        - "POST /api/fixes/change-heading-level"
+        - "POST /api/fixes/change-heading-text"
+        - "POST /api/fixes/bulk-replace-heading"
+        - "POST /api/fixes/heading-to-bold"
+        - "GET /api/fixes/find-heading"
+        - "GET /api/fixes/analyze-heading-sources"
+      fixable_codes: H1_MULTIPLE, HEADING_SKIP, HEADING_EMPTY
+
+    image_fixes:
+      description: "Alt/title/caption/description update, WebP optimization, GEO metadata (GPS EXIF), SEO filename rename, batch optimization"
+      status: shipped
+      endpoints:
+        - "POST /api/fixes/update-image-meta"
+        - "POST /api/fixes/optimize-image"
+        - "POST /api/fixes/optimize-existing-preview"
+        - "POST /api/fixes/optimize-existing"
+        - "POST /api/fixes/optimize-upload-preview"
+        - "POST /api/fixes/optimize-upload"
+        - "POST /api/fixes/batch-optimize/start"
+        - "GET /api/fixes/batch-optimize/{batch_id}/status"
+        - "POST /api/fixes/batch-optimize/{batch_id}/pause/resume/cancel"
+        - "GET /api/fixes/batch-optimize/list"
+        - "GET /api/fixes/image-info"
+        - "POST /api/fixes/refresh-image-from-wp"
+      fixable_codes: IMG_ALT_MISSING, IMG_ALT_TOO_SHORT, IMG_ALT_TOO_LONG, IMG_ALT_GENERIC, IMG_FORMAT_LEGACY
+
+    link_fixes:
+      description: "Replace broken links, verify re-checked links, mark links as fixed"
+      status: shipped
+      endpoints:
+        - "POST /api/fixes/replace-link"
+        - "POST /api/fixes/verify-broken-links/{job_id}"
+        - "POST /api/fixes/mark-broken-link-fixed"
+        - "POST /api/fixes/mark-anchor-fixed"
+        - "GET /api/fixes/link-sources"
+      fixable_codes: BROKEN_LINK_404, BROKEN_LINK_410, BROKEN_LINK_5XX, LINK_EMPTY_ANCHOR, PLACEHOLDER_LINK
+
+    orphaned_media:
+      description: "List WordPress media not referenced by any crawled page"
+      status: shipped
+      endpoints:
+        - "GET /api/fixes/orphaned-media/{job_id}"
+
+    fix_management:
+      description: "Generic fix CRUD — generate proposals, approve, apply, delete"
+      status: shipped
+      endpoints:
+        - "POST /api/fixes/generate/{job_id}"
+        - "GET /api/fixes/{job_id}"
+        - "PATCH /api/fixes/{fix_id}"
+        - "POST /api/fixes/apply/{job_id}"
+        - "DELETE /api/fixes/{job_id}"
+        - "POST /api/fixes/mark-issue-fixed"
+        - "POST /api/fixes/apply-one"
+        - "POST /api/fixes/wp-value"
+
+# ──────────────────────────────────────────
+# DOMAIN: AI Analysis & Advisory
+# ──────────────────────────────────────────
+ai_analysis:
+  description: "AI-powered page analysis, advisor reports, GEO checks, FAQ generation"
+  status: shipped
+  subdomains:
+
+    page_advisor:
+      description: "Per-page AI-generated SEO recommendations"
+      status: shipped
+      endpoints:
+        - "POST /api/ai/page-advisor"
+
+    site_advisor:
+      description: "Site-wide AI-generated SEO recommendations"
+      status: shipped
+      endpoints:
+        - "POST /api/ai/site-advisor"
+
+    ai_analyze:
+      description: "Analyze page with AI for fix suggestions"
+      status: shipped
+      endpoints:
+        - "POST /api/ai/analyze"
+
+    image_geo:
+      description: "GEO analysis of images — analyze, apply alt/description"
+      status: shipped
+      endpoints:
+        - "POST /api/ai/image/analyze-geo"
+        - "POST /api/ai/image/apply-geo-metadata"
+
+    geo_faq:
+      description: "Generate FAQPage JSON-LD from GEO config"
+      status: shipped
+      endpoints:
+        - "POST /api/ai/geo-faq"
+
+    geo_llm_checks:
+      description: "LLM-driven GEO checks on a page (3 check types)"
+      status: shipped
+      endpoints:
+        - "POST /api/ai/geo-llm-checks"
+
+    faq_schema:
+      description: "Generate FAQPage JSON-LD from page Q&A"
+      status: shipped
+      endpoints:
+        - "POST /api/ai/faq-schema"
+
+    ai_test:
+      description: "Verify AI provider reachability"
+      status: shipped
+      endpoints:
+        - "GET /api/ai/test"
+
+    usage_stats:
+      description: "Aggregated AI billing report"
+      status: shipped
+      endpoints:
+        - "GET /api/ai/usage/stats"
+
+# ──────────────────────────────────────────
+# DOMAIN: GEO Configuration
+# ──────────────────────────────────────────
+geo_config:
+  description: "GEO settings CRUD, entity schema generation, model selection"
+  status: shipped
+  features:
+    - "Retrieve/save/delete GEO config per domain"
+    - "Test GEO config validity"
+    - "Generate Schema.org Organization JSON-LD from GeoConfig"
+    - "Select AI model for GEO analysis"
+
+# ──────────────────────────────────────────
+# DOMAIN: Exports & Reports
+# ──────────────────────────────────────────
+exports:
+  description: "Export crawl results as CSV, PDF audit, Excel workbook"
+  status: shipped
+  features:
+    - "CSV export (all issues + per-category)"
+    - "PDF audit report (Letter format, fpdf2)"
+    - "Excel multi-sheet workbook (openpyxl)"
+    - "AI image analysis PDF export"
+
+# ──────────────────────────────────────────
+# DOMAIN: Google Search Console Integration
+# ──────────────────────────────────────────
+gsc_integration:
+  description: "OAuth-based GSC connection, performance data ingestion, Authority Matrix"
+  status: shipped
+  features:
+    - "OAuth connect/disconnect flow"
+    - "Performance data ingestion (clicks, impressions, CTR, position)"
+    - "Per-URL ReviewFlag across 130+ checkers"
+    - "Status check + property listing"
+
+# ──────────────────────────────────────────
+# DOMAIN: AI Citations
+# ──────────────────────────────────────────
+ai_citations:
+  description: "Ingest LLM citation data and correlate with crawled pages"
+  status: shipped
+  features:
+    - "POST citation ingestion endpoint"
+    - "Cite/uncited page detection (AI_CITED_PAGE, AI_HIGH_VALUE_UNCITED)"
+
+# ──────────────────────────────────────────
+# DOMAIN: Utility
+# ──────────────────────────────────────────
+utility:
+  description: "llms.txt generation, robots/sitemap inspection, ignored pattern management"
+  status: shipped
+  features:
+    - "llms.txt generate, save, retrieve"
+    - "robots.txt fetch + parse"
+    - "Sitemap discovery + parse"
+    - "Suppressed codes management"
+    - "Anchor URL exempt management"
+    - "Ignored image pattern management"
+    - "Verified links management"
+
+# ──────────────────────────────────────────
+# DOMAIN: Health & Monitoring
+# ──────────────────────────────────────────
+health:
+  description: "Health check endpoint, crawl executive summaries"
+  status: shipped
+  features:
+    - "GET /api/health — public health check"
+    - "GET /api/crawl/{job_id}/executive-summary — AI summary of crawl results"
+    - "GET /api/crawl/{job_id}/comparison — diff against previous crawl"
+    - "GET /api/crawl/{job_id}/page-priority — Authority Matrix page ranking"
+
+# ──────────────────────────────────────────
+# DOMAIN: Frontend Features
+# ──────────────────────────────────────────
+frontend:
+  description: "React SPA with crawl management, results, fixes, GEO tools"
+  status: shipped
+  pages:
+    - "Home — start new crawl, view recent jobs"
+    - "Progress — live crawl progress"
+    - "Results — filtered issues by category/severity with fix management"
+    - "Fix Manager — WordPress fix proposals, approve/reject/apply"
+    - "Image Manager — image analysis, GEO optimization"
+    - "GEO Settings — configure GEO analysis"
+    - "AI Tools — FAQ schema generation, advisor reports"
+    - "llms.txt generator — generate/edit/save llms.txt"

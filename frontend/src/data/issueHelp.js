@@ -165,78 +165,23 @@ const issueHelp = {
       "information at the beginning. Lead with what the page is about, not background context.",
   },
 
-  OG_TITLE_MISSING: {
-    title: "Open Graph title missing",
+  SOCIAL_PREVIEW_METADATA_MISSING: {
+    title: "Social preview metadata missing",
     category: "metadata",
     severity: "info",
     definition:
-      "This page is missing an Open Graph title tag (<meta property=\"og:title\">). " +
-      "Open Graph tags control how your page appears when someone shares a link to it on " +
-      "social media platforms like Facebook and LinkedIn.",
+      "One or more social-preview meta tags are missing — og:title, og:description, " +
+      "og:image, or twitter:card. These control how your page looks when shared on Facebook, " +
+      "LinkedIn, Twitter/X, and similar platforms. The finding lists exactly which tags are absent.",
     impact:
-      "When this page is shared on social media, the platform will try to guess a title " +
-      "from the page content, which may be inaccurate, poorly formatted, or missing entirely. " +
-      "This makes shared links look less professional and less clickable.",
+      "Shared links render with a missing preview image, a guessed or wrong title, or a " +
+      "plain-text preview — all of which look unprofessional and reduce click-through. For " +
+      "nonprofits relying on social media for donations, events, and awareness, this directly " +
+      "cuts reach.",
     fix:
-      "Add <meta property=\"og:title\" content=\"Your Page Title\"> to the page's <head>. " +
-      "Most SEO plugins (Yoast, Rank Math) manage this automatically when you fill in the " +
-      "SEO title field. Check the plugin's social media settings.",
-  },
-
-  OG_DESC_MISSING: {
-    title: "Open Graph description missing",
-    category: "metadata",
-    severity: "info",
-    definition:
-      "This page is missing an Open Graph description tag (<meta property=\"og:description\">). " +
-      "This tag controls the summary text shown alongside the link preview when the page " +
-      "is shared on social media.",
-    impact:
-      "Social media platforms will attempt to pull description text from the page body when " +
-      "this tag is absent, often producing unpredictable or unhelpful results. Link previews " +
-      "without a proper description look less professional and attract fewer clicks.",
-    fix:
-      "Add <meta property=\"og:description\" content=\"Your description here\"> to the " +
-      "page's <head>. Most SEO plugins handle this automatically — check the social media " +
-      "settings section of your SEO plugin.",
-  },
-
-  OG_IMAGE_MISSING: {
-    title: "Social share image missing",
-    category: "metadata",
-    severity: "info",
-    mission_impact: "When someone shares your page on social media, there will be no preview image.",
-    definition:
-      "This page has no og:image meta tag. The Open Graph image controls the preview " +
-      "image shown when your page is shared on Facebook, LinkedIn, Twitter, and other " +
-      "social platforms.",
-    impact:
-      "Posts shared without a preview image get significantly less engagement — people " +
-      "scroll past text-only links. For nonprofits relying on social media to drive " +
-      "donations, event signups, or awareness, this directly reduces reach.",
-    fix:
-      "Add a meta tag: <meta property=\"og:image\" content=\"https://yoursite.com/image.jpg\">. " +
-      "Use a high-quality image at least 1200x630 pixels. In WordPress, most SEO plugins " +
-      "(Yoast, Rank Math) have a Social tab on each post/page where you can set the image.",
-  },
-
-  TWITTER_CARD_MISSING: {
-    title: "Twitter/X Card missing",
-    category: "metadata",
-    severity: "info",
-    mission_impact: "When someone shares your page on Twitter/X, the preview will be a plain text link.",
-    definition:
-      "This page has no <meta name=\"twitter:card\"> tag. Twitter Cards control how your " +
-      "page appears when shared on Twitter/X — including the preview image, title, and " +
-      "description format.",
-    impact:
-      "Without a Twitter Card tag, links shared on Twitter/X appear as plain URLs without " +
-      "a rich preview. Tweets with rich previews (image + title + description) get " +
-      "significantly more clicks and retweets than plain text links.",
-    fix:
-      "Add <meta name=\"twitter:card\" content=\"summary_large_image\"> to the page's " +
-      "<head>. Most SEO plugins (Yoast, Rank Math) have a Twitter/Social tab where you " +
-      "can configure this. The \"summary_large_image\" type shows the largest preview.",
+      "Populate og:title, og:description, og:image and twitter:card in the page <head>. A " +
+      "single SEO-plugin setting (Yoast, Rank Math → Social tab) usually fills all of them at " +
+      "once. Use a preview image at least 1200×630px.",
   },
 
   CANONICAL_MISSING: {
@@ -843,24 +788,6 @@ const issueHelp = {
   // DUPLICATES
   // ═══════════════════════════════════════════════════════════════════════════
 
-  TITLE_META_DUPLICATE_PAIR: {
-    title: "Title and meta description both duplicated",
-    category: "duplicate",
-    severity: "warning",
-    definition:
-      "This page shares both its page title AND its meta description with at least one " +
-      "other page on the site. Both fields are identical across multiple pages.",
-    impact:
-      "When both the title and description are duplicated, search engines have very little " +
-      "to distinguish between the affected pages. They may choose to show only one of them " +
-      "for a given search, or rank neither well. Visitors see what appears to be the same " +
-      "listing repeated, reducing trust.",
-    fix:
-      "Write unique titles and meta descriptions for every affected page. Each page's title " +
-      "and description should describe that page's specific content — not a generic " +
-      "description that could apply to multiple pages.",
-  },
-
   // ═══════════════════════════════════════════════════════════════════════════
   // SECURITY  (§E1)
   // ═══════════════════════════════════════════════════════════════════════════
@@ -1139,25 +1066,6 @@ const issueHelp = {
       "Review the page and update any outdated information — even small edits signal freshness " +
       "to search engines. Update dates, statistics, staff names, and program details. If the " +
       "content is evergreen and still accurate, consider republishing it with a current date.",
-  },
-
-  SCHEMA_MISSING: {
-    title: "No structured data (schema markup) on this page",
-    category: "crawlability",
-    severity: "warning",
-    definition:
-      "This page contains no JSON-LD or microdata structured data markup. Schema markup is a " +
-      "standardised vocabulary that helps search engines understand what your content is about " +
-      "and display richer search results.",
-    impact:
-      "Without schema, search engines rely entirely on reading your raw content. Adding schema " +
-      "can unlock 'rich results' (star ratings, event details, FAQs) that stand out in search " +
-      "and attract more clicks. For nonprofits, Organisation and Event schema are especially valuable.",
-    fix:
-      "Add Organisation schema to your homepage to describe your nonprofit. Add Event schema for " +
-      "any events pages. Consider FAQPage schema for common questions. " +
-      "Google's Structured Data Markup Helper (search.google.com/structured-data/helper) can " +
-      "generate the markup. Most WordPress SEO plugins (Yoast, Rank Math) add schema automatically.",
   },
 
 
@@ -2944,6 +2852,126 @@ const issueHelp = {
       "This is a proxy: it confirms readable contact info is present, not that it is absent " +
       "from images. A homepage that intentionally routes all contact to a separate /contact " +
       "page (with none on the homepage) will be flagged even though nothing is broken.",
+  },
+  ENTITY_NAME_INCONSISTENT: {
+    title: "Inconsistent organisation name",
+    category: "ai_readiness",
+    severity: "warning",
+    confidence: "Reasonable proxy",
+    definition:
+      "Your organisation is named differently in the structured data (JSON-LD) across pages — " +
+      "even after ignoring capitalisation and legal suffixes like 'Inc' or 'Society'. No single " +
+      "brand entity is consistently asserted for the site.",
+    impact:
+      "Evidence tier: Reasonable proxy. AI systems build one entity profile per name they see. " +
+      "When your pages assert different names, that signal splits — weakening the very thing the " +
+      "'Search Everywhere' shift rewards: being the brand people (and AI) reliably recognise and " +
+      "cite by name.",
+    fix:
+      "Choose one canonical Organization name and use it identically in the JSON-LD on every " +
+      "page/template. In WordPress this usually means one SEO-plugin or theme setting that feeds " +
+      "the Organization schema site-wide.",
+    good_vs_bad:
+      "Good: every page's Organization.name reads 'Living Systems Counselling Society'. Bad: some " +
+      "pages say 'Living Systems', others 'LSC Counselling', others 'Living Systems Counselling " +
+      "Inc.' — three entities to a machine.",
+    how_it_can_mislead:
+      "A legitimate DBA, sub-brand, or parent/child organisation may use more than one real name. " +
+      "This flags variance for review; it is not proof of an error. Casing- and legal-suffix-only " +
+      "differences are already normalised away and never flagged.",
+  },
+  ENTITY_SAMEAS_MISSING: {
+    title: "No sameAs entity links",
+    category: "ai_readiness",
+    severity: "info",
+    confidence: "Reasonable proxy",
+    definition:
+      "An Organization or Person block in this page's JSON-LD has no sameAs array — no links to " +
+      "authoritative profiles such as Wikipedia, Wikidata, or official social accounts.",
+    impact:
+      "Evidence tier: Reasonable proxy. sameAs is the bridge that lets AI systems resolve your " +
+      "name to a specific knowledge-graph entity. Without it, machines must guess which 'Acme' " +
+      "you are, weakening entity resolution and citation confidence.",
+    fix:
+      "Add a sameAs array to your Organization/Person schema listing your Wikipedia/Wikidata " +
+      "entry (if any) and your official social profiles (LinkedIn, Facebook, etc.).",
+    good_vs_bad:
+      "Good: Organization schema with sameAs: [wikidata URL, LinkedIn URL, Facebook URL]. Bad: " +
+      "an Organization block with a name and logo but no sameAs at all.",
+    how_it_can_mislead:
+      "A brand-new organisation may have no authoritative profile to link to yet — the absence " +
+      "isn't always fixable today. This flags the gap; it does not judge whether you should have " +
+      "a Wikipedia entry.",
+  },
+  AUTHOR_IDENTITY_INCONSISTENT: {
+    title: "Inconsistent author identity",
+    category: "ai_readiness",
+    severity: "info",
+    confidence: "Heuristic",
+    definition:
+      "The same author name appears under different author URLs across the site's article " +
+      "structured data (or one author URL appears under different names), so a machine cannot " +
+      "confidently treat them as one person.",
+    impact:
+      "Evidence tier: Heuristic. Fragmented author identity dilutes the expertise and " +
+      "authority signals (E-E-A-T) that AI and search systems use to decide whom to trust and " +
+      "attribute content to.",
+    fix:
+      "Give each author one canonical profile URL and one consistent display name, and use them " +
+      "in every article's author schema.",
+    good_vs_bad:
+      "Good: all of Jane's posts point to /author/jane with the name 'Jane Doe'. Bad: some point " +
+      "to /author/jane, others to /author/j-doe, for the same person.",
+    how_it_can_mislead:
+      "Two different real people can genuinely share a name. This is a prompt to review author " +
+      "identity, not a verdict that something is wrong.",
+  },
+  NEAR_DUPLICATE_BODY: {
+    title: "Near-duplicate page content",
+    category: "ai_readiness",
+    severity: "warning",
+    confidence: "Reasonable proxy",
+    definition:
+      "Two or more pages have near-identical lead content (their first ~1500 words) once shared " +
+      "site template — navigation and footer repeated across the site — has been removed from " +
+      "the comparison.",
+    impact:
+      "Evidence tier: Reasonable proxy. Generic, repeated content is the most 'absorbable' by AI " +
+      "answers: if many pages say the same thing, a single AI paragraph can replace all of them. " +
+      "Near-duplicate pages also compete with each other in search.",
+    fix:
+      "Consolidate the duplicates into one strong page and canonical/redirect the weaker ones, " +
+      "or differentiate each page with genuinely first-party specifics (original data, distinct " +
+      "examples, a real point of view).",
+    good_vs_bad:
+      "Good: each service-area page carries its own local details, testimonials, and specifics. " +
+      "Bad: ten 'city' pages identical except the town name swapped in — classic doorway pages.",
+    how_it_can_mislead:
+      "Some near-identical pages are legitimate (product-size variants, location pages with real " +
+      "local differences). The check compares lead content with boilerplate removed, but it is a " +
+      "prompt to review, not proof of thin content.",
+  },
+  BOILERPLATE_RATIO_HIGH: {
+    title: "Mostly boilerplate",
+    category: "ai_readiness",
+    severity: "info",
+    confidence: "Heuristic",
+    definition:
+      "Most of this page's text is site-wide template — navigation, footer, and repeated calls " +
+      "to action that appear on many other pages — with little content unique to the page itself.",
+    impact:
+      "Evidence tier: Heuristic. A page that is mostly shared template offers little for an AI " +
+      "answer to cite and reads as thin. These are among the pages most exposed to being ignored " +
+      "or replaced in AI search.",
+    fix:
+      "Add substantive, first-party content that is unique to this page — original explanation, " +
+      "data, examples, or a distinct perspective.",
+    good_vs_bad:
+      "Good: a page whose body is mostly its own subject matter, with a normal footer. Bad: a " +
+      "page that is a headline plus the same footer and CTA blocks found across the whole site.",
+    how_it_can_mislead:
+      "A genuine index or hub page is legitimately light on prose. This flags a high template " +
+      "ratio for review; check the page's intent before rewriting.",
   },
   };
 

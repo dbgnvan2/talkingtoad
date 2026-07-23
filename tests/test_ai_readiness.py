@@ -39,6 +39,7 @@ def _page(
     is_indexable: bool = True,
     text_to_html_ratio: float | None = 0.15,
     has_json_ld: bool = True,
+    schema_types: list[str] | None = None,
     headings_outline: list[dict] | None = None,
     pdf_metadata: dict | None = None,
 ) -> ParsedPage:
@@ -61,7 +62,7 @@ def _page(
         links=[],
         has_favicon=None,
         has_viewport_meta=True,
-        schema_types=[],
+        schema_types=schema_types or [],
         external_script_count=0,
         external_stylesheet_count=0,
         # v1.7 AI-Readiness fields
@@ -96,7 +97,9 @@ class TestAiReadinessIssues:
         assert "JSON_LD_MISSING" in codes
 
     def test_present_json_ld_no_issue(self):
-        page = _page(has_json_ld=True)
+        # §7/F2: JSON_LD_MISSING now keys on usable schema_types (absorbing the
+        # deleted SCHEMA_MISSING), so "present" means a usable @type was found.
+        page = _page(has_json_ld=True, schema_types=["Organization"])
         codes = _codes(check_page(page))
         assert "JSON_LD_MISSING" not in codes
 

@@ -96,6 +96,6 @@ def test_quick_win_computed():
 
 def test_make_issue_severity_matches_impact():
     """make_issue emits the derived severity (no impact/severity drift)."""
-    for code in ("NOINDEX_META", "BROKEN_LINK_404", "TITLE_MISSING", "OG_TITLE_MISSING"):
+    for code in ("NOINDEX_META", "BROKEN_LINK_404", "TITLE_MISSING", "SOCIAL_PREVIEW_METADATA_MISSING"):
         i = make_issue(code, "https://x/")
         assert i.severity == severity_from_impact(i.impact), code

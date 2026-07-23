@@ -20,7 +20,10 @@ from api.services.job_store_base import compute_impact_health
 _NO_SEV = {"critical": 0, "warning": 0, "info": 0}
 
 _SITE_CODES = ["HTTP_PAGE", "HTTPS_REDIRECT_MISSING", "MIXED_CONTENT",
-               "MISSING_HSTS", "WWW_CANONICALIZATION"]
+               "MISSING_HSTS", "WWW_CANONICALIZATION",
+               # "Search Everywhere" GEO (P1) — site-level findings.
+               "ENTITY_NAME_INCONSISTENT", "AUTHOR_IDENTITY_INCONSISTENT",
+               "NEAR_DUPLICATE_BODY"]
 
 
 def _imp(code: str) -> int:

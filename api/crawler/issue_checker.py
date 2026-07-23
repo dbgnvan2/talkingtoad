@@ -58,6 +58,9 @@ from api.crawler.checkers.crawlability import (  # noqa: F401
     _check_crawlability,
 )
 from api.crawler.checkers.links import (  # noqa: F401
+    collapse_per_target_occurrences,
+    occurrence_multiplier,
+    PER_TARGET_CODES,
     issue_for_status,
     issues_for_redirect,
     check_placeholder_links,
@@ -349,17 +352,26 @@ def check_page(
                 issue.extra = {"description": page.meta_description, "length": length}
                 issues.append(issue)
 
-        # ── OG tags ────────────────────────────────────────────────────────
+        # ── Social preview metadata (OG + Twitter) — one merged code ─────────
+        # §7/§6.10: OG title/description/image and the Twitter card are all
+        # driven by a single plugin/theme setting. Emit ONE
+        # SOCIAL_PREVIEW_METADATA_MISSING row listing which tags are missing,
+        # instead of up to four separate rows that quadruple-count one fix.
+        _missing_social = []
         if not page.og_title:
-            issues.append(make_issue("OG_TITLE_MISSING", url,
-                                     extra={"title": page.title}))
+            _missing_social.append("og:title")
         if not page.og_description:
-            issues.append(make_issue("OG_DESC_MISSING", url,
-                                     extra={"meta_description": page.meta_description}))
+            _missing_social.append("og:description")
         if not page.og_image:
-            issues.append(make_issue("OG_IMAGE_MISSING", url))
+            _missing_social.append("og:image")
         if not page.twitter_card:
-            issues.append(make_issue("TWITTER_CARD_MISSING", url))
+            _missing_social.append("twitter:card")
+        if _missing_social:
+            issues.append(make_issue(
+                "SOCIAL_PREVIEW_METADATA_MISSING", url,
+                extra={"missing_tags": _missing_social,
+                       "title": page.title,
+                       "meta_description": page.meta_description}))
 
         # ── Canonical tag ──────────────────────────────────────────────────
         _check_canonical(page, issues)
@@ -482,8 +494,8 @@ def check_page(
         issues.append(make_issue("MISSING_VIEWPORT_META", url))
 
     # ── Structured data (schema.org) ──────────────────────────────────────
-    if not page.schema_types and is_indexable:
-        issues.append(make_issue("SCHEMA_MISSING", url))
+    # §7: SCHEMA_MISSING deleted (duplicate of JSON_LD_MISSING, which the
+    # ai_readiness checker emits for the same "no structured data" condition).
 
     # ── Empty anchor text ─────────────────────────────────────────────────
     if page.empty_anchor_count > 0:
@@ -580,8 +592,13 @@ def check_page(
                 )
         issues.append(make_issue("SEMANTIC_DENSITY_LOW", url, extra=extra))
 
-    # JSON-LD Missing
-    if not page.has_json_ld and page.is_indexable and not url.endswith(".pdf"):
+    # JSON-LD Missing. §7: absorbs the deleted SCHEMA_MISSING — fire on
+    # "no usable structured-data types" (`not schema_types`), which covers both
+    # no <script type=ld+json> at all AND a script that is malformed or carries
+    # no @type (has_json_ld True but schema_types empty). Keying on schema_types
+    # rather than has_json_ld preserves SCHEMA_MISSING's coverage (P2: don't drop
+    # the "structured data present but unusable" case).
+    if not page.schema_types and page.is_indexable and not url.endswith(".pdf"):
         issues.append(make_issue("JSON_LD_MISSING", url))
 
     # Conversational H2s — also fires when no H2s exist on a substantial page

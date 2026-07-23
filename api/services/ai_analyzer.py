@@ -138,8 +138,7 @@ PROMPT_LIBRARY = {
         "  Examples by issue type:\n"
         "  TITLE_MISSING / TITLE_TOO_SHORT / TITLE_TOO_LONG / TITLE_DUPLICATE: Write the full title tag text (≤60 chars).\n"
         "  META_DESC_MISSING / META_DESC_TOO_SHORT / META_DESC_TOO_LONG / META_DESC_DUPLICATE: Write the full meta description (≤160 chars).\n"
-        "  OG_TITLE_MISSING: Write the Open Graph title text.\n"
-        "  OG_DESC_MISSING: Write the Open Graph description text.\n"
+        "  SOCIAL_PREVIEW_METADATA_MISSING: Write the Open Graph title and description text.\n"
         "  H1_MISSING: Write the H1 heading text.\n"
         "  H1_MULTIPLE: Write which H1 to keep (copy the exact text) and what the others should be demoted to (e.g. 'Keep: [text]. Demote the others to H2.').\n"
         "  HEADING_EMPTY: Write the text to fill in the empty heading.\n"
@@ -148,9 +147,7 @@ PROMPT_LIBRARY = {
         "  IMG_ALT_MISSING / IMG_ALT_TOO_SHORT / IMG_ALT_TOO_LONG / IMG_ALT_GENERIC / IMG_ALT_DUP_FILENAME / IMG_ALT_MISUSED: Write the alt text string only (80-125 chars, entity-rich, no quotes).\n"
         "  LINK_EMPTY_ANCHOR: Write the descriptive anchor text to use for this link.\n"
         "  THIN_CONTENT: Write 3-5 bullet points of specific content topics/angles to add to this page.\n"
-        "  SCHEMA_MISSING: Write a complete JSON-LD <script> block with the most appropriate Schema.org type.\n"
         "  SCHEMA_ORG_MISSING: Write a complete Organization JSON-LD <script> block.\n"
-        "  TITLE_META_DUPLICATE_PAIR: Write both a new title (≤60 chars) and new meta description (≤160 chars), clearly labelled.\n"
         "- why: One sentence explaining why this change helps SEO or AI discoverability.\n"
         "- where_to_apply: One sentence saying exactly where in the CMS to paste this (e.g. 'Paste into Yoast SEO → SEO Title field on this page').\n\n"
         "Respond with ONLY valid JSON (no markdown, no code blocks, no extra keys):\n"
@@ -327,7 +324,7 @@ async def analyze_with_ai(prompt_key: str, context: dict[str, Any]) -> str:
     _provider, cfg = _pick_model(_DEFAULT_TEXT_MODEL_BY_PROVIDER)
     # Schema codes ask the model to write a full JSON-LD <script> block which
     # can exceed 500 tokens. Bump the limit for those codes to avoid silent truncation.
-    _SCHEMA_CODES = {"SCHEMA_MISSING", "SCHEMA_ORG_MISSING"}
+    _SCHEMA_CODES = {"SCHEMA_ORG_MISSING", "JSON_LD_MISSING"}
     if context.get("issue_code") in _SCHEMA_CODES:
         cfg = ModelConfig(model=cfg.model, max_tokens=1000)
 

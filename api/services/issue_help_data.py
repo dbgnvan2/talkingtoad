@@ -46,18 +46,10 @@ ISSUE_HELP: dict[str, dict[str, str]] = {
         "impact": "The end of your description will be replaced with '…' in search results, which looks untidy and may cut off important information or calls to action.",
         "fix": "Shorten the description to under 160 characters, keeping the most important information at the beginning. Lead with what the page is about, not background context."
     },
-    "OG_TITLE_MISSING": {
-        "impact": "When this page is shared on social media, the platform will try to guess a title from the page content, which may be inaccurate, poorly formatted, or missing entirely. This makes shared links look less professional and less clickable."
-    },
-    "OG_DESC_MISSING": {
-        "impact": "Social media platforms will attempt to pull description text from the page body when this tag is absent, often producing unpredictable or unhelpful results. Link previews without a proper description look less professional and attract fewer clicks."
-    },
-    "OG_IMAGE_MISSING": {
-        "what": "This page has no og:image meta tag. The Open Graph image controls the preview image shown when your page is shared on Facebook, LinkedIn, Twitter, and other social platforms.",
-        "impact": "When someone shares your page on social media, there will be no preview image."
-    },
-    "TWITTER_CARD_MISSING": {
-        "impact": "When someone shares your page on Twitter/X, the preview will be a plain text link."
+    "SOCIAL_PREVIEW_METADATA_MISSING": {
+        "what": "One or more social-preview meta tags are missing — og:title, og:description, og:image, or twitter:card. These control how your page looks when shared on Facebook, LinkedIn, Twitter/X, and similar platforms. The finding lists exactly which tags are absent.",
+        "impact": "Shared links render with a missing preview image, a guessed or wrong title, or a plain-text preview — all of which look unprofessional and reduce click-through from social platforms.",
+        "fix": "Populate og:title, og:description, og:image and twitter:card. A single SEO plugin setting (Yoast, Rank Math) usually fills all of them at once."
     },
     "CANONICAL_MISSING": {
         "what": "This page has no canonical tag, and either it has URL query parameters (like ?page=2) or its content closely matches another page on the site. A canonical tag ",
@@ -215,11 +207,6 @@ ISSUE_HELP: dict[str, dict[str, str]] = {
         "impact": "Without a sitemap, search engines must discover all of your pages purely by following links. Pages with few or no internal links pointing to them may never be found, crawled, or indexed — effectively making them invisible in search results.",
         "fix": "Create an XML sitemap and submit it to Google Search Console. If you use WordPress, install Yoast SEO, Rank Math, or a dedicated sitemap plugin — these generate a sitemap automatically at /sitemap.xml. Squarespace and Wix do this automatically. Once created, add 'Sitemap: https://yoursite.com/sitemap.xml' to your robots.txt file."
     },
-    "TITLE_META_DUPLICATE_PAIR": {
-        "what": "This page shares both its page title AND its meta description with at least one other page on the site. Both fields are identical across multiple pages.",
-        "impact": "When both the title and description are duplicated, search engines have very little to distinguish between the affected pages. They may choose to show only one of them for a given search, or rank neither well. Visitors see what appears to be the same listing repeated, reducing trust.",
-        "fix": "Write unique titles and meta descriptions for every affected page. Each page's title and description should describe that page's specific content — not a generic description that could apply to multiple pages."
-    },
     "HTTP_PAGE": {
         "what": "This page is served over HTTP rather than HTTPS. HTTP does not encrypt the connection between the visitor's browser and your server, leaving data transmitted to and from this page exposed.",
         "impact": "Modern browsers display a 'Not Secure' warning for HTTP pages, which can undermine visitor trust and deter donations or contact form submissions. Search engines use HTTPS as a ranking signal — HTTP pages may rank lower. Any data submitted through forms on an HTTP page is transmitted unencrypted.",
@@ -287,11 +274,6 @@ ISSUE_HELP: dict[str, dict[str, str]] = {
         "what": "This page has not been modified in over 12 months, based on the Last-Modified HTTP header sent by the server. While not all content needs frequent updates, search engines use freshness as a ranking signal.",
         "impact": "Search engines and visitors may perceive this page as outdated or abandoned.",
         "fix": "Review the page and update any outdated information — even small edits signal freshness to search engines. Update dates, statistics, staff names, and program details. If the content is evergreen and still accurate, consider republishing it with a current date."
-    },
-    "SCHEMA_MISSING": {
-        "what": "This page contains no JSON-LD or microdata structured data markup. Schema markup is a standardised vocabulary that helps search engines understand what your content is about and display richer search results.",
-        "impact": "Without schema, search engines rely entirely on reading your raw content. Adding schema can unlock 'rich results' (star ratings, event details, FAQs) that stand out in search and attract more clicks. For nonprofits, Organisation and Event schema are especially valuable.",
-        "fix": "Add Organisation schema to your homepage to describe your nonprofit. Add Event schema for any events pages. Consider FAQPage schema for common questions. Google's Structured Data Markup Helper (search.google.com/structured-data/helper) can generate the markup. Most WordPress SEO plugins (Yoast, Rank Math) add schema automatically."
     },
     "MISSING_VIEWPORT_META": {
         "impact": "Your site may look broken or tiny on the phones your supporters use."
@@ -417,5 +399,30 @@ ISSUE_HELP: dict[str, dict[str, str]] = {
         "what": "None of the H2 headings on this page use interrogative words (How, What, Why). AI systems increasingly prefer direct question-answer pairings for accurate retrieval.",
         "impact": "LLMs and AI search engines (Perplexity, SearchGPT) often look for explicit questions in headings to match user queries. Descriptive-only headings (e.g. 'Our Services') are less 'matchable' than conversational ones (e.g. 'What Services Do We Provide?').",
         "fix": "Rewrite some of your subheadings as questions. This doesn't just help AI; it also helps human visitors who are often scanning your page for an answer to a specific question."
+    },
+    "ENTITY_NAME_INCONSISTENT": {
+        "what": "Your organisation is named differently in the structured data across pages (after ignoring capitalisation and legal suffixes like 'Inc' or 'Society'). No single brand entity is consistently asserted.",
+        "impact": "AI systems build one entity profile per name they see. Different names across pages split that signal, weakening your ability to be recognised and cited by name.",
+        "fix": "Choose one canonical Organization name and use it identically in the JSON-LD on every page/template."
+    },
+    "ENTITY_SAMEAS_MISSING": {
+        "what": "An Organization or Person block in this page's JSON-LD has no sameAs links to authoritative profiles (Wikipedia, Wikidata, official social accounts).",
+        "impact": "sameAs is the bridge that lets AI resolve your name to a specific knowledge-graph entity. Without it, machines must guess which organisation you are.",
+        "fix": "Add a sameAs array to your Organization/Person schema pointing to your Wikipedia/Wikidata entry and official social profiles."
+    },
+    "AUTHOR_IDENTITY_INCONSISTENT": {
+        "what": "The same author name appears under different author URLs across your article structured data (or one URL under different names), so a machine cannot treat them as one person.",
+        "impact": "Fragmented author identity dilutes the expertise and authority (E-E-A-T) signals AI and search systems use to decide whom to trust and attribute content to.",
+        "fix": "Give each author one canonical profile URL and one consistent display name, used in every article's author schema."
+    },
+    "NEAR_DUPLICATE_BODY": {
+        "what": "Two or more pages have near-identical lead content (their first ~1500 words) once shared navigation and footer template is removed from the comparison.",
+        "impact": "Generic, repeated content is the most 'absorbable' by AI answers — if many pages say the same thing, one AI paragraph can replace them all. Near-duplicate pages also compete with each other in search.",
+        "fix": "Consolidate duplicates into one strong page and canonical/redirect the weaker ones, or differentiate each page with genuinely first-party specifics."
+    },
+    "BOILERPLATE_RATIO_HIGH": {
+        "what": "Most of this page's text is site-wide template (navigation, footer, repeated CTAs found on many other pages), with little content unique to the page itself.",
+        "impact": "A page that is mostly shared template offers little for an AI answer to cite and reads as thin — among the pages most exposed to being ignored in AI search.",
+        "fix": "Add substantive, first-party content unique to this page — original explanation, data, examples, or a distinct perspective."
     }
 }

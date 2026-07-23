@@ -418,10 +418,23 @@ underlying signals are pre-computed on `ParsedPage` at parse time.
 ### 4.0.1 Scoring model R5 (2026-07-06)
 
 The R5 scoring change (`scoring_model_version = "2026-07-06-r5"`) finished the safe remainder of the
-external scoring spec on top of the R3/R4 calibration. It changes **how the health score is computed**,
-not which codes exist — all 152 codes are retained (the spec's proposed merges/deletions were declined;
-the former "merge" clusters are re-cast as suppress-children). Per-target occurrence counting (external §2)
-and the proposed cap increase to 25 were both declined by the owner; the category cap stays **20**.
+external scoring spec on top of the R3/R4 calibration. It changes **how the health score is computed**.
+The proposed cap increase to 25 remains declined (category cap stays **20**).
+
+**§7 code merges/deletions (2026-07-22, owner re-opened).** Previously declined; now applied where the
+codes share one detection pipeline: `SCHEMA_MISSING` **deleted** (duplicate of `JSON_LD_MISSING`, now the
+sole schema-family parent); `TITLE_META_DUPLICATE_PAIR` **deleted** (`TITLE_DUPLICATE` and
+`META_DESC_DUPLICATE` now each charge independently); `OG_TITLE_MISSING` + `OG_DESC_MISSING` +
+`OG_IMAGE_MISSING` + `TWITTER_CARD_MISSING` **merged → `SOCIAL_PREVIEW_METADATA_MISSING`** (one row listing
+the missing tags in `extra.missing_tags`). Net catalogue 157 → **152**. The **answer-first**
+(`CENTRAL_CLAIM_BURIED`, `FIRST_VIEWPORT_NO_ANSWER`, `GEO_SUMMARY_BURIED`) and **chunk**
+(`CHUNKS_NOT_SELF_CONTAINED`, `SECTION_CROSS_REFERENCES`, `SECTION_VAGUE_OPENER`) families are
+**deliberately kept as suppress-children, not merged**: `CENTRAL_CLAIM_BURIED` / `CHUNKS_NOT_SELF_CONTAINED`
+are emitted by the on-demand LLM path (`geo_llm.py`) while their would-be merge-mates are crawl-static
+checks — merging would conflate an LLM verdict with a static heuristic under one code. Suppress-children
+already delivers the no-double-count outcome across both pipelines.
+
+**§2 per-target occurrence counting** — see R5.7 below.
 
 - **R5.0 — Unified page-health computation.** There is now a single capped-and-suppressed deduction path.
   The two former raw-uncapped-sum paths in `crawl.py` and `citations.py` route through
@@ -456,6 +469,16 @@ and the proposed cap increase to 25 were both declined by the owner; the categor
   stamped on every saved audit and exposed in the summary response; audits predating the field read as
   `null`. → `tests/test_scoring_version.py::test_audit_carries_scoring_model_version`,
   `::test_summary_exposes_scoring_model_version`
+- **R5.7 — Per-target occurrence counting (external §2, 2026-07-22).** Previously declined; now applied.
+  The per-target codes `BROKEN_LINK_404/410/503/5XX`, `EXTERNAL_LINK_TIMEOUT`, `REDIRECT_301/302` were
+  emitted once per offending link (many rows per source page, each deducting full impact — the old
+  "5 × impact" distortion). `collapse_per_target_occurrences` (`api/crawler/checkers/links.py`) now
+  collapses them to **one row per (page, code)** carrying `extra.occurrences` and `extra.occurrence_urls`,
+  and **bakes an occurrence multiplier** `min(1 + 0.25·(n−1), 2.0)` into that row's `impact` (1→1.0,
+  2→1.25, 5→2.0, 20→2.0). Because the multiplier is baked into the stored impact, every downstream scorer
+  (both stores) applies §2 unchanged; the per-category cap still bounds independent problems on top.
+  Old audits (per-link rows) keep their prior scores and are distinguished by `scoring_model_version`.
+  → `tests/test_per_target_occurrences.py`
 
 **Deploy note.** Site-scoping the TLS codes and the noindex reduction mean multi-page HTTP-site and
 noindexed-page scores **rise once** under R5. A before/after crawl (per the R3 precedent) is the manual
@@ -713,6 +736,48 @@ computed server-side and never trusted from the client.
 → `tests/test_content_discovery.py`, `tests/test_crawl_scope.py`,
 `tests/test_discover_scope_integration.py`,
 `frontend/src/pages/__tests__/Home.scope.test.jsx`
+
+### 4.10 "Search Everywhere" GEO — brand-entity + body-uniqueness (P1)
+
+First phase of the GEO/AI-citability initiative (`PLAN-SEARCH-EVERYWHERE.md`,
+derived from the "Search Everywhere Optimization" review). Five cross-page
+`ai_readiness` codes, all detected post-crawl in
+`api/crawler/checkers/cross_page.py` — crawl-only, no new external calls, no WP
+calls. ⚠︎ Scores are provisional pending the R3→R5 refactor (`R5-REWORK`).
+
+**Brand-entity consistency** (the technical underpinning of "be recognised by
+name" — so AI reliably attributes content to one entity):
+- `ENTITY_NAME_INCONSISTENT` (site) — the Organization name in JSON-LD differs
+  across pages *after* casing + legal-suffix normalisation. Normalisation is the
+  false-positive guard: "Living Systems Counselling Society" and "Living Systems
+  Counselling" are one entity, not flagged. Emits one site-scoped issue listing
+  the variants.
+- `ENTITY_SAMEAS_MISSING` (page) — an Organization/Person block has no `sameAs`
+  links to authoritative profiles (Wikipedia/Wikidata/socials). Does not fire on
+  pages with no entity block.
+- `AUTHOR_IDENTITY_INCONSISTENT` (site) — one author name under differing URLs
+  (or vice-versa) across article schema. Heuristic tier (two real people can
+  share a name).
+
+**Body uniqueness** (find the thin, generic pages most exposed to AI
+absorption). One shared pass shingles each page's lead content
+(`first_1500_words`, 5-word n-grams), then computes a **site-wide boilerplate
+set** = shingles appearing on ≥ max(3, 20% of eligible) pages:
+- `NEAR_DUPLICATE_BODY` (site) — pages whose content-shingle Jaccard ≥ 0.80
+  *after boilerplate removal* (nav/footer stripped — the false-positive guard).
+  Clustered via union-find; one issue per cluster naming the members. Exact
+  all-pairs Jaccard ≤ 400 eligible pages; MinHash prefilter above (announced in
+  logs, P9).
+- `BOILERPLATE_RATIO_HIGH` (page) — ≥ 60% of a page's shingles are the shared
+  template — mostly boilerplate, low citability.
+
+All thresholds are config (env-overridable, `docs/thresholds.md`); old crawls
+missing `schema_blocks`/`first_1500_words` degrade to no findings, never a crash
+(P8); site-scoped checks skip sites under 3 pages. Adversarial guards written
+first (P10): `test_entity_consistency.py::test_e1_2_normalised_no_false_positive`,
+`test_near_duplicate_body.py::test_e2_2_boilerplate_excluded`.
+→ `tests/test_entity_consistency.py`, `tests/test_near_duplicate_body.py`,
+`tests/test_p1_serialization.py`
 
 ---
 

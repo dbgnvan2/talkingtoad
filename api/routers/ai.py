@@ -35,10 +35,9 @@ class AIAnalysisRequest(BaseModel):
 _AI_TEXT_SUGGESTION_CODES = {
     # Title / meta
     "TITLE_MISSING", "TITLE_TOO_SHORT", "TITLE_TOO_LONG", "TITLE_DUPLICATE",
-    "TITLE_META_DUPLICATE_PAIR",
     "META_DESC_MISSING", "META_DESC_TOO_SHORT", "META_DESC_TOO_LONG", "META_DESC_DUPLICATE",
-    # Social / OG
-    "OG_TITLE_MISSING", "OG_DESC_MISSING",
+    # Social / OG (merged)
+    "SOCIAL_PREVIEW_METADATA_MISSING",
     # Headings
     "H1_MISSING", "H1_MULTIPLE", "HEADING_EMPTY",
     # Images
@@ -49,7 +48,7 @@ _AI_TEXT_SUGGESTION_CODES = {
     # Content
     "THIN_CONTENT",
     # Schema
-    "SCHEMA_MISSING", "SCHEMA_ORG_MISSING",
+    "SCHEMA_ORG_MISSING",
     # AI readiness — text AI can rewrite
     "CONVERSATIONAL_H2_MISSING", "QUERY_COVERAGE_WEAK",
 }

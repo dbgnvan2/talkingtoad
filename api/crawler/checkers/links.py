@@ -5,9 +5,69 @@ Extracted from api/crawler/issue_checker.py in v2.6 M9.1 (Cycle K).
 Zero-logic move — function bodies are byte-identical to the originals.
 """
 
+import os
+from collections import OrderedDict
+
 from api.crawler.normaliser import is_same_domain
 
-from api.crawler.checkers.registry import Issue, make_issue
+from api.crawler.checkers.registry import Issue, make_issue, _ISSUE_SCORING
+
+# ── §2 per-target occurrence counting ────────────────────────────────────────
+# These codes are emitted once per offending LINK (many per source page). §2
+# collapses them to ONE row per (page, code) carrying the occurrence count, and
+# deducts impact once times an occurrence multiplier — instead of the old
+# unbounded "impact × number of links". Spec: talkingtoad-scoring-change-spec.md#2.
+PER_TARGET_CODES: frozenset[str] = frozenset({
+    "BROKEN_LINK_404", "BROKEN_LINK_410", "BROKEN_LINK_503", "BROKEN_LINK_5XX",
+    "EXTERNAL_LINK_TIMEOUT", "REDIRECT_301", "REDIRECT_302",
+})
+_OCC_STEP = float(os.getenv("TT_OCCURRENCE_STEP", "0.25"))
+_OCC_CEIL = float(os.getenv("TT_OCCURRENCE_CEIL", "2.0"))
+
+
+def occurrence_multiplier(n: int) -> float:
+    """Occurrence multiplier for a per-target code with *n* occurrences:
+    ``min(1 + 0.25·(n−1), 2.0)`` — 1→1.0, 2→1.25, 5→2.0, 20→2.0 (§2)."""
+    return min(1.0 + _OCC_STEP * (max(1, n) - 1), _OCC_CEIL)
+
+
+def collapse_per_target_occurrences(issues: list[Issue]) -> list[Issue]:
+    """Collapse per-target issues (broken links, redirects) to one row per
+    (page_url, code), summing occurrences and baking the occurrence multiplier
+    into that row's ``impact`` (so every downstream scorer, which reads the
+    stored impact, applies §2 without further change). Non-per-target issues
+    pass through untouched. Order: pass-through issues first, then collapsed."""
+    grouped: "OrderedDict[tuple[str, str], list[Issue]]" = OrderedDict()
+    passthrough: list[Issue] = []
+    for iss in issues:
+        if iss.code in PER_TARGET_CODES:
+            grouped.setdefault((iss.page_url, iss.code), []).append(iss)
+        else:
+            passthrough.append(iss)
+
+    collapsed: list[Issue] = []
+    for (page_url, code), group in grouped.items():
+        first = group[0]
+        n = len(group)
+        # Offending URL is `target_url` for broken/timeout links, `redirect_to`
+        # for redirect codes (F3: populate the evidence list for both).
+        targets = [
+            g.extra.get("target_url") or g.extra.get("redirect_to")
+            for g in group
+            if g.extra and (g.extra.get("target_url") or g.extra.get("redirect_to"))
+        ]
+        first.extra = {**(first.extra or {}), "occurrences": n, "occurrence_urls": targets}
+        if n > 1:
+            base_impact, effort = _ISSUE_SCORING[code]
+            first.impact = round(base_impact * occurrence_multiplier(n))
+            first.priority_rank = first.impact * 10 - effort * 6
+            first.quick_win = first.impact >= 4 and effort <= 1
+            first.description = (
+                f"{n} links from this page are affected ({code}); "
+                f"deduction charged once × occurrence factor."
+            )
+        collapsed.append(first)
+    return passthrough + collapsed
 
 
 def check_placeholder_links(page, issues: list[Issue]) -> None:

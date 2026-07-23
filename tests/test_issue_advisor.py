@@ -208,15 +208,14 @@ def test_ai_text_suggestion_codes_includes_text_rewritable():
     """All expected text-rewritable codes are in the backend eligibility set."""
     expected = {
         "TITLE_MISSING", "TITLE_TOO_SHORT", "TITLE_TOO_LONG", "TITLE_DUPLICATE",
-        "TITLE_META_DUPLICATE_PAIR",
         "META_DESC_MISSING", "META_DESC_TOO_SHORT", "META_DESC_TOO_LONG", "META_DESC_DUPLICATE",
-        "OG_TITLE_MISSING", "OG_DESC_MISSING",
+        "SOCIAL_PREVIEW_METADATA_MISSING",
         "H1_MISSING", "H1_MULTIPLE", "HEADING_EMPTY",
         "IMG_ALT_MISSING", "IMG_ALT_TOO_SHORT", "IMG_ALT_TOO_LONG",
         "IMG_ALT_GENERIC", "IMG_ALT_DUP_FILENAME", "IMG_ALT_MISUSED",
         "LINK_EMPTY_ANCHOR",
         "THIN_CONTENT",
-        "SCHEMA_MISSING", "SCHEMA_ORG_MISSING",
+        "SCHEMA_ORG_MISSING",
         "CONVERSATIONAL_H2_MISSING", "QUERY_COVERAGE_WEAK",
     }
     assert expected == _AI_TEXT_SUGGESTION_CODES

@@ -35,14 +35,14 @@ def _row(code: str) -> tuple[str, int, str]:
 def _build_fixture_rows() -> list[tuple[str, int, str]]:
     """One page that trips BOTH the category cap AND a suppression cluster.
 
-    - A suppression cluster: SCHEMA_MISSING (parent) + JSON_LD_MISSING +
-      SCHEMA_ORG_MISSING (children → contribute 0).
+    - A suppression cluster: JSON_LD_MISSING (parent) + SCHEMA_ORG_MISSING +
+      DATE_PUBLISHED_MISSING (children → contribute 0).
     - The category cap: many META_DESC_DUPLICATE rows summing over the cap.
     """
     rows: list[tuple[str, int, str]] = [
-        _row("SCHEMA_MISSING"),
         _row("JSON_LD_MISSING"),
         _row("SCHEMA_ORG_MISSING"),
+        _row("DATE_PUBLISHED_MISSING"),
     ]
     rows += [_row("META_DESC_DUPLICATE") for _ in range(15)]
     return rows
@@ -65,8 +65,8 @@ def test_all_health_paths_agree():
     assert canonical_site == page_score
 
     # And it reflects cap+suppression, not a raw sum:
-    # schema cluster charged once (SCHEMA_MISSING), metadata capped at the cap.
-    expected = 100 - _imp("SCHEMA_MISSING") - _CATEGORY_IMPACT_CAP
+    # schema cluster charged once (JSON_LD_MISSING), metadata capped at the cap.
+    expected = 100 - _imp("JSON_LD_MISSING") - _CATEGORY_IMPACT_CAP
     assert page_score == expected
     assert page_score > raw_score  # the raw sum would have scored lower
 

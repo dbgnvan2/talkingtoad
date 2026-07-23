@@ -34,19 +34,21 @@ def _r(code: str, impact: int | None = None) -> tuple[str, int, str]:
 
 # ── page_suppressed_codes ─────────────────────────────────────────────────────
 def test_suppresses_children_when_parent_present():
-    codes = {"SCHEMA_MISSING", "JSON_LD_MISSING", "SCHEMA_ORG_MISSING", "H1_MISSING"}
-    assert page_suppressed_codes(codes) == {"JSON_LD_MISSING", "SCHEMA_ORG_MISSING"}
+    # §7: SCHEMA_MISSING deleted; JSON_LD_MISSING is the sole schema-family parent.
+    codes = {"JSON_LD_MISSING", "SCHEMA_ORG_MISSING", "H1_MISSING"}
+    assert page_suppressed_codes(codes) == {"SCHEMA_ORG_MISSING"}
 
 
 def test_no_suppression_when_parent_absent():
-    # SCHEMA_ORG_MISSING is a child of BOTH SCHEMA_MISSING and (R5.2) of
-    # JSON_LD_MISSING; with neither parent present it must not be suppressed.
-    # H1_MISSING is unrelated to any cluster.
+    # SCHEMA_ORG_MISSING is a child of JSON_LD_MISSING; with the parent absent
+    # it must not be suppressed. H1_MISSING is unrelated to any cluster.
     assert page_suppressed_codes({"SCHEMA_ORG_MISSING", "H1_MISSING"}) == set()
 
 
 def test_only_present_children_suppressed():
-    assert page_suppressed_codes({"SCHEMA_MISSING", "JSON_LD_MISSING"}) == {"JSON_LD_MISSING"}
+    # Only children actually present are suppressed by the parent.
+    assert page_suppressed_codes({"JSON_LD_MISSING", "SCHEMA_ORG_MISSING"}) == {"SCHEMA_ORG_MISSING"}
+    assert page_suppressed_codes({"JSON_LD_MISSING"}) == set()
 
 
 def test_js_shell_cluster_includes_nav():
@@ -62,16 +64,19 @@ def test_every_rule_fires(parent, children):
 # ── clusters charged once ─────────────────────────────────────────────────────
 def test_schemaless_page_charged_once():
     p = "https://x/"
-    per_page = {p: [_r("SCHEMA_MISSING"), _r("JSON_LD_MISSING"), _r("SCHEMA_ORG_MISSING")]}
+    per_page = {p: [_r("JSON_LD_MISSING"), _r("SCHEMA_ORG_MISSING")]}
     site, _ = compute_impact_health([p], per_page, dict(_NO_SEV))
-    assert site == 100 - _imp("SCHEMA_MISSING")
+    assert site == 100 - _imp("JSON_LD_MISSING")
 
 
-def test_duplicate_pair_not_triple_charged():
+def test_duplicate_pair_charges_both_components():
+    # §7: TITLE_META_DUPLICATE_PAIR deleted. TITLE_DUPLICATE and
+    # META_DESC_DUPLICATE now each charge independently (both are distinct fixes,
+    # in the same `duplicate` category so the category cap still bounds them).
     p = "https://x/"
-    per_page = {p: [_r("TITLE_META_DUPLICATE_PAIR"), _r("TITLE_DUPLICATE"), _r("META_DESC_DUPLICATE")]}
+    per_page = {p: [_r("TITLE_DUPLICATE"), _r("META_DESC_DUPLICATE")]}
     site, _ = compute_impact_health([p], per_page, dict(_NO_SEV))
-    assert site == 100 - _imp("TITLE_META_DUPLICATE_PAIR")
+    assert site == 100 - _imp("TITLE_DUPLICATE") - _imp("META_DESC_DUPLICATE")
 
 
 def test_thin_content_pick_one():
@@ -86,9 +91,9 @@ def test_thin_content_pick_one():
 
 def test_job_level_suppression_of_parent_frees_children():
     p = "https://x/"
-    per_page = {p: [_r("SCHEMA_MISSING"), _r("JSON_LD_MISSING")]}
-    site, _ = compute_impact_health([p], per_page, dict(_NO_SEV), suppressed_codes={"SCHEMA_MISSING"})
-    assert site == 100 - _imp("JSON_LD_MISSING")
+    per_page = {p: [_r("JSON_LD_MISSING"), _r("SCHEMA_ORG_MISSING")]}
+    site, _ = compute_impact_health([p], per_page, dict(_NO_SEV), suppressed_codes={"JSON_LD_MISSING"})
+    assert site == 100 - _imp("SCHEMA_ORG_MISSING")
 
 
 # ── per-category cap + page-fatal bypass ──────────────────────────────────────

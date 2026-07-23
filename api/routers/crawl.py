@@ -35,7 +35,7 @@ from api.crawler.engine import (
 )
 from api.crawler.content_discovery import discover_scope, resolve_scope_urls
 from api.crawler.fetcher import is_ssrf_safe, fetch_page, make_client, make_ssrf_guarded_client, _RESCAN_TIMEOUT
-from api.crawler.issue_checker import Issue as EngIssue, check_page, issue_for_status, issue_scope, make_issue
+from api.crawler.issue_checker import Issue as EngIssue, check_page, collapse_per_target_occurrences, issue_for_status, issue_scope, make_issue
 from api.crawler.normaliser import normalise_url
 from api.crawler.parser import ParsedPage as EngPage, parse_page
 from api.models.issue import PHASE_1_CATEGORIES, Issue
@@ -256,22 +256,30 @@ async def _fetch_and_check_page(
             ext_checked += 1
             if ext_result is None:
                 continue
+            # Engine convention (so §2 collapse + scoring match the full crawl):
+            # attribute the finding to the SOURCE page, target URL in extra.
             if ext_result.status_code == 0 and ext_result.error:
-                timeout_issue = make_issue("EXTERNAL_LINK_TIMEOUT", target)
-                timeout_issue.extra = {"source_url": url}
+                timeout_issue = make_issue("EXTERNAL_LINK_TIMEOUT", url)
+                timeout_issue.extra = {"target_url": target}
                 eng_issues.append(timeout_issue)
             else:
                 broken = issue_for_status(ext_result.status_code, target)
                 if broken:
-                    broken.extra = {"source_url": url}
+                    broken.page_url = url
+                    broken.extra = {"target_url": target}
                     eng_issues.append(broken)
 
+    # §2: collapse per-target rows (broken links / redirects) to one row per
+    # (page, code) with the occurrence multiplier baked in — same transform the
+    # full crawl applies, so a rescan of a multi-broken-link page scores
+    # identically instead of reverting to the pre-§2 per-link sum.
+    eng_issues = collapse_per_target_occurrences(eng_issues)
+
     # ── Convert engine issues → Pydantic models ──────────────────────
-    _BROKEN_LINK_CATEGORIES = {"broken_link"}
+    # All eng_issues are attributed to this page (`url`) now.
     new_issues = [_engine_issue_to_model(i, job_id) for i in eng_issues]
     for issue in new_issues:
-        if issue.category not in _BROKEN_LINK_CATEGORIES:
-            issue.page_url = url
+        issue.page_url = url
 
     return _PageCheckResult(
         page=page,

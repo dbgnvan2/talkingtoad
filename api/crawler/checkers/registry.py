@@ -14,8 +14,8 @@ Single source of truth for:
     - ``Issue`` dataclass and ``_IssueSpec`` dataclass
     - ``_ISSUE_SCORING`` (impact, effort) by code — 152 codes
     - ``_CATALOGUE`` (every issue spec) — 152 codes
-    - ``_AI_READINESS_CONFIDENCE`` (confidence labels) — 63 codes
-      (of 152 total; the 89 non-ai_readiness codes carry no confidence label)
+    - ``_AI_READINESS_CONFIDENCE`` (confidence labels) — 68 codes
+      (of 152 total; the 84 non-ai_readiness codes carry no confidence label)
     - ``_STOP_WORDS`` and ``_GENERIC_ANCHOR_TEXTS`` (shared helpers)
     - Size-limit constants
     - ``make_issue()`` factory, ``_sig_words()``, ``_titles_mismatch()``
@@ -132,11 +132,9 @@ _ISSUE_SCORING: dict[str, tuple[int, int]] = {
     "META_DESC_DUPLICATE":        (2, 2),
     "META_DESC_TOO_SHORT":        (2, 1),
     "META_DESC_TOO_LONG":         (2, 1),
-    "OG_TITLE_MISSING":           (1, 1),
-    "OG_DESC_MISSING":            (1, 1),
+    "SOCIAL_PREVIEW_METADATA_MISSING": (1, 1),  # §7 merge of OG_* + TWITTER_CARD
     "CANONICAL_MISSING":          (6,  2),
     "CANONICAL_EXTERNAL":         (6, 3),
-    "TITLE_META_DUPLICATE_PAIR":  (4, 2),
     "FAVICON_MISSING":            (2, 2),
     "H1_MISSING":                 (4, 1),
     "H1_MULTIPLE":                (2, 2),
@@ -180,7 +178,6 @@ _ISSUE_SCORING: dict[str, tuple[int, int]] = {
     "LOGIN_REDIRECT":             (2,  1),
     "INTERNAL_REDIRECT_301":      (2, 1),
     "ORPHAN_PAGE":                (4, 2),
-    "SCHEMA_MISSING":             (4, 2),
     "MISSING_VIEWPORT_META":      (6,  1),
     "IMG_BROKEN":                 (4, 2),
     "LINK_EMPTY_ANCHOR":          (2, 2),
@@ -200,8 +197,6 @@ _ISSUE_SCORING: dict[str, tuple[int, int]] = {
     "CONVERSATIONAL_H2_MISSING":  (1, 2),
     "BLOG_SECTIONS_MISSING":      (2, 2),
     # v1.9.2 new checks
-    "OG_IMAGE_MISSING":           (1, 1),
-    "TWITTER_CARD_MISSING":       (1, 1),
     "CONTENT_STALE":              (1, 3),
     # Phase 3 new checks
     "ANCHOR_TEXT_GENERIC":        (2, 2),
@@ -293,6 +288,15 @@ _ISSUE_SCORING: dict[str, tuple[int, int]] = {
     "WRONG_PLACEHOLDER_LINK":       (2, 2),
     "SCHEMA_ORG_MISSING":           (4, 2),
     "CONTACT_INFO_NOT_IN_HTML":     (4, 2),
+    # ── "Search Everywhere" GEO — brand-entity + body-uniqueness (P1) ────────
+    # Born into the R5 model: impact below == derive_impact() from the
+    # (confidence, effect_size) tiers in _CALIBRATION (asserted by
+    # test_r3_calibration.py). Tiers reviewed 2026-07-22 — no rework outstanding.
+    "ENTITY_NAME_INCONSISTENT":     (4, 2),
+    "ENTITY_SAMEAS_MISSING":        (2, 1),
+    "AUTHOR_IDENTITY_INCONSISTENT": (1, 2),
+    "NEAR_DUPLICATE_BODY":          (4, 3),
+    "BOILERPLATE_RATIO_HIGH":       (1, 2),
 }
 
 
@@ -340,7 +344,9 @@ _CALIBRATION: dict[str, tuple[str, str, bool]] = {
     "AMPHTML_BROKEN": ("Reasonable proxy", "small", False),
     "ANCHOR_TEXT_GENERIC": ("Established", "small", False),
     "AUTHOR_BYLINE_MISSING": ("Reasonable proxy", "moderate", False),
+    "AUTHOR_IDENTITY_INCONSISTENT": ("Heuristic", "small", False),
     "BLOG_SECTIONS_MISSING": ("Heuristic", "moderate", False),
+    "BOILERPLATE_RATIO_HIGH": ("Heuristic", "small", False),
     "BROKEN_LINK_404": ("Established", "small", False),
     "BROKEN_LINK_410": ("Established", "small", False),
     "BROKEN_LINK_503": ("Heuristic", "small", False),
@@ -368,6 +374,8 @@ _CALIBRATION: dict[str, tuple[str, str, bool]] = {
     "DATE_MODIFIED_MISSING": ("Reasonable proxy", "small", False),
     "DATE_PUBLISHED_MISSING": ("Reasonable proxy", "small", False),
     "DOCUMENT_PROPS_MISSING": ("Established", "small", False),
+    "ENTITY_NAME_INCONSISTENT": ("Reasonable proxy", "moderate", False),
+    "ENTITY_SAMEAS_MISSING": ("Reasonable proxy", "small", False),
     "EXTERNAL_CITATIONS_LOW": ("Heuristic", "moderate", True),
     "EXTERNAL_LINK_SKIPPED": ("Heuristic", "none", False),
     "EXTERNAL_LINK_TIMEOUT": ("Heuristic", "small", False),
@@ -420,13 +428,11 @@ _CALIBRATION: dict[str, tuple[str, str, bool]] = {
     "MISSING_HSTS": ("Heuristic", "small", False),
     "MISSING_VIEWPORT_META": ("Established", "moderate", False),
     "MIXED_CONTENT": ("Reasonable proxy", "moderate", False),
+    "NEAR_DUPLICATE_BODY": ("Reasonable proxy", "moderate", False),
     "NOINDEX_HEADER": ("Established", "large", False),
     "NOINDEX_META": ("Established", "large", False),
     "NON_SEMANTIC_BUTTON": ("Heuristic", "small", False),
     "NOT_IN_SITEMAP": ("Established", "small", False),
-    "OG_DESC_MISSING": ("Heuristic", "small", False),
-    "OG_IMAGE_MISSING": ("Heuristic", "small", False),
-    "OG_TITLE_MISSING": ("Heuristic", "small", False),
     "ORPHAN_CLAIM_TECHNICAL": ("Heuristic", "moderate", True),
     "ORPHAN_PAGE": ("Reasonable proxy", "moderate", False),
     "PAGE_SIZE_LARGE": ("Reasonable proxy", "small", False),
@@ -447,7 +453,6 @@ _CALIBRATION: dict[str, tuple[str, str, bool]] = {
     "REDIRECT_TRAILING_SLASH": ("Established", "none", False),
     "ROBOTS_BLOCKED": ("Established", "large", False),
     "SCHEMA_DEPRECATED_TYPE": ("Established", "small", False),
-    "SCHEMA_MISSING": ("Reasonable proxy", "moderate", False),
     "SCHEMA_ORG_MISSING": ("Reasonable proxy", "moderate", False),
     "SCHEMA_TYPE_CONFLICT": ("Reasonable proxy", "small", False),
     "SCHEMA_TYPE_MISMATCH": ("Reasonable proxy", "small", False),
@@ -461,11 +466,10 @@ _CALIBRATION: dict[str, tuple[str, str, bool]] = {
     "THIN_CONTENT": ("Reasonable proxy", "moderate", False),
     "TITLE_DUPLICATE": ("Reasonable proxy", "moderate", False),
     "TITLE_H1_MISMATCH": ("Heuristic", "small", False),
-    "TITLE_META_DUPLICATE_PAIR": ("Heuristic", "small", False),
     "TITLE_MISSING": ("Established", "moderate", False),
     "TITLE_TOO_LONG": ("Established", "small", False),
     "TITLE_TOO_SHORT": ("Heuristic", "small", False),
-    "TWITTER_CARD_MISSING": ("Heuristic", "small", False),
+    "SOCIAL_PREVIEW_METADATA_MISSING": ("Heuristic", "small", False),
     "UA_CONTENT_DIFFERS": ("Reasonable proxy", "large", False),
     "UNSAFE_CROSS_ORIGIN_LINK": ("Established", "none", False),
     "URL_HAS_SPACES": ("Established", "small", False),
@@ -487,7 +491,6 @@ _IMPACT_OVERRIDES: dict[str, int] = {
     "CONTENT_UNSTRUCTURED": 3,
     "IMG_ALT_MISSING": 3,
     "LOGIN_REDIRECT": 2,
-    "TITLE_META_DUPLICATE_PAIR": 4,
 }
 
 def derive_impact(code: str) -> int:
@@ -518,6 +521,10 @@ _SITE_SCOPED_CODES: frozenset[str] = frozenset({
     "MIXED_CONTENT",
     "MISSING_HSTS",
     "WWW_CANONICALIZATION",
+    # "Search Everywhere" GEO (P1) — findings that are site-level properties.
+    "ENTITY_NAME_INCONSISTENT",
+    "AUTHOR_IDENTITY_INCONSISTENT",
+    "NEAR_DUPLICATE_BODY",
 })
 
 
@@ -596,32 +603,21 @@ _CATALOGUE: dict[str, _IssueSpec] = {
         human_description="Too-Long Summary Snippet",
         fixability="wp_fixable",
     ),
-    "OG_TITLE_MISSING": _IssueSpec(
+    "SOCIAL_PREVIEW_METADATA_MISSING": _IssueSpec(
         category="metadata", severity="info",
-        description="Open Graph title tag missing",
-        recommendation="Add an og:title meta tag. This controls how your page title appears when shared on social media.",
-        human_description="Missing Social Share Title",
-        fixability="wp_fixable",
-    ),
-    "OG_DESC_MISSING": _IssueSpec(
-        category="metadata", severity="info",
-        description="Open Graph description tag missing",
-        recommendation="Add an og:description meta tag. This controls the description shown when your page is shared on social media.",
-        human_description="Missing Social Share Description",
-        fixability="wp_fixable",
-    ),
-    "OG_IMAGE_MISSING": _IssueSpec(
-        category="metadata", severity="info",
-        description="Open Graph image tag (og:image) is missing",
-        recommendation="Add an og:image meta tag with a URL to a high-quality preview image (1200x630px recommended). This controls the image shown when your page is shared on Facebook, LinkedIn, and other social platforms.",
-        human_description="Missing Social Share Image",
-        fixability="content_edit",
-    ),
-    "TWITTER_CARD_MISSING": _IssueSpec(
-        category="metadata", severity="info",
-        description="Missing Twitter/X Card meta tag",
-        recommendation="Add a <meta name=\"twitter:card\" content=\"summary_large_image\"> tag. This controls how your page appears when shared on Twitter/X.",
-        human_description="Missing Twitter/X Card",
+        description="One or more social-preview meta tags are missing (og:title, "
+                    "og:description, og:image, or twitter:card)",
+        recommendation="Add the missing Open Graph / Twitter Card meta tags so shared links "
+                       "render a proper title, description, and preview image. A single SEO "
+                       "plugin setting usually populates all of them.",
+        human_description="Missing Social Preview Metadata",
+        what_it_is="Open Graph and Twitter Card tags control the title, description, and image "
+                   "shown when your page is shared on social platforms. They are typically all "
+                   "set by one plugin/theme option.",
+        impact_desc="Shared links look unprofessional — missing image, wrong title, or plain-text "
+                    "preview — reducing click-through from social platforms.",
+        how_to_fix="Populate og:title, og:description, og:image and twitter:card (via your SEO "
+                   "plugin or theme). The finding lists exactly which tags are missing.",
         fixability="content_edit",
     ),
     "CANONICAL_MISSING": _IssueSpec(
@@ -877,15 +873,6 @@ _CATALOGUE: dict[str, _IssueSpec] = {
         human_description="Stale Content",
         fixability="content_edit",
     ),
-    "SCHEMA_MISSING": _IssueSpec(
-        category="crawlability", severity="warning",
-        description="No structured data (schema markup) found on this page",
-        recommendation="Consider adding JSON-LD structured data to help search engines understand the page content. "
-                       "At minimum, add Organisation schema to your homepage. "
-                       "Google's Rich Results Test can validate your markup.",
-        human_description="No Structured Data",
-        fixability="wp_fixable",
-    ),
     # ── Sitemap ───────────────────────────────────────────────────────────
     "SITEMAP_MISSING": _IssueSpec(
         category="sitemap", severity="info",
@@ -895,13 +882,6 @@ _CATALOGUE: dict[str, _IssueSpec] = {
         fixability="developer_needed",
     ),
     # ── Duplicate content ─────────────────────────────────────────────────
-    "TITLE_META_DUPLICATE_PAIR": _IssueSpec(
-        category="duplicate", severity="warning",
-        description="Both title and meta description duplicated on another page",
-        recommendation="This page and another share identical title and meta description. Update both to be unique.",
-        human_description="Identical Title & Description",
-        fixability="content_edit",
-    ),
     # ── Security (§E1) ────────────────────────────────────────────────────
     "HTTP_PAGE": _IssueSpec(
         category="security", severity="warning", scope="site",
@@ -1873,6 +1853,82 @@ _CATALOGUE: dict[str, _IssueSpec] = {
         fixability="content_edit",
         confidence_label="Heuristic",
     ),
+    # ── "Search Everywhere" GEO — brand-entity + body-uniqueness (P1) ────────
+    # Spec: docs/pending/2026-07-22_p1-entity-consistency-near-duplicate.md
+    # confidence_label falls back to _AI_READINESS_CONFIDENCE.
+    "ENTITY_NAME_INCONSISTENT": _IssueSpec(
+        category="ai_readiness", severity="warning", scope="site",
+        description="The organisation is named differently in structured data across pages "
+                    "(after casing/legal-suffix normalisation), so no single brand entity is asserted",
+        recommendation="Pick one canonical Organization name and use it identically in the JSON-LD "
+                       "on every page. AI systems attribute and cite content to a consistent named "
+                       "entity — mixed names fragment that identity.",
+        human_description="Inconsistent Organisation Name",
+        what_it_is="Your Organization schema states your name. When different pages state it "
+                   "differently, machines can't be sure they describe one organisation.",
+        impact_desc="AI systems build one entity profile per name. Split names dilute the brand "
+                    "signal that makes you 'the one people search for by name'.",
+        how_to_fix="Standardise Organization.name across all pages/templates to a single spelling.",
+        fixability="content_edit",
+    ),
+    "ENTITY_SAMEAS_MISSING": _IssueSpec(
+        category="ai_readiness", severity="info",
+        description="An Organization or Person block in this page's JSON-LD has no sameAs links "
+                    "to authoritative profiles (Wikipedia/Wikidata/official socials)",
+        recommendation="Add a sameAs array to your Organization/Person schema pointing to your "
+                       "Wikipedia/Wikidata entry and official social profiles — the bridge AI "
+                       "systems use to resolve you to a knowledge-graph entity.",
+        human_description="No sameAs Entity Links",
+        what_it_is="sameAs links connect your entity to authoritative references, letting AI "
+                   "confidently disambiguate and cite your organisation.",
+        impact_desc="Without sameAs, there is no explicit link to the knowledge graph, weakening "
+                    "entity resolution and citation confidence.",
+        how_to_fix="Add sameAs URLs to the Organization/Person JSON-LD block.",
+        fixability="content_edit",
+    ),
+    "AUTHOR_IDENTITY_INCONSISTENT": _IssueSpec(
+        category="ai_readiness", severity="info", scope="site",
+        description="The same author name appears under differing author URLs (or one URL under "
+                    "differing names) across pages, fragmenting author identity",
+        recommendation="Give each author one canonical profile URL and name, used consistently in "
+                       "article schema. Consolidated author identity strengthens E-E-A-T signals.",
+        human_description="Inconsistent Author Identity",
+        what_it_is="Article schema names the author. Conflicting name↔URL pairings make it unclear "
+                   "whether pages share one author.",
+        impact_desc="Fragmented author identity weakens the expertise/authority signals AI uses to "
+                    "trust and attribute content.",
+        how_to_fix="Use one canonical author name + profile URL across all articles.",
+        fixability="content_edit",
+    ),
+    "NEAR_DUPLICATE_BODY": _IssueSpec(
+        category="ai_readiness", severity="warning", scope="site",
+        description="Two or more pages have near-identical lead content after shared site template "
+                    "(nav/footer) is removed — commodity content at high risk of AI absorption",
+        recommendation="Consolidate the duplicates into one strong page (and canonical or redirect "
+                       "the weaker ones), or differentiate each with first-party specifics. "
+                       "Near-identical pages compete with themselves and are the easiest for AI "
+                       "answers to replace.",
+        human_description="Near-Duplicate Page Content",
+        what_it_is="A comparison of each page's lead content (first ~1500 words, boilerplate "
+                   "stripped) found pages that are near-identical to each other.",
+        impact_desc="Generic, repeated content is the most 'absorbable' by AI answers — if many "
+                    "pages say the same thing, one paragraph can replace them all.",
+        how_to_fix="Merge or meaningfully differentiate the flagged pages.",
+        fixability="content_edit",
+    ),
+    "BOILERPLATE_RATIO_HIGH": _IssueSpec(
+        category="ai_readiness", severity="info",
+        description="Most of this page's text is site-wide template (repeated on many other pages) "
+                    "with little unique content of its own",
+        recommendation="Add substantive first-party content unique to this page. A page that is "
+                       "mostly shared template offers little for AI to cite and reads as thin.",
+        human_description="Mostly Boilerplate",
+        what_it_is="The share of this page's text that also appears across many other pages "
+                   "(nav, footer, repeated CTAs) is high relative to its unique content.",
+        impact_desc="Template-heavy pages have low citability and are prime AI-replacement targets.",
+        how_to_fix="Expand the page with original, page-specific substance.",
+        fixability="content_edit",
+    ),
 }
 _STOP_WORDS: frozenset[str] = frozenset({
     "a", "an", "the", "and", "or", "but", "in", "on", "at", "to", "for",
@@ -1938,7 +1994,9 @@ _AI_READINESS_CONFIDENCE: dict[str, str] = {
     "AI_PREVIEW_SUPPRESSED": "Established",
     "AI_TXT_MISSING": "Heuristic",
     "AUTHOR_BYLINE_MISSING": "Reasonable proxy",
+    "AUTHOR_IDENTITY_INCONSISTENT": "Heuristic",
     "BLOG_SECTIONS_MISSING": "Heuristic",
+    "BOILERPLATE_RATIO_HIGH": "Heuristic",
     "CENTRAL_CLAIM_BURIED": "Heuristic",
     "CHUNKS_NOT_SELF_CONTAINED": "Heuristic",
     "CITATIONS_MISSING_SUBSTANTIAL_CONTENT": "Heuristic",
@@ -1958,6 +2016,8 @@ _AI_READINESS_CONFIDENCE: dict[str, str] = {
     "DATE_MODIFIED_MISSING": "Reasonable proxy",
     "DATE_PUBLISHED_MISSING": "Reasonable proxy",
     "DOCUMENT_PROPS_MISSING": "Established",
+    "ENTITY_NAME_INCONSISTENT": "Reasonable proxy",
+    "ENTITY_SAMEAS_MISSING": "Reasonable proxy",
     "EXTERNAL_CITATIONS_LOW": "Heuristic",
     "FAQ_SCHEMA_MISSING": "Established",
     "FAQ_ANSWERS_NOT_IN_HTML": "Reasonable proxy",
@@ -1969,6 +2029,7 @@ _AI_READINESS_CONFIDENCE: dict[str, str] = {
     "LINK_PROFILE_PROMOTIONAL": "Heuristic",
     "LLMS_TXT_INVALID": "Heuristic",
     "LLMS_TXT_MISSING": "Heuristic",
+    "NEAR_DUPLICATE_BODY": "Reasonable proxy",
     "ORPHAN_CLAIM_TECHNICAL": "Heuristic",
     "PROMOTIONAL_CONTENT_INTERRUPTS": "Heuristic",
     "QUERY_COVERAGE_WEAK": "Heuristic",

@@ -8,21 +8,20 @@ generator: scripts/generate_issue_codes_doc.py
 
 > **This file is auto-generated.** Do not edit by hand — your changes will be overwritten the next time the generator runs. To update an issue code, edit `api/crawler/issue_checker.py` (`_CATALOGUE`, `_ISSUE_SCORING`, `_AI_READINESS_CONFIDENCE`) and re-run `python scripts/generate_issue_codes_doc.py`.
 
-**152 issue codes** across 13 categories.
+**152 issue codes** across 12 categories.
 
 ## Table of contents
 
-- [METADATA](#metadata) (20)
+- [METADATA](#metadata) (17)
 - [HEADING](#heading) (4)
 - [BROKEN_LINK](#broken_link) (8)
 - [REDIRECT](#redirect) (8)
-- [CRAWLABILITY](#crawlability) (18)
-- [DUPLICATE](#duplicate) (1)
+- [CRAWLABILITY](#crawlability) (17)
 - [SITEMAP](#sitemap) (1)
 - [SECURITY](#security) (6)
 - [URL_STRUCTURE](#url_structure) (4)
 - [IMAGE](#image) (14)
-- [AI_READINESS](#ai_readiness) (63)
+- [AI_READINESS](#ai_readiness) (68)
 - [RENDERING](#rendering) (1)
 - [SEMANTIC_HTML](#semantic_html) (4)
 
@@ -33,7 +32,7 @@ generator: scripts/generate_issue_codes_doc.py
 
 Title, meta description, OG tags, canonical, favicon.
 
-_20 codes in this category._
+_17 codes in this category._
 
 ### ANCHOR_TEXT_GENERIC
 **Severity:** 🔵 info | **Impact:** 2 | **Effort:** 2 | **Fixability:** content_edit
@@ -161,36 +160,19 @@ Meta description under 70 characters
 
 ---
 
-### OG_DESC_MISSING
-**Severity:** 🔵 info | **Impact:** 1 | **Effort:** 1 | **Fixability:** wp_fixable
-
-Open Graph description tag missing
-
-**Recommendation:** Add an og:description meta tag. This controls the description shown when your page is shared on social media.
-
-**Plain-English:** Missing Social Share Description
-
----
-
-### OG_IMAGE_MISSING
+### SOCIAL_PREVIEW_METADATA_MISSING
 **Severity:** 🔵 info | **Impact:** 1 | **Effort:** 1 | **Fixability:** content_edit
 
-Open Graph image tag (og:image) is missing
+**What it is**
+Open Graph and Twitter Card tags control the title, description, and image shown when your page is shared on social platforms. They are typically all set by one plugin/theme option.
 
-**Recommendation:** Add an og:image meta tag with a URL to a high-quality preview image (1200x630px recommended). This controls the image shown when your page is shared on Facebook, LinkedIn, and other social platforms.
+**Why it matters**
+Shared links look unprofessional — missing image, wrong title, or plain-text preview — reducing click-through from social platforms.
 
-**Plain-English:** Missing Social Share Image
+**How to fix**
+Populate og:title, og:description, og:image and twitter:card (via your SEO plugin or theme). The finding lists exactly which tags are missing.
 
----
-
-### OG_TITLE_MISSING
-**Severity:** 🔵 info | **Impact:** 1 | **Effort:** 1 | **Fixability:** wp_fixable
-
-Open Graph title tag missing
-
-**Recommendation:** Add an og:title meta tag. This controls how your page title appears when shared on social media.
-
-**Plain-English:** Missing Social Share Title
+**Plain-English:** Missing Social Preview Metadata
 
 ---
 
@@ -251,17 +233,6 @@ Title under 30 characters
 **Recommendation:** Expand the title to 30–60 characters. Include your organisation name and the page topic.
 
 **Plain-English:** Too-Short Page Name
-
----
-
-### TWITTER_CARD_MISSING
-**Severity:** 🔵 info | **Impact:** 1 | **Effort:** 1 | **Fixability:** content_edit
-
-Missing Twitter/X Card meta tag
-
-**Recommendation:** Add a <meta name="twitter:card" content="summary_large_image"> tag. This controls how your page appears when shared on Twitter/X.
-
-**Plain-English:** Missing Twitter/X Card
 
 ---
 
@@ -521,7 +492,7 @@ Redirect adds or removes a trailing slash — your CMS handles this automaticall
 
 robots.txt blocks, noindex directives, thin content, orphan pages.
 
-_18 codes in this category._
+_17 codes in this category._
 
 ### AMPHTML_BROKEN
 **Severity:** 🔵 info | **Impact:** 2 | **Effort:** 3
@@ -699,17 +670,6 @@ Page blocked by robots.txt
 
 ---
 
-### SCHEMA_MISSING
-**Severity:** 🟡 warning | **Impact:** 4 | **Effort:** 2 | **Fixability:** wp_fixable
-
-No structured data (schema markup) found on this page
-
-**Recommendation:** Consider adding JSON-LD structured data to help search engines understand the page content. At minimum, add Organisation schema to your homepage. Google's Rich Results Test can validate your markup.
-
-**Plain-English:** No Structured Data
-
----
-
 ### THIN_CONTENT
 **Severity:** 🟡 warning | **Impact:** 4 | **Effort:** 3 | **Fixability:** content_edit
 
@@ -718,24 +678,6 @@ Page has fewer than 300 words of body content
 **Recommendation:** Expand the page content to at least 300 words to provide more value to users and search engines.
 
 **Plain-English:** Low Information
-
----
-
-<a id="duplicate"></a>
-## DUPLICATE
-
-Cross-page title / meta description / title+meta pair duplicates.
-
-_1 codes in this category._
-
-### TITLE_META_DUPLICATE_PAIR
-**Severity:** 🟡 warning | **Impact:** 4 | **Effort:** 2 | **Fixability:** content_edit
-
-Both title and meta description duplicated on another page
-
-**Recommendation:** This page and another share identical title and meta description. Update both to be unique.
-
-**Plain-English:** Identical Title & Description
 
 ---
 
@@ -1047,7 +989,7 @@ Image takes too long to load (over 1 second)
 
 Site readiness for AI search engines (Google AI Overviews, ChatGPT, Perplexity, etc.). Every code in this category carries a confidence label per the v2.0 spec: **Established** (vendor-confirmed effect), **Reasonable proxy** (industry consensus + Google's published best practices), **Heuristic** (industry consensus only, no vendor confirmation).
 
-_63 codes in this category._
+_68 codes in this category._
 
 ### AI_BOT_BLANKET_DISALLOW
 **Severity:** 🔴 critical | **Confidence:** Established | **Impact:** 9 | **Effort:** 1
@@ -1225,6 +1167,22 @@ Blog or article page has no author byline, rel=author, or JSON-LD author field
 
 ---
 
+### AUTHOR_IDENTITY_INCONSISTENT
+**Severity:** 🔵 info | **Confidence:** Heuristic | **Impact:** 1 | **Effort:** 2 | **Fixability:** content_edit
+
+**What it is**
+Article schema names the author. Conflicting name↔URL pairings make it unclear whether pages share one author.
+
+**Why it matters**
+Fragmented author identity weakens the expertise/authority signals AI uses to trust and attribute content.
+
+**How to fix**
+Use one canonical author name + profile URL across all articles.
+
+**Plain-English:** Inconsistent Author Identity
+
+---
+
 ### BLOG_SECTIONS_MISSING
 **Severity:** 🔵 info | **Confidence:** Heuristic | **Impact:** 2 | **Effort:** 2 | **Fixability:** content_edit
 
@@ -1233,6 +1191,22 @@ Blog or article page lacks sufficient heading structure for AI citation anchors
 **Recommendation:** Add H2/H3 headings to break content into named sections. AI engines use headings as citation anchors — a long post with fewer than 3 headings cannot be accurately quoted or cited by AI.
 
 **Plain-English:** No Section Headings for AI Citation
+
+---
+
+### BOILERPLATE_RATIO_HIGH
+**Severity:** 🔵 info | **Confidence:** Heuristic | **Impact:** 1 | **Effort:** 2 | **Fixability:** content_edit
+
+**What it is**
+The share of this page's text that also appears across many other pages (nav, footer, repeated CTAs) is high relative to its unique content.
+
+**Why it matters**
+Template-heavy pages have low citability and are prime AI-replacement targets.
+
+**How to fix**
+Expand the page with original, page-specific substance.
+
+**Plain-English:** Mostly Boilerplate
 
 ---
 
@@ -1450,6 +1424,38 @@ PDF is missing internal Title or Subject metadata
 
 ---
 
+### ENTITY_NAME_INCONSISTENT
+**Severity:** 🟡 warning | **Confidence:** Reasonable proxy | **Impact:** 4 | **Effort:** 2 | **Fixability:** content_edit
+
+**What it is**
+Your Organization schema states your name. When different pages state it differently, machines can't be sure they describe one organisation.
+
+**Why it matters**
+AI systems build one entity profile per name. Split names dilute the brand signal that makes you 'the one people search for by name'.
+
+**How to fix**
+Standardise Organization.name across all pages/templates to a single spelling.
+
+**Plain-English:** Inconsistent Organisation Name
+
+---
+
+### ENTITY_SAMEAS_MISSING
+**Severity:** 🔵 info | **Confidence:** Reasonable proxy | **Impact:** 2 | **Effort:** 1 | **Fixability:** content_edit
+
+**What it is**
+sameAs links connect your entity to authoritative references, letting AI confidently disambiguate and cite your organisation.
+
+**Why it matters**
+Without sameAs, there is no explicit link to the knowledge graph, weakening entity resolution and citation confidence.
+
+**How to fix**
+Add sameAs URLs to the Organization/Person JSON-LD block.
+
+**Plain-English:** No sameAs Entity Links
+
+---
+
 ### EXTERNAL_CITATIONS_LOW
 **Severity:** 🔵 info | **Confidence:** Heuristic | **Impact:** 3 | **Effort:** 2 | **Fixability:** content_edit
 
@@ -1568,6 +1574,22 @@ No llms.txt found at root
 **Recommendation:** Create an /llms.txt file to help LLMs and AI agents (Gemini, Perplexity) accurately crawl and cite your high-value content.
 
 **Plain-English:** Missing AI Instruction File
+
+---
+
+### NEAR_DUPLICATE_BODY
+**Severity:** 🟡 warning | **Confidence:** Reasonable proxy | **Impact:** 4 | **Effort:** 3 | **Fixability:** content_edit
+
+**What it is**
+A comparison of each page's lead content (first ~1500 words, boilerplate stripped) found pages that are near-identical to each other.
+
+**Why it matters**
+Generic, repeated content is the most 'absorbable' by AI answers — if many pages say the same thing, one paragraph can replace them all.
+
+**How to fix**
+Merge or meaningfully differentiate the flagged pages.
+
+**Plain-English:** Near-Duplicate Page Content
 
 ---
 
