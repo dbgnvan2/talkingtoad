@@ -21,15 +21,29 @@ tests can't. Current run: **~58 distinct issue codes** across 45 crawled pages.
 
 ## Run it
 
+**Read a report** (proof the real crawler finds the planted issues — no test
+runner, exits non-zero if any planted issue is missed):
+
 ```bash
-# regenerate the pages (optional — they're committed)
-python tests/golden_site/build_pages.py
+python3 tests/golden_site/report.py
+```
 
-# the end-to-end detection test
+The automated gate (same ground truth via `manifest.py`):
+
+```bash
 pytest tests/test_golden_site.py -q
+```
 
-# serve it to browse by hand (prints the localhost URL)
-python tests/golden_site/server.py
+Serve it to browse / crawl by hand (prints the localhost URL):
+
+```bash
+python3 tests/golden_site/server.py
+```
+
+Regenerate the pages (optional — they're committed):
+
+```bash
+python3 tests/golden_site/build_pages.py
 ```
 
 ## Hosting / SSRF note
