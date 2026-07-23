@@ -326,6 +326,33 @@ class TestGetPages:
         assert len(data["pages"]) == 1
         assert data["pages"][0]["issue_counts"]["critical"] == 1
 
+    async def test_pages_includes_citability_grade(self, api_client, auth_headers, test_store):
+        """E5: ByPagePanel reads page.citability_grade, so /pages must return it.
+        An ai_readiness issue lowers the grade; a non-ai_readiness one does not."""
+        job = _job()
+        pages = [
+            _page(job.job_id, url="https://example.com/a"),
+            _page(job.job_id, url="https://example.com/b"),
+        ]
+        issues = [
+            Issue(job_id=job.job_id, page_url="https://example.com/a",
+                  category="ai_readiness", severity="warning",
+                  issue_code="GEO_SUMMARY_BURIED", impact=2,
+                  description="d", recommendation="r"),
+            Issue(job_id=job.job_id, page_url="https://example.com/b",
+                  category="metadata", severity="warning",
+                  issue_code="TITLE_TOO_LONG", impact=2,
+                  description="d", recommendation="r"),
+        ]
+        await _seed(test_store, job, issues=issues, pages=pages)
+
+        r = await api_client.get(f"/api/crawl/{job.job_id}/pages", headers=auth_headers)
+        assert r.status_code == 200
+        by_url = {p["url"]: p for p in r.json()["pages"]}
+        assert "citability_grade" in by_url["https://example.com/a"]
+        assert by_url["https://example.com/a"]["citability_grade"] == 98   # 100 − 2 (ai_readiness)
+        assert by_url["https://example.com/b"]["citability_grade"] == 100  # metadata doesn't count
+
     async def test_pages_unknown_job_returns_404(self, api_client, auth_headers):
         r = await api_client.get("/api/crawl/no-such/pages", headers=auth_headers)
         assert r.status_code == 404

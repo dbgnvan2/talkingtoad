@@ -618,6 +618,8 @@ The `security` category always runs regardless of toggles.
 
 `GET /api/crawl/{job_id}/pages/issues?url=…` additionally returns an `agent_issues` array — `[{ "code", "severity", "category", "tier" }]` — listing the agent-relevant issues on that page, where `tier` is the confidence label (falling back to severity).
 
+`GET /api/crawl/{job_id}/pages` returns each page with `url`, `status_code`, `issue_counts`, and `citability_grade` — a per-page 0–100 GEO/AI-citability rollup (`100 − Σ impact of the page's charged ai_readiness issues`, cluster-suppression applied, no per-category cap). The same value is on each `/page-priority` row. Surfaced in the UI as the `CitabilityBadge` column (green ≥ 70 / amber ≥ 40 / red).
+
 The `robots_txt` and `sitemap` objects are included in the summary when discovery data is available. Both may be `null` if the crawl has not yet completed the discovery phase.
 
 `priority_rank` formula: `(impact × 10) − (effort × 2)`. Higher = fix sooner.

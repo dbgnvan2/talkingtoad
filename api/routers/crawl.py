@@ -775,6 +775,24 @@ async def get_pages(
     )
     total_pages = max(1, math.ceil(total_crawled / limit))
 
+    # E5: attach the per-page GEO/citability grade (rollup of ai_readiness
+    # issues) so the By-Page view can show it as a column. Computed in the
+    # router — the store's count aggregate has no per-issue impact/category —
+    # mirroring the /page-priority endpoint's use of compute_citability_grade.
+    from api.services.job_store_base import compute_citability_grade
+
+    issues = await store.get_all_issues(job_id)
+    rows_by_url: dict[str, list[tuple[str, int, str]]] = {}
+    for issue in issues:
+        if issue.page_url:
+            rows_by_url.setdefault(issue.page_url.rstrip("/"), []).append(
+                (issue.issue_code, issue.impact or 0, issue.category or "")
+            )
+    for pg in pages:
+        pg["citability_grade"] = compute_citability_grade(
+            rows_by_url.get((pg.get("url") or "").rstrip("/"), [])
+        )
+
     return {
         "job_id": job_id,
         "pagination": {

@@ -1,5 +1,6 @@
 import React, { useState } from 'react'
 import { getPagePriority } from '../api.js'
+import CitabilityBadge from './CitabilityBadge.jsx'
 
 // Page Priority Work Queue — ranks crawled pages by the Authority Matrix
 // (health x GSC performance, via the M6.3 refresh trigger) so the user knows
@@ -104,6 +105,7 @@ export default function PagePriorityPanel({ jobId }) {
                 <th className="py-2 pr-3">Priority</th>
                 <th className="py-2 pr-3">Page</th>
                 <th className="py-2 pr-3 text-right">Health</th>
+                <th className="py-2 pr-3 text-right">Citability</th>
                 <th className="py-2 pr-3 text-right">Clicks</th>
                 <th className="py-2 pr-3 text-right">Impr.</th>
               </tr>
@@ -119,6 +121,7 @@ export default function PagePriorityPanel({ jobId }) {
                   </td>
                   <td className="py-2 pr-3 max-w-xs truncate text-gray-700" title={p.url}>{p.url}</td>
                   <td className="py-2 pr-3 text-right font-mono">{p.health_score}</td>
+                  <td className="py-2 pr-3 text-right"><CitabilityBadge grade={p.citability_grade} /></td>
                   <td className="py-2 pr-3 text-right font-mono text-gray-600">{p.gsc ? p.gsc.clicks : '—'}</td>
                   <td className="py-2 pr-3 text-right font-mono text-gray-600">{p.gsc ? p.gsc.impressions : '—'}</td>
                 </tr>

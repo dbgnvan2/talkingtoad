@@ -42,6 +42,28 @@ describe('PagePriorityPanel', () => {
     expect(screen.getAllByText('—').length).toBeGreaterThan(0)
   })
 
+  it('renders the citability grade badge per page (E5)', async () => {
+    global.fetch.mockImplementation(() =>
+      Promise.resolve({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({
+          pages: [
+            { url: 'https://x/a', health_score: 40, citability_grade: 35, gsc: null, review_flag: { flagged: false, reasons: [] }, priority_rank: 1, bucket: 'OK' },
+            { url: 'https://x/b', health_score: 90, citability_grade: 88, gsc: null, review_flag: { flagged: false, reasons: [] }, priority_rank: 2, bucket: 'OK' },
+          ],
+          total: 2,
+        }),
+      })
+    )
+    renderWithProviders(<PagePriorityPanel jobId="job1" />)
+    fireEvent.click(screen.getByText(/Rank pages/))
+    await waitFor(() => expect(screen.getByText('https://x/a')).toBeInTheDocument())
+    expect(screen.getByText('Citability')).toBeInTheDocument()
+    expect(screen.getByText('35')).toBeInTheDocument()
+    expect(screen.getByText('88')).toBeInTheDocument()
+  })
+
   it('shows a Hide control after ranking that collapses the table', async () => {
     global.fetch.mockImplementation(() =>
       Promise.resolve({

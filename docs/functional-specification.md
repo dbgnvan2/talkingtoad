@@ -797,10 +797,14 @@ A per-page 0–100 GEO/AI-citability lens: cluster suppression applied first (so
 co-firing signals aren't double-counted), then `100 − Σ(impact of charged
 ai_readiness rows)`. Unlike overall page health it does **not** apply the
 per-category cap (ai_readiness *is* the whole score here). A pure rollup of
-already-emitted signals — no new detection. Exposed on
-`GET /api/crawl/{job_id}/page-priority` as `citability_grade` per page; the
-visual surfacing is intentionally deferred pending owner direction (GUI-change
-constraint). → `tests/test_citability_grade.py`
+already-emitted signals — no new detection. Returned as `citability_grade` per
+page on both `GET /api/crawl/{job_id}/page-priority` and
+`GET /api/crawl/{job_id}/pages`, and surfaced in the UI (owner-approved) as a
+colour-graded badge (`CitabilityBadge`, green ≥ 70 / amber ≥ 40 / red) — a column
+on the Page Priority work queue (`PagePriorityPanel`) and on the By-Page view
+(`ByPagePanel`). → `tests/test_citability_grade.py`,
+`tests/test_api.py::TestGetPages::test_pages_includes_citability_grade`,
+`frontend/.../PagePriorityPanel.test.jsx`, `frontend/.../ByPagePanel.test.jsx`
 
 ---
 

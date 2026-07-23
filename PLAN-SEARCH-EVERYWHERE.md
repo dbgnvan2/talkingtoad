@@ -49,7 +49,7 @@ Status values: `backlog` → `spec` (micro-spec in `docs/pending/`, awaiting app
 | **E2** | Body near-duplicate + boilerplate | #7 | `NEAR_DUPLICATE_BODY` (site), `BOILERPLATE_RATIO_HIGH` (page) | cross-page | **P1** | ✅ `shipped` 2026-07-22 — functional-spec §4.10; `test_near_duplicate_body.py` | ✅ cleared 2026-07-22 |
 | **E3** | Schema extraction completeness | #4 | `HOWTO_SCHEMA_INCOMPLETE`, `PRODUCT_REVIEW_SCHEMA_MISSING` (page, type-gated) | page | P2 | ✅ `shipped` 2026-07-22 — `ai_readiness.py`; `test_schema_completeness_eeat.py` | ✅ born into R5 |
 | **E4** | Author E-E-A-T | #6 | `AUTHOR_CREDENTIALS_MISSING` (page); first-hand experience left to existing `geo_llm` (no new keyword code) | page | P2 | ✅ `shipped` 2026-07-22 — `ai_readiness.py`; `test_schema_completeness_eeat.py` | ✅ born into R5 |
-| **E5** | **Citability grade** (rollup) | #2, #1 | none — derived per-page grade from `ai_readiness` issues | page | P3 | 🟡 backend `shipped` 2026-07-22 (`compute_citability_grade`, exposed on `/page-priority` as `citability_grade`; `test_citability_grade.py`). **GUI display deferred — needs owner OK (GUI-change constraint).** Originality-lens label not built. | ✅ born into R5 |
+| **E5** | **Citability grade** (rollup) | #2, #1 | none — derived per-page grade from `ai_readiness` issues | page | P3 | ✅ `shipped` 2026-07-22 — `compute_citability_grade`; returned on `/page-priority` **and** `/pages`; UI badge (owner-approved) on Page Priority queue + By-Page view (`CitabilityBadge`). Originality-lens label still not built (optional). | ✅ born into R5 |
 
 **Done already (no work — recorded so we don't re-open):**
 - Idea **#3 detection** — `api/services/ai_bots.py` + 7 `AI_BOT_*` codes (GPTBot,

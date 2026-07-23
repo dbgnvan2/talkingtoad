@@ -76,6 +76,8 @@ def mock_store():
 
     store.get_job = mock_get_job
     store.get_pages_with_issue_counts = mock_get_pages
+    # /pages now computes a per-page citability_grade from all issues (E5).
+    store.get_all_issues = AsyncMock(return_value=[])
 
     # Override the get_store dependency for both routers
     app.dependency_overrides[crawl_get_store] = lambda: store
