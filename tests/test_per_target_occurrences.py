@@ -95,3 +95,28 @@ def test_per_target_codes_membership():
     for c in ("BROKEN_LINK_404", "BROKEN_LINK_410", "BROKEN_LINK_503",
               "BROKEN_LINK_5XX", "EXTERNAL_LINK_TIMEOUT", "REDIRECT_301", "REDIRECT_302"):
         assert c in PER_TARGET_CODES
+
+
+def test_collapse_groups_by_page_and_code_preserving_urls():
+    """§2 (P2): the collapse must group by (page_url, code) — never merge across
+    pages or codes — and preserve every offending target URL (no silent drop).
+    This is the shared transform both the full crawl and the rescan path run, so
+    if attribution ever diverges between them, the grouped rows differ here."""
+    issues = [
+        _broken("https://x.org/a", "https://ext/1", "BROKEN_LINK_404"),
+        _broken("https://x.org/a", "https://ext/2", "BROKEN_LINK_404"),
+        _broken("https://x.org/a", "https://ext/3", "BROKEN_LINK_5XX"),
+        _broken("https://x.org/b", "https://ext/1", "BROKEN_LINK_404"),
+    ]
+    out = collapse_per_target_occurrences(issues)
+    by_key = {(i.page_url, i.code): i for i in out}
+    # Three distinct (page, code) groups — a/404, a/5xx, b/404.
+    assert set(by_key) == {
+        ("https://x.org/a", "BROKEN_LINK_404"),
+        ("https://x.org/a", "BROKEN_LINK_5XX"),
+        ("https://x.org/b", "BROKEN_LINK_404"),
+    }
+    a404 = by_key[("https://x.org/a", "BROKEN_LINK_404")]
+    assert set(a404.extra["occurrence_urls"]) == {"https://ext/1", "https://ext/2"}, \
+        "offending URLs must be preserved (P2 — no silent drop)"
+    assert a404.extra["occurrences"] == 2

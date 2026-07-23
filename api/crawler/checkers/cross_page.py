@@ -58,7 +58,6 @@ def check_cross_page(pages: list[ParsedPage], start_url: str | None = None) -> l
     Detects:
     - TITLE_DUPLICATE: same title on multiple pages
     - META_DESC_DUPLICATE: same meta description on multiple pages
-    - TITLE_META_DUPLICATE_PAIR: both title and meta_desc duplicated together
     - CANONICAL_MISSING (near-duplicate condition): same title+meta_desc, no canonical
     - ORPHAN_PAGE: page has no internal links pointing to it
 

@@ -230,7 +230,7 @@ class TestIssueStorage:
         issues = [
             _issue(job.job_id, code="TITLE_MISSING", severity="critical"),
             _issue(job.job_id, code="META_DESC_TOO_SHORT", severity="warning"),
-            _issue(job.job_id, code="OG_TITLE_MISSING", severity="info"),
+            _issue(job.job_id, code="SOCIAL_PREVIEW_METADATA_MISSING", severity="info"),
         ]
         await store.save_issues(issues)
         fetched, total = await store.get_issues(job.job_id)
@@ -241,7 +241,7 @@ class TestIssueStorage:
         job = _job()
         await store.create_job(job)
         issues = [
-            _issue(job.job_id, severity="info", code="OG_TITLE_MISSING"),
+            _issue(job.job_id, severity="info", code="SOCIAL_PREVIEW_METADATA_MISSING"),
             _issue(job.job_id, severity="critical", code="TITLE_MISSING"),
             _issue(job.job_id, severity="warning", code="TITLE_TOO_SHORT"),
         ]
@@ -269,7 +269,7 @@ class TestIssueStorage:
         issues = [
             _issue(job.job_id, severity="critical", code="TITLE_MISSING"),
             _issue(job.job_id, severity="warning", code="TITLE_TOO_SHORT"),
-            _issue(job.job_id, severity="info", code="OG_TITLE_MISSING"),
+            _issue(job.job_id, severity="info", code="SOCIAL_PREVIEW_METADATA_MISSING"),
         ]
         await store.save_issues(issues)
         fetched, total = await store.get_issues(job.job_id, severity="critical")

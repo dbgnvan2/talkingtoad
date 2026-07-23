@@ -72,6 +72,10 @@ _CODE_TO_FIELD: dict[str, str] = {
     "META_DESC_TOO_LONG":  "meta_description",
     "NOINDEX_META":        "indexable",
     "NOT_IN_SITEMAP":      "sitemap_include",
+    # §7 merge: JSON_LD_MISSING is the surviving code for "no structured data"
+    # (SCHEMA_MISSING was deleted). Inherit its one-click Yoast schema-type fix
+    # so the capability isn't dropped in the merge (P12).
+    "JSON_LD_MISSING":     "schema_article_type",
 }
 
 

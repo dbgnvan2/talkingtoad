@@ -15,11 +15,9 @@ const CODE_TO_FIELD = {
   META_DESC_MISSING:   'meta_description',
   META_DESC_TOO_SHORT: 'meta_description',
   META_DESC_TOO_LONG:  'meta_description',
-  OG_TITLE_MISSING:    'og_title',
-  OG_DESC_MISSING:     'og_description',
   NOINDEX_META:        'indexable',
   NOT_IN_SITEMAP:      'sitemap_include',
-  SCHEMA_MISSING:      'schema_article_type',
+  JSON_LD_MISSING:     'schema_article_type',
   TITLE_H1_MISMATCH:   'seo_title',
 }
 

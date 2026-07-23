@@ -35,6 +35,11 @@ This file tracks infrastructure improvements, testing gaps, and future features 
 - [ ] **Type Safety:** Migrate `Results.jsx` and other large components to TypeScript.
 - [ ] **CSS Refactoring:** Clean up duplicate Tailwind classes in `Results.jsx` into shared base components.
 
+### Deferred from the 2026-07-22 R5/GEO /csdp sweep
+- [ ] **§2 dual-path integration test:** `test_per_target_occurrences.py` now checks the shared `collapse_per_target_occurrences` grouping, but neither *real* emission site (full crawl `engine.py` vs rescan `crawl.py:_fetch_and_check_page`) is exercised end-to-end. Add a test that runs both paths on the same multi-broken-link page and asserts identical collapsed `(page_url, code, impact)` rows, so a future attribution divergence fails CI. *(Reason deferred: needs mocked-fetch harness for both async paths; the shared-transform + attribution-convention tests cover the common regression.)*
+- [ ] **Pre-existing frontend fix-map drift:** `FixInlinePanel.jsx` `CODE_TO_FIELD` includes `TITLE_H1_MISMATCH → seo_title`, which is **not** in the backend `wp_shared._CODE_TO_FIELD` — so the inline fix likely fails backend-side. Pre-existing (not introduced by §7); `test_frontend_backend_code_parity.py::test_inline_fix_codes_are_backend_fixable` currently excludes it. Decide: add `TITLE_H1_MISMATCH` to the backend map, or remove the frontend entry, then drop the exclusion.
+- [ ] **Cosmetic (§2):** internal broken pages (`engine.py:566`) emit `extra={"source_url": …}`, so `collapse_per_target_occurrences` leaves their `occurrence_urls` empty (it reads `target_url`/`redirect_to`). Scoring unaffected (n=1, self-attributed) and the source is captured in `broken_link_sources`; unify the key for consistency if convenient.
+
 ---
 
 ## ✅ Completed
