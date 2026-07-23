@@ -20,15 +20,21 @@ logger = logging.getLogger(__name__)
 
 
 def _iter_schema_objs(blocks):
-    """Yield every JSON-LD object in *blocks*, descending ``@graph`` and lists."""
+    """Yield every JSON-LD object in *blocks*, descending ``@graph`` and lists.
+
+    Current input (``json.loads`` output) is acyclic, but a ``seen`` guard keeps
+    the DFS safe regardless of provenance — a self-referential or shared node
+    can't grow the stack unboundedly."""
     stack = list(blocks or [])
+    seen: set[int] = set()
     while stack:
         obj = stack.pop()
         if isinstance(obj, list):
             stack.extend(obj)
             continue
-        if not isinstance(obj, dict):
+        if not isinstance(obj, dict) or id(obj) in seen:
             continue
+        seen.add(id(obj))
         graph = obj.get("@graph")
         if isinstance(graph, list):
             stack.extend(graph)
@@ -247,6 +253,9 @@ def _run_geo_checks(page: "ParsedPage", url: str, issues: list) -> None:
         # author OBJECT existing: a plain text byline with no author schema does
         # NOT fire (that would flood every nonprofit blog post); this targets
         # pages that added author markup but left it credential-less. Article-gated.
+        # NOTE: near-zero firing on Yoast/RankMath (they reference the author by
+        # @id and that Person node usually carries url/sameAs) — low counts mean
+        # "few bare inline authors", not "the audit missed something".
         if is_article:
             for o in objs:
                 author = o.get("author")
