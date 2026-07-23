@@ -120,3 +120,67 @@ def test_collapse_groups_by_page_and_code_preserving_urls():
     assert set(a404.extra["occurrence_urls"]) == {"https://ext/1", "https://ext/2"}, \
         "offending URLs must be preserved (P2 — no silent drop)"
     assert a404.extra["occurrences"] == 2
+
+
+# ── §2 dual-path parity: full crawl vs rescan score a multi-broken-link page
+# identically (guards against the two emission sites diverging — TODO item). ──
+import httpx
+import respx
+from api.crawler.engine import run_crawl, CrawlSettings
+from api.routers.crawl import _fetch_and_check_page
+from api.models.job import CrawlJob
+
+_DUAL_HOME = (
+    '<!DOCTYPE html><html><head>'
+    '<title>Home Page With A Good Long Title Here Now</title>'
+    '<meta name="description" content="A good description long enough to pass validation checks easily.">'
+    '</head><body><h1>Home</h1>'
+    '<a href="https://ext.org/1">1</a><a href="https://ext.org/2">2</a><a href="https://ext.org/3">3</a>'
+    '</body></html>'
+)
+
+
+def _dual_mock(m):
+    m.get("https://example.com/robots.txt").mock(return_value=httpx.Response(200, text="User-agent: *\nDisallow:\n"))
+    m.get("https://example.com/sitemap.xml").mock(return_value=httpx.Response(404))
+    m.get("https://example.com/").mock(
+        return_value=httpx.Response(200, text=_DUAL_HOME, headers={"content-type": "text/html"}))
+    for i in (1, 2, 3):
+        m.head(f"https://ext.org/{i}").mock(return_value=httpx.Response(404))
+        m.get(f"https://ext.org/{i}").mock(return_value=httpx.Response(404))
+
+
+def _home_404_rows(issues, code_attr="code"):
+    # Full crawl returns registry Issue dataclasses (.code); the rescan path
+    # returns Pydantic models.issue.Issue (.issue_code). Both carry page_url /
+    # impact / extra.
+    return [i for i in issues
+            if getattr(i, code_attr) == "BROKEN_LINK_404" and i.page_url == "https://example.com/"]
+
+
+@pytest.mark.asyncio
+async def test_full_crawl_and_rescan_score_broken_links_identically(store):
+    """3 broken external links on one page must collapse to ONE BROKEN_LINK_404
+    row with the same occurrence-multiplied impact on BOTH paths."""
+    base = _ISSUE_SCORING["BROKEN_LINK_404"][0]
+    expected_impact = round(base * occurrence_multiplier(3))  # n=3 -> ×1.5
+
+    with respx.mock:
+        _dual_mock(respx.mock)
+        crawl_result = await run_crawl("job-dual", "https://example.com/",
+                                       CrawlSettings(crawl_delay_ms=0, max_pages=5))
+    full = _home_404_rows(crawl_result.issues)
+
+    job = CrawlJob(job_id="rescan-dual", target_url="https://example.com/")
+    await store.create_job(job)
+    with respx.mock:
+        _dual_mock(respx.mock)
+        rescan = await _fetch_and_check_page(
+            url="https://example.com/", job_id="rescan-dual",
+            base_url="https://example.com/", store=store)
+    re_rows = _home_404_rows(rescan.issues, code_attr="issue_code")
+
+    assert len(full) == 1, f"full crawl: expected 1 collapsed row, got {len(full)}"
+    assert len(re_rows) == 1, f"rescan: expected 1 collapsed row, got {len(re_rows)}"
+    assert full[0].extra["occurrences"] == 3 == re_rows[0].extra["occurrences"]
+    assert full[0].impact == expected_impact == re_rows[0].impact

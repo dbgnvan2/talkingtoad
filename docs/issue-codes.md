@@ -8,7 +8,7 @@ generator: scripts/generate_issue_codes_doc.py
 
 > **This file is auto-generated.** Do not edit by hand — your changes will be overwritten the next time the generator runs. To update an issue code, edit `api/crawler/issue_checker.py` (`_CATALOGUE`, `_ISSUE_SCORING`, `_AI_READINESS_CONFIDENCE`) and re-run `python scripts/generate_issue_codes_doc.py`.
 
-**152 issue codes** across 12 categories.
+**155 issue codes** across 12 categories.
 
 ## Table of contents
 
@@ -21,7 +21,7 @@ generator: scripts/generate_issue_codes_doc.py
 - [SECURITY](#security) (6)
 - [URL_STRUCTURE](#url_structure) (4)
 - [IMAGE](#image) (14)
-- [AI_READINESS](#ai_readiness) (68)
+- [AI_READINESS](#ai_readiness) (71)
 - [RENDERING](#rendering) (1)
 - [SEMANTIC_HTML](#semantic_html) (4)
 
@@ -989,7 +989,7 @@ Image takes too long to load (over 1 second)
 
 Site readiness for AI search engines (Google AI Overviews, ChatGPT, Perplexity, etc.). Every code in this category carries a confidence label per the v2.0 spec: **Established** (vendor-confirmed effect), **Reasonable proxy** (industry consensus + Google's published best practices), **Heuristic** (industry consensus only, no vendor confirmation).
 
-_68 codes in this category._
+_71 codes in this category._
 
 ### AI_BOT_BLANKET_DISALLOW
 **Severity:** 🔴 critical | **Confidence:** Established | **Impact:** 9 | **Effort:** 1
@@ -1164,6 +1164,22 @@ Blog or article page has no author byline, rel=author, or JSON-LD author field
 **Recommendation:** Add an author byline with name and optionally credentials. Include rel='author' on the author link and an 'author' field in your JSON-LD BlogPosting schema.
 
 **Plain-English:** No Author Attribution
+
+---
+
+### AUTHOR_CREDENTIALS_MISSING
+**Severity:** 🔵 info | **Confidence:** Heuristic | **Impact:** 1 | **Effort:** 2 | **Fixability:** content_edit
+
+**What it is**
+A bare author name (no title, bio, or profile link) tells AI who wrote the page but nothing about why they're credible.
+
+**Why it matters**
+Expertise and authority signals help AI and search decide whom to trust and cite. A name alone is a weak signal.
+
+**How to fix**
+Add jobTitle / description / sameAs / url to the author Person in your JSON-LD.
+
+**Plain-English:** Author Credentials Missing
 
 ---
 
@@ -1511,6 +1527,22 @@ The first paragraph or list does not lead its H2 or H3 section — the core answ
 
 ---
 
+### HOWTO_SCHEMA_INCOMPLETE
+**Severity:** 🔵 info | **Confidence:** Heuristic | **Impact:** 1 | **Effort:** 2
+
+**What it is**
+HowTo schema describes a step-by-step procedure. Without a step array it announces a how-to but gives machines nothing to extract.
+
+**Why it matters**
+AI answers and assistants reproduce procedures from structured steps. An empty HowTo block wastes the signal.
+
+**How to fix**
+Populate the HowTo `step` array in your structured data.
+
+**Plain-English:** Incomplete HowTo Schema
+
+---
+
 ### JSON_LD_INVALID
 **Severity:** 🟡 warning | **Confidence:** Reasonable proxy | **Impact:** 4 | **Effort:** 2
 
@@ -1601,6 +1633,22 @@ Technical/how-to page has 3+ factual claims not paired with a source link or att
 **Recommendation:** Add a source link or attribution ('according to [source]') next to each specific capability claim, number, or procedure step.
 
 **Plain-English:** Unsourced Technical Claims
+
+---
+
+### PRODUCT_REVIEW_SCHEMA_MISSING
+**Severity:** 🔵 info | **Confidence:** Reasonable proxy | **Impact:** 2 | **Effort:** 2
+
+**What it is**
+Product schema can carry reviews and an aggregate rating. Without them the product is described but never rated in machine-readable form.
+
+**Why it matters**
+Review stars in search and AI trust signals both come from rating markup; a Product block without it leaves that on the table.
+
+**How to fix**
+Add review / aggregateRating to the Product JSON-LD (only with real ratings).
+
+**Plain-English:** Product Missing Review Schema
 
 ---
 

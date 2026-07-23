@@ -1632,6 +1632,12 @@ const issueHelp = {
       "This block may be intentional. If you prefer to opt out of AI training data collection, " +
       "you can leave this as-is. If it's accidental, remove the block. You can also contact " +
       "specific AI companies (OpenAI, Anthropic, etc.) directly to request opt-out.",
+    how_it_can_mislead:
+      "This is a strategic choice, not a defect — which is why it scores 0. Key nuance: blocking " +
+      "training bots (GPTBot, ClaudeBot, CCBot) does NOT stop you being cited in AI answers. The " +
+      "answer/search fetchers (OAI-SearchBot, PerplexityBot, Google's AI surfaces) are separate " +
+      "bots — so you can protect your content from training while staying eligible for citation. " +
+      "Blocking those answer bots instead is what removes you from AI answers.",
   },
 
   AI_BOT_USER_FETCH_BLOCKED: {
@@ -2972,6 +2978,76 @@ const issueHelp = {
     how_it_can_mislead:
       "A genuine index or hub page is legitimately light on prose. This flags a high template " +
       "ratio for review; check the page's intent before rewriting.",
+  },
+  HOWTO_SCHEMA_INCOMPLETE: {
+    title: "Incomplete HowTo schema",
+    category: "ai_readiness",
+    severity: "info",
+    confidence: "Heuristic",
+    definition:
+      "This page includes HowTo structured data, but the HowTo block declares no steps — it " +
+      "announces a step-by-step procedure without listing the steps in machine-readable form.",
+    impact:
+      "Evidence tier: Heuristic. AI assistants and answer engines reproduce procedures from " +
+      "structured steps. An empty HowTo block gives them nothing to extract, so the markup does " +
+      "no work. (Note: Google retired HowTo rich results in search, so the value here is AI " +
+      "extraction, not search appearance.)",
+    fix:
+      "Populate the HowTo `step` array in your JSON-LD — one entry per step, each with a name and " +
+      "text (and optionally an image or URL). If the page isn't really a how-to, remove the HowTo " +
+      "type instead.",
+    good_vs_bad:
+      "Good: a HowTo block with an ordered `step` list mirroring the on-page instructions. Bad: " +
+      "`@type: HowTo` with a name but no steps.",
+    how_it_can_mislead:
+      "This only fires when HowTo schema is actually present — it flags incomplete markup, never " +
+      "its absence. A page with no HowTo schema at all is silent (that's a different, intentional " +
+      "choice), so it won't nag ordinary pages.",
+  },
+  PRODUCT_REVIEW_SCHEMA_MISSING: {
+    title: "Product missing review schema",
+    category: "ai_readiness",
+    severity: "info",
+    confidence: "Reasonable proxy",
+    definition:
+      "This page has Product structured data, but the Product block carries neither a review nor " +
+      "an aggregateRating — no rating signal is exposed to search engines or AI systems.",
+    impact:
+      "Evidence tier: Reasonable proxy. Review stars in search results and the trust signals AI " +
+      "systems use both come from rating markup. A Product block without it describes the product " +
+      "but never rates it, leaving that eligibility unused.",
+    fix:
+      "Add review and/or aggregateRating to your Product JSON-LD — but only when you have genuine, " +
+      "verifiable ratings (fabricated ratings violate Google's guidelines).",
+    good_vs_bad:
+      "Good: a Product block with aggregateRating (ratingValue + reviewCount) reflecting real " +
+      "reviews. Bad: a Product block with name and price but no rating markup.",
+    how_it_can_mislead:
+      "Only fires when Product schema is present, so it targets incomplete product markup — not " +
+      "every page. Don't add ratings you don't actually have just to clear it.",
+  },
+  AUTHOR_CREDENTIALS_MISSING: {
+    title: "Author credentials missing",
+    category: "ai_readiness",
+    severity: "info",
+    confidence: "Heuristic",
+    definition:
+      "This article names an author in its structured data, but the author entry is bare — a name " +
+      "with no job title, bio (description), sameAs links, or profile URL.",
+    impact:
+      "Evidence tier: Heuristic. Expertise and authority (the E-E-A-T signals AI and search use to " +
+      "decide whom to trust and cite) come from who the author is. A name alone is a weak signal; " +
+      "credentials strengthen it.",
+    fix:
+      "Enrich the author Person in your JSON-LD with jobTitle, a short description/bio, and " +
+      "sameAs or url pointing to an author profile page.",
+    good_vs_bad:
+      "Good: author Person with name, jobTitle 'Registered Clinical Counsellor', and a sameAs to " +
+      "their profile. Bad: author with just `name: 'Jane Doe'` and nothing else.",
+    how_it_can_mislead:
+      "Only fires when author schema exists but is credential-less — a plain text byline with no " +
+      "author schema does NOT trigger it (that would flag almost every blog post). It targets " +
+      "pages that added author markup but left it empty.",
   },
   };
 

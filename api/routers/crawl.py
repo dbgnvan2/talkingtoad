@@ -1294,7 +1294,7 @@ async def get_page_priority(
     # Per-page health via the canonical capped+suppressed model (R5.0) — NOT a
     # raw ``100 − Σ impact`` sum (which ignored the category cap and cluster
     # suppression and diverged from compute_impact_health).
-    from api.services.job_store_base import compute_page_health
+    from api.services.job_store_base import compute_page_health, compute_citability_grade
 
     rows_by_url: dict[str, list[tuple[str, int, str]]] = {}
     for issue in issues:
@@ -1308,13 +1308,17 @@ async def get_page_priority(
     rows: list[dict] = []
     for page in pages:
         key = page.url.rstrip("/")
-        health_score = compute_page_health(rows_by_url.get(key, []))
+        page_rows = rows_by_url.get(key, [])
+        health_score = compute_page_health(page_rows)
+        # E5: per-page GEO/citability grade (rollup of ai_readiness issues).
+        citability_grade = compute_citability_grade(page_rows)
         records = await store.get_performance_records(url=page.url)
         flag = evaluate_refresh(records, health_score, today=today)
         latest = sorted(records, key=lambda r: r.period)[-1] if records else None
         rows.append({
             "url": page.url,
             "health_score": health_score,
+            "citability_grade": citability_grade,
             "gsc": None if latest is None else {
                 "clicks": latest.gsc_clicks_mo,
                 "impressions": latest.gsc_impressions_mo,

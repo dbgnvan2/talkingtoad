@@ -12,10 +12,10 @@ integrity of this file is enforced by five CI parity invariants — see
 
 Single source of truth for:
     - ``Issue`` dataclass and ``_IssueSpec`` dataclass
-    - ``_ISSUE_SCORING`` (impact, effort) by code — 152 codes
-    - ``_CATALOGUE`` (every issue spec) — 152 codes
-    - ``_AI_READINESS_CONFIDENCE`` (confidence labels) — 68 codes
-      (of 152 total; the 84 non-ai_readiness codes carry no confidence label)
+    - ``_ISSUE_SCORING`` (impact, effort) by code — 155 codes
+    - ``_CATALOGUE`` (every issue spec) — 155 codes
+    - ``_AI_READINESS_CONFIDENCE`` (confidence labels) — 71 codes
+      (of 155 total; the 84 non-ai_readiness codes carry no confidence label)
     - ``_STOP_WORDS`` and ``_GENERIC_ANCHOR_TEXTS`` (shared helpers)
     - Size-limit constants
     - ``make_issue()`` factory, ``_sig_words()``, ``_titles_mismatch()``
@@ -297,6 +297,10 @@ _ISSUE_SCORING: dict[str, tuple[int, int]] = {
     "AUTHOR_IDENTITY_INCONSISTENT": (1, 2),
     "NEAR_DUPLICATE_BODY":          (4, 3),
     "BOILERPLATE_RATIO_HIGH":       (1, 2),
+    # E3/E4 — schema completeness + author E-E-A-T (Search Everywhere P2)
+    "HOWTO_SCHEMA_INCOMPLETE":      (1, 2),
+    "PRODUCT_REVIEW_SCHEMA_MISSING":(2, 2),
+    "AUTHOR_CREDENTIALS_MISSING":   (1, 2),
 }
 
 
@@ -478,6 +482,10 @@ _CALIBRATION: dict[str, tuple[str, str, bool]] = {
     "URL_UPPERCASE": ("Reasonable proxy", "small", False),
     "WRONG_PLACEHOLDER_LINK": ("Reasonable proxy", "small", False),
     "WWW_CANONICALIZATION": ("Reasonable proxy", "moderate", False),
+    # E3/E4 — schema completeness + author E-E-A-T (Search Everywhere P2)
+    "HOWTO_SCHEMA_INCOMPLETE": ("Heuristic", "small", False),
+    "PRODUCT_REVIEW_SCHEMA_MISSING": ("Reasonable proxy", "small", False),
+    "AUTHOR_CREDENTIALS_MISSING": ("Heuristic", "small", False),
 }
 
 # Deliberate deviations from the pure matrix (auditor adjudication of the 21
@@ -1929,6 +1937,50 @@ _CATALOGUE: dict[str, _IssueSpec] = {
         how_to_fix="Expand the page with original, page-specific substance.",
         fixability="content_edit",
     ),
+    # ── E3/E4 — schema completeness + author E-E-A-T (Search Everywhere P2) ──
+    "HOWTO_SCHEMA_INCOMPLETE": _IssueSpec(
+        category="ai_readiness", severity="info",
+        description="This page has HowTo structured data but it declares no steps, so the "
+                    "instructions aren't machine-readable",
+        recommendation="Add a step list to your HowTo JSON-LD (each step with a name and text). "
+                       "Complete HowTo markup lets AI systems extract and reproduce your "
+                       "instructions accurately.",
+        human_description="Incomplete HowTo Schema",
+        what_it_is="HowTo schema describes a step-by-step procedure. Without a step array it "
+                   "announces a how-to but gives machines nothing to extract.",
+        impact_desc="AI answers and assistants reproduce procedures from structured steps. An "
+                    "empty HowTo block wastes the signal.",
+        how_to_fix="Populate the HowTo `step` array in your structured data.",
+        fixability="developer_needed",
+    ),
+    "PRODUCT_REVIEW_SCHEMA_MISSING": _IssueSpec(
+        category="ai_readiness", severity="info",
+        description="This page has Product structured data with no review or aggregateRating, so "
+                    "no rating signal is exposed to search or AI",
+        recommendation="Add review or aggregateRating to your Product JSON-LD when you have genuine "
+                       "ratings. Rating markup drives review rich results and gives AI a trust signal.",
+        human_description="Product Missing Review Schema",
+        what_it_is="Product schema can carry reviews and an aggregate rating. Without them the "
+                   "product is described but never rated in machine-readable form.",
+        impact_desc="Review stars in search and AI trust signals both come from rating markup; a "
+                    "Product block without it leaves that on the table.",
+        how_to_fix="Add review / aggregateRating to the Product JSON-LD (only with real ratings).",
+        fixability="developer_needed",
+    ),
+    "AUTHOR_CREDENTIALS_MISSING": _IssueSpec(
+        category="ai_readiness", severity="info",
+        description="This article names an author in its structured data, but the author entry has "
+                    "no credentials — no job title, bio, sameAs, or profile URL",
+        recommendation="Enrich the author schema with jobTitle, a short bio (description), and "
+                       "sameAs/URL to an author profile. Author expertise is a core E-E-A-T signal.",
+        human_description="Author Credentials Missing",
+        what_it_is="A bare author name (no title, bio, or profile link) tells AI who wrote the "
+                   "page but nothing about why they're credible.",
+        impact_desc="Expertise and authority signals help AI and search decide whom to trust and "
+                    "cite. A name alone is a weak signal.",
+        how_to_fix="Add jobTitle / description / sameAs / url to the author Person in your JSON-LD.",
+        fixability="content_edit",
+    ),
 }
 _STOP_WORDS: frozenset[str] = frozenset({
     "a", "an", "the", "and", "or", "but", "in", "on", "at", "to", "for",
@@ -1997,6 +2049,9 @@ _AI_READINESS_CONFIDENCE: dict[str, str] = {
     "AUTHOR_IDENTITY_INCONSISTENT": "Heuristic",
     "BLOG_SECTIONS_MISSING": "Heuristic",
     "BOILERPLATE_RATIO_HIGH": "Heuristic",
+    "HOWTO_SCHEMA_INCOMPLETE": "Heuristic",
+    "PRODUCT_REVIEW_SCHEMA_MISSING": "Reasonable proxy",
+    "AUTHOR_CREDENTIALS_MISSING": "Heuristic",
     "CENTRAL_CLAIM_BURIED": "Heuristic",
     "CHUNKS_NOT_SELF_CONTAINED": "Heuristic",
     "CITATIONS_MISSING_SUBSTANTIAL_CONTENT": "Heuristic",

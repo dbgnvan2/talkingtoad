@@ -779,6 +779,29 @@ first (P10): `test_entity_consistency.py::test_e1_2_normalised_no_false_positive
 → `tests/test_entity_consistency.py`, `tests/test_near_duplicate_body.py`,
 `tests/test_p1_serialization.py`
 
+**P2 — schema completeness + author E-E-A-T** (`api/crawler/checkers/ai_readiness.py`).
+All three are **page-type-gated on the relevant schema `@type` being present** —
+they flag *incomplete* markup, never *absent* markup, so pages without the schema
+stay silent (P7, no false positives at scale):
+- `HOWTO_SCHEMA_INCOMPLETE` (page) — a `HowTo` block with no `step` list.
+- `PRODUCT_REVIEW_SCHEMA_MISSING` (page) — a `Product` block with neither
+  `review` nor `aggregateRating`.
+- `AUTHOR_CREDENTIALS_MISSING` (page) — an article's author `Person` schema is
+  bare (name only, no jobTitle/description/sameAs/url). A plain text byline with
+  no author schema does **not** fire (that is `AUTHOR_BYLINE_MISSING`'s remit and
+  would otherwise flood every blog post). `@graph` is descended.
+→ `tests/test_schema_completeness_eeat.py`
+
+**P3 — citability grade** (`api/services/job_store_base.py::compute_citability_grade`).
+A per-page 0–100 GEO/AI-citability lens: cluster suppression applied first (so
+co-firing signals aren't double-counted), then `100 − Σ(impact of charged
+ai_readiness rows)`. Unlike overall page health it does **not** apply the
+per-category cap (ai_readiness *is* the whole score here). A pure rollup of
+already-emitted signals — no new detection. Exposed on
+`GET /api/crawl/{job_id}/page-priority` as `citability_grade` per page; the
+visual surfacing is intentionally deferred pending owner direction (GUI-change
+constraint). → `tests/test_citability_grade.py`
+
 ---
 
 ## 5. Fix capabilities

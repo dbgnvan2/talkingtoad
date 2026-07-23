@@ -295,6 +295,24 @@ def compute_page_health(rows: list[tuple[str, int, str]]) -> int:
     return max(0, 100 - _page_deduction(_charged_page_rows(rows)))
 
 
+def compute_citability_grade(rows: list[tuple[str, int, str]]) -> int:
+    """Per-page GEO / AI-citability grade (0–100) — Search Everywhere E5.
+
+    A dedicated lens on how extractable and citable a page is to AI systems,
+    separate from overall SEO health. It is a ROLLUP of already-emitted
+    ``ai_readiness`` issues — no new detection. Cluster suppression is applied
+    first (so co-firing signals aren't double-counted), then the grade is
+    ``100 − Σ(impact of the charged ai_readiness rows)``.
+
+    Unlike :func:`compute_page_health` it does NOT apply the per-category cap:
+    that cap exists to stop one category flooring the *overall* score, but here
+    ai_readiness IS the whole score, so capping it would collapse the range.
+    """
+    charged = _charged_page_rows(rows)
+    ai_deduction = sum(imp for _c, imp, cat in charged if cat == "ai_readiness")
+    return max(0, 100 - ai_deduction)
+
+
 def compute_impact_health(
     page_norm_urls: list[str],
     per_page_issues: dict[str, list[tuple[str, int, str]]],

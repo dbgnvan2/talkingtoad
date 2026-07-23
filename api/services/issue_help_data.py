@@ -424,5 +424,20 @@ ISSUE_HELP: dict[str, dict[str, str]] = {
         "what": "Most of this page's text is site-wide template (navigation, footer, repeated CTAs found on many other pages), with little content unique to the page itself.",
         "impact": "A page that is mostly shared template offers little for an AI answer to cite and reads as thin — among the pages most exposed to being ignored in AI search.",
         "fix": "Add substantive, first-party content unique to this page — original explanation, data, examples, or a distinct perspective."
+    },
+    "HOWTO_SCHEMA_INCOMPLETE": {
+        "what": "This page includes HowTo structured data, but the HowTo block declares no steps — it announces a step-by-step procedure without listing the steps in machine-readable form.",
+        "impact": "AI assistants reproduce procedures from structured steps; an empty HowTo block gives them nothing to extract. (Google retired HowTo rich results, so the value here is AI extraction, not search appearance.)",
+        "fix": "Populate the HowTo step array in your JSON-LD (one entry per step with a name and text), or remove the HowTo type if the page isn't really a how-to."
+    },
+    "PRODUCT_REVIEW_SCHEMA_MISSING": {
+        "what": "This page has Product structured data, but the Product block carries neither a review nor an aggregateRating — no rating signal is exposed to search or AI.",
+        "impact": "Review stars in search and the trust signals AI systems use both come from rating markup. A Product block without it describes the product but never rates it.",
+        "fix": "Add review and/or aggregateRating to your Product JSON-LD — but only when you have genuine, verifiable ratings."
+    },
+    "AUTHOR_CREDENTIALS_MISSING": {
+        "what": "This article names an author in its structured data, but the author entry is bare — a name with no job title, bio, sameAs links, or profile URL.",
+        "impact": "Expertise and authority (E-E-A-T) signals come from who the author is. A name alone is a weak signal; credentials strengthen whom AI and search will trust and cite.",
+        "fix": "Enrich the author Person in your JSON-LD with jobTitle, a short bio (description), and sameAs or url pointing to an author profile."
     }
 }

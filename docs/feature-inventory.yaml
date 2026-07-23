@@ -34,10 +34,10 @@ crawl_engine_wp_integration:
     - "WP-specific page type detection (posts, pages, categories)"
 
 # ──────────────────────────────────────────
-# DOMAIN: Issue Detection (152 codes)
+# DOMAIN: Issue Detection (155 codes)
 # ──────────────────────────────────────────
 issues_detection:
-  description: "152 issue codes across 13 categories, each with impact/effort scoring"
+  description: "155 issue codes across 13 categories, each with impact/effort scoring"
   status: shipped
   categories:
 
@@ -121,7 +121,7 @@ issues_detection:
         - LANDMARK_NAV_MISSING, INTERACTIVE_NO_ACCESSIBLE_NAME
 
     ai_readiness:
-      description: "68 codes — AI bot access, content extractability, citations, GEO signals, schema, freshness"
+      description: "71 codes — AI bot access, content extractability, citations, GEO signals, schema, freshness"
       status: shipped
       codes:
         - AI_BOT_BLANKET_DISALLOW, AI_BOT_DEPRECATED_DIRECTIVE, AI_BOT_NO_AI_DIRECTIVES
@@ -164,6 +164,8 @@ issues_detection:
         # "Search Everywhere" GEO P1 (brand-entity + body-uniqueness)
         - ENTITY_NAME_INCONSISTENT, ENTITY_SAMEAS_MISSING, AUTHOR_IDENTITY_INCONSISTENT
         - NEAR_DUPLICATE_BODY, BOILERPLATE_RATIO_HIGH
+        # Schema completeness + author E-E-A-T (P2) + citability grade (P3)
+        - HOWTO_SCHEMA_INCOMPLETE, PRODUCT_REVIEW_SCHEMA_MISSING, AUTHOR_CREDENTIALS_MISSING
 
 # ──────────────────────────────────────────
 # DOMAIN: WordPress Fix Operations

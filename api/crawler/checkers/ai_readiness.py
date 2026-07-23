@@ -18,6 +18,32 @@ from api.crawler.checkers.registry import Issue, make_issue
 
 logger = logging.getLogger(__name__)
 
+
+def _iter_schema_objs(blocks):
+    """Yield every JSON-LD object in *blocks*, descending ``@graph`` and lists."""
+    stack = list(blocks or [])
+    while stack:
+        obj = stack.pop()
+        if isinstance(obj, list):
+            stack.extend(obj)
+            continue
+        if not isinstance(obj, dict):
+            continue
+        graph = obj.get("@graph")
+        if isinstance(graph, list):
+            stack.extend(graph)
+        yield obj
+
+
+def _schema_has_type(obj: dict, *types: str) -> bool:
+    t = obj.get("@type")
+    ts = t if isinstance(t, list) else [t]
+    return any(x in types for x in ts)
+
+
+# Author credential signals (E4): a Person author with any of these is "credentialed".
+_AUTHOR_CREDENTIAL_KEYS = ("jobTitle", "description", "knowsAbout", "sameAs", "url", "worksFor")
+
 # FAQ_ANSWERS_NOT_IN_HTML: a FAQ answer with fewer than this many characters of
 # text present in the RAW HTML is treated as absent (JS-injected on click).
 # See docs/thresholds.md.
@@ -189,6 +215,53 @@ def _run_geo_checks(page: "ParsedPage", url: str, issues: list) -> None:
             issues.append(make_issue("JSON_LD_INVALID", url, extra={
                 "invalid_count": len(invalid),
             }))
+
+        # E3: structured-data completeness for answer extraction. Both codes are
+        # PAGE-TYPE-GATED on the relevant schema @type actually being present —
+        # they flag INCOMPLETE markup, never absent markup, so a page with no
+        # HowTo/Product schema is silent (P7: no false positives at scale).
+        objs = list(_iter_schema_objs(page.schema_blocks))
+
+        # HOWTO_SCHEMA_INCOMPLETE: a HowTo block with no step list.
+        for o in objs:
+            if _schema_has_type(o, "HowTo"):
+                steps = o.get("step")
+                if not steps or (isinstance(steps, list) and len(steps) == 0):
+                    issues.append(make_issue("HOWTO_SCHEMA_INCOMPLETE", url, extra={
+                        "reason": "HowTo schema present but has no step list",
+                    }))
+                    break
+
+        # PRODUCT_REVIEW_SCHEMA_MISSING: a Product block with neither review nor
+        # aggregateRating — no rating markup to earn review rich results / AI trust.
+        for o in objs:
+            if _schema_has_type(o, "Product"):
+                if not (o.get("review") or o.get("aggregateRating")):
+                    issues.append(make_issue("PRODUCT_REVIEW_SCHEMA_MISSING", url, extra={
+                        "reason": "Product schema has no review or aggregateRating",
+                    }))
+                    break
+
+        # E4: AUTHOR_CREDENTIALS_MISSING — an author Person declared in schema but
+        # bare (name only, no jobTitle/bio/sameAs/url/…). Tightly gated on an
+        # author OBJECT existing: a plain text byline with no author schema does
+        # NOT fire (that would flood every nonprofit blog post); this targets
+        # pages that added author markup but left it credential-less. Article-gated.
+        if is_article:
+            for o in objs:
+                author = o.get("author")
+                cands = author if isinstance(author, list) else [author]
+                bare = next(
+                    (a for a in cands
+                     if isinstance(a, dict) and a.get("name")
+                     and not any(a.get(k) for k in _AUTHOR_CREDENTIAL_KEYS)),
+                    None,
+                )
+                if bare is not None:
+                    issues.append(make_issue("AUTHOR_CREDENTIALS_MISSING", url, extra={
+                        "author": str(bare.get("name"))[:120],
+                    }))
+                    break
 
     # ── GEO.5.2: FAQ section without FAQPage schema ─────────────────────────
     # Questions are detected accordion-aware at parse time (page.faq_blocks) so
