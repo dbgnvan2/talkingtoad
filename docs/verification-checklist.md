@@ -148,13 +148,26 @@
 
 ## How to run the gate
 
+Run each line from the repo root. (Lines are comment-free so they paste cleanly
+into an interactive `zsh` — which, unlike `bash`, does **not** treat `#` lines as
+comments. Use `python3`, not `python`.)
+
+Backend suite (~2056+ passed):
+
 ```bash
-# backend
 pytest tests/ -q
-# frontend
-cd frontend && npx vitest run && npx eslint src   # hooks-rules errors block the build
-# docs/catalogue in sync
-python scripts/generate_issue_codes_doc.py   # must produce no git diff
+```
+
+Frontend suite + hooks-rules lint (errors block the build):
+
+```bash
+cd frontend && npx vitest run && npx eslint src && cd ..
+```
+
+Docs/catalogue in sync — regenerate and confirm **no** git diff:
+
+```bash
+python3 scripts/generate_issue_codes_doc.py && git diff --exit-code docs/issue-codes.md
 ```
 
 A green gate covers every **[CI]** row. The **[LIVE]** rows are the human
