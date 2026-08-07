@@ -59,3 +59,7 @@ client_secret*.json
 .bridge_snapshot_marker
 run-bridge.sh
 repo_map.md
+.aider*
+
+# Generated advisor/audit report artifacts (keep binaries out of git history)
+Advisor-Report_*.pdf
