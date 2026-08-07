@@ -208,3 +208,18 @@ Any results tab can be exported as a CSV file for sharing with a developer or fi
 - External link cap: 50 per page, 500 per job
 - Image check cap: 200 unique image URLs per job
 - Query-string variant cap: 50 unique query strings per path
+
+---
+
+## Out of Scope
+
+### Backlink / off-site authority analysis
+
+TalkingToad audits a site's own pages and their AI-readiness; it does **not**
+analyse the site's backlink profile. Backlink discovery, toxic-link
+identification, disavow-list generation, and referring-domain diversity are
+deliberately out of scope. Across the wider tool suite, Domain Authority is used
+as the single authority proxy; a full backlink graph requires a paid third-party
+link-index provider (Ahrefs, Majestic, or DataForSEO backlinks) and is judged
+low-ROI for a single nonprofit. This is a deliberate boundary, not an omission —
+revisit only if scale or budget changes.
