@@ -798,6 +798,14 @@ CREATE TABLE IF NOT EXISTS performance_ledger (
     gsc_ctr_mo                   REAL DEFAULT 0.0,
     gsc_avg_position_mo          REAL DEFAULT 0.0,
     recorded_at                  TEXT,
+    -- Performance Bundle ingestion (2026-08-06 spec, PB1) — nullable GA4 + index
+    ga4_sessions_mo              INTEGER,
+    ga4_engaged_sessions_mo      INTEGER,
+    ga4_engagement_rate_mo       REAL,
+    ga4_conversions_mo           INTEGER,
+    ga4_ai_referral_sessions_mo  INTEGER,
+    index_state                  TEXT,
+    source_generated_at          TEXT,
     PRIMARY KEY (url, period)
 );
 

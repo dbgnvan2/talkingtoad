@@ -193,6 +193,19 @@ codes; all other page-scoped codes on that page contribute 0. See functional-spe
 | Progress polling — after 60 s | every 5 seconds | same |
 | Vite dev-server proxy default target | `http://localhost:8000` | `frontend/vite.config.js` (overridable via `API_URL` env) |
 
+## Performance ledger / bundle
+
+| Threshold | Value | Source |
+|---|---|---|
+| Performance-bundle staleness window | 35 days | `api/services/performance_freshness.py` `STALENESS_DAYS_DEFAULT` |
+
+Bundle data whose `generated_at` is older than this window is flagged `stale` on
+ingest (PB8). Chosen as "older than roughly one monthly refresh cycle" given GSC's
+~2–3-day reporting lag. Distinct from the Refresh-Trigger constants (Authority
+Matrix): 180-day technical-improvement staleness and 20% traffic-decay drop.
+
+---
+
 ## Test infrastructure
 
 | Threshold | Value | Source |

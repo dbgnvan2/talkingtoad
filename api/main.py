@@ -40,6 +40,7 @@ from api.routers import advisor as advisor_router
 from api.routers import usage as usage_router
 from api.routers import citations as citations_router
 from api.routers import gsc as gsc_router
+from api.routers import performance as performance_router
 from api.services.job_store import SQLiteJobStore, RedisJobStore, get_job_store
 from api.services.rate_limiter import limiter
 
@@ -209,3 +210,4 @@ app.include_router(advisor_router.router)
 app.include_router(usage_router.router)  # v2.6 M2.6 / Cycle EE
 app.include_router(citations_router.router)  # M5: AI citation ingestion
 app.include_router(gsc_router.router)  # M6.1+M6.4: GSC data ingest + surfacing
+app.include_router(performance_router.router)  # 2026-08-06: PerformanceBundle ingestion (Phase 1)

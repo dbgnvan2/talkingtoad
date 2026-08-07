@@ -498,7 +498,7 @@ class RedisJobStore:
         now = datetime.now(timezone.utc).isoformat()
         for r in records:
             key = f"tt:perf:{r.url}:{r.period}"
-            await self._r.hset(key, values={
+            values = {
                 "url": r.url,
                 "period": r.period,
                 "created_at": r.created_at or "",
@@ -508,7 +508,23 @@ class RedisJobStore:
                 "gsc_ctr_mo": str(r.gsc_ctr_mo),
                 "gsc_avg_position_mo": str(r.gsc_avg_position_mo),
                 "recorded_at": now,
-            })
+            }
+            # GA4/index fields (PB1): only write when present, so a later
+            # GSC-only bundle doesn't wipe an earlier bundle's GA4 data (P2 —
+            # None means "not supplied", not "zero"). Absent hash fields decode
+            # back to None in get_performance_records.
+            for field_name, val in (
+                ("ga4_sessions_mo", r.ga4_sessions_mo),
+                ("ga4_engaged_sessions_mo", r.ga4_engaged_sessions_mo),
+                ("ga4_engagement_rate_mo", r.ga4_engagement_rate_mo),
+                ("ga4_conversions_mo", r.ga4_conversions_mo),
+                ("ga4_ai_referral_sessions_mo", r.ga4_ai_referral_sessions_mo),
+                ("index_state", r.index_state),
+                ("source_generated_at", r.source_generated_at),
+            ):
+                if val is not None:
+                    values[field_name] = str(val)
+            await self._r.hset(key, values=values)
 
     async def get_performance_records(
         self, url: str | None = None, domain: str | None = None
@@ -528,6 +544,14 @@ class RedisJobStore:
             data = await self._r.hgetall(k)
             if not data:
                 continue
+            def _opt_int(key):
+                v = data.get(key)
+                return int(v) if v not in (None, "") else None
+
+            def _opt_float(key):
+                v = data.get(key)
+                return float(v) if v not in (None, "") else None
+
             records.append(PerformanceRecord(
                 url=data.get("url", ""),
                 period=data.get("period", ""),
@@ -538,6 +562,14 @@ class RedisJobStore:
                 gsc_ctr_mo=float(data.get("gsc_ctr_mo", 0.0)),
                 gsc_avg_position_mo=float(data.get("gsc_avg_position_mo", 0.0)),
                 recorded_at=data.get("recorded_at") or None,
+                # GA4/index fields (PB1) — absent hash field ⇒ None (not 0).
+                ga4_sessions_mo=_opt_int("ga4_sessions_mo"),
+                ga4_engaged_sessions_mo=_opt_int("ga4_engaged_sessions_mo"),
+                ga4_engagement_rate_mo=_opt_float("ga4_engagement_rate_mo"),
+                ga4_conversions_mo=_opt_int("ga4_conversions_mo"),
+                ga4_ai_referral_sessions_mo=_opt_int("ga4_ai_referral_sessions_mo"),
+                index_state=data.get("index_state") or None,
+                source_generated_at=data.get("source_generated_at") or None,
             ))
         return records
 

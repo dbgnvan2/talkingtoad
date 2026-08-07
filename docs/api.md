@@ -694,6 +694,55 @@ Query params: `url` (required), `job_id` (optional), `health_score` (optional, d
 
 ---
 
+## Performance Bundle Ingestion (2026-08-06, Phase 1)
+
+Source-agnostic ingest of GSC + GA4 + index-state metrics from a sibling reporting
+app (Option A — no Google OAuth in TalkingToad). Feeds the same Performance Ledger
+as `/api/gsc/ingest`. Requires `Authorization: Bearer <token>`.
+
+| Method | Endpoint | Description |
+|---|---|---|
+| POST | `/api/performance/ingest?job_id=...` | Ingest a `PerformanceBundle` (v1) JSON body; merge per-URL GSC+GA4+index into the ledger. |
+
+### POST `/api/performance/ingest`
+
+Query param: `job_id` (required). Body: a `PerformanceBundle` v1 (see
+`docs/pending/2026-08-06_performance-bundle-ingestion.md` for the full contract).
+Per-URL GSC + GA4 + `index_state` are persisted for bundle URLs that match a
+crawled page; `pages[].gsc.top_queries` and the `site` object (GTM audit, GA4
+site-search) are accepted but persisted in a later phase — reported under `deferred`.
+
+A matched row is stored under the **crawled page's** URL (the key the page-priority
+consumer reads by), so a bundle/crawl difference of only a trailing slash, `www`, or
+scheme still lands on the right row. Bundle URLs matching no crawled page are **held
+out** (reported in `unmatched_urls`), not stored under an orphan key.
+
+**Guards:** `bundle_version != 1` → 400 `UNSUPPORTED_BUNDLE_VERSION`; scheme/host-less
+`site_url` → 400 `INVALID_SITE_URL`; unknown `job_id` → 404 `JOB_NOT_FOUND`; `site_url`
+not the same site as the job's `target_url` → 403 `DOMAIN_MISMATCH` (zero rows written).
+
+Response:
+
+```json
+{
+  "ingested": 12,
+  "sources": ["gsc", "ga4"],
+  "period": "2026-07",
+  "unmatched_urls": ["https://example.org/orphan"],
+  "invalid_urls": [],
+  "stale": false,
+  "deferred": ["top_queries", "site"]
+}
+```
+
+- `ingested` — rows persisted (bundle URLs that matched a crawled page).
+- `unmatched_urls` — bundle URLs with no crawled page; held out (extend the crawl to capture them), not dropped silently.
+- `invalid_urls` — bundle URLs that could not be parsed; skipped without aborting the ingest.
+- `stale` — `true`/`false` from `generated_at` vs a 35-day window; `null` when the timestamp is missing/unparseable.
+- `deferred` — payload sections accepted but not yet persisted (Phase 2/3).
+
+---
+
 ## Parked / Not Shipped
 
 - **Multi-tenant AI key management**: per-customer API keys, Customer Settings UI, Identity Model — not implemented. See [`TODO-MULTITENANT.md`](TODO-MULTITENANT.md).

@@ -591,6 +591,45 @@ TalkingToad integrates with Google Search Console (GSC) to correlate structural 
   - **Staleness:** >180 days since the last technical improvement.
   - **Traffic Decay:** >20% drop in clicks compared to the 3-month average.
 
+**Performance Bundle ingestion (2026-08-06, Phase 1 — PB1/PB2/PB6/PB8).** In
+addition to the in-app OAuth `GSCClient`, the same Performance Ledger can be fed
+by a **source-agnostic `PerformanceBundle` (v1)** pushed from a sibling reporting
+app that already owns GSC/GA4/GTM OAuth — so TalkingToad gains GA4 (sessions,
+engagement, **conversions**, AI-referral) and GSC index-state per URL **without
+adding any Google OAuth or unparking the multi-tenant identity model** (Option A;
+`docs/TODO-MULTITENANT.md`). TalkingToad owns *consumption*; the sibling app owns
+*acquisition*. The existing `/api/gsc/ingest` is just one producer of the same ledger.
+
+- **Contract:** one bundle = one site + one `period` (YYYY-MM). Every field except
+  `bundle_version`, `site_url`, `generated_at`, `period`, and `pages[].url` is
+  optional; **absence means "unknown", never zero** (P2) — GA4 fields on
+  `PerformanceRecord` are nullable and never coerced to 0.
+- **Endpoint:** `POST /api/performance/ingest?job_id=…` (`api/routers/performance.py`,
+  `require_auth`). **PB6 domain guard:** `bundle.site_url` must be the same site as
+  the job's `target_url` (`is_same_domain`) or the call returns 403 `DOMAIN_MISMATCH`
+  with zero rows written (a scheme/host-less `site_url` is a distinct 400
+  `INVALID_SITE_URL`). Returns `{ingested, sources, period, unmatched_urls,
+  invalid_urls, stale, deferred}`.
+- **One join key (P11):** a matched row is stored under the **crawled page's** URL —
+  the same key the page-priority consumer reads by — so a bundle/crawl difference of
+  only a trailing slash / `www` / scheme still lands on the right row (storage, diff,
+  and lookup share one key). Bundle URLs matching no crawled page are **held out** in
+  `unmatched_urls`, not persisted under an orphan key; unparseable URLs go to
+  `invalid_urls` without aborting the ingest (P2).
+- **Merge (P8):** a bundle is authoritative only for the fields it carries — the
+  router read-merges and the store COALESCE-merges so a GA4-only bundle never zeroes
+  prior GSC and a GSC-only producer never wipes GA4. Re-ingest updates, never
+  duplicates. A row that carries fields forward from an older bundle is stamped with
+  the **oldest** contributing source's date, so freshness is never over-reported.
+- **`deferred`** (query-level / site-level payloads accepted but persisted in a later
+  phase) is surfaced, not dropped (P2).
+- **Freshness (PB8):** `source_generated_at` is stored; `is_stale()`
+  (`performance_freshness.py`, default 35-day window) drives a staleness signal so
+  bundle-derived numbers are never shown as current when old.
+- **Not yet (Phase 2/3):** striking-distance→rewriter (PB3), coverage/cross-signal
+  diff (PB7), conversion-weighted priority (PB4), index reconciliation (PB5), GTM-audit
+  surface (PB9). Spec: `docs/pending/2026-08-06_performance-bundle-ingestion.md`.
+
 ### 4.9 Agent-readiness checks (Phase 1)
 
 A coherent set of checks describing how findable, parseable, and operable a

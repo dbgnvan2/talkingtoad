@@ -141,6 +141,25 @@ class SQLiteJobStore:
                 # Column already exists
                 pass
 
+        # Performance-ledger migrations (2026-08-06 spec, PB1) — GA4 + index.
+        perf_columns = [
+            ("ga4_sessions_mo",             "INTEGER"),
+            ("ga4_engaged_sessions_mo",     "INTEGER"),
+            ("ga4_engagement_rate_mo",      "REAL"),
+            ("ga4_conversions_mo",          "INTEGER"),
+            ("ga4_ai_referral_sessions_mo", "INTEGER"),
+            ("index_state",                 "TEXT"),
+            ("source_generated_at",         "TEXT"),
+        ]
+        for col, col_type in perf_columns:
+            try:
+                await self._db.execute(
+                    f"ALTER TABLE performance_ledger ADD COLUMN {col} {col_type}"
+                )
+            except aiosqlite.OperationalError:
+                # Column already exists
+                pass
+
         await self._db.commit()
 
     async def close(self) -> None:
@@ -1499,26 +1518,56 @@ class SQLiteJobStore:
             """INSERT INTO performance_ledger
                (url, period, created_at, last_technical_improvement_at,
                 gsc_clicks_mo, gsc_impressions_mo, gsc_ctr_mo,
-                gsc_avg_position_mo, recorded_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                gsc_avg_position_mo, recorded_at,
+                ga4_sessions_mo, ga4_engaged_sessions_mo, ga4_engagement_rate_mo,
+                ga4_conversions_mo, ga4_ai_referral_sessions_mo, index_state,
+                source_generated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                ON CONFLICT(url, period) DO UPDATE SET
                    created_at = COALESCE(excluded.created_at, created_at),
                    last_technical_improvement_at = COALESCE(excluded.last_technical_improvement_at, last_technical_improvement_at),
+                   -- GSC fields overwrite (excluded.*): a GSC value of 0 is real
+                   -- data, not "absent", so it can't be COALESCE-merged. The
+                   -- bundle ingest router therefore read-merges GSC (carries a
+                   -- prior row forward when a bundle omits GSC) BEFORE this write;
+                   -- GA4 below is the mirror case — nullable, so COALESCE-merged
+                   -- here so a GSC-only writer can't wipe it.
                    gsc_clicks_mo = excluded.gsc_clicks_mo,
                    gsc_impressions_mo = excluded.gsc_impressions_mo,
                    gsc_ctr_mo = excluded.gsc_ctr_mo,
                    gsc_avg_position_mo = excluded.gsc_avg_position_mo,
-                   recorded_at = excluded.recorded_at""",
+                   recorded_at = excluded.recorded_at,
+                   -- GA4/index fields merge (COALESCE): a later GSC-only bundle
+                   -- must not wipe GA4 data from an earlier bundle (P2).
+                   ga4_sessions_mo = COALESCE(excluded.ga4_sessions_mo, ga4_sessions_mo),
+                   ga4_engaged_sessions_mo = COALESCE(excluded.ga4_engaged_sessions_mo, ga4_engaged_sessions_mo),
+                   ga4_engagement_rate_mo = COALESCE(excluded.ga4_engagement_rate_mo, ga4_engagement_rate_mo),
+                   ga4_conversions_mo = COALESCE(excluded.ga4_conversions_mo, ga4_conversions_mo),
+                   ga4_ai_referral_sessions_mo = COALESCE(excluded.ga4_ai_referral_sessions_mo, ga4_ai_referral_sessions_mo),
+                   index_state = COALESCE(excluded.index_state, index_state),
+                   source_generated_at = COALESCE(excluded.source_generated_at, source_generated_at)""",
             [
                 (
                     r.url, r.period, r.created_at, r.last_technical_improvement_at,
                     r.gsc_clicks_mo, r.gsc_impressions_mo, r.gsc_ctr_mo,
                     r.gsc_avg_position_mo, now,
+                    r.ga4_sessions_mo, r.ga4_engaged_sessions_mo, r.ga4_engagement_rate_mo,
+                    r.ga4_conversions_mo, r.ga4_ai_referral_sessions_mo, r.index_state,
+                    r.source_generated_at,
                 )
                 for r in records
             ],
         )
         await db.commit()
+
+    # Explicit column order — never SELECT * — so physical layout (fresh CREATE
+    # vs. ALTER-migrated) can't shift positional decoding.
+    _PERF_COLS = (
+        "url, period, created_at, last_technical_improvement_at, "
+        "gsc_clicks_mo, gsc_impressions_mo, gsc_ctr_mo, gsc_avg_position_mo, recorded_at, "
+        "ga4_sessions_mo, ga4_engaged_sessions_mo, ga4_engagement_rate_mo, "
+        "ga4_conversions_mo, ga4_ai_referral_sessions_mo, index_state, source_generated_at"
+    )
 
     async def get_performance_records(
         self, url: str | None = None, domain: str | None = None
@@ -1526,21 +1575,22 @@ class SQLiteJobStore:
         """Retrieve performance records, optionally filtered by url or domain."""
         db = self._db
         assert db is not None
+        cols = self._PERF_COLS
         if url:
             async with db.execute(
-                "SELECT * FROM performance_ledger WHERE url = ? ORDER BY period",
+                f"SELECT {cols} FROM performance_ledger WHERE url = ? ORDER BY period",
                 (url,),
             ) as cursor:
                 rows = await cursor.fetchall()
         elif domain:
             async with db.execute(
-                "SELECT * FROM performance_ledger WHERE url LIKE ? ORDER BY url, period",
+                f"SELECT {cols} FROM performance_ledger WHERE url LIKE ? ORDER BY url, period",
                 (f"{domain}%",),
             ) as cursor:
                 rows = await cursor.fetchall()
         else:
             async with db.execute(
-                "SELECT * FROM performance_ledger ORDER BY url, period"
+                f"SELECT {cols} FROM performance_ledger ORDER BY url, period"
             ) as cursor:
                 rows = await cursor.fetchall()
         return [
@@ -1550,6 +1600,10 @@ class SQLiteJobStore:
                 gsc_clicks_mo=row[4], gsc_impressions_mo=row[5],
                 gsc_ctr_mo=row[6], gsc_avg_position_mo=row[7],
                 recorded_at=row[8],
+                ga4_sessions_mo=row[9], ga4_engaged_sessions_mo=row[10],
+                ga4_engagement_rate_mo=row[11], ga4_conversions_mo=row[12],
+                ga4_ai_referral_sessions_mo=row[13], index_state=row[14],
+                source_generated_at=row[15],
             )
             for row in rows
         ]

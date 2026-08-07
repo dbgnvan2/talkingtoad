@@ -21,3 +21,18 @@ class PerformanceRecord(BaseModel):
     gsc_ctr_mo: float = 0.0
     gsc_avg_position_mo: float = 0.0
     recorded_at: str | None = None  # when this row was written (ISO)
+
+    # ── Performance Bundle ingestion (2026-08-06 spec, PB1) ─────────────────
+    # GA4 + index-state fields, populated from an ingested PerformanceBundle
+    # (produced by the sibling reporting app). All default None — "no GA4
+    # source" must stay distinguishable from "zero sessions" (P2), so callers
+    # must never coerce None → 0. index_state controlled vocab: indexed |
+    # crawled_not_indexed | discovered_not_indexed | excluded_noindex |
+    # not_in_gsc | unknown.
+    ga4_sessions_mo: int | None = None
+    ga4_engaged_sessions_mo: int | None = None
+    ga4_engagement_rate_mo: float | None = None
+    ga4_conversions_mo: int | None = None
+    ga4_ai_referral_sessions_mo: int | None = None
+    index_state: str | None = None
+    source_generated_at: str | None = None  # the bundle's generated_at (freshness, PB8)

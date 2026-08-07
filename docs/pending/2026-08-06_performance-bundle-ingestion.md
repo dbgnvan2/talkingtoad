@@ -1,7 +1,7 @@
 # Micro-spec: Performance Bundle ingestion — GA4 + GTM + query/index via a source-agnostic contract
 
 **Date:** 2026-08-06
-**Status:** pending — awaiting owner approval. Architecture **decided 2026-08-06: Option A** (sibling app pushes bundle — see PB-A).
+**Status:** **Phase 1 SHIPPED (2026-08-06)** — PB1/PB2/PB6/PB8 implemented, tested (2130-green), and folded into functional-specification §4.8. Phases 2–3 (PB3/PB4/PB5/PB7/PB9) remain pending; this doc stays in `pending/` until they land. Architecture **decided 2026-08-06: Option A** (sibling app pushes bundle — see PB-A).
 **Spec IDs:** PB1–PB9
 **Extends:** the existing Performance Ledger (`api/models/performance.py`, `PerformanceRecord`),
 `api/routers/gsc.py` ingest, the Page Priority queue (`PagePriorityPanel`), and refresh flags
@@ -177,8 +177,8 @@ GTM API itself under Option A.
 
 | Endpoint | Frontend/consumer expects | Test name | Status |
 |----------|---------------------------|-----------|--------|
-| POST `/api/performance/ingest` | `{ingested, sources, period, unmatched_urls}`; 403 on domain mismatch; GA4-absent bundle stores `None` not `0` | `tests/test_performance_ingest.py::test_ingest_bundle_v1_schema` · `::test_ingest_domain_mismatch_403` · `::test_ga4_absent_is_null_not_zero` | pending |
-| POST `/api/performance/ingest` | unmatched bundle URLs are reported, not dropped | `tests/test_performance_ingest.py::test_unmatched_urls_surfaced` | pending |
+| POST `/api/performance/ingest` | `{ingested, sources, period, unmatched_urls, stale, deferred}`; 403 on domain mismatch; GA4-absent bundle stores `None` not `0` | `test_performance_ingest.py::test_ingest_response_schema` · `::test_domain_mismatch_returns_403_and_writes_nothing` · `::test_ingest_ga4_only_page_keeps_gsc_null_not_zero` | ✅ done |
+| POST `/api/performance/ingest` | unmatched bundle URLs are reported, not dropped | `test_performance_ingest.py::test_unmatched_urls_surfaced` | ✅ done |
 | GET `/api/performance/striking-distance/{job_id}` | rows within band incl. `top_query`; band is config-driven | `tests/test_striking_distance.py::test_band_and_floor_from_config` | pending |
 | GET `/api/performance/coverage-diff/{job_id}` | three keyed lists; `uncrawled_earning` excludes already-crawled URLs | `tests/test_coverage_diff.py::test_three_lists_and_join` | pending |
 | Priority queue | GA4-absent job ranks byte-identically to today (regression) | `tests/test_page_priority.py::test_ga4_absent_matches_gsc_only_baseline` | pending |
@@ -187,14 +187,14 @@ GTM API itself under Option A.
 
 | ID | Criterion | Test | Status |
 |----|-----------|------|--------|
-| PB1 | `PerformanceRecord` GA4/index fields default `None`; both stores round-trip them | `tests/test_performance_model.py::test_ga4_fields_roundtrip_sqlite_redis` | pending |
-| PB2 | Bundle upsert merges GA4+GSC for a period; second ingest updates, not duplicates (**dirty-state, P8**) | `tests/test_performance_ingest.py::test_reingest_updates_not_duplicates` | pending |
+| PB1 | `PerformanceRecord` GA4/index fields default `None`; stores round-trip them; absent GA4 stays `None` not `0` | `test_performance_model.py::test_pb1_ga4_and_index_fields_round_trip` · `::test_pb1_absent_ga4_reads_back_as_none_not_zero` | ✅ done |
+| PB2 | Bundle upsert merges GA4+GSC for a period; second ingest updates, not duplicates; GA4-only re-ingest preserves prior GSC (**dirty-state, P8**) | `test_performance_ingest.py::test_reingest_updates_not_duplicates` · `::test_ga4_only_reingest_preserves_prior_gsc_via_endpoint` · `test_performance_model.py::test_pb1_gsc_only_upsert_preserves_prior_ga4` | ✅ done |
 | PB3 | Striking-distance returns only in-band pages with a target query | `tests/test_striking_distance.py::test_only_in_band_returned` | pending |
 | PB4 | Conversion weighting raises a high-conversion page's rank; no-GA4 job unchanged | `tests/test_page_priority.py::test_conversion_weighting_optin` | pending |
 | PB5 | `crawled_not_indexed` page appears in index-reconciliation report | `tests/test_index_reconcile.py::test_not_indexed_surfaced` | pending |
-| PB6 | Domain-mismatched bundle → 403, zero rows written | `tests/test_performance_ingest.py::test_ingest_domain_mismatch_403` | pending |
+| PB6 | Domain-mismatched bundle → 403, zero rows written; job-not-found → 404; bad version → 400 | `test_performance_ingest.py::test_domain_mismatch_returns_403_and_writes_nothing` · `::test_job_not_found_returns_404` · `::test_unsupported_version_returns_400` | ✅ done |
 | PB7 | Coverage-diff classifies a bundle-only URL as `uncrawled_earning` and a traffic-less crawled page as `zero_traffic_crawled` | `tests/test_coverage_diff.py::test_classification` | pending |
-| PB8 | Bundle older than staleness window renders a stale warning | `tests/test_performance_freshness.py::test_stale_warning` | pending |
+| PB8 | Bundle older than staleness window flagged stale; fresh = False; unknown = None; boundary correct | `test_performance_model.py::test_pb8_days_since_and_is_stale` · `test_performance_ingest.py::test_stale_bundle_flagged` | ✅ done |
 | PB9 | `gtm_audit.paused_tags` surfaced in the status/response | `tests/test_performance_ingest.py::test_gtm_audit_surfaced` | pending |
 
 **Adversarial / P-pattern coverage:** PB2 dirty-state re-ingest (P8); PB4 monotonicity (more
@@ -210,6 +210,80 @@ normalisation both sides (P11).
 - **Phase 2:** PB3 (striking-distance → rewriter) and PB7 (coverage-diff) — the highest-value derived
   reports.
 - **Phase 3:** PB4 (conversion weighting), PB5 (index reconcile), PB9 (GTM audit surface).
+
+### Phase 1 — SHIPPED 2026-08-06 (as-built notes & deviations)
+
+Landed: `api/models/performance.py` (PB1 fields), ledger schema + `_migrate()` +
+`save/get_performance_records` in both `sqlite_store.py` and `redis_store.py` (PB1),
+`api/services/performance_freshness.py` (PB8), `api/routers/performance.py` →
+`POST /api/performance/ingest` (PB2/PB6), registered in `main.py`. Tests:
+`tests/test_performance_model.py`, `tests/test_performance_ingest.py`.
+
+Deviations from the spec above, made during implementation:
+
+1. **`top_queries` and `site` (gtm_audit / site_search) are accepted but NOT yet
+   persisted** in Phase 1 — they feed the Phase 2/3 derived reports (PB3/PB7/PB9),
+   so their side tables are deferred to those phases. The ingest response reports
+   them under a `deferred: [...]` list so nothing is silently dropped (P2). The
+   spec's "separate table for top_queries" is therefore a Phase 2 item, not Phase 1.
+2. **PB6 matches the bundle's `site_url` against the crawl JOB's `target_url`**
+   (`is_same_domain`, which treats www as same-site) — *not* against the WordPress
+   credentials domain. The WP `_validate_wp_domain_for_*` helpers are WP-specific;
+   the job-domain match is the correct guard for a performance bundle. Mismatch →
+   403 `DOMAIN_MISMATCH`, zero rows written (verified).
+3. **`job_id` is a query param** on the endpoint (`?job_id=...`); the bundle body
+   carries no job id (it's site-oriented). The endpoint ties the bundle to a crawl
+   via that param + the `site_url`↔`target_url` domain check.
+4. **Merge correctness (P8) is enforced in two places:** the router read-merges so a
+   GA4-only bundle can't zero prior GSC (and vice-versa), and the sqlite `ON CONFLICT`
+   COALESCE-merges GA4/index so the legacy GSC-only `/api/gsc/ingest` path can't wipe
+   GA4. Both directions are regression-tested.
+5. **Response adds `stale` (PB8), `deferred`, and `invalid_urls`** beyond the spec's
+   `{ingested, sources, period, unmatched_urls}`.
+
+**Review fixes (learning-qa pre-flight), all regression-tested:**
+
+1. **One join key (P11, was HIGH).** Matched rows are stored under the **crawled
+   page's** URL — the key the page-priority consumer (`crawl.py`) reads by — not the
+   raw bundle URL. Storage, the matched/unmatched diff, and the downstream lookup now
+   share one key, so a trailing-slash/`www`/scheme difference can't persist a row the
+   consumer never finds. Unmatched bundle URLs are held out (reported in
+   `unmatched_urls`), not stored under an orphan key. Test:
+   `test_trailing_slash_bundle_url_stored_under_crawled_key`.
+2. **Malformed URL is non-fatal (P2).** URLs are normalised **before** the save, so a
+   scheme-less URL lands in `invalid_urls` instead of raising a 500 *after* other rows
+   commit. Test: `test_malformed_bundle_url_is_skipped_not_fatal`.
+3. **Honest freshness (PB8/P6).** A row that carries fields forward from an older
+   bundle is stamped with `earlier(new, prior)` — the oldest contributing source's
+   date — not optimistically the newest. Test:
+   `test_carried_forward_row_reports_oldest_source_vintage`.
+4. **`INVALID_SITE_URL` 400.** A bare-host / `sc-domain:` `site_url` (netloc == "")
+   returns a clear 400, not a confusing 403. Test: `test_invalid_site_url_returns_400`.
+
+**Independent review (post-implementation), fixes applied:**
+
+- **F1 (MED-HIGH) — `www`/scheme join.** `normalise_url` folds neither `www.` nor
+  http/https, so the earlier join only reconciled trailing-slash/case/params — the
+  spec over-promised. Added `_match_key` (normalise + `_strip_www` + drop scheme),
+  used for matching only (storage still under the crawled url). The "crawl
+  example.org / GSC property www.example.org" config now joins. Test:
+  `test_www_and_scheme_differences_still_join`.
+- **F2 (MED) — Redis coverage.** The production store's GA4 merge path was untested.
+  Added `tests/test_performance_redis.py` (round-trip, absent→None, GSC-only preserves
+  GA4) against a field-merging fake.
+- **F3 (LOW) — `earlier()` corruption edge** hardened to prefer the parseable side.
+  Test: `test_pb8_earlier_picks_oldest_and_handles_unparseable`.
+- **Gap — duplicate URL in one bundle** now merges to one row (records keyed by
+  storage_key); `ingested` counts distinct rows. Test:
+  `test_duplicate_bundle_urls_merge_to_one_row`.
+- **Gap — `index_state` carry-forward** tested: `test_index_state_carried_forward_when_new_gsc_omits_it`.
+
+**Adjacent — found, NOT fixed (F4, pre-existing).** The legacy `/api/gsc/ingest`
+(`api/routers/gsc.py:283`) builds records keyed on the **raw GSC URL** and leaves
+`source_generated_at=None`. It never *wipes* GA4 (its `None` GA4 is COALESCE-preserved),
+but because it doesn't share `_match_key`/crawled-page keying, its rows can land under a
+different key than the bundle + page-priority consumer use. Out of scope for this change;
+flagged for a Phase 2 follow-up (unify `gsc.py` onto the same join-key + freshness stamp).
 
 ---
 
