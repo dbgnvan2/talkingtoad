@@ -23,7 +23,9 @@ _SITE_CODES = ["HTTP_PAGE", "HTTPS_REDIRECT_MISSING", "MIXED_CONTENT",
                "MISSING_HSTS", "WWW_CANONICALIZATION",
                # "Search Everywhere" GEO (P1) — site-level findings.
                "ENTITY_NAME_INCONSISTENT", "AUTHOR_IDENTITY_INCONSISTENT",
-               "NEAR_DUPLICATE_BODY"]
+               "NEAR_DUPLICATE_BODY",
+               # Analytics & Measurement (2026-08-06 spec) — site-wide tagging property
+               "ANALYTICS_ID_INCONSISTENT"]
 
 
 def _imp(code: str) -> int:

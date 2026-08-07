@@ -213,7 +213,60 @@ def check_cross_page(pages: list[ParsedPage], start_url: str | None = None) -> l
     issues.extend(_check_entity_consistency(live_pages, start_url))
     issues.extend(_check_body_uniqueness(live_pages))
 
+    # ── Analytics & Measurement — inconsistent tag ID across the site (MI3) ──
+    issues.extend(_check_analytics_consistency(live_pages))
+
     return issues
+
+
+def _check_analytics_consistency(pages: list[ParsedPage]) -> list[Issue]:
+    """MI3 — flag when the site's GA4/GTM measurement IDs are not uniform, or
+    the tag is present on some pages and absent on others.
+
+    Only meaningful with 2+ crawled pages. Site-scoped: emitted once, on the
+    first affected page (the scoring layer charges site-scoped codes once
+    site-wide). HTML pages only — non-HTML/redirect pages are already excluded
+    from ``live_pages`` by the caller.
+
+    Spec:  docs/pending/2026-08-06_measurement-integrity-checks.md (MI3)
+    Tests: tests/test_analytics_checks.py::test_mi3_inconsistent_ids_cross_page
+    """
+    from api.crawler.analytics_patterns import CURRENT_TAG_TYPES
+
+    if len(pages) < 2:
+        return []
+
+    # Per page: the set of current (GA4/GTM) measurement IDs it carries.
+    per_page_ids: list[tuple[str, frozenset]] = []
+    for p in pages:
+        ids = {
+            t["id"] for t in (getattr(p, "analytics_tags", None) or [])
+            if t.get("type") in CURRENT_TAG_TYPES and t.get("id")
+        }
+        per_page_ids.append((p.url, frozenset(ids)))
+
+    tagged = [(url, ids) for url, ids in per_page_ids if ids]
+    if not tagged:
+        return []  # no tags anywhere → that's MI1 per-page territory, not MI3
+
+    # The canonical site-wide ID set = union across pages that HAVE a tag.
+    all_ids = frozenset().union(*(ids for _url, ids in tagged))
+
+    # Inconsistent if any page's ID set differs from the site-wide set — that
+    # covers both "different ID here" and "no tag here while others have one".
+    # Attribute the issue to the first ACTUALLY-offending page (whose id set
+    # differs), not pages[0] which may itself be consistent. Site-scoped, so
+    # it's charged once site-wide regardless — but the displayed URL should
+    # point at a real offender.
+    offender = next((url for url, ids in per_page_ids if ids != all_ids), None)
+    if offender is None:
+        return []
+
+    return [make_issue(
+        "ANALYTICS_ID_INCONSISTENT", offender,
+        extra={"measurement_ids": sorted(all_ids),
+               "pages_with_tag": len(tagged),
+               "pages_total": len(per_page_ids)})]
 
 
 # ── Schema / JSON-LD entity helpers ─────────────────────────────────────────

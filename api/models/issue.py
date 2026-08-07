@@ -29,6 +29,8 @@ IssueCategory = Literal[
     # Agent-readiness Phase 1 (task-side checks)
     "rendering",
     "semantic_html",
+    # Analytics & Measurement (2026-08-06 spec) — GA4/GTM tag integrity + attribution
+    "analytics",
     # Phase 2
     "image",
     "performance",
@@ -43,6 +45,8 @@ PHASE_1_CATEGORIES: frozenset[str] = frozenset(
         "image", "ai_readiness",
         # Agent-readiness Phase 1 task-side categories
         "rendering", "semantic_html",
+        # Analytics & Measurement (2026-08-06 spec)
+        "analytics",
     ]
 )
 

@@ -112,6 +112,11 @@ class ParsedPage:
     # v1.9 Image Intelligence fields
     image_data: list = None  # list[dict] - comprehensive image data for ImageInfo
 
+    # Analytics & Measurement (analytics category — 2026-08-06 spec)
+    analytics_tags: list = None          # list[dict]: {"type","id","via"} detections; None if none
+    has_consent_mode: bool | None = None # Google Consent Mode v2 signal seen (None when no tag)
+    untrackable_outbound_hrefs: list = None  # external image/icon links with no identifiable label
+
     # v2.1 GEO Analyzer fields
     is_spa_shell: bool = False           # raw HTML is a JS app shell with near-zero text
     author_detected: bool = False        # rel=author / itemprop=author / byline class found
@@ -465,6 +470,10 @@ def parse_page(
         pdf_metadata=pdf_metadata,
         # v1.9 Image Intelligence
         image_data=_extract_image_data(soup, page_url),
+        # Analytics & Measurement (analytics category — 2026-08-06 spec)
+        analytics_tags=_extract_analytics_tags(soup),
+        has_consent_mode=_detect_consent_mode(soup),
+        untrackable_outbound_hrefs=_find_untrackable_outbound_links(soup, page_url),
         # v2.1 GEO Analyzer fields
         is_spa_shell=_detect_spa_shell(soup),
         author_detected=_detect_author(soup),
@@ -707,6 +716,117 @@ def _extract_schema_blocks(soup: BeautifulSoup) -> list[dict] | None:
             pass
 
     return blocks if blocks else None
+
+
+def _script_inline_text(script) -> str:
+    """Inline text of a <script>, robust to BeautifulSoup returning None for
+    ``.string`` when the tag has mixed/multiple content."""
+    if script.string:
+        return script.string
+    try:
+        return script.get_text() or ""
+    except Exception:
+        return ""
+
+
+def _extract_analytics_tags(soup: BeautifulSoup) -> list | None:
+    """Detect GA4 / GTM / (legacy) UA tags from the page's scripts.
+
+    Returns a list of ``{"type","id","via"}`` detections (``via`` is
+    ``"src"`` for an external loader or ``"call"`` for an inline vendor call),
+    or ``None`` when no analytics tag is present. Best-effort ``id`` (may be
+    None). Detection requires a real vendor loader/call anchor — a bare
+    measurement id in prose does NOT count (avoids false positives).
+
+    Spec: docs/pending/2026-08-06_measurement-integrity-checks.md (MI1–MI3)
+    """
+    from api.crawler.analytics_patterns import TAG_SIGNATURES
+
+    detections: list[dict] = []
+    for script in soup.find_all("script"):
+        src = (script.get("src") or "").strip()
+        inline = _script_inline_text(script)
+        for sig in TAG_SIGNATURES:
+            src_hit = bool(src) and any(s in src for s in sig["src_substrings"])
+            call_hit = any(c in inline for c in sig["call_substrings"])
+            if not (src_hit or call_hit):
+                continue
+            haystack = f"{src}\n{inline}"
+            m = sig["id_re"].search(haystack)
+            tag_id = m.group(0) if m else None
+            # A gtag('config',…) call / gtag/js loader with no matching id is
+            # another Google product (Ads AW-, Floodlight DC-), not this vendor.
+            if sig.get("require_id") and tag_id is None:
+                continue
+            detections.append({
+                "type": sig["type"],
+                "id": tag_id,
+                "via": "src" if src_hit else "call",
+            })
+    return detections or None
+
+
+def _detect_consent_mode(soup: BeautifulSoup) -> bool | None:
+    """True when a Google Consent Mode v2 signal is present in an inline script,
+    False when analytics scripts exist but no consent signal is found, and None
+    when there are no scripts to inspect at all.
+
+    Spec: docs/pending/2026-08-06_measurement-integrity-checks.md (MI4)
+    """
+    from api.crawler.analytics_patterns import CONSENT_MODE_SIGNALS
+
+    scripts = soup.find_all("script")
+    if not scripts:
+        return None
+    for script in scripts:
+        text = _script_inline_text(script)
+        if not text:
+            continue
+        lowered = text.replace(" ", "").lower()
+        for sig in CONSENT_MODE_SIGNALS:
+            if sig.replace(" ", "").lower() in lowered:
+                return True
+    return False
+
+
+def _find_untrackable_outbound_links(soup: BeautifulSoup, page_url: str) -> list | None:
+    """External image/icon links with no identifiable label.
+
+    Returns the absolute hrefs of external ``<a>`` elements that contain a
+    visual element (img/svg/picture/icon) but have NO anchor text, aria-label,
+    title, or image alt — so GA4's outbound-click event records an empty
+    ``link_text`` and the click can't be attributed. A truly empty anchor with
+    no visual content is intentionally excluded (that's an empty-anchor issue,
+    flagged elsewhere) — and any anchor that HAS a label is excluded (so a
+    labelled image link does not fire, the MI6 adversarial case).
+
+    Spec: docs/pending/2026-08-06_measurement-integrity-checks.md (MI6)
+    """
+    hrefs: list[str] = []
+    for a in soup.find_all("a", href=True):
+        href = (a.get("href") or "").strip()
+        if not href or href.startswith(("#", "javascript:", "mailto:", "tel:", "data:")):
+            continue
+        absolute = urljoin(page_url, href)
+        if not absolute.startswith(("http://", "https://")):
+            continue
+        if is_same_domain(absolute, page_url):
+            continue  # external links only
+        if a.get_text(strip=True):
+            continue  # has visible text → trackable
+        if (a.get("aria-label") or "").strip() or (a.get("title") or "").strip():
+            continue  # has an accessible label → identifiable
+        img = a.find("img")
+        if img is not None and (img.get("alt") or "").strip():
+            continue  # image carries alt text → identifiable
+        has_visual = (
+            img is not None
+            or a.find(["svg", "picture", "i", "span"]) is not None
+        )
+        if not has_visual:
+            continue  # empty anchor with no visual — handled by the empty-anchor check
+        hrefs.append(absolute)
+    return hrefs or None
 
 
 def _count_external_scripts(soup: BeautifulSoup, page_url: str) -> int:

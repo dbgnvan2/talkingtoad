@@ -106,6 +106,7 @@ _ANALYSIS_CATEGORY_MAP: dict[str, frozenset[str]] = {
     "site_structure": frozenset({"heading"}),
     "indexability":   frozenset({"crawlability", "sitemap"}),
     "ai_readiness":   frozenset({"ai_readiness"}),
+    "analytics":      frozenset({"analytics"}),
 }
 # Categories not covered by a named group are always emitted (security).
 _UNGROUPED_CATEGORIES: frozenset[str] = frozenset({"security"})

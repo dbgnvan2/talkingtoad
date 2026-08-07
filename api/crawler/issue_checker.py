@@ -68,6 +68,7 @@ from api.crawler.checkers.links import (  # noqa: F401
     _is_case_normalise_only,
 )
 from api.crawler.checkers.security import _check_security  # noqa: F401
+from api.crawler.checkers.analytics import _check_analytics  # noqa: F401
 from api.crawler.checkers.metadata import (  # noqa: F401
     _check_canonical,
     check_homepage_agent_readiness,
@@ -427,6 +428,12 @@ def check_page(
 
     # ── Security (§E1) ────────────────────────────────────────────────────
     _check_security(page, issues, hsts_checked_hosts=hsts_checked_hosts)
+
+    # ── Analytics & Measurement (2026-08-06 spec) ─────────────────────────
+    # Unconditional, like security: measurement integrity matters on every live
+    # page. Category-level enable/disable is handled by the engine's issue
+    # filter (_enabled_categories), not a guard here.
+    _check_analytics(page, issues)
 
     # ── Pagination links (§E3) ────────────────────────────────────────────
     if page.pagination_next or page.pagination_prev:

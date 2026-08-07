@@ -8,7 +8,7 @@ generator: scripts/generate_issue_codes_doc.py
 
 > **This file is auto-generated.** Do not edit by hand — your changes will be overwritten the next time the generator runs. To update an issue code, edit `api/crawler/issue_checker.py` (`_CATALOGUE`, `_ISSUE_SCORING`, `_AI_READINESS_CONFIDENCE`) and re-run `python scripts/generate_issue_codes_doc.py`.
 
-**155 issue codes** across 12 categories.
+**161 issue codes** across 13 categories.
 
 ## Table of contents
 
@@ -22,6 +22,7 @@ generator: scripts/generate_issue_codes_doc.py
 - [URL_STRUCTURE](#url_structure) (4)
 - [IMAGE](#image) (14)
 - [AI_READINESS](#ai_readiness) (71)
+- [ANALYTICS](#analytics) (6)
 - [RENDERING](#rendering) (1)
 - [SEMANTIC_HTML](#semantic_html) (4)
 
@@ -1820,6 +1821,107 @@ AI crawler user agents (GPTBot, ClaudeBot) receive substantially less content th
 **Recommendation:** Ensure AI crawler requests receive the same content as regular browsers. Serving stripped content to AI bots prevents citation and indexing.
 
 **Plain-English:** AI Bot Content Stripping
+
+---
+
+<a id="analytics"></a>
+## ANALYTICS
+
+_6 codes in this category._
+
+### ANALYTICS_ID_INCONSISTENT
+**Severity:** 🔵 info | **Impact:** 2 | **Effort:** 2
+
+**What it is**
+Different pages report to different GA4/GTM IDs, or the tag is present on some pages and absent on others — a sign the tag was added page-by-page instead of site-wide.
+
+**Why it matters**
+Traffic is split across properties or lost entirely, so no single report reflects the whole site and trends look broken.
+
+**How to fix**
+Move the tag into the site-wide header/footer template with a single measurement ID, remove per-page copies, and re-crawl to confirm one consistent ID everywhere.
+
+**Plain-English:** Inconsistent Analytics ID
+
+---
+
+### ANALYTICS_TAG_DUPLICATE
+**Severity:** 🟡 warning | **Impact:** 4 | **Effort:** 1
+
+**What it is**
+Two analytics installations were found on one page: for example a GA4 tag added by a plugin AND a Google Tag Manager container that also loads GA4.
+
+**Why it matters**
+Double-tagging inflates pageviews and sessions and roughly halves your reported engagement and conversion rates, so every decision made from the data is wrong.
+
+**How to fix**
+Pick one delivery path for GA4 (usually GTM) and remove the other. Re-crawl to confirm a single tag remains. This is a heuristic from the page markup — verify in GA4 DebugView or Tag Assistant before removing anything.
+
+**Plain-English:** Duplicate Analytics Tag
+
+---
+
+### ANALYTICS_TAG_MISSING
+**Severity:** 🟡 warning | **Impact:** 4 | **Effort:** 1
+
+**What it is**
+This page carries no Google Analytics 4 tag and no Google Tag Manager container, so visits to it are not being recorded.
+
+**Why it matters**
+You are flying blind on this page: no sessions, no engagement, no conversions. If it's a donation or contact page, you can't tell whether it works. Pages missing the tag also skew site-wide totals downward.
+
+**How to fix**
+Ensure the GA4 tag (or the GTM container that loads it) is present in the shared header/footer template so it appears on every page, then re-crawl to confirm. Detection is markup-only — it confirms the tag is on the page, not that it fires.
+
+**Plain-English:** No Analytics Tag
+
+---
+
+### CONSENT_MODE_MISSING
+**Severity:** 🔵 info | **Impact:** 2 | **Effort:** 3
+
+**What it is**
+The page loads GA4/GTM but shows no Consent Mode v2 configuration, which is how Google expects analytics to respect a visitor's cookie choice in regulated regions.
+
+**Why it matters**
+Without Consent Mode, analytics may collect data before consent (a privacy/GDPR risk for EU/UK visitors) or, if a banner blocks the tag outright, you lose data from everyone who doesn't accept.
+
+**How to fix**
+If you serve EU/UK visitors, set up Consent Mode v2 in GTM alongside your consent banner (advisory — this is a heuristic markup check, not legal advice).
+
+**Plain-English:** Consent Mode Not Detected
+
+---
+
+### OUTBOUND_LINK_UNTRACKABLE
+**Severity:** 🔵 info | **Impact:** 1 | **Effort:** 1 | **Fixability:** content_edit
+
+**What it is**
+An external link whose only content is an image or icon — it has no visible text, aria-label, or title. GA4 records the click but with an empty link label.
+
+**Why it matters**
+You can see that people leave for external sites but not WHICH link they used, so you can't measure partner referrals, donation-processor handoffs, or social links.
+
+**How to fix**
+Add an aria-label (or descriptive alt text on the image) to the link so it has an identifiable label in GA4's outbound-click events.
+
+**Plain-English:** Untrackable Outbound Link
+
+---
+
+### SELF_REFERENCING_UTM
+**Severity:** 🔵 info | **Impact:** 2 | **Effort:** 1 | **Fixability:** content_edit
+
+**What it is**
+A link to another page on your own site carries UTM campaign tags (e.g. ?utm_source=…). UTMs are meant for links coming FROM other sites, not internal ones.
+
+**Why it matters**
+Clicking an internal UTM'd link restarts the GA4 session and reattributes the visitor to that fake campaign, so your real traffic sources (organic, referral) are under-counted and self-referrals pollute reports.
+
+**How to fix**
+Edit the link to point to the clean internal URL with no utm_* parameters. Reserve UTMs for external campaigns (emails, ads, social posts).
+
+**Plain-English:** Self-Referencing Campaign Link
 
 ---
 

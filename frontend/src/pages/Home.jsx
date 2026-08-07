@@ -8,6 +8,7 @@ const ANALYSIS_TOGGLES = [
   { key: 'seo_essentials', label: 'SEO Essentials',  desc: 'Title tags, meta descriptions, canonicals' },
   { key: 'site_structure', label: 'Site Structure',  desc: 'Heading hierarchy (H1–H6)' },
   { key: 'indexability',   label: 'Indexability',    desc: 'robots.txt, XML sitemaps, noindex tags' },
+  { key: 'analytics',      label: 'Analytics & Measurement', desc: 'GA4/GTM tag presence, consent mode, link attribution' },
 ]
 
 const SAVED_URL_KEY = 'talkingtoad_last_url'

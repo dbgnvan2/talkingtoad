@@ -3049,6 +3049,110 @@ const issueHelp = {
       "author schema does NOT trigger it (that would flag almost every blog post). It targets " +
       "pages that added author markup but left it empty.",
   },
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // ANALYTICS & MEASUREMENT
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  ANALYTICS_TAG_MISSING: {
+    title: "No analytics tag",
+    category: "analytics",
+    severity: "warning",
+    mission_impact: "This page isn't being measured, so you can't tell if it's working.",
+    definition:
+      "No Google Analytics 4 tag and no Google Tag Manager container were found in this page's " +
+      "HTML, so visits to it are not recorded.",
+    impact:
+      "You're flying blind on this page — no sessions, no engagement, no conversions. If it's a " +
+      "donation or contact page, you can't tell whether it works, and the gap also drags your " +
+      "site-wide totals down.",
+    fix:
+      "Add the GA4 tag (or the Tag Manager container that loads it) to the shared header/footer " +
+      "template so it appears on every page, then re-crawl to confirm. Note: this checks the page's " +
+      "HTML, so it confirms the tag is present — not that it fires.",
+  },
+
+  ANALYTICS_TAG_DUPLICATE: {
+    title: "Duplicate analytics tag",
+    category: "analytics",
+    severity: "warning",
+    mission_impact: "Analytics is loaded twice here, so your numbers are inflated.",
+    definition:
+      "This page appears to load Google Analytics more than once — either two GA4 config calls, or a " +
+      "direct GA4 tag alongside a Tag Manager container that also loads GA4.",
+    impact:
+      "Double-tagging inflates pageviews and sessions and roughly halves your reported engagement and " +
+      "conversion rates, so decisions made from the data are wrong.",
+    fix:
+      "Deliver GA4 through one path only (usually Tag Manager) and remove the other. Verify in GA4 " +
+      "DebugView or Google Tag Assistant before removing anything, then re-crawl to confirm one tag remains.",
+  },
+
+  ANALYTICS_ID_INCONSISTENT: {
+    title: "Inconsistent analytics ID",
+    category: "analytics",
+    severity: "info",
+    mission_impact: "Different pages report to different analytics accounts, splitting your data.",
+    definition:
+      "The analytics measurement ID is not the same on every crawled page — or the tag is present on " +
+      "some pages and missing on others. This usually means the tag was added page-by-page instead of " +
+      "in one shared template.",
+    impact:
+      "Traffic is split across properties or lost entirely, so no single report reflects the whole site " +
+      "and trends look broken.",
+    fix:
+      "Install one GA4 measurement ID site-wide via the shared header/footer template, remove per-page " +
+      "copies, and re-crawl to confirm one consistent ID everywhere.",
+  },
+
+  CONSENT_MODE_MISSING: {
+    title: "Consent Mode not detected",
+    category: "analytics",
+    severity: "info",
+    mission_impact: "Analytics may not respect visitor cookie choices in the EU/UK.",
+    definition:
+      "An analytics tag is present but no Google Consent Mode v2 signal was found. Consent Mode is how " +
+      "Google expects analytics to respect a visitor's cookie choice in regulated regions.",
+    impact:
+      "Without it, analytics may collect data before consent (a privacy/GDPR risk for EU/UK visitors) " +
+      "or, if a banner blocks the tag outright, you lose data from everyone who doesn't accept.",
+    fix:
+      "If you serve EU/UK visitors, configure Consent Mode v2 in Tag Manager alongside your cookie " +
+      "banner. This is an advisory heuristic from the page's HTML, not legal advice.",
+  },
+
+  SELF_REFERENCING_UTM: {
+    title: "Self-referencing campaign link",
+    category: "analytics",
+    severity: "info",
+    mission_impact: "An internal link with campaign tags scrambles where your visitors 'came from'.",
+    definition:
+      "A link to another page on your own site carries utm_* campaign parameters (e.g. " +
+      "?utm_source=…). UTMs are meant for links coming from OTHER sites, not internal ones.",
+    impact:
+      "Clicking an internal UTM'd link restarts the analytics session and reattributes the visitor to " +
+      "that fake campaign, so your real traffic sources (organic, referral) are under-counted and " +
+      "self-referrals pollute reports.",
+    fix:
+      "Edit the link to point to the clean internal URL with no utm_* parameters. Reserve UTMs for " +
+      "external campaigns — emails, ads, and social posts.",
+  },
+
+  OUTBOUND_LINK_UNTRACKABLE: {
+    title: "Untrackable outbound link",
+    category: "analytics",
+    severity: "info",
+    mission_impact: "You can see people leave for other sites, but not which link they used.",
+    definition:
+      "An external link on this page is an image or icon with no text, aria-label, title, or image alt " +
+      "text — so analytics records the outbound click with an empty label.",
+    impact:
+      "You can't measure partner referrals, donation-processor handoffs, or social links, because every " +
+      "one of those clicks looks identical and unlabelled in your reports.",
+    fix:
+      "Give the link an aria-label (or descriptive alt text on its image) so it has an identifiable " +
+      "label in analytics' outbound-click events.",
+  },
   };
 
 

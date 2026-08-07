@@ -271,6 +271,28 @@ export const categoryHelp = {
       "No <main> landmark identifying the primary content",
       "No <nav> landmark identifying the navigation"
     ]
+  },
+
+  analytics: {
+    title: "Analytics & Measurement",
+    description:
+      "Analytics & Measurement checks look at whether your website measurement is actually working: is a " +
+      "Google Analytics 4 (or Tag Manager) tag present on every page, installed exactly once, respecting " +
+      "visitor consent, and are your links attributable in reports? These are read from your pages' HTML — " +
+      "no Google account or API access is used.",
+    why:
+      "Every decision a nonprofit makes from its analytics — which pages work, where donors come from, " +
+      "whether a campaign paid off — is only as good as the data underneath. A page with no tag is invisible; " +
+      "a double-tagged page inflates every number; self-referencing campaign links and unlabelled outbound " +
+      "links quietly corrupt attribution. This category catches those measurement faults before they mislead you.",
+    common: [
+      "A page with no GA4 or Google Tag Manager tag at all",
+      "Google Analytics loaded twice (plugin + Tag Manager) — double-counting",
+      "Different measurement IDs on different pages, or the tag missing on some",
+      "Consent Mode not configured for EU/UK visitors",
+      "Internal links carrying utm_* campaign parameters",
+      "Image/icon links to external sites with no label to identify the click"
+    ]
   }
 }
 

@@ -58,7 +58,9 @@ _VALID_CATEGORIES: frozenset[str] = frozenset(
     ["broken_link", "metadata", "heading", "redirect",
      "crawlability", "duplicate", "sitemap", "security", "url_structure", "ai_readiness", "image",
      # Agent-readiness Phase 1 task-side categories
-     "rendering", "semantic_html"]
+     "rendering", "semantic_html",
+     # Analytics & Measurement (2026-08-06 spec)
+     "analytics"]
 )
 
 # Per-job cancel events (job_id → asyncio.Event)

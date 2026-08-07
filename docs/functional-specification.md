@@ -808,6 +808,35 @@ on the Page Priority work queue (`PagePriorityPanel`) and on the By-Page view
 
 ---
 
+### 4.13 Analytics & Measurement category (2026-08-06)
+
+A crawl-time category answering *"is your measurement working, and is your traffic
+attributable?"* — decided entirely from page HTML, with **no GSC/GA4/GTM API,
+OAuth, or per-site credentials** (distinct from §4.8, which consumes the GSC API).
+Tag signatures/vocabulary live in `api/crawler/analytics_patterns.py` (config, not
+code); per-page checks in `api/crawler/checkers/analytics.py`, the site-level check
+in `checkers/cross_page.py`. Surfaced via a dedicated "Analytics & Measurement"
+analysis toggle (default on). Detection is **markup-only** — a pass means the tag is
+present on the page, not that it fires.
+
+| Code | Scope | Sev | Fires when |
+|---|---|---|---|
+| `ANALYTICS_TAG_MISSING` | per page | warning | No current GA4 (`G-…`) or GTM (`GTM-…`) tag on the page. A Google Ads-only (`AW-…`) page still counts as untagged. |
+| `ANALYTICS_TAG_DUPLICATE` | per page | warning | GA4 configured in two+ separate `<script>` blocks, or a direct GA4 tag co-existing with a GTM container (double-count risk). Ads/Floodlight gtag calls are excluded (no `G-` id). |
+| `ANALYTICS_ID_INCONSISTENT` | site | info | GA4/GTM measurement IDs differ across pages, or the tag is present on some pages and absent on others. Attributed to the first offending page. |
+| `CONSENT_MODE_MISSING` | per page | info | A tag is present but no Google Consent Mode v2 signal (`gtag('consent',…)`) is detected. Suppressed when `ANALYTICS_TAG_MISSING` fires. Advisory (EU/UK). |
+| `SELF_REFERENCING_UTM` | per page | info | An internal link carries `utm_*` (blank/upper-case included) or a click-id (`gclid`, `fbclid`, …), restarting the GA4 session source. External links excluded. |
+| `OUTBOUND_LINK_UNTRACKABLE` | per page | info | An external image/icon link has no text, `aria-label`, `title`, or image `alt` — GA4's outbound-click event records an empty `link_text`. |
+
+Scoring is derived through the R5/R3 calibration model (`_CALIBRATION` →
+`_IMPACT_MATRIX`): tag-missing/duplicate → impact 4 (warning, quick wins), the rest
+→ impact 1–2 (info). → `tests/test_analytics_checks.py`, `tests/test_parser_analytics.py`.
+
+Micro-spec: `docs/pending/2026-08-06_measurement-integrity-checks.md` (folded in on
+completion, 2026-08-06).
+
+---
+
 ## 5. Fix capabilities
 
 Fixes are organised into routers; all WP-touching endpoints validate domain credentials.

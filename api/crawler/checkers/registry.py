@@ -12,10 +12,10 @@ integrity of this file is enforced by five CI parity invariants — see
 
 Single source of truth for:
     - ``Issue`` dataclass and ``_IssueSpec`` dataclass
-    - ``_ISSUE_SCORING`` (impact, effort) by code — 155 codes
-    - ``_CATALOGUE`` (every issue spec) — 155 codes
+    - ``_ISSUE_SCORING`` (impact, effort) by code — 161 codes
+    - ``_CATALOGUE`` (every issue spec) — 161 codes
     - ``_AI_READINESS_CONFIDENCE`` (confidence labels) — 71 codes
-      (of 155 total; the 84 non-ai_readiness codes carry no confidence label)
+      (of 161 total; the 90 non-ai_readiness codes carry no confidence label)
     - ``_STOP_WORDS`` and ``_GENERIC_ANCHOR_TEXTS`` (shared helpers)
     - Size-limit constants
     - ``make_issue()`` factory, ``_sig_words()``, ``_titles_mismatch()``
@@ -301,6 +301,14 @@ _ISSUE_SCORING: dict[str, tuple[int, int]] = {
     "HOWTO_SCHEMA_INCOMPLETE":      (1, 2),
     "PRODUCT_REVIEW_SCHEMA_MISSING":(2, 2),
     "AUTHOR_CREDENTIALS_MISSING":   (1, 2),
+    # ── Analytics & Measurement (2026-08-06 spec, MI1–MI6) ──────────────────
+    # impact == derive_impact() from _CALIBRATION below (test_r3_calibration.py).
+    "ANALYTICS_TAG_MISSING":        (4, 1),
+    "ANALYTICS_TAG_DUPLICATE":      (4, 1),
+    "ANALYTICS_ID_INCONSISTENT":    (2, 2),
+    "CONSENT_MODE_MISSING":         (2, 3),
+    "SELF_REFERENCING_UTM":         (2, 1),
+    "OUTBOUND_LINK_UNTRACKABLE":    (1, 1),
 }
 
 
@@ -486,6 +494,13 @@ _CALIBRATION: dict[str, tuple[str, str, bool]] = {
     "HOWTO_SCHEMA_INCOMPLETE": ("Heuristic", "small", False),
     "PRODUCT_REVIEW_SCHEMA_MISSING": ("Reasonable proxy", "small", False),
     "AUTHOR_CREDENTIALS_MISSING": ("Heuristic", "small", False),
+    # ── Analytics & Measurement (2026-08-06 spec, MI1–MI6) ──────────────────
+    "ANALYTICS_TAG_MISSING": ("Reasonable proxy", "moderate", False),   # → 4, warning
+    "ANALYTICS_TAG_DUPLICATE": ("Reasonable proxy", "moderate", False), # → 4, warning
+    "ANALYTICS_ID_INCONSISTENT": ("Reasonable proxy", "small", False),  # → 2, info
+    "CONSENT_MODE_MISSING": ("Heuristic", "moderate", False),           # → 2, info
+    "SELF_REFERENCING_UTM": ("Reasonable proxy", "small", False),       # → 2, info
+    "OUTBOUND_LINK_UNTRACKABLE": ("Heuristic", "small", False),         # → 1, info
 }
 
 # Deliberate deviations from the pure matrix (auditor adjudication of the 21
@@ -533,6 +548,8 @@ _SITE_SCOPED_CODES: frozenset[str] = frozenset({
     "ENTITY_NAME_INCONSISTENT",
     "AUTHOR_IDENTITY_INCONSISTENT",
     "NEAR_DUPLICATE_BODY",
+    # Analytics & Measurement — a site-wide tagging property (2026-08-06 spec).
+    "ANALYTICS_ID_INCONSISTENT",
 })
 
 
@@ -1979,6 +1996,96 @@ _CATALOGUE: dict[str, _IssueSpec] = {
         impact_desc="Expertise and authority signals help AI and search decide whom to trust and "
                     "cite. A name alone is a weak signal.",
         how_to_fix="Add jobTitle / description / sameAs / url to the author Person in your JSON-LD.",
+        fixability="content_edit",
+    ),
+    # ══════════════════════════════════════════════════════════════════════
+    # ANALYTICS & MEASUREMENT (2026-08-06 spec, MI1–MI6)
+    # Detected from page HTML at crawl time — no GSC/GA4/GTM API involved.
+    # ══════════════════════════════════════════════════════════════════════
+    "ANALYTICS_TAG_MISSING": _IssueSpec(
+        category="analytics", severity="warning",
+        description="No analytics tag (GA4 or Google Tag Manager) was detected on this page.",
+        recommendation="Add your GA4 tag or GTM container to this page's template so its traffic is measured.",
+        human_description="No Analytics Tag",
+        what_it_is="This page carries no Google Analytics 4 tag and no Google Tag Manager container, "
+                   "so visits to it are not being recorded.",
+        impact_desc="You are flying blind on this page: no sessions, no engagement, no conversions. "
+                    "If it's a donation or contact page, you can't tell whether it works. Pages missing "
+                    "the tag also skew site-wide totals downward.",
+        how_to_fix="Ensure the GA4 tag (or the GTM container that loads it) is present in the shared "
+                   "header/footer template so it appears on every page, then re-crawl to confirm. "
+                   "Detection is markup-only — it confirms the tag is on the page, not that it fires.",
+        fixability="developer_needed",
+    ),
+    "ANALYTICS_TAG_DUPLICATE": _IssueSpec(
+        category="analytics", severity="warning",
+        description="This page appears to load Google Analytics more than once (duplicate GA4 config, "
+                    "or both a direct GA4 tag and a GTM container that also loads GA4).",
+        recommendation="Load GA4 exactly once — either directly or via GTM, not both — to avoid double-counting.",
+        human_description="Duplicate Analytics Tag",
+        what_it_is="Two analytics installations were found on one page: for example a GA4 tag added by a "
+                   "plugin AND a Google Tag Manager container that also loads GA4.",
+        impact_desc="Double-tagging inflates pageviews and sessions and roughly halves your reported "
+                    "engagement and conversion rates, so every decision made from the data is wrong.",
+        how_to_fix="Pick one delivery path for GA4 (usually GTM) and remove the other. Re-crawl to "
+                   "confirm a single tag remains. This is a heuristic from the page markup — verify in "
+                   "GA4 DebugView or Tag Assistant before removing anything.",
+        fixability="developer_needed",
+    ),
+    "ANALYTICS_ID_INCONSISTENT": _IssueSpec(
+        category="analytics", severity="info", scope="site",
+        description="The analytics measurement ID is not the same on every crawled page (or some pages "
+                    "have a tag and others don't).",
+        recommendation="Use one GA4 property ID across the whole site, installed via a shared template.",
+        human_description="Inconsistent Analytics ID",
+        what_it_is="Different pages report to different GA4/GTM IDs, or the tag is present on some pages "
+                   "and absent on others — a sign the tag was added page-by-page instead of site-wide.",
+        impact_desc="Traffic is split across properties or lost entirely, so no single report reflects "
+                    "the whole site and trends look broken.",
+        how_to_fix="Move the tag into the site-wide header/footer template with a single measurement ID, "
+                   "remove per-page copies, and re-crawl to confirm one consistent ID everywhere.",
+        fixability="developer_needed",
+    ),
+    "CONSENT_MODE_MISSING": _IssueSpec(
+        category="analytics", severity="info",
+        description="An analytics tag is present but no Google Consent Mode v2 signal was detected.",
+        recommendation="Configure Google Consent Mode v2 if you have visitors in the EU/UK or use a cookie banner.",
+        human_description="Consent Mode Not Detected",
+        what_it_is="The page loads GA4/GTM but shows no Consent Mode v2 configuration, which is how "
+                   "Google expects analytics to respect a visitor's cookie choice in regulated regions.",
+        impact_desc="Without Consent Mode, analytics may collect data before consent (a privacy/GDPR "
+                    "risk for EU/UK visitors) or, if a banner blocks the tag outright, you lose data "
+                    "from everyone who doesn't accept.",
+        how_to_fix="If you serve EU/UK visitors, set up Consent Mode v2 in GTM alongside your consent "
+                   "banner (advisory — this is a heuristic markup check, not legal advice).",
+        fixability="developer_needed",
+    ),
+    "SELF_REFERENCING_UTM": _IssueSpec(
+        category="analytics", severity="info",
+        description="An internal link on this page points to your own site with utm_* campaign parameters.",
+        recommendation="Remove utm_* (and click-id) parameters from links that point to your own pages.",
+        human_description="Self-Referencing Campaign Link",
+        what_it_is="A link to another page on your own site carries UTM campaign tags (e.g. "
+                   "?utm_source=…). UTMs are meant for links coming FROM other sites, not internal ones.",
+        impact_desc="Clicking an internal UTM'd link restarts the GA4 session and reattributes the "
+                    "visitor to that fake campaign, so your real traffic sources (organic, referral) are "
+                    "under-counted and self-referrals pollute reports.",
+        how_to_fix="Edit the link to point to the clean internal URL with no utm_* parameters. Reserve "
+                   "UTMs for external campaigns (emails, ads, social posts).",
+        fixability="content_edit",
+    ),
+    "OUTBOUND_LINK_UNTRACKABLE": _IssueSpec(
+        category="analytics", severity="info",
+        description="An external link on this page has no text or label (image/icon only), so its "
+                    "outbound clicks can't be identified in analytics.",
+        recommendation="Give image/icon links an aria-label or title so GA4 can identify the outbound click.",
+        human_description="Untrackable Outbound Link",
+        what_it_is="An external link whose only content is an image or icon — it has no visible text, "
+                   "aria-label, or title. GA4 records the click but with an empty link label.",
+        impact_desc="You can see that people leave for external sites but not WHICH link they used, so "
+                    "you can't measure partner referrals, donation-processor handoffs, or social links.",
+        how_to_fix="Add an aria-label (or descriptive alt text on the image) to the link so it has an "
+                   "identifiable label in GA4's outbound-click events.",
         fixability="content_edit",
     ),
 }
