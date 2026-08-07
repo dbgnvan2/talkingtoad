@@ -112,3 +112,11 @@ def test_pb8_earlier_picks_oldest_and_handles_unparseable():
     assert earlier("bad", new) == new          # one-sided failure → parseable side
     assert earlier(new, "bad") == new
     assert earlier("bad", "worse") == "bad"    # neither parses → first arg
+
+
+def test_pb8_earlier_handles_mixed_tz_awareness():
+    """Regression (consolidated sweep): a tz-aware (...Z) vs tz-naive stamp must
+    compare, not raise TypeError."""
+    aware, naive = "2026-08-01T00:00:00Z", "2026-07-01T00:00:00"
+    assert earlier(aware, naive) == naive      # naive July is earlier than aware Aug
+    assert earlier(naive, aware) == naive      # order-independent, no crash

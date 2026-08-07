@@ -328,6 +328,25 @@ async def test_carried_forward_row_reports_oldest_source_vintage(client_store):
     assert rec.source_generated_at == "2026-06-01T00:00:00Z"  # oldest vintage wins
 
 
+async def test_mixed_tz_format_across_bundles_does_not_crash(client_store):
+    """Regression (consolidated sweep): bundle #1 with a tz-naive generated_at then
+    bundle #2 with a `...Z` generated_at (carried-forward page) must merge, not 500."""
+    client, store = client_store
+    await _seed_job(store)
+    r1 = await client.post("/api/performance/ingest", params={"job_id": "job1"},
+                           json=_bundle(generated_at="2026-07-01T00:00:00",  # naive
+                                        pages=[_page("https://example.org/a", gsc={"clicks": 3})]))
+    assert r1.status_code == 200
+    r2 = await client.post("/api/performance/ingest", params={"job_id": "job1"},
+                           json=_bundle(generated_at="2026-08-15T00:00:00Z", sources=["ga4"],  # aware
+                                        pages=[_page("https://example.org/a", ga4={"sessions": 4})]))
+    assert r2.status_code == 200, r2.text
+    rec = (await store.get_performance_records(url="https://example.org/a"))[0]
+    assert rec.gsc_clicks_mo == 3
+    assert rec.ga4_sessions_mo == 4
+    assert rec.source_generated_at == "2026-07-01T00:00:00"  # oldest vintage, no crash
+
+
 async def test_stale_bundle_flagged(client_store):
     client, store = client_store
     await _seed_job(store)

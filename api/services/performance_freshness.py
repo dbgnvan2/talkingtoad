@@ -8,7 +8,7 @@ Spec: docs/functional-specification.md §4.8 (Performance Bundle ingestion, PB8)
 
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 
 
 # Default staleness window. GSC lags ~2–3 days and bundles are typically
@@ -46,13 +46,21 @@ def is_stale(
     return None if n is None else n > days
 
 
+def _as_utc(dt: datetime) -> datetime:
+    """Make a datetime tz-aware in UTC. GSC/GA4 timestamps are UTC by contract, so
+    a naive stamp (e.g. `2026-07-01T00:00:00`, no offset) is treated as UTC. Without
+    this, comparing a naive stamp to a `...Z` (aware) one raises TypeError."""
+    return dt.replace(tzinfo=timezone.utc) if dt.tzinfo is None else dt
+
+
 def earlier(a: str | None, b: str | None) -> str | None:
     """Return the earlier of two ISO timestamps, so a ledger row that carries data
     forward from an older bundle reports the vintage of its OLDEST contributing
     source, never optimistically the newest (PB8 honesty). On a one-sided parse
     failure returns the parseable side (a real date beats an unorderable one); if
-    neither parses, returns `a`. Note: our own writer only ever stores valid ISO
-    or None, so the unparseable branch is external-corruption defence only."""
+    neither parses, returns `a`. Mixed tz-aware/naive inputs are compared as UTC
+    (naive assumed UTC) rather than raising. Note: our own writer only ever stores
+    valid ISO or None, so the unparseable branch is external-corruption defence."""
     da, db = parse_generated_at(a), parse_generated_at(b)
     if da is None and db is None:
         return a
@@ -60,4 +68,4 @@ def earlier(a: str | None, b: str | None) -> str | None:
         return b
     if db is None:
         return a
-    return a if da <= db else b
+    return a if _as_utc(da) <= _as_utc(db) else b
