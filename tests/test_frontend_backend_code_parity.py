@@ -15,6 +15,8 @@ from api.services.wp_shared import _CODE_TO_FIELD
 _ROOT = Path(__file__).resolve().parent.parent
 _RESULTS = _ROOT / "frontend" / "src" / "pages" / "Results.jsx"
 _FIXPANEL = _ROOT / "frontend" / "src" / "components" / "FixInlinePanel.jsx"
+_SUMMARY = _ROOT / "frontend" / "src" / "components" / "SummaryPanel.jsx"
+_PDF_REPORT = _ROOT / "api" / "services" / "report_generator.py"
 
 # Codes deleted/merged in §7 — must not linger in any frontend code-set.
 _DELETED_OR_MERGED = {
@@ -63,3 +65,42 @@ def test_no_deleted_codes_linger_in_frontend():
     for path in (_RESULTS, _FIXPANEL):
         present = _DELETED_OR_MERGED & set(re.findall(r"[A-Z0-9_]+", path.read_text()))
         assert not present, f"{path.name} still references deleted/merged codes: {present}"
+
+
+# ── Category display/ordering lists ↔ backend categories ─────────────────────
+# The set of issue categories is hand-mirrored in THREE hardcoded display lists:
+# the Results.jsx category tabs, the SummaryPanel.jsx "Issues by Category" grid,
+# and the PDF report's cat_list. Adding a new backend category (e.g. `analytics`,
+# 2026-08-06) without updating all three makes it silently vanish from the UI and
+# the audit PDF — exactly what happened to `analytics`, `rendering`, and
+# `semantic_html`. This test makes that class of omission fail in CI.
+
+def _js_category_keys(text: str) -> set[str]:
+    """Extract the `key: 'x'` slugs from a `const CATEGORIES = [ ... ]` array."""
+    m = re.search(r"CATEGORIES\s*=\s*\[(.*?)\]", text, re.S)
+    assert m, "CATEGORIES array not found"
+    return set(re.findall(r"key:\s*'([a-z_]+)'", m.group(1)))
+
+
+def _pdf_category_keys(text: str) -> set[str]:
+    """Extract the slug (2nd tuple element) from the PDF `cat_list = [ ... ]`."""
+    m = re.search(r"cat_list\s*=\s*\[(.*?)\]", text, re.S)
+    assert m, "cat_list not found"
+    return set(re.findall(r'"[^"]+"\s*,\s*"([a-z_]+)"', m.group(1)))
+
+
+def test_category_display_lists_cover_every_backend_category():
+    from api.crawler.checkers.registry import _CATALOGUE
+
+    backend = {spec.category for spec in _CATALOGUE.values()}
+    lists = {
+        "Results.jsx CATEGORIES tabs": _js_category_keys(_RESULTS.read_text()),
+        "SummaryPanel.jsx category grid": _js_category_keys(_SUMMARY.read_text()),
+        "report_generator.py PDF cat_list": _pdf_category_keys(_PDF_REPORT.read_text()),
+    }
+    for name, keys in lists.items():
+        missing = backend - keys
+        assert not missing, (
+            f"{name} is missing backend issue categories: {sorted(missing)}. "
+            "Every category in registry._CATALOGUE must appear in this display list."
+        )

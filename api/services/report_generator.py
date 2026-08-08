@@ -169,7 +169,9 @@ async def generate_pdf_report(
         ("Crawlability", "crawlability"), ("Duplicates", "duplicate"),
         ("Sitemap", "sitemap"), ("Security", "security"),
         ("URL Structure", "url_structure"), ("Images", "image"),
-        ("AI Readiness", "ai_readiness"),
+        ("AI Readiness", "ai_readiness"), ("Rendering", "rendering"),
+        ("Semantic HTML", "semantic_html"),
+        ("Analytics & Measurement", "analytics"),
     ]
     
     for label, key in cat_list:

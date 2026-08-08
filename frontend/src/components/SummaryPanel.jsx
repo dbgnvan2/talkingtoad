@@ -24,6 +24,7 @@ const CATEGORIES = [
   { key: 'ai_readiness',  label: 'AI Readiness' },
   { key: 'rendering',     label: 'Rendering' },
   { key: 'semantic_html', label: 'Semantic HTML' },
+  { key: 'analytics',     label: 'Analytics & Measurement' },
 ]
 
 const TAB_ORPHAN_IMAGES = CATEGORIES.length + 2
