@@ -359,6 +359,19 @@ class SQLiteJobStore:
             rows = await cursor.fetchall()
         return [_row_to_issue(dict(r)) for r in rows]
 
+    async def get_issues_for_urls(self, job_id: str, urls: list[str]) -> list[Issue]:
+        """Issues for a specific set of page URLs (CLN7 / P9: avoid loading and
+        reconstructing every Issue in the job just to grade the paginated slice)."""
+        if not urls:
+            return []
+        placeholders = ",".join("?" * len(urls))
+        async with self._db.execute(
+            f"SELECT * FROM issues WHERE job_id = ? AND page_url IN ({placeholders})",
+            (job_id, *urls),
+        ) as cursor:
+            rows = await cursor.fetchall()
+        return [_row_to_issue(dict(r)) for r in rows]
+
     # ── Link storage ───────────────────────────────────────────────────────
 
     async def save_links(self, links: list[Link]) -> None:

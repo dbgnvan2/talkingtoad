@@ -783,7 +783,11 @@ async def get_pages(
     # mirroring the /page-priority endpoint's use of compute_citability_grade.
     from api.services.job_store_base import compute_citability_grade
 
-    issues = await store.get_all_issues(job_id)
+    # CLN7 (P9): scope the issue load to just the ≤`limit` page URLs being graded
+    # here, instead of reconstructing every Issue in the job on each paginated
+    # request (get_all_issues).
+    page_urls = [pg.get("url") for pg in pages if pg.get("url")]
+    issues = await store.get_issues_for_urls(job_id, page_urls)
     # CLN5: drop user-suppressed codes before grading so the citability column
     # reconciles with site health (get_summary already drops them). Suppression
     # is SQLite-only; on Redis this no-ops, matching Redis get_summary.

@@ -221,6 +221,15 @@ class RedisJobStore:
         issues.sort(key=lambda i: _rank.get(i.severity, 4))
         return issues
 
+    async def get_issues_for_urls(self, job_id: str, urls: list[str]) -> list[Issue]:
+        """Issues for a specific set of page URLs (CLN7). Redis stores all of a
+        job's issues in one blob, so this loads then filters — API parity with
+        SQLite's scoped query (no correctness difference, just no I/O saving)."""
+        if not urls:
+            return []
+        wanted = set(urls)
+        return [i for i in await self._load_issues(job_id) if i.page_url in wanted]
+
     async def get_summary(self, job_id: str) -> dict:
         job = await self.get_job(job_id)
         if not job:
