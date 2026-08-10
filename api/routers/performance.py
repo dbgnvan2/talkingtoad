@@ -18,15 +18,16 @@ Tests: tests/test_performance_ingest.py, tests/test_performance_model.py
 from __future__ import annotations
 
 import logging
-from urllib.parse import urlparse, urlunparse
+from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
-from api.crawler.normaliser import _strip_www, is_same_domain, normalise_url
+from api.crawler.normaliser import is_same_domain
 from api.models.performance import PerformanceRecord
 from api.services.auth import require_auth
 from api.services.error_responses import _err
+from api.services.perf_join import build_crawled_key_map, match_key
 from api.services.performance_freshness import earlier, is_stale
 
 logger = logging.getLogger(__name__)
@@ -37,19 +38,6 @@ router = APIRouter(prefix="/api/performance", dependencies=[Depends(require_auth
 def _get_store():
     from api.main import _store
     return _store
-
-
-def _match_key(url: str) -> str:
-    """Join key for matching a bundle URL to a crawled page. On top of what
-    `normalise_url` does (lowercase host, drop fragment, strip tracking params,
-    strip trailing slash) this ALSO folds the two differences `normalise_url`
-    leaves in place — a leading `www.` and the http/https scheme — because the
-    crawl seed and the sibling app's GSC/GA4 property routinely differ on exactly
-    those (e.g. crawl `https://example.org`, property `https://www.example.org/`).
-    Used ONLY for matching; rows are still stored under the crawled page's exact
-    url. Raises ValueError (from `normalise_url`) on a scheme/host-less URL."""
-    p = urlparse(normalise_url(url))
-    return urlunparse(("", _strip_www(p.netloc), p.path, "", p.query, ""))
 
 
 # ── PerformanceBundle v1 contract ───────────────────────────────────────────
@@ -154,12 +142,7 @@ async def ingest_bundle(bundle: PerformanceBundle, job_id: str):
     # so a bundle URL still resolves to the right crawled page. Bundle URLs that
     # match no crawled page are held out (surfaced in unmatched_urls) rather than
     # persisted under an orphan key the consumer would never read.
-    crawled_by_key: dict[str, str] = {}
-    for pg in await store.get_pages(job_id):
-        try:
-            crawled_by_key[_match_key(pg.url)] = pg.url
-        except ValueError:
-            continue
+    crawled_by_key = build_crawled_key_map(await store.get_pages(job_id))
 
     # Read-merge for correct dirty-state behaviour (P8): a bundle is authoritative
     # ONLY for the fields it carries. A GA4-only bundle must not overwrite GSC
@@ -184,7 +167,7 @@ async def ingest_bundle(bundle: PerformanceBundle, job_id: str):
         # Match up front (before any save) so a malformed URL is skipped honestly,
         # never crashing a request whose other rows are committed (P2).
         try:
-            key = _match_key(p.url)
+            key = match_key(p.url)
         except ValueError:
             invalid.append(p.url)
             continue

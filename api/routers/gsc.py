@@ -15,7 +15,7 @@ import json
 import logging
 import os
 import time
-from datetime import date
+from datetime import date, datetime, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -25,6 +25,7 @@ from pydantic import BaseModel
 from api.models.performance import PerformanceRecord
 from api.services.auth import require_auth
 from api.services.gsc_client import build_flow, fetch_page_performance, list_properties
+from api.services.perf_join import build_crawled_key_map, match_key
 from api.services.refresh_trigger import ReviewFlag, evaluate_refresh
 
 logger = logging.getLogger(__name__)
@@ -282,15 +283,27 @@ async def gsc_ingest(site_url: str, job_id: str, days: int = 30):
 
     period = time.strftime("%Y-%m")
     store = _get_store()
+    # CLN4: store rows under the crawled-page key (the key the page-priority
+    # consumer reads by), joining GSC URLs through the shared www/scheme/slash-
+    # tolerant match_key — GSC "domain properties" routinely differ from the
+    # crawl seed on exactly those. A GSC URL not in the crawl falls back to its
+    # raw form. Stamp source_generated_at so PB8 freshness works for GSC too.
+    crawled_by_key = build_crawled_key_map(await store.get_pages(job_id))
+    generated_at = datetime.now(timezone.utc).isoformat()
     records = []
     for row in rows:
+        try:
+            storage_key = crawled_by_key.get(match_key(row["url"]), row["url"])
+        except ValueError:
+            storage_key = row["url"]
         records.append(PerformanceRecord(
-            url=row["url"],
+            url=storage_key,
             period=period,
             gsc_clicks_mo=row["clicks"],
             gsc_impressions_mo=row["impressions"],
             gsc_ctr_mo=row["ctr"],
             gsc_avg_position_mo=row["position"],
+            source_generated_at=generated_at,
         ))
 
     await store.save_performance_records(records)

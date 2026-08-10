@@ -522,6 +522,46 @@ class TestGscIngest:
         assert records[0].gsc_clicks_mo == 10
         assert records[0].gsc_impressions_mo == 100
 
+    async def test_cln4_1_gsc_ingest_joins_on_crawled_page_key(
+        self, gsc_client, gsc_env, gsc_store
+    ):
+        """CLN4.1/4.2: a GSC URL that differs from the crawled page by www +
+        trailing slash is stored under the CRAWLED-page key (the key
+        /page-priority reads by), not the raw GSC form, and source_generated_at
+        is stamped."""
+        from datetime import datetime, timezone
+
+        from api.models.job import CrawlJob
+        from api.models.page import CrawledPage
+
+        await gsc_store.create_job(CrawlJob(
+            job_id="jc", target_url="https://example.org", status="complete"))
+        await gsc_store.save_pages([CrawledPage(
+            job_id="jc", url="https://example.org/a", status_code=200,
+            crawled_at=datetime.now(timezone.utc))])
+
+        mock_rows = [{"url": "https://www.example.org/a/", "clicks": 7,
+                      "impressions": 70, "ctr": 0.1, "position": 4.0}]
+        with patch("api.routers.gsc._load_creds") as mock_load, \
+             patch("api.routers.gsc.fetch_page_performance", new_callable=AsyncMock) as mock_fetch, \
+             patch("api.routers.gsc._get_store") as mock_get_store:
+            mock_load.return_value = json.dumps({
+                "token": "t", "refresh_token": "r",
+                "client_id": "i", "client_secret": "s"})
+            mock_fetch.return_value = mock_rows
+            mock_get_store.return_value = gsc_store
+            resp = await gsc_client.post("/api/gsc/ingest", params={
+                "site_url": "https://www.example.org/", "job_id": "jc"})
+        assert resp.status_code == 200
+
+        # stored under the crawled-page key, readable by the consumer
+        under_crawled = await gsc_store.get_performance_records(url="https://example.org/a")
+        assert len(under_crawled) == 1
+        assert under_crawled[0].gsc_clicks_mo == 7
+        assert under_crawled[0].source_generated_at  # CLN4.2 — non-null freshness stamp
+        # NOT persisted under the raw GSC url form (the orphan-key bug)
+        assert await gsc_store.get_performance_records(url="https://www.example.org/a/") == []
+
     @pytest.mark.asyncio
     async def test_ingest_idempotent(self, gsc_client, gsc_env, gsc_store):
         """Re-ingest for same (url, period) updates — doesn't duplicate."""
