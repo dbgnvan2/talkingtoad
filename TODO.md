@@ -62,6 +62,27 @@ Shipped: added the `analytics` category to the two frontend CATEGORIES arrays (`
 
 ---
 
+### Deferred from the 2026-08-08 CLN /csdp sweep (learning-qa; low-severity, not fixed)
+The sweep found no fix-worthy defect in the CLN0–CLN8 batch. Two low-severity P2
+observations on the GSC ingest path, recorded here (neither is a regression —
+CLN4 strictly improved the matched case):
+
+- [ ] **GSC unmatched rows are stored as silent orphans** (`api/routers/gsc.py:293`):
+  a GSC row whose `match_key` matches no crawled page falls back to storing under
+  the raw GSC url — a key `page-priority` never reads — and is counted in
+  `ingested` but never surfaced. The bundle path (`performance.py`) instead holds
+  unmatched URLs out and returns them in `unmatched_urls`. *Deferred:* for parity,
+  collect + return unmatched GSC URLs (a "GSC has traffic for uncrawled pages"
+  signal) or drop them rather than persisting orphans. Benign dead storage today.
+- [ ] **Fold-collision last-wins within a single GSC ingest** (`gsc.py` +
+  `save_performance_records` `INSERT OR REPLACE` on `(url, period)`): if one pull
+  returns two rows whose `match_key` folds to the same crawled page (e.g. `/a` and
+  `/a/`, or www + non-www), the later row wins and the earlier row's clicks are
+  dropped, not summed. Low probability (URL-prefix properties don't emit both
+  forms; domain properties canonicalize); same latent behaviour in the bundle
+  path. *Deferred:* document the "one source row per page" assumption, or sum on
+  collision if it ever shows up in real data.
+
 ## ✅ Completed
 
 - [x] **Technical-debt cleanup batch — CLN0–CLN8 (2026-08-08):** cleared the
