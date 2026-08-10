@@ -53,12 +53,19 @@ def test_inline_fix_codes_are_backend_fixable():
     _CODE_TO_FIELD (else the fix call fails)."""
     js = _js_object_keys(_FIXPANEL.read_text(), "CODE_TO_FIELD")
     missing = js - set(_CODE_TO_FIELD)
-    # TITLE_H1_MISMATCH is a pre-existing frontend-only entry (tracked in TODO,
-    # not introduced here) — exclude it so this test guards NEW drift only.
-    missing.discard("TITLE_H1_MISMATCH")
+    # CLN6: TITLE_H1_MISMATCH exclusion removed — it is now in the backend map.
     assert not missing, (
         f"FixInlinePanel CODE_TO_FIELD offers codes the backend can't fix: {missing}"
     )
+
+
+def test_cln6_1_title_h1_mismatch_is_backend_fixable():
+    """CLN6.1: TITLE_H1_MISMATCH (catalogued wp_fixable) resolves to the seo_title
+    field in the backend map, so the inline-fix button actually works."""
+    from api.services.wp_shared import _CODE_TO_FIELD, get_fixable_codes
+
+    assert _CODE_TO_FIELD.get("TITLE_H1_MISMATCH") == "seo_title"
+    assert "TITLE_H1_MISMATCH" in get_fixable_codes()
 
 
 def test_no_deleted_codes_linger_in_frontend():

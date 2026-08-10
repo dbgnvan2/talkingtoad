@@ -67,6 +67,10 @@ _CODE_TO_FIELD: dict[str, str] = {
     "TITLE_MISSING":       "seo_title",
     "TITLE_TOO_SHORT":     "seo_title",
     "TITLE_TOO_LONG":      "seo_title",
+    # CLN6: TITLE_H1_MISMATCH is catalogued fixability="wp_fixable"; the fix is a
+    # user-reviewed edit of the SEO title to align it with the H1 — same
+    # seo_title field flow as the other TITLE_* codes. Was frontend-only drift.
+    "TITLE_H1_MISMATCH":   "seo_title",
     "META_DESC_MISSING":   "meta_description",
     "META_DESC_TOO_SHORT": "meta_description",
     "META_DESC_TOO_LONG":  "meta_description",
