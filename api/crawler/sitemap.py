@@ -88,12 +88,20 @@ class SitemapResult:
         missing_issue: dict | None,
         source_url: str | None,
         grouped: dict[str, list[str]] | None = None,
+        reachable: bool = True,
     ) -> None:
         self.urls = urls
         self.found = found
         self.missing_issue = missing_issue
         self.source_url = source_url
         self.grouped = grouped
+        # SD2.3 (CLN0): True if the site was reached (any candidate returned a
+        # definitive HTTP status < 500), False if every candidate raised a
+        # network/timeout error or 5xx after retries — so a caller can tell
+        # "reached, no typed sitemap" from "couldn't reach the site". Always True
+        # when found. Computed accurately by fetch_sitemap_recursive (the variant
+        # scope discovery consumes); defaults True elsewhere.
+        self.reachable = reachable
 
 
 async def fetch_sitemap(
@@ -254,10 +262,12 @@ async def fetch_sitemap_recursive(
         if robots_sitemap_urls:
             candidates.extend(robots_sitemap_urls)
 
+    any_reached = False
     for candidate in candidates:
-        result = await _fetch_and_resolve(candidate, client)
+        result, reached = await _fetch_and_resolve(candidate, client)
+        any_reached = any_reached or reached
         if result is not None:
-            return result
+            return result  # found ⇒ reachable=True (dataclass default)
 
     logger.warning("sitemap_missing", extra={"base_url": base_url})
     return SitemapResult(
@@ -270,21 +280,34 @@ async def fetch_sitemap_recursive(
             "message": "No sitemap found. A sitemap helps search engines discover all pages on your site.",
         },
         source_url=None,
+        # SD2.3: distinguish "reached the site, no typed sitemap" (retryable=False
+        # downstream) from "couldn't reach the site at all" (retryable=True).
+        reachable=any_reached,
     )
 
 
 async def _fetch_and_resolve(
     url: str, client: httpx.AsyncClient
-) -> SitemapResult | None:
-    """Fetch *url*, resolve index files, and return aggregated URLs."""
+) -> tuple[SitemapResult | None, bool]:
+    """Fetch *url*, resolve index files, and return ``(result_or_None, reached)``.
+
+    ``reached`` (SD2.3 / CLN0) is True when the server gave a definitive HTTP
+    answer (status < 500) — even a 404 or a non-sitemap 200 — and False only when
+    the fetch raised a network/timeout error or returned 5xx (retryable). This
+    lets ``fetch_sitemap_recursive`` distinguish "reached, no typed sitemap" from
+    "couldn't reach the site". ``result`` is None whenever this candidate did not
+    yield a usable sitemap, regardless of ``reached``.
+    """
     try:
         response = await client.get(url, timeout=_FETCH_TIMEOUT, follow_redirects=True)
     except httpx.RequestError as exc:
         logger.debug("sitemap_fetch_error", extra={"url": url, "error": str(exc)})
-        return None
+        return None, False  # transient — did not reach the site
 
+    if response.status_code >= 500:
+        return None, False  # retryable server error — treat as unreachable
     if response.status_code != 200:
-        return None
+        return None, True   # reached, definitive non-sitemap answer (e.g. 404)
 
     content = _decompress(response)
     soup = BeautifulSoup(content, "lxml-xml")
@@ -297,26 +320,26 @@ async def _fetch_and_resolve(
         all_page_urls: list[str] = []
         grouped: dict[str, list[str]] = {}
         for child_url in child_urls_raw:
-            child_result = await _fetch_and_resolve(child_url, client)
+            child_result, _child_reached = await _fetch_and_resolve(child_url, client)
             if child_result is not None:
                 all_page_urls.extend(child_result.urls)
                 type_key = classify_child_sitemap(child_url)
                 if type_key:
                     grouped.setdefault(type_key, []).extend(child_result.urls)
         if not all_page_urls and not child_urls_raw:
-            return None
+            return None, True  # reached (200), but the index was empty
         return SitemapResult(
             urls=all_page_urls,
             found=True,
             missing_issue=None,
             source_url=url,
             grouped=grouped or None,
-        )
+        ), True
 
     page_urls = [loc.get_text(strip=True) for loc in soup.find_all("loc")]
     if not page_urls and not soup.find("urlset"):
-        return None
+        return None, True  # reached (200), but not a sitemap document
 
     return SitemapResult(
         urls=page_urls, found=True, missing_issue=None, source_url=url
-    )
+    ), True

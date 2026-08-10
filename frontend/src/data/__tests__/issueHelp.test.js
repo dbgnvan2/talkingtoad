@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import issueHelp, { getIssueHelp } from '../issueHelp.js'
+import categories from '../categories.generated.json'
 
 describe('issueHelp data', () => {
   const KNOWN_CODES = [
@@ -44,13 +45,10 @@ describe('issueHelp data', () => {
   })
 
   it('category values are valid', () => {
-    const validCategories = new Set([
-      'broken_link', 'metadata', 'heading', 'redirect',
-      'crawlability', 'duplicate', 'sitemap', 'security',
-      'url_structure', 'ai_readiness', 'image',
-      // Agent-readiness Phase 1 task-side categories
-      'rendering', 'semantic_html',
-    ])
+    // CLN2: the valid category set is the single source of truth
+    // (categories.generated.json ← registry.CATEGORY_DISPLAY), so this can't
+    // drift when a category is added/removed on the backend.
+    const validCategories = new Set(categories.map(c => c.key))
     for (const [code, help] of Object.entries(issueHelp)) {
       expect(validCategories.has(help.category), `${code} has invalid category: ${help.category}`).toBe(true)
     }

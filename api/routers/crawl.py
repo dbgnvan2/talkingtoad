@@ -489,7 +489,10 @@ async def discover_scope_endpoint(
 
     Read-only: probes the WordPress REST API and/or the site's sitemap. Requires
     no credentials and writes nothing. Returns ``{is_wordpress, discovery_tier,
-    types[], categories[], category_scope_supported, notes}``.
+    types[], categories[], category_scope_supported, retryable, notes}``.
+    ``retryable`` is True (and ``discovery_tier`` is ``"unreachable"``) when the
+    probes couldn't reach the site, so the caller should offer a "Try again"
+    rather than the definitive "no scoping available" message (SD2.5 / CLN0).
     """
     target_url, err = _normalise_and_validate_target(body.get("target_url", ""))
     if err is not None:

@@ -76,8 +76,13 @@ def mock_store():
 
     store.get_job = mock_get_job
     store.get_pages_with_issue_counts = mock_get_pages
-    # /pages now computes a per-page citability_grade from all issues (E5).
+    # /pages computes a per-page citability_grade; CLN7 scopes that to the shown
+    # URLs via get_issues_for_urls (get_all_issues kept for the quick-wins path).
     store.get_all_issues = AsyncMock(return_value=[])
+    store.get_issues_for_urls = AsyncMock(return_value=[])
+    # CLN5: /pages filters user-suppressed codes; a MagicMock fabricates this
+    # attribute (a real Redis store returns None here → no-op), so model it.
+    store.get_suppressed_codes = AsyncMock(return_value=[])
 
     # Override the get_store dependency for both routers
     app.dependency_overrides[crawl_get_store] = lambda: store

@@ -125,13 +125,62 @@ def _sort_types(types: list[dict]) -> list[dict]:
 # Tier 1 — WordPress REST
 # ---------------------------------------------------------------------------
 
-async def _probe_wp_rest(base: str, client: httpx.AsyncClient) -> bool:
-    """Return True if ``GET {base}/wp-json/`` looks like a WP REST root."""
-    got = await _get_json(client, f"{base}/wp-json/")
-    if not got:
-        return False
-    data, _ = got
-    return isinstance(data, dict) and ("routes" in data or "namespaces" in data or "name" in data)
+async def _fetch_reachable(
+    client: httpx.AsyncClient, url: str
+) -> tuple[str, object | None]:
+    """Reachability-classified GET (SD2.1 / CLN0). Returns ``(outcome, json)``:
+
+      - ``("ok", data)``        HTTP 200 with a valid JSON body.
+      - ``("absent", None)``    reached, but no usable JSON — a definitive non-200
+                                (404/401/403) OR a 200 with an unparseable body.
+      - ``("unreachable", None)`` transient/retryable — ``httpx.RequestError`` or a
+                                5xx after retries. We do NOT know whether the
+                                resource exists.
+
+    Retries transient conditions with backoff, mirroring ``_get_json``. Used only
+    where reachability must be distinguished (the REST probe); the pagination
+    callers keep ``_get_json``'s ``tuple | None`` contract.
+    """
+    for attempt in range(_MAX_RETRIES + 1):
+        try:
+            r = await client.get(url, timeout=_REST_TIMEOUT, follow_redirects=True)
+        except httpx.RequestError as exc:
+            if attempt < _MAX_RETRIES:
+                await asyncio.sleep(_RETRY_BACKOFF_S * (2 ** attempt))
+                continue
+            logger.debug("discovery_probe_error", extra={"url": url, "error": str(exc)})
+            return "unreachable", None
+        if r.status_code >= 500:
+            if attempt < _MAX_RETRIES:
+                await asyncio.sleep(_RETRY_BACKOFF_S * (2 ** attempt))
+                continue
+            return "unreachable", None  # 5xx after retries → retryable (P1)
+        if r.status_code != 200:
+            return "absent", None       # reached, definitive non-200
+        try:
+            return "ok", r.json()
+        except Exception:
+            return "absent", None       # reached, 200 but not JSON
+    return "unreachable", None
+
+
+async def _probe_wp_rest(base: str, client: httpx.AsyncClient) -> str:
+    """Classify ``GET {base}/wp-json/`` (SD2.2 / CLN0):
+
+      - ``"rest"``        it is a WordPress REST root.
+      - ``"absent"``      the site was reached but it is not a WP REST root.
+      - ``"unreachable"`` the probe could not reach the site (transient/retryable).
+    """
+    outcome, data = await _fetch_reachable(client, f"{base}/wp-json/")
+    if outcome == "unreachable":
+        return "unreachable"
+    if (
+        outcome == "ok"
+        and isinstance(data, dict)
+        and ("routes" in data or "namespaces" in data or "name" in data)
+    ):
+        return "rest"
+    return "absent"
 
 
 async def _rest_types(base: str, client: httpx.AsyncClient) -> list[dict]:
@@ -274,7 +323,8 @@ async def discover_scope(target_url: str, client: httpx.AsyncClient) -> dict:
     base = _base_origin(target_url)
 
     # ── Tier 1: WordPress REST ──────────────────────────────────────────────
-    if await _probe_wp_rest(base, client):
+    rest_outcome = await _probe_wp_rest(base, client)
+    if rest_outcome == "rest":
         types = await _rest_types(base, client)
         for t in types:
             t["count"] = await _rest_count(base, client, t["rest_base"])
@@ -285,6 +335,7 @@ async def discover_scope(target_url: str, client: httpx.AsyncClient) -> dict:
             "types": _sort_types(types),
             "categories": categories,
             "category_scope_supported": bool(categories),
+            "retryable": False,
             "notes": "",
         }
 
@@ -311,22 +362,43 @@ async def discover_scope(target_url: str, client: httpx.AsyncClient) -> dict:
                 "types": _sort_types(types),
                 "categories": [],
                 "category_scope_supported": False,
+                "retryable": False,
                 "notes": (
                     "Content types were read from the site's sitemap. Scoping by "
                     "post category isn't available without the WordPress REST API."
                 ),
             }
 
-    # ── Tier 3: nothing to scope on ─────────────────────────────────────────
+    # ── Tier 3 decision: definitive absence vs transient/unreachable ────────
+    # (SD2.4 / CLN0). Only call it a definitive "no scoping" when the REST probe
+    # got a definitive answer (reached, not WP) AND the sitemap tier actually
+    # reached the site. If EITHER tier was merely unreachable, absence is
+    # unproven, so return a retryable result rather than the dead-end message.
+    definitive_none = rest_outcome == "absent" and sitemap.reachable
+    if definitive_none:
+        return {
+            "is_wordpress": False,
+            "discovery_tier": "none",
+            "types": [],
+            "categories": [],
+            "category_scope_supported": False,
+            "retryable": False,
+            "notes": (
+                "This site doesn't expose a WordPress REST API or a typed sitemap, "
+                "so content-type scoping isn't available — a full-site crawl will run."
+            ),
+        }
+
     return {
         "is_wordpress": False,
-        "discovery_tier": "none",
+        "discovery_tier": "unreachable",
         "types": [],
         "categories": [],
         "category_scope_supported": False,
+        "retryable": True,
         "notes": (
-            "This site doesn't expose a WordPress REST API or a typed sitemap, so "
-            "content-type scoping isn't available — a full-site crawl will run."
+            "Couldn't reach the site to check for content-type scoping. This is "
+            "usually temporary — try again."
         ),
     }
 
@@ -361,7 +433,11 @@ async def resolve_scope_urls(
     urls: set[str] = set()
     notes: list[str] = []
 
-    if await _probe_wp_rest(base, client):
+    # SD2.2: only the definite "rest" outcome takes the REST path; "absent"/
+    # "unreachable" fall through to the sitemap tier (resolution runs after the
+    # user already chose types from a successful discovery, so its retry story is
+    # out of scope here — see SD4).
+    if await _probe_wp_rest(base, client) == "rest":
         # Map requested type keys → rest_base via a fresh /types read.
         types = {t["key"]: t["rest_base"] for t in await _rest_types(base, client)}
         for key in type_keys:

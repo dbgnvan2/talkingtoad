@@ -308,9 +308,27 @@ export default function Home() {
                 )}
 
                 {!scopeLoading && !scopeError && scopeData && scopeData.types.length === 0 && (
-                  <p className="text-xs text-gray-500">
-                    {scopeData.notes || 'No content types could be detected — run a full-site scan instead.'}
-                  </p>
+                  scopeData.retryable ? (
+                    /* SD2.6 (CLN0): the probe couldn't reach the site — this is
+                       usually transient, so offer a retry instead of the
+                       dead-end "no scoping available" copy. */
+                    <div className="text-xs">
+                      <p className="text-gray-600">
+                        {scopeData.notes || "Couldn't reach the site to check for content-type scoping. This is usually temporary — try again."}
+                      </p>
+                      <button
+                        type="button"
+                        onClick={runDiscovery}
+                        className="mt-2 text-green-700 font-medium hover:underline"
+                      >
+                        Try again
+                      </button>
+                    </div>
+                  ) : (
+                    <p className="text-xs text-gray-500">
+                      {scopeData.notes || 'No content types could be detected — run a full-site scan instead.'}
+                    </p>
+                  )
                 )}
 
                 {!scopeLoading && !scopeError && scopeData && scopeData.types.length > 0 && (

@@ -40,6 +40,17 @@ const NONE_DISCOVERY = {
   notes: 'This site does not expose a WordPress REST API or a typed sitemap.',
 }
 
+// SD (CLN0): the probes couldn't reach the site — retryable, NOT a definitive "no".
+const UNREACHABLE_DISCOVERY = {
+  is_wordpress: false,
+  discovery_tier: 'unreachable',
+  types: [],
+  categories: [],
+  category_scope_supported: false,
+  retryable: true,
+  notes: "Couldn't reach the site to check for content-type scoping. This is usually temporary — try again.",
+}
+
 function jsonResponse(data, status = 200) {
   return Promise.resolve({
     ok: status >= 200 && status < 300,
@@ -144,5 +155,30 @@ describe('Home — scan scope (partial scan)', () => {
 
     await waitFor(() => expect(startCalls.length).toBe(1))
     expect(startCalls[0].settings?.content_scope).toBeUndefined()
+  })
+
+  it('sd3.8 retryable discovery shows Try again (not the definitive dead-end)', async () => {
+    installFetch(UNREACHABLE_DISCOVERY, [])
+    renderWithProviders(<Home />)
+    setUrl('example.com')
+    await switchToPartial()
+
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /try again/i })).toBeInTheDocument()
+    )
+    expect(screen.getByText(/usually temporary/i)).toBeInTheDocument()
+    expect(screen.queryByText(/no content types could be detected/i)).not.toBeInTheDocument()
+  })
+
+  it('sd3.8 definitive none shows no retry', async () => {
+    installFetch(NONE_DISCOVERY, [])
+    renderWithProviders(<Home />)
+    setUrl('example.com')
+    await switchToPartial()
+
+    await waitFor(() =>
+      expect(screen.getByText(/does not expose a WordPress REST API/i)).toBeInTheDocument()
+    )
+    expect(screen.queryByRole('button', { name: /try again/i })).not.toBeInTheDocument()
   })
 })

@@ -89,6 +89,26 @@ class TestDiscoverScopeEndpoint:
         assert data["types"] == []
         assert data["notes"]
 
+    async def test_sd3_7_endpoint_returns_retryable_field(self, api_client, auth_headers):
+        """SD3.7: the endpoint passes through the transient/unreachable outcome —
+        discovery_tier 'unreachable' + retryable True — so the UI can offer a retry."""
+        unreachable = {
+            "is_wordpress": False, "discovery_tier": "unreachable", "types": [],
+            "categories": [], "category_scope_supported": False, "retryable": True,
+            "notes": "Couldn't reach the site to check for content-type scoping. "
+                     "This is usually temporary — try again.",
+        }
+        with patch("api.routers.crawl.discover_scope", new=AsyncMock(return_value=unreachable)):
+            r = await api_client.post(
+                "/api/crawl/discover-scope",
+                json={"target_url": "example.com"},
+                headers=auth_headers,
+            )
+        assert r.status_code == 200
+        data = r.json()
+        assert data["discovery_tier"] == "unreachable"
+        assert data["retryable"] is True
+
     async def test_discover_scope_requires_auth(self, api_client):
         r = await api_client.post("/api/crawl/discover-scope", json={"target_url": "example.com"})
         assert r.status_code == 401

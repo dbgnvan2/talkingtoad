@@ -296,3 +296,106 @@ class TestDiscoverScopeNone:
         assert result["types"] == []
         assert result["is_wordpress"] is False
         assert result["notes"]
+
+
+# ── SD3 (CLN0): transient/unreachable ≠ definitive absence ───────────────────
+
+class TestScopeDiscoveryTransientVsAbsent:
+    """A network blip during discovery must NOT be reported as a definitive
+    'no WordPress REST API / no typed sitemap' — it must be retryable."""
+
+    @pytest.fixture(autouse=True)
+    def _no_backoff(self, monkeypatch):
+        async def _noop(_delay):
+            return None
+        monkeypatch.setattr("api.crawler.content_discovery.asyncio.sleep", _noop)
+
+    @pytest.mark.asyncio
+    async def test_sd3_1_rest_probe_timeout_is_retryable_not_definitive(self):
+        with respx.mock:
+            respx.get("https://example.com/wp-json/").mock(side_effect=httpx.ConnectTimeout("t"))
+            respx.get("https://example.com/sitemap.xml").mock(side_effect=httpx.ConnectTimeout("t"))
+            async with httpx.AsyncClient() as client:
+                result = await discover_scope(TARGET, client)
+        assert result["discovery_tier"] == "unreachable"
+        assert result["retryable"] is True
+        assert "try again" in result["notes"].lower()
+        assert "doesn't expose" not in result["notes"]
+
+    @pytest.mark.asyncio
+    async def test_sd3_2_reachable_non_wp_200_is_definitive_none(self):
+        with respx.mock:
+            respx.get("https://example.com/wp-json/").mock(
+                return_value=httpx.Response(200, json={"foo": "bar"}))  # reached, not WP
+            respx.get("https://example.com/sitemap.xml").mock(
+                return_value=httpx.Response(404))  # reached, no typed sitemap
+            async with httpx.AsyncClient() as client:
+                result = await discover_scope(TARGET, client)
+        assert result["discovery_tier"] == "none"
+        assert result["retryable"] is False
+        assert "doesn't expose" in result["notes"]
+
+    @pytest.mark.asyncio
+    async def test_sd3_3_rest_404_but_sitemap_unreachable_is_retryable(self):
+        with respx.mock:
+            respx.get("https://example.com/wp-json/").mock(return_value=httpx.Response(404))
+            respx.get("https://example.com/sitemap.xml").mock(side_effect=httpx.ConnectTimeout("t"))
+            async with httpx.AsyncClient() as client:
+                result = await discover_scope(TARGET, client)
+        assert result["discovery_tier"] == "unreachable"
+        assert result["retryable"] is True
+
+    @pytest.mark.asyncio
+    async def test_sd3_4_probe_wp_rest_three_way_outcome(self):
+        from api.crawler.content_discovery import _probe_wp_rest
+
+        with respx.mock:
+            respx.get("https://example.com/wp-json/").mock(side_effect=httpx.ConnectTimeout("t"))
+            async with httpx.AsyncClient() as client:
+                assert await _probe_wp_rest("https://example.com", client) == "unreachable"
+        with respx.mock:
+            respx.get("https://example.com/wp-json/").mock(return_value=httpx.Response(404))
+            async with httpx.AsyncClient() as client:
+                assert await _probe_wp_rest("https://example.com", client) == "absent"
+        with respx.mock:
+            respx.get("https://example.com/wp-json/").mock(
+                return_value=httpx.Response(200, json={"name": "x", "routes": {}}))
+            async with httpx.AsyncClient() as client:
+                assert await _probe_wp_rest("https://example.com", client) == "rest"
+
+    @pytest.mark.asyncio
+    async def test_sd3_5_sitemap_reachable_flag(self):
+        with respx.mock:
+            respx.get("https://example.com/sitemap.xml").mock(side_effect=httpx.ConnectTimeout("t"))
+            async with httpx.AsyncClient() as client:
+                r = await fetch_sitemap_recursive(TARGET, client)
+            assert r.found is False and r.reachable is False
+        with respx.mock:
+            respx.get("https://example.com/sitemap.xml").mock(return_value=httpx.Response(404))
+            async with httpx.AsyncClient() as client:
+                r = await fetch_sitemap_recursive(TARGET, client)
+            assert r.found is False and r.reachable is True
+        with respx.mock:
+            respx.get("https://example.com/sitemap.xml").mock(
+                return_value=httpx.Response(200, text=_urlset(["https://example.com/a"])))
+            async with httpx.AsyncClient() as client:
+                r = await fetch_sitemap_recursive(TARGET, client)
+            assert r.found is True and r.reachable is True
+
+    @pytest.mark.asyncio
+    async def test_sd3_6_positive_tiers_carry_retryable_false(self):
+        with respx.mock:
+            respx.route(host="example.com").mock(side_effect=_rest_handler)
+            async with httpx.AsyncClient() as client:
+                rest = await discover_scope(TARGET, client)
+        assert rest["discovery_tier"] == "rest" and rest["retryable"] is False
+
+        with respx.mock:
+            respx.get("https://example.com/wp-json/").mock(return_value=httpx.Response(404))
+            respx.get("https://example.com/sitemap.xml").mock(
+                return_value=httpx.Response(200, text=_index(["https://example.com/page-sitemap.xml"])))
+            respx.get("https://example.com/page-sitemap.xml").mock(
+                return_value=httpx.Response(200, text=_urlset(["https://example.com/about"])))
+            async with httpx.AsyncClient() as client:
+                sm = await discover_scope(TARGET, client)
+        assert sm["discovery_tier"] == "sitemap" and sm["retryable"] is False
