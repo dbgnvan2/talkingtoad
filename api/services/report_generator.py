@@ -163,16 +163,11 @@ async def generate_pdf_report(
     pdf.set_text_color(*COLOR_GRAY_800)
     pdf.cell(W, 10, "Issues by Category", new_x="LMARGIN", new_y="NEXT")
     
-    cat_list = [
-        ("Broken Links", "broken_link"), ("Metadata", "metadata"),
-        ("Headings", "heading"), ("Redirects", "redirect"),
-        ("Crawlability", "crawlability"),
-        ("Sitemap", "sitemap"), ("Security", "security"),
-        ("URL Structure", "url_structure"), ("Images", "image"),
-        ("AI Readiness", "ai_readiness"), ("Rendering", "rendering"),
-        ("Semantic HTML", "semantic_html"),
-        ("Analytics & Measurement", "analytics"),
-    ]
+    # CLN2: category rows come from the single source of truth
+    # registry.CATEGORY_DISPLAY (ordered key→label), so this list can never drift
+    # from the crawler's categories or the frontend grid.
+    from api.crawler.checkers.registry import CATEGORY_DISPLAY
+    cat_list = [(label, key) for key, label in CATEGORY_DISPLAY]
     
     for label, key in cat_list:
         count = summary.get("by_category", {}).get(key, 0)

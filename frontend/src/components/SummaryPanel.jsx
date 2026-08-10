@@ -9,22 +9,10 @@ import Top10Pages from './Top10Pages.jsx'
 import LLMSTxtGenerator from './LLMSTxtGenerator.jsx'
 import StatCard from './StatCard.jsx'
 import Spinner from './Spinner.jsx'
-
-const CATEGORIES = [
-  { key: 'broken_link',   label: 'Broken Links' },
-  { key: 'metadata',      label: 'Metadata' },
-  { key: 'heading',       label: 'Headings' },
-  { key: 'redirect',      label: 'Redirects' },
-  { key: 'crawlability',  label: 'Crawlability' },
-  { key: 'sitemap',       label: 'Sitemap' },
-  { key: 'security',      label: 'Security' },
-  { key: 'url_structure', label: 'URL Structure' },
-  { key: 'image',         label: 'Images' },
-  { key: 'ai_readiness',  label: 'AI Readiness' },
-  { key: 'rendering',     label: 'Rendering' },
-  { key: 'semantic_html', label: 'Semantic HTML' },
-  { key: 'analytics',     label: 'Analytics & Measurement' },
-]
+// CATEGORIES (the Issues-by-Category grid) comes from the single source of truth
+// registry.CATEGORY_DISPLAY, projected to categories.generated.json (CLN2).
+// Regenerate with `python scripts/generate_categories_json.py`.
+import CATEGORIES from '../data/categories.generated.json'
 
 const TAB_ORPHAN_IMAGES = CATEGORIES.length + 2
 const TAB_ORPHAN_PAGES = CATEGORIES.length + 3

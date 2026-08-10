@@ -74,52 +74,44 @@ def test_no_deleted_codes_linger_in_frontend():
         assert not present, f"{path.name} still references deleted/merged codes: {present}"
 
 
-# ── Category display/ordering lists ↔ backend categories ─────────────────────
-# The set of issue categories is hand-mirrored in THREE hardcoded display lists:
-# the Results.jsx category tabs, the SummaryPanel.jsx "Issues by Category" grid,
-# and the PDF report's cat_list. Adding a new backend category (e.g. `analytics`,
-# 2026-08-06) without updating all three makes it silently vanish from the UI and
-# the audit PDF — exactly what happened to `analytics`, `rendering`, and
-# `semantic_html`. This test makes that class of omission fail in CI.
+# ── Category display list ↔ backend categories (CLN1 / CLN2) ─────────────────
+# The category set + labels + order live in ONE place — registry.CATEGORY_DISPLAY
+# — projected to frontend/src/data/categories.generated.json (imported by the
+# frontend) and read directly by the PDF report. Previously they were
+# hand-mirrored in 3 places, which silently dropped `analytics`, `rendering`, and
+# `semantic_html` from surfaces. These tests guard the single source against the
+# crawler's actual categories, and that no hand-mirrored copy sneaks back in.
 
-def _js_category_keys(text: str) -> set[str]:
-    """Extract the `key: 'x'` slugs from a `const CATEGORIES = [ ... ]` array."""
-    m = re.search(r"CATEGORIES\s*=\s*\[(.*?)\]", text, re.S)
-    assert m, "CATEGORIES array not found"
-    return set(re.findall(r"key:\s*'([a-z_]+)'", m.group(1)))
+def test_category_display_is_single_source_of_truth():
+    """CLN1.2/CLN2: registry.CATEGORY_DISPLAY's key set EQUALS the set of
+    categories _CATALOGUE emits — no missing (would vanish from every surface),
+    no extra (a dead tile that can only show 0, e.g. the former `duplicate`)."""
+    from api.crawler.checkers.registry import CATEGORY_DISPLAY, _CATALOGUE
 
-
-def _pdf_category_keys(text: str) -> set[str]:
-    """Extract the slug (2nd tuple element) from the PDF `cat_list = [ ... ]`."""
-    m = re.search(r"cat_list\s*=\s*\[(.*?)\]", text, re.S)
-    assert m, "cat_list not found"
-    return set(re.findall(r'"[^"]+"\s*,\s*"([a-z_]+)"', m.group(1)))
-
-
-def test_category_display_lists_cover_every_backend_category():
-    """CLN1.2: each display list's category key set EQUALS the backend set —
-    no missing (silently vanished from UI) and no extra (a dead tile that can
-    only ever show 0, e.g. the former `duplicate`)."""
-    from api.crawler.checkers.registry import _CATALOGUE
-
+    display = {key for key, _label in CATEGORY_DISPLAY}
     backend = {spec.category for spec in _CATALOGUE.values()}
-    lists = {
-        "Results.jsx CATEGORIES tabs": _js_category_keys(_RESULTS.read_text()),
-        "SummaryPanel.jsx category grid": _js_category_keys(_SUMMARY.read_text()),
-        "report_generator.py PDF cat_list": _pdf_category_keys(_PDF_REPORT.read_text()),
-    }
-    for name, keys in lists.items():
-        missing = backend - keys
-        assert not missing, (
-            f"{name} is missing backend issue categories: {sorted(missing)}. "
-            "Every category in registry._CATALOGUE must appear in this display list."
+    assert display == backend, (
+        "CATEGORY_DISPLAY drifted from the catalogue categories: "
+        f"missing={sorted(backend - display)} extra={sorted(display - backend)}"
+    )
+    keys = [key for key, _ in CATEGORY_DISPLAY]
+    assert len(keys) == len(set(keys)), "CATEGORY_DISPLAY has duplicate keys"
+
+
+def test_no_hand_mirrored_category_lists_remain():
+    """CLN2.2: the frontend imports the generated JSON and the PDF derives its
+    list from CATEGORY_DISPLAY — no file re-declares the category list by hand."""
+    for path in (_RESULTS, _SUMMARY):
+        text = path.read_text()
+        assert "categories.generated.json" in text, (
+            f"{path.name} must import CATEGORIES from categories.generated.json"
         )
-        extra = keys - backend
-        assert not extra, (
-            f"{name} has category keys no _CATALOGUE code emits: {sorted(extra)}. "
-            "A dead category tile/row can only ever show 0 — remove it or wire a "
-            "code to that category."
+        assert not re.search(r"const\s+CATEGORIES\s*=\s*\[", text), (
+            f"{path.name} still hand-declares a CATEGORIES array — use the import"
         )
+    assert "CATEGORY_DISPLAY" in _PDF_REPORT.read_text(), (
+        "report_generator.py PDF cat_list must derive from CATEGORY_DISPLAY"
+    )
 
 
 def test_cln1_1_no_dead_duplicate_category():

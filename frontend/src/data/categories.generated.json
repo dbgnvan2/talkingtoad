@@ -1,0 +1,54 @@
+[
+  {
+    "key": "broken_link",
+    "label": "Broken Links"
+  },
+  {
+    "key": "metadata",
+    "label": "Metadata"
+  },
+  {
+    "key": "heading",
+    "label": "Headings"
+  },
+  {
+    "key": "redirect",
+    "label": "Redirects"
+  },
+  {
+    "key": "crawlability",
+    "label": "Crawlability"
+  },
+  {
+    "key": "sitemap",
+    "label": "Sitemap"
+  },
+  {
+    "key": "security",
+    "label": "Security"
+  },
+  {
+    "key": "url_structure",
+    "label": "URL Structure"
+  },
+  {
+    "key": "image",
+    "label": "Images"
+  },
+  {
+    "key": "ai_readiness",
+    "label": "AI Readiness"
+  },
+  {
+    "key": "rendering",
+    "label": "Rendering"
+  },
+  {
+    "key": "semantic_html",
+    "label": "Semantic HTML"
+  },
+  {
+    "key": "analytics",
+    "label": "Analytics & Measurement"
+  }
+]

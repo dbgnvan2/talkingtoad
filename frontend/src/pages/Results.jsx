@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo, Suspense } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
+import CATEGORIES from '../data/categories.generated.json'
 import SeverityBadge from '../components/SeverityBadge.jsx'
 import IssueHelpPanel from '../components/IssueHelpPanel.jsx'
 import FixManager from '../components/FixManager.jsx'
@@ -62,21 +63,9 @@ const AI_TEXT_SUGGESTION_CODES = new Set([
   'CONVERSATIONAL_H2_MISSING', 'QUERY_COVERAGE_WEAK',
 ])
 
-const CATEGORIES = [
-  { key: 'broken_link',   label: 'Broken Links' },
-  { key: 'metadata',      label: 'Metadata' },
-  { key: 'heading',       label: 'Headings' },
-  { key: 'redirect',      label: 'Redirects' },
-  { key: 'crawlability',  label: 'Crawlability' },
-  { key: 'sitemap',       label: 'Sitemap' },
-  { key: 'security',      label: 'Security' },
-  { key: 'url_structure', label: 'URL Structure' },
-  { key: 'image',         label: 'Images' },
-  { key: 'ai_readiness',  label: 'AI Readiness' },
-  { key: 'rendering',     label: 'Rendering' },
-  { key: 'semantic_html', label: 'Semantic HTML' },
-  { key: 'analytics',     label: 'Analytics & Measurement' },
-]
+// CATEGORIES (the tab bar) is imported from categories.generated.json — the
+// single source of truth is registry.CATEGORY_DISPLAY (CLN2). Regenerate with
+// `python scripts/generate_categories_json.py`; do not hand-edit the list here.
 
 const TAB_SUMMARY        = 0
 const TAB_BY_PAGE        = CATEGORIES.length + 1

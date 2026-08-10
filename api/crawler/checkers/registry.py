@@ -39,6 +39,34 @@ from typing import Literal
 SCORING_MODEL_VERSION = "2026-07-06-r5"
 
 # ---------------------------------------------------------------------------
+# Category display order + labels — SINGLE SOURCE OF TRUTH (CLN2)
+# ---------------------------------------------------------------------------
+# The ordered (category_key, human_label) list that drives every category
+# display surface: the Results.jsx tab bar and SummaryPanel.jsx grid (via the
+# generated frontend/src/data/categories.generated.json — see
+# scripts/generate_categories_json.py) and the PDF audit's "Issues by Category"
+# section (api/services/report_generator.py imports this directly). Previously
+# these were hand-mirrored in 3+ places, which silently dropped `analytics`,
+# `rendering`, and `semantic_html` from surfaces. Its key set MUST equal the set
+# of categories emitted by _CATALOGUE — enforced by
+# tests/test_frontend_backend_code_parity.py.
+CATEGORY_DISPLAY: list[tuple[str, str]] = [
+    ("broken_link",   "Broken Links"),
+    ("metadata",      "Metadata"),
+    ("heading",       "Headings"),
+    ("redirect",      "Redirects"),
+    ("crawlability",  "Crawlability"),
+    ("sitemap",       "Sitemap"),
+    ("security",      "Security"),
+    ("url_structure", "URL Structure"),
+    ("image",         "Images"),
+    ("ai_readiness",  "AI Readiness"),
+    ("rendering",     "Rendering"),
+    ("semantic_html", "Semantic HTML"),
+    ("analytics",     "Analytics & Measurement"),
+]
+
+# ---------------------------------------------------------------------------
 # Generic anchor text patterns (Step 3a)
 # ---------------------------------------------------------------------------
 
