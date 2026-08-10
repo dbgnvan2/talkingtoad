@@ -64,6 +64,17 @@ Shipped: added the `analytics` category to the two frontend CATEGORIES arrays (`
 
 ## ✅ Completed
 
+- [x] **Technical-debt cleanup batch — CLN0–CLN8 (2026-08-08):** cleared the
+  accumulated sweep deferrals (folded into functional-spec §4.9 + §4.14; pending
+  specs deleted). Done: **CLN0** scope-discovery transient≠absent (SD1–SD8, the
+  2026-08-07 spec); **CLN1** dropped dead `duplicate` tile; **CLN2** single-source
+  category list (`registry.CATEGORY_DISPLAY` → generated JSON + PDF); **CLN3**
+  `_ANALYSIS_CATEGORY_MAP` completeness; **CLN4** unified GSC/bundle join key +
+  `source_generated_at` (was F4); **CLN5** citability/health honour suppressed
+  codes (was P6/P7); **CLN6** `TITLE_H1_MISMATCH` now WP-fixable; **CLN7** `/pages`
+  scopes its issue-load (was P9); **CLN8** internal broken-page `occurrence_urls`.
+  Still deferred (explicitly out of the batch): Performance-Bundle Phase 2/3
+  (PB3–PB9) + cross-signal reconcile, and the E5 "Originality lens" label.
 - [x] **Orphaned Page Detection:** `ORPHAN_PAGE` issue code detects pages with no internal links pointing to them (v1.5)
 - [x] **Orphaned Image Detection:** WP Media Library scan for images not used on any crawled page (v1.9.2)
 - [x] **Image Download & Optimization Module:** Download → resize → WebP → GPS EXIF → SEO rename → upload (v1.9.1)

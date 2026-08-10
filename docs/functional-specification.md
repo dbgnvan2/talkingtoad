@@ -736,8 +736,8 @@ is the adversarial guard: a Post whose permalink mimics a Page is excluded under
 a Pages-only scope (P7).
 
 **Discovery — `POST /api/crawl/discover-scope`** (`api/crawler/content_discovery.py`).
-Read-only, no credentials, degrades across three tiers and returns
-`{is_wordpress, discovery_tier, types[], categories[], category_scope_supported, notes}`:
+Read-only, no credentials, degrades across tiers and returns
+`{is_wordpress, discovery_tier, types[], categories[], category_scope_supported, retryable, notes}`:
 - **`rest`** — `/wp-json/` responds → enumerate public content types via
   `/wp/v2/types` (built-in non-content types excluded, all public CPTs kept) and
   categories via `/wp/v2/categories`; per-type counts from `X-WP-Total`.
@@ -747,8 +747,18 @@ Read-only, no credentials, degrades across three tiers and returns
   Yoast/Rank Math and WP-core conventions). Pages/Posts/CPT scoping works;
   `category_scope_supported=false` (category sitemaps list archives, not member
   posts).
-- **`none`** — neither (non-WordPress sites) → only a full crawl is offered, with
-  a note explaining why.
+- **`none`** — the site was **reached** and definitively exposes neither REST nor
+  a typed sitemap → only a full crawl is offered, with a note explaining why.
+  `retryable=false`.
+- **`unreachable`** (CLN0/SD, 2026-08-07) — the probes could **not reach** the
+  site (network error, timeout, or 5xx after retries), so REST/typed-sitemap
+  absence is *unproven*. Returns `retryable=true` with a "usually temporary — try
+  again" note instead of the definitive dead-end; the frontend renders a **Try
+  again** affordance rather than stripping the scoping option. A transient failure
+  on *either* the REST probe (`_probe_wp_rest` → `"rest"`/`"absent"`/`"unreachable"`)
+  or the sitemap tier (`SitemapResult.reachable`) yields this outcome — absence is
+  only "none" when REST was definitively absent **and** the sitemap tier reached
+  the site (P1/P2). All positive/definitive payloads carry `retryable=false`.
 
 **Resolution + enforcement.** `POST /api/crawl/start` accepts
 `settings.content_scope = {mode, type_keys[], category_ids[]}`. When
@@ -873,6 +883,34 @@ Scoring is derived through the R5/R3 calibration model (`_CALIBRATION` →
 
 Micro-spec: `docs/pending/2026-08-06_measurement-integrity-checks.md` (folded in on
 completion, 2026-08-06).
+
+### 4.14 Technical-debt cleanup batch (2026-08-08, CLN0–CLN8)
+
+A batch of correctness/robustness cleanups (micro-spec
+`docs/pending/2026-08-08_debt-cleanup-batch.md`, folded in on completion). The
+user-facing behaviour change is CLN0 (scope-discovery retryable outcome, §4.9).
+The rest are internal but affect documented invariants:
+
+- **CLN2 — single source of truth for the category list.** The category set +
+  labels + order live once in `registry.CATEGORY_DISPLAY`, projected to
+  `frontend/src/data/categories.generated.json` (imported by Results.jsx /
+  SummaryPanel.jsx via `scripts/generate_categories_json.py`) and read directly by
+  the PDF report. A parity test requires `CATEGORY_DISPLAY`'s key set to equal the
+  `_CATALOGUE` category set (no missing, no dead) — replacing the former
+  hand-mirrored lists that had silently dropped categories from surfaces.
+- **CLN3 — analysis-toggle completeness.** Every issue category is reachable via
+  some `_ANALYSIS_CATEGORY_MAP` group or the always-emitted `security`; a partial
+  `enabled_analyses` can no longer silently exclude `image`/`rendering`/
+  `semantic_html` (enforced by `tests/test_engine_analysis_map.py`).
+- **CLN4 — one performance-ledger join key.** `api/services/perf_join.py:match_key`
+  (www/scheme/trailing-slash tolerant) is used by BOTH `/api/gsc/ingest` and the
+  Performance Bundle ingest, and GSC rows are stored under the crawled-page key
+  (what the page-priority consumer reads) with `source_generated_at` stamped —
+  fixing GSC rows that previously landed under an orphan key.
+- Also: CLN1 (dropped the dead `duplicate` category tile), CLN5 (per-page
+  citability/health honour user-suppressed codes), CLN6 (`TITLE_H1_MISMATCH` is
+  genuinely WP-fixable), CLN7 (`/pages` scopes its citability issue-load to the
+  shown URLs), CLN8 (internal broken-page `occurrence_urls` populated).
 
 ---
 
