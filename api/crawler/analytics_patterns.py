@@ -15,6 +15,10 @@ import re
 # Measurement-ID shapes. Word-boundary anchored so a bare id in prose is only
 # treated as a tag when it co-occurs with a vendor call anchor (see the checker).
 GA4_ID_RE = re.compile(r"\bG-[A-Z0-9]{6,12}\b")
+# Google's newer unified "Google tag" id — distinct from GA4's G- (it routes to
+# GA4 and/or Google Ads). Increasingly Google's default hand-out for GA4, so it
+# MUST count as a present measurement tag or MI1 false-fires (2026-08-08).
+GT_ID_RE = re.compile(r"\bGT-[A-Z0-9]{6,12}\b")
 GTM_ID_RE = re.compile(r"\bGTM-[A-Z0-9]{4,10}\b")
 UA_ID_RE = re.compile(r"\bUA-\d{4,10}-\d{1,4}\b")
 
@@ -43,6 +47,18 @@ TAG_SIGNATURES: list[dict] = [
         "require_id": True,   # a G- id must be present — AW-/DC- gtag calls are NOT GA4
     },
     {
+        # Google's unified "Google tag" (GT-…). Shares gtag.js delivery with GA4;
+        # each signature searches the SAME script for its own id, so a GT- script
+        # records here (require_id keeps AW-/DC- out) while a G- script records as
+        # ga4. Counts as a present measurement tag (CURRENT_TAG_TYPES) so MI1
+        # doesn't false-fire on the increasingly-common Google tag.
+        "type": "google_tag",
+        "id_re": GT_ID_RE,
+        "src_substrings": ["googletagmanager.com/gtag/js"],
+        "call_substrings": ["gtag('config'", 'gtag("config"'],
+        "require_id": True,
+    },
+    {
         "type": "gtm",
         "id_re": GTM_ID_RE,
         "src_substrings": ["googletagmanager.com/gtm.js"],
@@ -66,7 +82,12 @@ TAG_SIGNATURES: list[dict] = [
 # Vendor slugs that count as a live, current analytics tag for MI1 (tag-missing).
 # UA is deliberately excluded — a page whose ONLY tag is dead UA is still
 # effectively unmeasured for current GA4 reporting.
-CURRENT_TAG_TYPES: frozenset[str] = frozenset({"ga4", "gtm"})
+CURRENT_TAG_TYPES: frozenset[str] = frozenset({"ga4", "gtm", "google_tag"})
+
+# Direct (non-GTM) measurement tags. MI2's duplicate check reads across these so a
+# Google tag (GT-) behaves like GA4 (G-): two config calls, or one direct tag
+# co-existing with a GTM container, is a double-tag.
+DIRECT_MEASUREMENT_TYPES: frozenset[str] = frozenset({"ga4", "google_tag"})
 
 # Google Consent Mode v2 signals — any present ⇒ consent mode is configured.
 # Deliberately precise: only real `gtag('consent', …)` / `dataLayer` consent

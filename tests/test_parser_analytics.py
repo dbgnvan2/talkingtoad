@@ -74,6 +74,20 @@ def test_google_ads_gtag_is_not_ga4():
     assert p.analytics_tags is None  # no G- id → no ga4 detection, nothing else present
 
 
+def test_gt3_2_google_tag_typed_and_id_extracted():
+    """GT3.2: a Google tag (GT-…) is typed 'google_tag' with its GT- id — not
+    ga4, not a dropped None (the livingsystems.ca form)."""
+    html = ('<script async src="https://www.googletagmanager.com/gtag/js?id=GT-T9K65DT"></script>'
+            "<script>function gtag(){dataLayer.push(arguments);}gtag('config','GT-T9K65DT');</script>")
+    p = _page(html)
+    assert p.analytics_tags, "the GT- Google tag must be detected"
+    types = {t["type"] for t in p.analytics_tags}
+    assert "google_tag" in types
+    assert "ga4" not in types
+    gt = next(t for t in p.analytics_tags if t["type"] == "google_tag")
+    assert gt["id"] == "GT-T9K65DT"
+
+
 def test_bare_measurement_id_in_prose_is_not_a_tag():
     """Adversarial: a G-XXXX string in visible text (no gtag call/loader) must
     NOT be detected as an analytics tag."""

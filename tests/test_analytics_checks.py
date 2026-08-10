@@ -91,6 +91,32 @@ def test_mi1_google_ads_only_is_still_untagged():
     assert "ANALYTICS_TAG_MISSING" in _codes(_page(ADS))
 
 
+# ── GT: the unified Google tag (GT-…) must count as a present tag ────────────
+# The exact form observed on livingsystems.ca (a real false-positive site).
+GOOGLE_TAG = ('<script async src="https://www.googletagmanager.com/gtag/js?id=GT-T9K65DT"></script>'
+              "<script>function gtag(){dataLayer.push(arguments);}gtag('config','GT-T9K65DT');</script>")
+
+
+def test_gt3_1_google_tag_gt_id_is_not_missing():
+    """GT3.1 (adversarial): a genuinely-measured site whose tag is a Google tag
+    (GT-…) must NOT be reported as ANALYTICS_TAG_MISSING."""
+    codes = _codes(_page(GOOGLE_TAG))
+    assert "ANALYTICS_TAG_MISSING" not in codes
+    assert "ANALYTICS_TAG_DUPLICATE" not in codes  # a single GT- install is not a duplicate
+
+
+def test_gt3_3_google_ads_only_still_missing():
+    """GT3.3: the fix didn't flip everything to 'present' — an AW--only (Google
+    Ads) page still has no measurement tag → MI1 fires."""
+    assert "ANALYTICS_TAG_MISSING" in _codes(_page(ADS))
+
+
+def test_gt3_4_google_tag_plus_gtm_is_duplicate():
+    """GT3.4: a direct Google tag (GT-) co-existing with a GTM container is a
+    double-tag, exactly like GA4 (G-) + GTM."""
+    assert "ANALYTICS_TAG_DUPLICATE" in _codes(_page(GOOGLE_TAG + GTM))
+
+
 # ── MI3 (cross-page) ─────────────────────────────────────────────────────────
 def _p(html, url):
     res = FetchResult(url=url, final_url=url, status_code=200, headers={},

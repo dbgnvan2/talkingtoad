@@ -870,7 +870,7 @@ present on the page, not that it fires.
 
 | Code | Scope | Sev | Fires when |
 |---|---|---|---|
-| `ANALYTICS_TAG_MISSING` | per page | warning | No current GA4 (`G-…`) or GTM (`GTM-…`) tag on the page. A Google Ads-only (`AW-…`) page still counts as untagged. |
+| `ANALYTICS_TAG_MISSING` | per page | warning | No current measurement tag on the page — GA4 (`G-…`), the unified **Google tag** (`GT-…`, 2026-08-08), or GTM (`GTM-…`). A Google Ads-only (`AW-…`/`DC-…`) page still counts as untagged (`require_id` gate). |
 | `ANALYTICS_TAG_DUPLICATE` | per page | warning | GA4 configured in two+ separate `<script>` blocks, or a direct GA4 tag co-existing with a GTM container (double-count risk). Ads/Floodlight gtag calls are excluded (no `G-` id). |
 | `ANALYTICS_ID_INCONSISTENT` | site | info | GA4/GTM measurement IDs differ across pages, or the tag is present on some pages and absent on others. Attributed to the first offending page. |
 | `CONSENT_MODE_MISSING` | per page | info | A tag is present but no Google Consent Mode v2 signal (`gtag('consent',…)`) is detected. Suppressed when `ANALYTICS_TAG_MISSING` fires. Advisory (EU/UK). |
@@ -880,6 +880,15 @@ present on the page, not that it fires.
 Scoring is derived through the R5/R3 calibration model (`_CALIBRATION` →
 `_IMPACT_MATRIX`): tag-missing/duplicate → impact 4 (warning, quick wins), the rest
 → impact 1–2 (info). → `tests/test_analytics_checks.py`, `tests/test_parser_analytics.py`.
+
+**Recognised measurement tags** (`api/crawler/analytics_patterns.py`, editorial
+config): GA4 `G-…`, the unified Google tag `GT-…` (`google_tag` — Google's newer
+default; added 2026-08-08 after a false `ANALYTICS_TAG_MISSING` on a `GT-`-tagged
+site), GTM `GTM-…`, and legacy UA `UA-…` (recorded but never satisfies MI1). GA4
+and the Google tag are the *direct* measurement tags for the MI2 duplicate check;
+Google Ads `AW-…`/Floodlight `DC-…` gtag calls are excluded via the `require_id`
+gate. Detection is markup-only — a JS-injected tag absent from the raw HTML is not
+seen (by design).
 
 Micro-spec: `docs/pending/2026-08-06_measurement-integrity-checks.md` (folded in on
 completion, 2026-08-06).

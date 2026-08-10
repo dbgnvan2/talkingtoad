@@ -19,6 +19,7 @@ from api.crawler.parser import ParsedPage
 from api.crawler.analytics_patterns import (
     CAMPAIGN_PARAM_NAMES,
     CURRENT_TAG_TYPES,
+    DIRECT_MEASUREMENT_TYPES,
     UTM_PARAM_PREFIXES,
 )
 from api.crawler.checkers.registry import Issue, make_issue
@@ -32,28 +33,30 @@ def _check_analytics(page: ParsedPage, issues: list[Issue]) -> None:
     Tests:   tests/test_analytics_checks.py
     """
     tags = page.analytics_tags or []
-    ga4 = [t for t in tags if t.get("type") == "ga4"]
+    # Direct (non-GTM) measurement tags: GA4 (G-) and the Google tag (GT-).
+    direct = [t for t in tags if t.get("type") in DIRECT_MEASUREMENT_TYPES]
     gtm = [t for t in tags if t.get("type") == "gtm"]
     current = [t for t in tags if t.get("type") in CURRENT_TAG_TYPES]
 
     if not current:
-        # MI1 — no current (GA4/GTM) tag anywhere on the page.
+        # MI1 — no current (GA4 / Google tag / GTM) tag anywhere on the page.
         issues.append(make_issue("ANALYTICS_TAG_MISSING", page.url))
     else:
-        # MI2 — duplicate GA4 delivery. The standard install is one gtag.js
-        # loader (via="src") + one gtag('config') call (via="call") for a G- id
-        # — that is NOT a duplicate. A duplicate is GA4 configured in two+
-        # separate <script> blocks (detection is script-granular, so two config
-        # calls in ONE script read as one), or a direct GA4 tag co-existing with
-        # a GTM container (plugin + GTM double-tag). Ads/Floodlight gtag calls
-        # are already excluded upstream (they carry no G- id → not type "ga4").
-        ga4_config_calls = [t for t in ga4 if t.get("via") == "call"]
-        ga4_direct = bool(ga4)
-        if len(ga4_config_calls) >= 2 or (ga4_direct and bool(gtm)):
+        # MI2 — duplicate measurement delivery. The standard install is one
+        # gtag.js loader (via="src") + one gtag('config') call (via="call") for a
+        # single G-/GT- id — NOT a duplicate. A duplicate is a direct tag
+        # configured in two+ separate <script> blocks (detection is
+        # script-granular, so two config calls in ONE script read as one), or a
+        # direct GA4/Google tag co-existing with a GTM container (plugin + GTM
+        # double-tag). Ads/Floodlight gtag calls are excluded upstream (no
+        # G-/GT- id → not a direct type).
+        direct_config_calls = [t for t in direct if t.get("via") == "call"]
+        direct_present = bool(direct)
+        if len(direct_config_calls) >= 2 or (direct_present and bool(gtm)):
             ids = sorted({t["id"] for t in tags if t.get("id")})
             issues.append(make_issue(
                 "ANALYTICS_TAG_DUPLICATE", page.url,
-                extra={"ga4_config_calls": len(ga4_config_calls),
+                extra={"ga4_config_calls": len(direct_config_calls),
                        "has_gtm": bool(gtm), "ids": ids}))
 
         # MI4 — consent mode missing (only meaningful when a tag exists; when MI1
