@@ -166,7 +166,7 @@ async def generate_pdf_report(
     cat_list = [
         ("Broken Links", "broken_link"), ("Metadata", "metadata"),
         ("Headings", "heading"), ("Redirects", "redirect"),
-        ("Crawlability", "crawlability"), ("Duplicates", "duplicate"),
+        ("Crawlability", "crawlability"),
         ("Sitemap", "sitemap"), ("Security", "security"),
         ("URL Structure", "url_structure"), ("Images", "image"),
         ("AI Readiness", "ai_readiness"), ("Rendering", "rendering"),

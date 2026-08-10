@@ -90,6 +90,9 @@ def _pdf_category_keys(text: str) -> set[str]:
 
 
 def test_category_display_lists_cover_every_backend_category():
+    """CLN1.2: each display list's category key set EQUALS the backend set —
+    no missing (silently vanished from UI) and no extra (a dead tile that can
+    only ever show 0, e.g. the former `duplicate`)."""
     from api.crawler.checkers.registry import _CATALOGUE
 
     backend = {spec.category for spec in _CATALOGUE.values()}
@@ -104,3 +107,18 @@ def test_category_display_lists_cover_every_backend_category():
             f"{name} is missing backend issue categories: {sorted(missing)}. "
             "Every category in registry._CATALOGUE must appear in this display list."
         )
+        extra = keys - backend
+        assert not extra, (
+            f"{name} has category keys no _CATALOGUE code emits: {sorted(extra)}. "
+            "A dead category tile/row can only ever show 0 — remove it or wire a "
+            "code to that category."
+        )
+
+
+def test_cln1_1_no_dead_duplicate_category():
+    """CLN1.1: no issue spec emits `category='duplicate'` (the premise for
+    dropping the dead Duplicates tile). Duplicate detection lives under the real
+    categories — TITLE_DUPLICATE/META_DESC_DUPLICATE (metadata), etc."""
+    from api.crawler.checkers.registry import _CATALOGUE
+
+    assert "duplicate" not in {spec.category for spec in _CATALOGUE.values()}

@@ -16,7 +16,6 @@ const CATEGORIES = [
   { key: 'heading',       label: 'Headings' },
   { key: 'redirect',      label: 'Redirects' },
   { key: 'crawlability',  label: 'Crawlability' },
-  { key: 'duplicate',     label: 'Duplicates' },
   { key: 'sitemap',       label: 'Sitemap' },
   { key: 'security',      label: 'Security' },
   { key: 'url_structure', label: 'URL Structure' },
