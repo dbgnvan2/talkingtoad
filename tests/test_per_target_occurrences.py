@@ -23,6 +23,18 @@ def _broken(page, target, code="BROKEN_LINK_404"):
     return iss
 
 
+def test_cln8_1_internal_broken_page_source_url_populates_occurrence_urls():
+    """CLN8: an internal broken PAGE carries extra={'source_url': ...} (the page
+    itself is 4xx/5xx, source_url is where it was linked from), not target_url.
+    Its collapsed occurrence_urls must be populated, not left empty."""
+    iss = make_issue("BROKEN_LINK_404", "https://x.org/broken")
+    iss.extra = {"source_url": "https://x.org/home"}
+    out = collapse_per_target_occurrences([iss])
+    rows = [i for i in out if i.code == "BROKEN_LINK_404"]
+    assert len(rows) == 1
+    assert rows[0].extra["occurrence_urls"] == ["https://x.org/home"]
+
+
 @pytest.mark.parametrize("n,expected_mult", [(1, 1.0), (2, 1.25), (5, 2.0), (20, 2.0)])
 def test_occurrence_multiplier_curve(n, expected_mult):
     assert occurrence_multiplier(n) == expected_mult

@@ -49,13 +49,15 @@ def collapse_per_target_occurrences(issues: list[Issue]) -> list[Issue]:
     for (page_url, code), group in grouped.items():
         first = group[0]
         n = len(group)
-        # Offending URL is `target_url` for broken/timeout links, `redirect_to`
-        # for redirect codes (F3: populate the evidence list for both).
-        targets = [
-            g.extra.get("target_url") or g.extra.get("redirect_to")
-            for g in group
-            if g.extra and (g.extra.get("target_url") or g.extra.get("redirect_to"))
-        ]
+        # Evidence URL for the occurrence list: `target_url` for broken/timeout
+        # links, `redirect_to` for redirect codes, or `source_url` for an
+        # internal broken PAGE (the page itself 4xx/5xx; source_url is where it
+        # was linked from). CLN8: include source_url so those rows aren't left
+        # with an empty occurrence_urls.
+        def _evidence(x):
+            return x.get("target_url") or x.get("redirect_to") or x.get("source_url")
+
+        targets = [_evidence(g.extra) for g in group if g.extra and _evidence(g.extra)]
         first.extra = {**(first.extra or {}), "occurrences": n, "occurrence_urls": targets}
         if n > 1:
             base_impact, effort = _ISSUE_SCORING[code]
