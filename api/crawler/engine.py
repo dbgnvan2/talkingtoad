@@ -102,13 +102,23 @@ _BOT_BLOCKING_DOMAINS: frozenset[str] = frozenset(
 # Maps analysis toggle names (v1.3 §3.1) to the issue categories they cover.
 _ANALYSIS_CATEGORY_MAP: dict[str, frozenset[str]] = {
     "link_integrity": frozenset({"broken_link", "redirect"}),
-    "seo_essentials": frozenset({"metadata", "duplicate", "url_structure"}),
+    "seo_essentials": frozenset({"metadata", "url_structure"}),
     "site_structure": frozenset({"heading"}),
     "indexability":   frozenset({"crawlability", "sitemap"}),
-    "ai_readiness":   frozenset({"ai_readiness"}),
+    # CLN3: rendering + semantic_html are agent-readiness siblings of ai_readiness
+    # (added by the agent-readiness P1 work) — reachable via the ai_readiness toggle.
+    "ai_readiness":   frozenset({"ai_readiness", "rendering", "semantic_html"}),
     "analytics":      frozenset({"analytics"}),
+    # CLN3: `image` gets its own self-named group (like analytics/ai_readiness) so
+    # a partial selection can enable it — previously it belonged to no group and
+    # was unreachable except via the all-on (enabled_analyses=None) path.
+    "image":          frozenset({"image"}),
 }
-# Categories not covered by a named group are always emitted (security).
+# `security` is the SOLE always-emitted category (even under a partial
+# `enabled_analyses`) — critical safety issues run regardless. Every OTHER
+# category must be reachable through a named group above. The union of all groups
+# ∪ this set MUST equal the full registry category set — enforced by
+# tests/test_engine_analysis_map.py::test_cln3_1_map_covers_every_category.
 _UNGROUPED_CATEGORIES: frozenset[str] = frozenset({"security"})
 
 
