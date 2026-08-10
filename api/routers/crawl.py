@@ -784,9 +784,14 @@ async def get_pages(
     from api.services.job_store_base import compute_citability_grade
 
     issues = await store.get_all_issues(job_id)
+    # CLN5: drop user-suppressed codes before grading so the citability column
+    # reconciles with site health (get_summary already drops them). Suppression
+    # is SQLite-only; on Redis this no-ops, matching Redis get_summary.
+    _gs = getattr(store, "get_suppressed_codes", None)
+    suppressed = set(await _gs()) if _gs else set()
     rows_by_url: dict[str, list[tuple[str, int, str]]] = {}
     for issue in issues:
-        if issue.page_url:
+        if issue.page_url and issue.issue_code not in suppressed:
             rows_by_url.setdefault(issue.page_url.rstrip("/"), []).append(
                 (issue.issue_code, issue.impact or 0, issue.category or "")
             )
@@ -1316,9 +1321,14 @@ async def get_page_priority(
     # suppression and diverged from compute_impact_health).
     from api.services.job_store_base import compute_page_health, compute_citability_grade
 
+    # CLN5: drop user-suppressed codes before grading so per-page health AND the
+    # citability column reconcile with site health (both previously used raw
+    # rows). SQLite-only suppression; no-ops on Redis, matching Redis get_summary.
+    _gs = getattr(store, "get_suppressed_codes", None)
+    suppressed = set(await _gs()) if _gs else set()
     rows_by_url: dict[str, list[tuple[str, int, str]]] = {}
     for issue in issues:
-        if issue.page_url:
+        if issue.page_url and issue.issue_code not in suppressed:
             key = issue.page_url.rstrip("/")
             rows_by_url.setdefault(key, []).append(
                 (issue.issue_code, issue.impact or 0, issue.category or "")

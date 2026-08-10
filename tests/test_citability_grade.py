@@ -48,3 +48,40 @@ def test_e5_suppression_not_double_counted():
 def test_e5_floors_at_zero():
     rows = [(f"CODE{i}", 20, "ai_readiness") for i in range(10)]
     assert compute_citability_grade(rows) == 0
+
+
+# ── CLN5: the ROUTER must drop user-suppressed codes before grading ──────────
+# The grade function only applies R4 *cluster* suppression; job-level *user*
+# suppression is filtered at the /pages and /page-priority call sites so the
+# citability column (and per-page health) reconcile with site health.
+
+async def test_cln5_1_citability_grade_honours_suppressed_codes():
+    """CLN5.1 (P8 dirty-state): suppressing an ai_readiness code raises the page's
+    citability grade on /page-priority, matching what site health already does."""
+    from datetime import datetime, timezone
+
+    from api.models.issue import Issue
+    from api.models.job import CrawlJob
+    from api.models.page import CrawledPage
+    from api.routers.crawl import get_page_priority
+    from api.services.sqlite_store import SQLiteJobStore
+
+    async with SQLiteJobStore(db_path=":memory:") as store:
+        await store.create_job(CrawlJob(job_id="j1", target_url="https://example.com", status="complete"))
+        url = "https://example.com/p"
+        await store.save_pages([CrawledPage(
+            job_id="j1", url=url, status_code=200, crawled_at=datetime.now(timezone.utc))])
+        await store.save_issues([Issue(
+            job_id="j1", page_url=url, category="ai_readiness", severity="info",
+            issue_code="GEO_SUMMARY_BURIED", description="d", recommendation="r", impact=2)])
+
+        before = await get_page_priority("j1", store=store)
+        g_before = before["pages"][0]["citability_grade"]
+        assert g_before < 100, "the ai_readiness issue should charge the grade before suppression"
+
+        await store.add_suppressed_code("GEO_SUMMARY_BURIED")
+
+        after = await get_page_priority("j1", store=store)
+        g_after = after["pages"][0]["citability_grade"]
+        assert g_after == 100, "suppressed code must no longer charge the citability grade"
+        assert g_after > g_before
