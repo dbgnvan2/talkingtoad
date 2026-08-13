@@ -76,8 +76,8 @@ def test_make_issue_known_code_still_works():
 # ── R-Q2: catalogue <-> scoring bijection (docstring counts were stale) ───────
 def test_scoring_catalogue_bijection():
     assert set(_CATALOGUE) == set(_ISSUE_SCORING)
-    # 155 (v2.6 baseline) + 6 analytics codes (2026-08-06 spec) = 161
-    assert len(_ISSUE_SCORING) == len(_CATALOGUE) == 161
+    # 155 (v2.6 baseline) + 6 analytics (2026-08-06) + 1 CTA-tracking (2026-08-09) = 162
+    assert len(_ISSUE_SCORING) == len(_CATALOGUE) == 162
 
 
 # ── R0.2: Claude-User honors robots.txt (was wrongly False) ───────────────────

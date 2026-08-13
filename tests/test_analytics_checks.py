@@ -192,6 +192,22 @@ def test_mi7_fires_when_wrapper_convention_present_but_a_conversion_untracked():
     assert any("Request Information" in t for t in iss.extra["untracked_ctas"])
 
 
+def test_mi7_generic_track_classes_are_not_tracking_markers():
+    """Adversarial (2026-08-09 sweep): a conversion CTA inside a Slick carousel
+    (`slick-track`) or with a `fast-track`/`data-slick-track` ancestor must NOT be
+    read as tracked — those are generic classes, not the track-/track_ convention.
+    On a page with NO real tracking, MI7 must stay silent (no false fire)."""
+    from api.crawler.checkers.analytics import _cta_is_tracked
+    # unit: none of these generic tokens count as a marker
+    assert not _cta_is_tracked({"class": "elementor-button", "context_classes": ["slick-track"]})
+    assert not _cta_is_tracked({"class": "fast-track btn"})
+    assert not _cta_is_tracked({"class": "btn", "context_data": ["data-slick-track"]})
+    # end-to-end: carousel-wrapped Donate on an untracked page → no MI7 fire
+    html = (GA4 + '<div class="slick-track"><div class="elementor-widget-button">'
+            '<a class="elementor-button" href="/d">Donate now</a></div></div>')
+    assert "CTA_TRACKING_MISSING" not in _codes(_page(html, head=False))
+
+
 def test_mi7_counselling_vocabulary_recognised():
     """The conversion vocabulary covers counselling/intake/consultation/request
     (the site's real CTAs), while browse CTAs stay excluded."""

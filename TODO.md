@@ -83,6 +83,16 @@ CLN4 strictly improved the matched case):
   path. *Deferred:* document the "one source row per page" assumption, or sum on
   collision if it ever shows up in real data.
 
+### Deferred from the 2026-08-09 MI7 /csdp sweep (learning-qa; low-severity, not fixed)
+- [ ] **P9 — MI7 CTA caps truncate silently:** `_MAX_CTA_ELEMENTS = 300` (`parser.py`)
+  and `_MAX_CTA_ANCESTORS = 4` drop CTAs / ancestor context with no "N of M" signal
+  on a huge page. Advisory check, low blast radius; announce if it ever matters.
+- [ ] **Cosmetic — MI2 `extra` key mislabel:** `ANALYTICS_TAG_DUPLICATE`'s extra still
+  uses the key `"ga4_config_calls"` though it now counts *direct* (GA4 + Google tag)
+  config calls (`checkers/analytics.py`). A Google-tag-only duplicate reports its
+  count under a `ga4_`-named field. Nothing external reads it; rename to
+  `direct_config_calls` when convenient (update `test_mi2_*` if they assert on it).
+
 ## ✅ Completed
 
 - [x] **Technical-debt cleanup batch — CLN0–CLN8 (2026-08-08):** cleared the

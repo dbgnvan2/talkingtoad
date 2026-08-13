@@ -839,20 +839,22 @@ _MAX_CTA_ELEMENTS = 300  # bound the per-page CTA payload on huge pages (P9)
 _MAX_CTA_ANCESTORS = 4
 
 
-def _cta_ancestor_context(el) -> str:
-    """Lowercased class + data-attr-name text of *el*'s nearest ancestors, so the
-    checker can detect a tracking marker sitting on a wrapper element (the common
-    page-builder pattern), not just on the button itself."""
-    parts: list[str] = []
+def _cta_ancestor_markers(el) -> tuple[list, list]:
+    """Return ``(class_tokens, data_attr_names)`` of *el*'s nearest ancestors, so
+    the checker can detect a tracking marker sitting on a wrapper element (the
+    common page-builder pattern) via TOKEN-prefix matching — not a substring over
+    a blob, which would false-match generic classes like ``slick-track``."""
+    classes: list[str] = []
+    data: list[str] = []
     node = getattr(el, "parent", None)
     for _ in range(_MAX_CTA_ANCESTORS):
         name = getattr(node, "name", None)
         if node is None or name in (None, "body", "html", "[document]"):
             break
-        parts.append(" ".join(node.get("class") or []))
-        parts.extend(k for k in getattr(node, "attrs", {}) if k.lower().startswith("data-"))
+        classes.extend(c.lower() for c in (node.get("class") or []))
+        data.extend(k.lower() for k in getattr(node, "attrs", {}) if k.lower().startswith("data-"))
         node = getattr(node, "parent", None)
-    return " ".join(parts).lower()
+    return classes, data
 
 
 def _extract_cta_elements(soup: BeautifulSoup) -> list | None:
@@ -890,12 +892,14 @@ def _extract_cta_elements(soup: BeautifulSoup) -> list | None:
                 or (el.get("title") or "")).strip()
         if not text:
             continue  # unnamed control — can't classify conversion intent
+        ctx_classes, ctx_data = _cta_ancestor_markers(el)
         out.append({
             "text": text[:120],
             "class": classes,
             "onclick": (el.get("onclick") or ""),
             "data_attrs": [k for k in el.attrs if k.lower().startswith("data-")],
-            "context": _cta_ancestor_context(el),
+            "context_classes": ctx_classes,   # ancestor class tokens (lowercased)
+            "context_data": ctx_data,          # ancestor data-* attr names (lowercased)
         })
         if len(out) >= _MAX_CTA_ELEMENTS:
             break

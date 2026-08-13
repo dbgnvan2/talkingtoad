@@ -39,18 +39,19 @@ _CTA_INTENT_RE = re.compile(
 
 def _cta_is_tracked(cta: dict) -> bool:
     """True when the CTA carries a detectable click-tracking marker — on the
-    element itself OR on an ancestor wrapper (``context``). Page builders put the
-    custom class on the widget wrapper and the click-listener uses ``closest()``,
-    so a marker several levels up still means the button is tracked. Markers: a
-    convention class, a ``data-*`` tracking attr, or an inline gtag/dataLayer call."""
-    # class markers + ancestor context (context is class + data-attr names, so a
-    # class marker like `track-` also catches a `data-track` in an ancestor).
-    haystack = (cta.get("class") or "").lower() + " " + (cta.get("context") or "")
-    if any(m in haystack for m in CTA_TRACKING_CLASS_MARKERS):
+    element itself OR on an ancestor wrapper. Page builders put the custom class
+    on the widget wrapper and the click-listener uses ``closest()``, so a marker
+    several levels up still means the button is tracked.
+
+    Markers are matched per class TOKEN by PREFIX (not as a substring over a
+    concatenated blob), so a generic class like ``slick-track`` / ``fast-track``
+    / a ``data-slick-track`` attr does NOT count as tracking (that substring bug
+    both hid real gaps and misfired — 2026-08-09 sweep)."""
+    class_tokens = (cta.get("class") or "").lower().split() + (cta.get("context_classes") or [])
+    if any(tok.startswith(CTA_TRACKING_CLASS_MARKERS) for tok in class_tokens):
         return True
-    if any(p in haystack for p in CTA_TRACKING_DATA_PREFIXES):
-        return True
-    if any(d.lower().startswith(CTA_TRACKING_DATA_PREFIXES) for d in (cta.get("data_attrs") or [])):
+    data_names = [d.lower() for d in (cta.get("data_attrs") or [])] + (cta.get("context_data") or [])
+    if any(name.startswith(CTA_TRACKING_DATA_PREFIXES) for name in data_names):
         return True
     onclick = (cta.get("onclick") or "").lower()
     return any(m in onclick for m in CTA_ONCLICK_MARKERS)

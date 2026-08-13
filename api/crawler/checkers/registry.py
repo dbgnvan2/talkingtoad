@@ -12,10 +12,10 @@ integrity of this file is enforced by five CI parity invariants — see
 
 Single source of truth for:
     - ``Issue`` dataclass and ``_IssueSpec`` dataclass
-    - ``_ISSUE_SCORING`` (impact, effort) by code — 161 codes
-    - ``_CATALOGUE`` (every issue spec) — 161 codes
+    - ``_ISSUE_SCORING`` (impact, effort) by code — 162 codes
+    - ``_CATALOGUE`` (every issue spec) — 162 codes
     - ``_AI_READINESS_CONFIDENCE`` (confidence labels) — 71 codes
-      (of 161 total; the 90 non-ai_readiness codes carry no confidence label)
+      (of 162 total; the 91 non-ai_readiness codes carry no confidence label)
     - ``_STOP_WORDS`` and ``_GENERIC_ANCHOR_TEXTS`` (shared helpers)
     - Size-limit constants
     - ``make_issue()`` factory, ``_sig_words()``, ``_titles_mismatch()``

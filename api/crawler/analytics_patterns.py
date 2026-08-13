@@ -115,23 +115,29 @@ CAMPAIGN_PARAM_NAMES: frozenset[str] = frozenset({"gclid", "gbraid", "wbraid", "
 # "conversion CTA" worth measuring. Nav toggles / "read more" are excluded on
 # purpose (low value, high noise). Editorial vocabulary (global rule #9).
 CTA_INTENT_TERMS: tuple[str, ...] = (
-    "donate", "give", "pledge", "book", "schedule", "appointment", "contact",
-    "register", "sign up", "signup", "subscribe", "apply", "join", "volunteer",
-    "get started", "enrol", "enroll", "rsvp", "reserve", "buy", "shop",
-    "checkout", "purchase", "order",
+    "donate", "give now", "give today", "pledge", "book", "schedule",
+    "appointment", "contact", "register", "sign up", "signup", "subscribe",
+    "apply now", "join", "volunteer", "get started", "enrol", "enroll", "rsvp",
+    "reserve", "buy", "shop", "checkout", "purchase",
     # Service/consultation conversions (counselling, therapy, coaching, etc.)
     "counselling", "counseling", "intake", "consultation", "consult", "request",
 )
+# NOTE (2026-08-09 sweep): bare `give`/`apply`/`order` were dropped — they matched
+# "Give it a try", "Apply filters", "Order status". Use the specific forms above;
+# add site terms here (config, not code) if your CTAs use other conversion words.
 
 # A CTA counts as "tracked" when a click-tracking marker is detected on it:
-#   - its class contains any CTA_TRACKING_CLASS_MARKERS substring, OR
-#   - it has a data-* attribute whose name starts with any CTA_TRACKING_DATA_PREFIXES, OR
-#   - its onclick contains any CTA_ONCLICK_MARKERS call.
-# Defaults cover the common `track-*` class convention (a JS listener fires a GA4
-# event on click). Config-editable to match a site's own convention.
+#   - a class TOKEN (on the element or a wrapper) STARTS WITH a CTA_TRACKING_CLASS_MARKERS
+#     prefix, OR
+#   - it (or a wrapper) has a data-* attribute whose name starts with a
+#     CTA_TRACKING_DATA_PREFIXES prefix, OR
+#   - its onclick contains a CTA_ONCLICK_MARKERS call.
+# These are PREFIX markers matched per class token (not substrings over a blob) —
+# so a generic carousel/content class like `slick-track` or `fast-track` is NOT a
+# tracking marker, while the `track-*` / `track_*` convention is. Config-editable.
 CTA_TRACKING_CLASS_MARKERS: tuple[str, ...] = (
     # both hyphen and underscore conventions (track-donate / track_donate)
-    "track-", "track_", "-track", "_track",
+    "track-", "track_",
     "ga-event", "ga4-event", "gtm-track", "analytics-event",
 )
 CTA_TRACKING_DATA_PREFIXES: tuple[str, ...] = (

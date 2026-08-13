@@ -108,8 +108,8 @@ def test_cta_ancestor_marker_captured_in_context():
                       html=html, content_type="text/html")
     p = parse_page(res, BASE)
     cta = p.cta_elements[0]
-    assert "track" not in cta["class"].lower()          # marker is NOT on the <a>
-    assert "track_begincounselling" in cta["context"]   # it IS on an ancestor
+    assert "track" not in cta["class"].lower()                    # marker is NOT on the <a>
+    assert "track_begincounselling" in cta["context_classes"]     # it IS on an ancestor
 
 
 def test_gt3_2_google_tag_typed_and_id_extracted():
