@@ -97,6 +97,38 @@ describe('FixFocusPanel', () => {
     )
   })
 
+  it('surfaces newly_found from a verify as a Regenerate prompt (sweep #3)', async () => {
+    global.fetch.mockImplementation((url) => {
+      const u = String(url)
+      if (u.includes('/fix-focus/verify-page')) {
+        return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({
+          url: 'https://x.org/about', reconciled: true,
+          verified: [], still_present: [], newly_found: ['CANONICAL_MISSING'],
+        }) })
+      }
+      return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(SNAPSHOT) })
+    })
+    renderWithProviders(<FixFocusPanel jobId="job1" />)
+    await waitFor(() => expect(screen.getAllByText('Verify page').length).toBeGreaterThan(0))
+    fireEvent.click(screen.getAllByText('Verify page')[0])
+    await waitFor(() => expect(screen.getByText(/new issue\(s\) found/)).toBeInTheDocument())
+    expect(screen.getByText(/Regenerate to include them/)).toBeInTheDocument()
+  })
+
+  it('shows an error when a checklist toggle fails (sweep #4)', async () => {
+    global.fetch.mockImplementation((url) => {
+      const u = String(url)
+      if (u.includes('/fix-focus/check')) {
+        return Promise.resolve({ ok: false, status: 404, json: () => Promise.resolve({ error: { message: 'ITEM_NOT_FOUND' } }) })
+      }
+      return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(SNAPSHOT) })
+    })
+    renderWithProviders(<FixFocusPanel jobId="job1" />)
+    await waitFor(() => expect(screen.getByText('Missing title')).toBeInTheDocument())
+    fireEvent.click(screen.getByLabelText('Mark TITLE_MISSING fixed'))
+    await waitFor(() => expect(screen.getByText(/ITEM_NOT_FOUND|Could not update|HTTP 404/)).toBeInTheDocument())
+  })
+
   it('shows an error state when the request fails', async () => {
     global.fetch.mockImplementation(() =>
       Promise.resolve({ ok: false, status: 500, json: () => Promise.resolve({ error: { message: 'boom' } }) })

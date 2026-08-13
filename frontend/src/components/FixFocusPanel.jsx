@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { getFixFocus, toggleFixFocusItem, verifyFixFocusPage, regenerateFixFocus } from '../api.js'
 
 // Fix Focus — a curated, tickable worklist of the highest-priority fixes, split
@@ -25,20 +25,34 @@ const STATUS_LABEL = {
   open: '', checked: 'checked', verified: 'verified ✓', still_present: 'still present',
 }
 
-function FocusSection({ title, focus, jobId, onChange }) {
+function FocusSection({ title, focus, jobId, onChange, onError, onNotice }) {
   const [verifyingUrl, setVerifyingUrl] = useState(null)
   if (!focus || !focus.pages) return null
 
-  const toggle = async (pageUrl, item) => {
-    const next = item.status !== 'checked'
-    await toggleFixFocusItem(jobId, pageUrl, item.issue_code, next)
-    onChange()
+  // Derive the intended state from the checkbox event (not only the literal
+  // 'checked' status) so a 'verified' item can be un-ticked correctly.
+  const toggle = async (pageUrl, item, nextChecked) => {
+    onError(null)
+    try {
+      await toggleFixFocusItem(jobId, pageUrl, item.issue_code, nextChecked)
+      await onChange()
+    } catch (e) {
+      onError(e.message || 'Could not update the checklist item')
+    }
   }
   const verify = async (pageUrl) => {
     setVerifyingUrl(pageUrl)
+    onError(null)
     try {
-      await verifyFixFocusPage(jobId, pageUrl)
-      onChange()
+      const res = await verifyFixFocusPage(jobId, pageUrl)
+      if (res && res.reconciled === false) {
+        onNotice(`Could not verify this page — it returned HTTP ${res.page_status}. Try again later.`)
+      } else if (res && res.newly_found && res.newly_found.length) {
+        onNotice(`${res.newly_found.length} new issue(s) found on this page — click Regenerate to include them.`)
+      }
+      await onChange()
+    } catch (e) {
+      onError(e.message || 'Could not verify this page')
     } finally {
       setVerifyingUrl(null)
     }
@@ -77,7 +91,7 @@ function FocusSection({ title, focus, jobId, onChange }) {
                 <input
                   type="checkbox"
                   checked={item.status === 'checked' || item.status === 'verified'}
-                  onChange={() => toggle(page.url, item)}
+                  onChange={(e) => toggle(page.url, item, e.target.checked)}
                   aria-label={`Mark ${item.issue_code} fixed`}
                 />
                 <span className={STATUS_STYLE[item.status] || 'text-gray-600'}>
@@ -105,6 +119,7 @@ function FocusSection({ title, focus, jobId, onChange }) {
 export default function FixFocusPanel({ jobId }) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
+  const [notice, setNotice] = useState(null)
   const [data, setData] = useState(null)
   const [showHelp, setShowHelp] = useState(false)
 
@@ -125,6 +140,7 @@ export default function FixFocusPanel({ jobId }) {
   const regenerate = async () => {
     setLoading(true)
     setError(null)
+    setNotice(null)
     try {
       setData(await regenerateFixFocus(jobId))
     } catch (e) {
@@ -173,11 +189,16 @@ export default function FixFocusPanel({ jobId }) {
 
       {loading && <p className="text-xs text-gray-500">Loading…</p>}
       {error && <p className="text-xs text-red-600">{error}</p>}
+      {notice && (
+        <p className="text-xs text-amber-800 bg-amber-50 rounded-xl p-2">{notice}</p>
+      )}
 
       {data && !loading && (
         <div className="grid md:grid-cols-2 gap-5">
-          <FocusSection title="SEO" focus={data.seo} jobId={jobId} onChange={load} />
-          <FocusSection title="AI / GEO" focus={data.geo} jobId={jobId} onChange={load} />
+          <FocusSection title="SEO" focus={data.seo} jobId={jobId} onChange={load}
+                        onError={setError} onNotice={setNotice} />
+          <FocusSection title="AI / GEO" focus={data.geo} jobId={jobId} onChange={load}
+                        onError={setError} onNotice={setNotice} />
         </div>
       )}
     </div>

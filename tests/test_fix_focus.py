@@ -140,18 +140,21 @@ def test_ff4c_regenerate_preserves_status():
     assert "META_DESC_MISSING" not in codes                    # gone
 
 
-# ── FF4.D / FF5.A — verify-page reconcile; unfixed stays visible ──────────
+# ── FF4.D / FF5.A — verify-page reconcile from the ABSOLUTE live set ───────
 def test_ff4d_verify_page_reconciles_and_ff5a_unfixed_visible():
+    """A snapshot item absent from the re-scan's live set is verified (this also
+    covers the already-cleared case — the code is simply not present, with no
+    reliance on a since-last-scan delta, sweep finding 1); a present one is
+    still_present; a live code not in the snapshot is newly_found."""
     snap = build_snapshot(
         [_issue("https://x.org/a", "TITLE_MISSING"),
          _issue("https://x.org/a", "META_DESC_MISSING")],
         generated_at=NOW, scoring_model_version="v")
-    # rescan says TITLE cleared, META still there, plus a NEW code not in snapshot
+    # ABSOLUTE current set: META still there + a NEW code; TITLE no longer present.
     outcome = apply_verify(
         snap, "https://x.org/a",
-        resolved_codes=["TITLE_MISSING"],
         present_codes=["META_DESC_MISSING", "CANONICAL_MISSING"])
-    assert outcome["verified"] == ["TITLE_MISSING"]
+    assert outcome["verified"] == ["TITLE_MISSING"]          # not present → verified
     assert outcome["still_present"] == ["META_DESC_MISSING"]  # NOT silently dropped
     assert outcome["newly_found"] == ["CANONICAL_MISSING"]    # surfaced, not injected
     codes = {it["issue_code"]: it for p in snap["seo"]["pages"] for it in p["items"]}
@@ -159,6 +162,18 @@ def test_ff4d_verify_page_reconciles_and_ff5a_unfixed_visible():
     assert codes["META_DESC_MISSING"]["status"] == STATUS_STILL_PRESENT
     # newly_found did not enter the frozen list
     assert "CANONICAL_MISSING" not in codes
+
+
+def test_ff4d_already_cleared_item_verifies_on_empty_rescan():
+    """Sweep finding 1 (regression): if the page was already fixed (re-scan sees
+    NOTHING), every snapshot item on it verifies — not left stuck 'open'."""
+    snap = build_snapshot(
+        [_issue("https://x.org/a", "TITLE_MISSING")],
+        generated_at=NOW, scoring_model_version="v")
+    outcome = apply_verify(snap, "https://x.org/a", present_codes=[])
+    assert outcome["verified"] == ["TITLE_MISSING"]
+    codes = {it["issue_code"]: it for p in snap["seo"]["pages"] for it in p["items"]}
+    assert codes["TITLE_MISSING"]["status"] == STATUS_VERIFIED
 
 
 # ── FF3 — persistence: snapshot saved on a job and survives reload ─────────

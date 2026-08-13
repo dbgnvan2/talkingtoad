@@ -173,23 +173,22 @@ def merge_checked_state(new_snapshot: dict, old_snapshot: dict | None) -> dict:
     return new_snapshot
 
 
-def apply_verify(
-    snapshot: dict,
-    page_url: str,
-    *,
-    resolved_codes: Iterable[str],
-    present_codes: Iterable[str],
-) -> dict:
-    """Reconcile one page against a re-scan (FF4.D/FF5).
+def apply_verify(snapshot: dict, page_url: str, *, present_codes: Iterable[str]) -> dict:
+    """Reconcile one page against a re-scan's ABSOLUTE current issue set (FF4.D/FF5).
 
-    ``resolved_codes`` = codes the re-scan says cleared → ``verified``.
-    ``present_codes``  = codes the re-scan still sees → ``still_present`` (an
-    unfixed item is made visible, never silently dropped — honesty rule / P2).
-    Returns ``{verified, still_present, newly_found}`` for the page. ``newly_found``
-    = codes the re-scan raised that aren't in the frozen snapshot (surfaced so the
-    user can regenerate; they do NOT silently enter the frozen list).
+    ``present_codes`` = every issue code the re-scan currently sees on the page
+    (the live set, not a since-last-scan delta). A snapshot item is:
+      - ``still_present`` if its code is in ``present_codes`` (unfixed — made
+        visible, never silently dropped, honesty rule / P2), else
+      - ``verified`` (the code is no longer detected → the fix stuck).
+
+    Reading the ABSOLUTE set (not ``resolved_codes = old − new``) makes Verify
+    correct on a repeat click and when the page was already rescanned by the
+    standalone Rescan button before Verify ran (else an already-cleared issue
+    would never verify — P6/P2). Returns ``{verified, still_present, newly_found}``;
+    ``newly_found`` = codes the re-scan raised that aren't in the frozen snapshot
+    (surfaced so the user can regenerate — they do NOT silently enter the list).
     """
-    resolved = set(resolved_codes)
     present = set(present_codes)
     verified: list[str] = []
     still_present: list[str] = []
@@ -198,12 +197,12 @@ def apply_verify(
         if page["url"] != page_url:
             continue
         snap_codes_on_page.add(item["issue_code"])
-        if item["issue_code"] in resolved:
-            item["status"] = STATUS_VERIFIED
-            verified.append(item["issue_code"])
-        elif item["issue_code"] in present:
+        if item["issue_code"] in present:
             item["status"] = STATUS_STILL_PRESENT
             still_present.append(item["issue_code"])
+        else:
+            item["status"] = STATUS_VERIFIED
+            verified.append(item["issue_code"])
     newly_found = sorted(present - snap_codes_on_page)
     return {
         "verified": sorted(verified),

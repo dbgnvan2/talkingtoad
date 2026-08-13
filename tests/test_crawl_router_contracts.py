@@ -487,11 +487,15 @@ class TestFixFocusEndpoints:
         calls = {"n": 0}
 
         async def fake_rescan(jid, url, store):
+            # ABSOLUTE live set: TITLE gone (→ verified), GEO still present (→
+            # still_present). impact carried so the floor filter keeps GEO.
             calls["n"] += 1
             return {
                 "url": "https://example.com/about",
+                "status_code": 200,
                 "resolved_codes": ["TITLE_MISSING"],
-                "by_category": {"ai_readiness": [{"issue_code": "GEO_SUMMARY_BURIED"}]},
+                "by_category": {"ai_readiness": [
+                    {"issue_code": "GEO_SUMMARY_BURIED", "impact": 5}]},
             }
 
         monkeypatch.setattr(crawl_mod, "rescan_url", fake_rescan)
@@ -501,6 +505,7 @@ class TestFixFocusEndpoints:
         assert r.status_code == 200
         assert calls["n"] == 1, "verify-page must reuse the rescan-url path (FF5.B)"
         body = r.json()
+        assert body["reconciled"] is True
         assert body["verified"] == ["TITLE_MISSING"]
         assert body["still_present"] == ["GEO_SUMMARY_BURIED"]
         # snapshot updated + persisted
@@ -510,6 +515,33 @@ class TestFixFocusEndpoints:
                     for it in p["items"]}
         assert statuses["TITLE_MISSING"] == "verified"
         assert statuses["GEO_SUMMARY_BURIED"] == "still_present"
+
+    @pytest.mark.asyncio
+    async def test_ff2_verify_page_error_status_not_reconciled(
+        self, api_client, auth_headers, test_store, monkeypatch
+    ):
+        """Sweep finding 2 (P1): a 5xx/4xx page must NOT mark its issues verified —
+        an erroring page parses to few issues and would look 'fixed'."""
+        job_id = await self._seed(test_store)
+        await api_client.get(f"/api/crawl/{job_id}/fix-focus", headers=auth_headers)
+        import api.routers.crawl as crawl_mod
+
+        async def err_rescan(jid, url, store):
+            return {"url": "https://example.com/about", "status_code": 503,
+                    "resolved_codes": ["TITLE_MISSING"], "by_category": {}}
+
+        monkeypatch.setattr(crawl_mod, "rescan_url", err_rescan)
+        r = await api_client.post(
+            f"/api/crawl/{job_id}/fix-focus/verify-page?url=https://example.com/about",
+            headers=auth_headers)
+        assert r.status_code == 200
+        assert r.json()["reconciled"] is False
+        # snapshot untouched — nothing falsely verified
+        job = await test_store.get_job(job_id)
+        statuses = {it["issue_code"]: it["status"]
+                    for f in ("seo", "geo") for p in job.fix_focus[f]["pages"]
+                    for it in p["items"]}
+        assert statuses["TITLE_MISSING"] == "open"
 
     @pytest.mark.asyncio
     async def test_fix_focus_unknown_job_404(self, api_client, auth_headers):

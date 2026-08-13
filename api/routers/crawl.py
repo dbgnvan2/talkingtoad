@@ -48,6 +48,7 @@ from api.services.job_store import SQLiteJobStore, RedisJobStore
 from api.services.rate_limiter import CRAWL_START_LIMIT, EXPORT_LIMIT, AI_ANALYSIS_LIMIT, limiter
 from api.services.report_generator import generate_pdf_report
 from api.services.excel_generator import generate_excel_report
+from api.crawler.checkers.registry import FIX_FOCUS_MIN_IMPACT
 from api.services.fix_focus import (
     apply_verify,
     build_snapshot,
@@ -1316,17 +1317,28 @@ async def verify_fix_focus_page(
     rescan = await rescan_url(job_id, url=url, store=store)
     if isinstance(rescan, JSONResponse):
         return rescan
+    # An erroring page (>=400 with an HTML body) parses to few/no issues, which
+    # would look like everything was "fixed". Refuse to reconcile it as verified —
+    # a 5xx/4xx is a transient/unknown outcome, not a fix (P1). rescan_url itself
+    # already returned a JSONResponse for a hard fetch failure (status 0).
+    if rescan["status_code"] >= 400:
+        return {
+            "url": rescan["url"], "reconciled": False,
+            "page_status": rescan["status_code"],
+            "verified": [], "still_present": [], "newly_found": [],
+        }
+    # Absolute current issue set for the page, filtered to the Fix Focus floor so
+    # newly_found stays consistent with FF2.C (warning-and-above only).
     present_codes = {
         i["issue_code"]
         for issues in rescan["by_category"].values()
         for i in issues
+        if i.get("impact", 0) >= FIX_FOCUS_MIN_IMPACT
     }
-    outcome = apply_verify(
-        snapshot, rescan["url"],
-        resolved_codes=rescan["resolved_codes"], present_codes=present_codes,
-    )
+    outcome = apply_verify(snapshot, rescan["url"], present_codes=present_codes)
     await store.update_job(job_id, fix_focus=snapshot)
-    return {"url": rescan["url"], **outcome}
+    return {"url": rescan["url"], "reconciled": True,
+            "page_status": rescan["status_code"], **outcome}
 
 
 @router.get("/{job_id}/comparison", response_model=None)
