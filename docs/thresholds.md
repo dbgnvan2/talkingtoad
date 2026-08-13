@@ -206,6 +206,20 @@ Matrix): 180-day technical-improvement staleness and 20% traffic-decay drop.
 
 ---
 
+## Fix Focus checklist
+
+| Threshold | Value | Source |
+|---|---|---|
+| Fix Focus min impact (inclusion floor) | 4 (warning+) | `api/crawler/checkers/registry.py` `FIX_FOCUS_MIN_IMPACT` |
+| Fix Focus max pages per focus | 10 | `api/crawler/checkers/registry.py` `FIX_FOCUS_MAX_PAGES` |
+
+The floor excludes info-level issues (impact < 4) so the checklist stays a
+high-priority worklist (FF2.C). The 10-page cap bounds each focus (SEO, AI/GEO)
+to a finite list; overflow is announced via `pages_total`/`items_hidden`, never
+silently dropped (FF2.E). See functional-specification §6.11.
+
+---
+
 ## Test infrastructure
 
 | Threshold | Value | Source |

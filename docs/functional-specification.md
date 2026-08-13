@@ -1087,6 +1087,37 @@ the results view. No new endpoints were added; both reuse existing bearer-auth G
   *(Spec: `docs/pending/OLD/2026-07-06_connections-panel.md`,
   `docs/pending/OLD/2026-07-06_ui-and-detection-fixes.md`.)*
 
+### 6.11 Fix Focus — curated priority-fix checklist (2026-08-13)
+
+A finite, tickable worklist distinct from the read-only Top-10-Pages / Top-Priority summaries.
+Built from the job's **already-stored** issues (no re-crawl), split into two focuses — **SEO**
+and **AI/GEO** — grouped by page and capped at **10 pages per focus**, ordered by summed
+`priority_rank`. It is **saved with the crawl** (a `fix_focus` JSON blob on the job, mirroring
+`geo_report`) so it returns without re-scanning, and each page can be re-scanned to verify.
+
+- **Bucketing (FF1).** `focus_bucket(category, code)` (`registry.py`) is the single source of
+  truth: GEO = `AGENT_READINESS_CATEGORIES` (`ai_readiness`, `rendering`, `semantic_html`) ∪
+  `AGENT_READINESS_EXTRA_CODES` (`PLACEHOLDER_LINK`, `WRONG_PLACEHOLDER_LINK`); SEO is the
+  complement. `job_store_base` **imports** the same set (Agent Health and Fix Focus can't drift —
+  `test_ff1c_focus_bucket_single_source`).
+- **Selection (FF2).** Only page-scoped issues at or above `FIX_FOCUS_MIN_IMPACT` (4, warning+);
+  deduped by `(page_url, issue_code)`; the 10-page cap announces the drop
+  (`pages_total`/`pages_shown`/`items_hidden` — no silent truncation).
+- **Persistence (FF3).** The snapshot is frozen on first `GET` and persisted; each item carries a
+  `status ∈ {open, checked, verified, still_present}`. `update_job` now JSON-encodes dict blobs on
+  **both** SQLite and Redis (previously Redis `str()`-repr'd a dict — a latent bug fixed here).
+- **Endpoints (FF4/FF5).** `GET /api/crawl/{id}/fix-focus` (generate+persist),
+  `POST …/fix-focus/check` (reversible toggle), `POST …/fix-focus/regenerate` (rebuild,
+  preserving checked/verified state for surviving items), `POST …/fix-focus/verify-page` (reuses
+  the existing `rescan-url` path — one hardened fetch — then reconciles from the **absolute**
+  current issue set: a code still seen → `still_present`, otherwise → `verified`; new codes →
+  `newly_found`, surfaced but not injected into the frozen list). A page returning HTTP ≥ 400 is
+  **not** reconciled (`reconciled:false`) so an erroring page never false-verifies.
+- **Frontend.** A new **Fix Focus** tab in Results renders both focuses with checkboxes, a
+  per-page **Verify** button, and **Regenerate**; toggle/verify failures surface in the panel's
+  error state. → `tests/test_fix_focus.py`, `tests/test_crawl_router_contracts.py::TestFixFocusEndpoints`,
+  `frontend`: `FixFocusPanel.test.jsx`. *(Spec: this section supersedes the pending micro-spec.)*
+
 ---
 
 ## 7. Reporting and export

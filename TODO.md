@@ -105,6 +105,20 @@ CLN4 strictly improved the matched case):
   `analytics_patterns.py` as real content classes surface, or revisit whether the bare
   `track-`/`track_` prefix convention should require a co-occurring `data-*`/onclick marker.
 
+### From the 2026-08-13 Fix Focus /csdp sweep (learning-qa)
+- [x] verify-page verdict from the absolute live set (not a DB delta); error-status guard;
+  UI error/newly_found surfacing — all FIXED in the same session (commit 41c027a).
+- [ ] **Concurrency (open risk, low):** every Fix Focus mutation reads the whole `fix_focus`
+  blob, mutates in memory, and writes the entire blob back (`crawl.py` check/regenerate/
+  verify-page). Two concurrent toggles, or a toggle racing a verify on the same job, are
+  last-writer-wins — the later write clobbers the earlier. Fix Focus is a per-job,
+  single-user worklist so impact is low; if it ever matters, re-read+merge inside a short
+  transaction or scope the write to the single item.
+- [ ] **Latent (adjacent, not Fix Focus):** `geo_report` / `executive_summary` are still not
+  round-tripped on Redis (`_mapping_to_job` doesn't read them back). The dict-serialisation
+  half is now fixed for the shared `update_job` path, but these two fields aren't in the
+  Redis job mapping. Add them alongside `fix_focus` when convenient.
+
 ## ✅ Completed
 
 - [x] **Technical-debt cleanup batch — CLN0–CLN8 (2026-08-08):** cleared the

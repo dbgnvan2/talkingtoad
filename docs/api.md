@@ -42,6 +42,10 @@ same doc's §9 verification matrix.
 | GET | `/api/crawl/{job_id}/results/{category}` | Results filtered by category. |
 | POST | `/api/crawl/{job_id}/rescan-url?url={url}` | Re-fetch a single page, rerun checks, update stored issues. Sends cache-bypass headers. |
 | GET | `/api/crawl/{job_id}/page-priority` | Page Priority Work Queue: ranks the job's crawled pages by the Authority Matrix (Vulnerable Stars first, then Traffic Decay/Staleness, then worst-health; Hidden Gems surfaced as opportunities). Works with or without GSC data. Returns `{pages: [{url, health_score, gsc, review_flag: {flagged, reasons}, ...}], total}`. |
+| GET | `/api/crawl/{job_id}/fix-focus?focus={all\|seo\|geo}` | Fix Focus checklist. Generates+persists a frozen snapshot on first call, then returns it (no re-scan). Returns `{seo, geo, generated_at, scoring_model_version}` where each focus is `{pages: [{url, page_priority, items: [{issue_code, human_description, severity, impact, effort, priority_rank, quick_win, status}]}], pages_total, pages_shown, items_hidden}`. |
+| POST | `/api/crawl/{job_id}/fix-focus/check` | Toggle a checklist item. Body `{page_url, issue_code, checked}`. Reversible. 404 `ITEM_NOT_FOUND` if the item isn't in the snapshot. |
+| POST | `/api/crawl/{job_id}/fix-focus/regenerate` | Rebuild the snapshot from current stored issues, preserving checked/verified state for surviving items. |
+| POST | `/api/crawl/{job_id}/fix-focus/verify-page?url={url}` | Re-scan one page (reuses `rescan-url`) and reconcile: items no longer seen → `verified`, still seen → `still_present`, new → `newly_found`. Returns `{url, reconciled, page_status, verified, still_present, newly_found}`; a page returning HTTP ≥ 400 is not reconciled (`reconciled:false`). |
 
 ## Export
 
