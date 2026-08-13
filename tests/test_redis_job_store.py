@@ -190,6 +190,28 @@ class TestJobCrud:
         mapping = mock_redis.hset.call_args[1]["values"]
         assert mapping["error_message"] == ""
 
+    async def test_ff3_fix_focus_dict_serialized_as_json(self, store, mock_redis):
+        """Fix Focus FF3.B: a dict blob is JSON-encoded on Redis, NOT str()'d
+        into a non-parseable Python repr (the old dict path was a no-op/broken)."""
+        blob = {"seo": {"pages": [], "pages_total": 0, "pages_shown": 0,
+                        "items_hidden": 0}, "geo": {"pages": []}}
+        await store.update_job("j1", fix_focus=blob)
+        mapping = mock_redis.hset.call_args[1]["values"]
+        assert mapping["fix_focus"] == json.dumps(blob)
+
+    async def test_ff3_fix_focus_roundtrips_through_get_job(self, store, mock_redis):
+        """FF3.B: get_job deserializes the fix_focus JSON back into a dict (Redis
+        parity with SQLite — no longer a silent no-op on production)."""
+        job = _job()
+        mapping = store._job_to_mapping(job)
+        blob = {"seo": {"pages": [{"url": "https://x.org/a",
+                                   "items": [{"issue_code": "TITLE_MISSING",
+                                              "status": "open"}]}]}}
+        mapping["fix_focus"] = json.dumps(blob)
+        mock_redis.hgetall.return_value = mapping
+        got = await store.get_job(job.job_id)
+        assert got.fix_focus == blob
+
     async def test_list_recent_jobs_returns_empty(self, store):
         result = await store.list_recent_jobs()
         assert result == []

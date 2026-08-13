@@ -93,6 +93,7 @@ class SQLiteJobStore:
             ("sitemap_url_count", "INTEGER"),
             ("executive_summary", "TEXT"),
             ("geo_report", "TEXT"),
+            ("fix_focus", "TEXT"),
             ("scoring_model_version", "TEXT"),
         ]
         for col, col_type in job_columns:
@@ -245,18 +246,21 @@ class SQLiteJobStore:
             "sitemap_url_found", "sitemap_url_count",
             "executive_summary",
             "geo_report",
+            "fix_focus",
             "scoring_model_version",
         }
         unknown = set(fields) - _ALLOWED
         if unknown:
             raise ValueError(f"update_job: unknown fields {unknown}")
 
-        # Serialise datetime and list values
+        # Serialise datetime, list and dict (JSON blob) values. dict handling is
+        # required for geo_report/fix_focus — a raw dict is not a valid SQLite
+        # bind parameter, so it must be JSON-encoded here (read back via json.loads).
         serialised = {}
         for k, v in fields.items():
             if isinstance(v, datetime):
                 serialised[k] = v.isoformat()
-            elif isinstance(v, list):
+            elif isinstance(v, (list, dict)):
                 serialised[k] = json.dumps(v)
             else:
                 serialised[k] = v
@@ -1643,6 +1647,7 @@ def _row_to_job(row: dict) -> CrawlJob:
         llms_txt_custom=row.get("llms_txt_custom"),
         executive_summary=row.get("executive_summary"),
         geo_report=json.loads(row["geo_report"]) if row.get("geo_report") else None,
+        fix_focus=json.loads(row["fix_focus"]) if row.get("fix_focus") else None,
         # R5.6 — legacy rows predate this column; .get() yields None (no crash).
         scoring_model_version=row.get("scoring_model_version"),
     )

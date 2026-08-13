@@ -24,6 +24,7 @@ import { useToast } from '../contexts/ToastContext.jsx'
 
 const GSCInsightsPanel = React.lazy(() => import('../components/GSCInsightsPanel'))
 const PagePriorityPanel = React.lazy(() => import('../components/PagePriorityPanel'))
+const FixFocusPanel = React.lazy(() => import('../components/FixFocusPanel'))
 import { getIssueHelp } from '../data/issueHelp.js'
 import sectionHelp from '../data/sectionHelp.js'
 import {
@@ -72,6 +73,7 @@ const TAB_BY_PAGE        = CATEGORIES.length + 1
 const TAB_ORPHAN_IMAGES  = CATEGORIES.length + 2
 const TAB_ORPHAN_PAGES   = CATEGORIES.length + 3
 const TAB_FIX_MGR        = CATEGORIES.length + 4
+const TAB_FIX_FOCUS      = CATEGORIES.length + 5
 
 export default function Results() {
   const { jobId } = useParams()
@@ -181,6 +183,7 @@ export default function Results() {
 
           {/* Actions */}
           <TabButton label="Fix Manager" active={!activeSeverity && activeTab === TAB_FIX_MGR} onClick={() => { setActiveSeverity(null); setActiveTab(TAB_FIX_MGR) }} />
+          <TabButton label="Fix Focus" active={!activeSeverity && activeTab === TAB_FIX_FOCUS} onClick={() => { setActiveSeverity(null); setActiveTab(TAB_FIX_FOCUS) }} />
         </div>
       </div>
 
@@ -209,6 +212,11 @@ export default function Results() {
           <OrphanedPagesPanel jobId={jobId} domain={domain} onPageClick={setFocusedPageUrl} />
         )}
         {!activeSeverity && activeTab === TAB_FIX_MGR && <FixManager jobId={jobId} domain={domain} />}
+        {!activeSeverity && activeTab === TAB_FIX_FOCUS && (
+          <Suspense fallback={<div className="bg-white rounded-lg shadow p-6 animate-pulse"><div className="h-4 bg-gray-200 rounded w-1/3"></div></div>}>
+            <FixFocusPanel jobId={jobId} />
+          </Suspense>
+        )}
       </div>
 
       {/* Page Priority Work Queue — opt-in, lazy-loaded */}

@@ -48,6 +48,13 @@ from api.services.job_store import SQLiteJobStore, RedisJobStore
 from api.services.rate_limiter import CRAWL_START_LIMIT, EXPORT_LIMIT, AI_ANALYSIS_LIMIT, limiter
 from api.services.report_generator import generate_pdf_report
 from api.services.excel_generator import generate_excel_report
+from api.services.fix_focus import (
+    apply_verify,
+    build_snapshot,
+    merge_checked_state,
+    set_checked,
+)
+from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
 
@@ -1203,6 +1210,123 @@ async def fix_history(
     if job is None:
         return _err("JOB_NOT_FOUND", "No crawl job found with the given ID.", 404)
     return await store.get_fix_history(job_id)
+
+
+# ── Fix Focus — curated priority-fix checklist (2026-08-13, FF1–FF6) ──────────
+# Spec: docs/pending/2026-08-13_fix-focus-checklist.md
+
+class FixFocusCheckBody(BaseModel):
+    page_url: str
+    issue_code: str
+    checked: bool
+
+
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+async def _load_or_build_fix_focus(job, store, *, regenerate: bool = False) -> dict:
+    """Return the persisted Fix Focus snapshot, generating+saving it on first use
+    (FF3.C snapshot is frozen). ``regenerate=True`` rebuilds from current issues,
+    preserving checked/verified state for surviving items (FF4.C)."""
+    if not regenerate and job.fix_focus:
+        return job.fix_focus
+    issues = await store.get_all_issues(job.job_id)
+    snapshot = build_snapshot(
+        issues,
+        generated_at=_now_iso(),
+        scoring_model_version=job.scoring_model_version,
+    )
+    if regenerate and job.fix_focus:
+        snapshot = merge_checked_state(snapshot, job.fix_focus)
+    await store.update_job(job.job_id, fix_focus=snapshot)
+    return snapshot
+
+
+@router.get("/{job_id}/fix-focus", response_model=None)
+async def get_fix_focus(
+    job_id: str,
+    focus: str = Query("all", pattern="^(all|seo|geo)$"),
+    store=Depends(get_store),
+) -> dict | JSONResponse:
+    """Return the Fix Focus checklist (FF4.A). First call generates and persists
+    the snapshot; later calls return the saved one (no re-scan)."""
+    job = await store.get_job(job_id)
+    if job is None:
+        return _err("JOB_NOT_FOUND", "No crawl job found with the given ID.", 404)
+    snapshot = await _load_or_build_fix_focus(job, store)
+    if focus in ("seo", "geo"):
+        return {
+            focus: snapshot[focus],
+            "generated_at": snapshot["generated_at"],
+            "scoring_model_version": snapshot["scoring_model_version"],
+        }
+    return snapshot
+
+
+@router.post("/{job_id}/fix-focus/regenerate", response_model=None)
+async def regenerate_fix_focus(
+    job_id: str,
+    store=Depends(get_store),
+) -> dict | JSONResponse:
+    """Rebuild the snapshot from current stored issues (FF4.C), preserving the
+    checked/verified state of items that still exist."""
+    job = await store.get_job(job_id)
+    if job is None:
+        return _err("JOB_NOT_FOUND", "No crawl job found with the given ID.", 404)
+    return await _load_or_build_fix_focus(job, store, regenerate=True)
+
+
+@router.post("/{job_id}/fix-focus/check", response_model=None)
+async def check_fix_focus_item(
+    job_id: str,
+    body: FixFocusCheckBody,
+    store=Depends(get_store),
+) -> dict | JSONResponse:
+    """Toggle a checklist item's checked state (FF4.B). Reversible."""
+    job = await store.get_job(job_id)
+    if job is None:
+        return _err("JOB_NOT_FOUND", "No crawl job found with the given ID.", 404)
+    snapshot = await _load_or_build_fix_focus(job, store)
+    item = set_checked(
+        snapshot, body.page_url, body.issue_code,
+        checked=body.checked, at=_now_iso() if body.checked else None,
+    )
+    if item is None:
+        return _err(
+            "ITEM_NOT_FOUND",
+            f"No Fix Focus item for {body.issue_code} on {body.page_url}.", 404,
+        )
+    await store.update_job(job_id, fix_focus=snapshot)
+    return item
+
+
+@router.post("/{job_id}/fix-focus/verify-page", response_model=None)
+async def verify_fix_focus_page(
+    job_id: str,
+    url: str = Query(..., description="The checklist page URL to re-scan and verify"),
+    store=Depends(get_store),
+) -> dict | JSONResponse:
+    """Re-scan a single page and reconcile the checklist (FF4.D/FF5). Reuses the
+    existing rescan-url path (one hardened fetch path, no second crawler)."""
+    job = await store.get_job(job_id)
+    if job is None:
+        return _err("JOB_NOT_FOUND", "No crawl job found with the given ID.", 404)
+    snapshot = await _load_or_build_fix_focus(job, store)
+    rescan = await rescan_url(job_id, url=url, store=store)
+    if isinstance(rescan, JSONResponse):
+        return rescan
+    present_codes = {
+        i["issue_code"]
+        for issues in rescan["by_category"].values()
+        for i in issues
+    }
+    outcome = apply_verify(
+        snapshot, rescan["url"],
+        resolved_codes=rescan["resolved_codes"], present_codes=present_codes,
+    )
+    await store.update_job(job_id, fix_focus=snapshot)
+    return {"url": rescan["url"], **outcome}
 
 
 @router.get("/{job_id}/comparison", response_model=None)

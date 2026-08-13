@@ -67,6 +67,38 @@ CATEGORY_DISPLAY: list[tuple[str, str]] = [
 ]
 
 # ---------------------------------------------------------------------------
+# Focus buckets — SEO vs AI/GEO — SINGLE SOURCE OF TRUTH (Fix Focus, 2026-08-13)
+# ---------------------------------------------------------------------------
+# The AI/GEO bucket = the agent-readiness categories (the citation-side
+# ai_readiness codes + the task-side rendering / semantic_html) plus the two
+# placeholder-link codes that live in broken_link (included WITHOUT recategorising
+# them). `job_store_base` imports these for its Agent Health score, and Fix Focus
+# uses `focus_bucket()` — so the two surfaces agree by construction (a drift is an
+# architecture-test failure, not a silent divergence). Config, not scattered logic
+# (global rule #9 / P4): the SEO set is always the complement, never a second list.
+AGENT_READINESS_CATEGORIES: frozenset[str] = frozenset(
+    {"ai_readiness", "rendering", "semantic_html"}
+)
+AGENT_READINESS_EXTRA_CODES: frozenset[str] = frozenset(
+    {"PLACEHOLDER_LINK", "WRONG_PLACEHOLDER_LINK"}
+)
+
+
+def focus_bucket(category: str, code: str) -> str:
+    """Fix Focus bucket for an issue: ``"geo"`` if AI/GEO-relevant, else ``"seo"``.
+
+    Total function — every issue resolves to exactly one bucket (no "unknown")."""
+    if category in AGENT_READINESS_CATEGORIES or code in AGENT_READINESS_EXTRA_CODES:
+        return "geo"
+    return "seo"
+
+
+# Fix Focus selection thresholds (config, not logic — P4; folded into
+# docs/thresholds.md on completion).
+FIX_FOCUS_MIN_IMPACT: int = 4   # warning-and-above (severity_from_impact floor)
+FIX_FOCUS_MAX_PAGES: int = 10   # pages shown per focus before truncation
+
+# ---------------------------------------------------------------------------
 # Generic anchor text patterns (Step 3a)
 # ---------------------------------------------------------------------------
 

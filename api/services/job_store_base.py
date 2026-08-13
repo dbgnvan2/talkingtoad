@@ -424,11 +424,12 @@ async def _compute_v15_health_score(
 # Defined as (category set) ∪ (explicit code set) so the two placeholder-link
 # codes are included without recategorising them out of broken_link.
 
-_AGENT_READINESS_CATEGORIES: frozenset[str] = frozenset(
-    {"ai_readiness", "rendering", "semantic_html"}
-)
-_AGENT_READINESS_EXTRA_CODES: frozenset[str] = frozenset(
-    {"PLACEHOLDER_LINK", "WRONG_PLACEHOLDER_LINK"}
+# Single source of truth lives in registry.py (Fix Focus shares this exact set via
+# focus_bucket()). Imported — not re-literal'd — so Agent Health and Fix Focus can
+# never drift (enforced by test_ff1c_focus_bucket_single_source).
+from api.crawler.checkers.registry import (
+    AGENT_READINESS_CATEGORIES as _AGENT_READINESS_CATEGORIES,
+    AGENT_READINESS_EXTRA_CODES as _AGENT_READINESS_EXTRA_CODES,
 )
 
 

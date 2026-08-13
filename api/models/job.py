@@ -96,6 +96,10 @@ class CrawlJob(BaseModel):
     executive_summary: str | None = None
     # v2.1 GEO Analyzer report (cached after first generation)
     geo_report: dict | None = None
+    # Fix Focus checklist snapshot (2026-08-13): frozen curated worklist +
+    # per-item checked/verified state, so it's saved with the crawl and returned
+    # to without re-scanning. Shape defined in api/services/fix_focus.py.
+    fix_focus: dict | None = None
     # R5.6 (external spec §8.4) — the scoring-model version that produced this
     # audit. Defaults to the current SCORING_MODEL_VERSION so every new job is
     # stamped at creation from a single source of truth. Legacy audits saved

@@ -83,6 +83,10 @@ class TestCrawlRouterAuth:
         ("get",  "/api/crawl/some-job-id/export/excel"),
         ("get",  "/api/crawl/some-job-id/images"),
         ("get",  "/api/crawl/some-job-id/images/summary"),
+        ("get",  "/api/crawl/some-job-id/fix-focus"),
+        ("post", "/api/crawl/some-job-id/fix-focus/regenerate"),
+        ("post", "/api/crawl/some-job-id/fix-focus/check"),
+        ("post", "/api/crawl/some-job-id/fix-focus/verify-page"),
         # Note: /api/crawl/{id}/orphaned-images doesn't exist on the crawl
         # router; the frontend uses /api/fixes/orphaned-media/{id} which
         # ships via orphaned_media_router (M0.12.4).
@@ -378,3 +382,136 @@ class TestExecutiveSummaryAIErrorNotContent:
         assert not job.executive_summary, (
             "AI error string must never be cached as the job's executive_summary"
         )
+
+
+# ===================================================================
+# Fix Focus checklist (2026-08-13) — FF4.A / FF4.B / FF4.D
+# Spec: docs/pending/2026-08-13_fix-focus-checklist.md
+# ===================================================================
+
+
+class TestFixFocusEndpoints:
+    async def _seed(self, test_store):
+        from api.models.issue import Issue
+        job_id = str(uuid4())
+        await test_store.create_job(CrawlJob(
+            job_id=job_id, target_url="https://example.com", status="complete",
+            pages_crawled=1))
+        await test_store.save_pages([CrawledPage(
+            job_id=job_id, url="https://example.com/about", status_code=200,
+            title="About", crawled_at=datetime.now(timezone.utc))])
+        await test_store.save_issues([
+            Issue(job_id=job_id, page_url="https://example.com/about",
+                  category="metadata", severity="warning", issue_code="TITLE_MISSING",
+                  description="d", recommendation="r", impact=7, effort=1,
+                  priority_rank=64, human_description="Missing title"),
+            Issue(job_id=job_id, page_url="https://example.com/about",
+                  category="ai_readiness", severity="warning", issue_code="GEO_SUMMARY_BURIED",
+                  description="d", recommendation="r", impact=5, effort=2,
+                  priority_rank=38, human_description="Summary buried"),
+        ])
+        return job_id
+
+    @pytest.mark.asyncio
+    async def test_ff4a_fix_focus_schema(self, api_client, auth_headers, test_store):
+        """GET returns the frozen contract: seo+geo focuses, each with
+        pages[].items[] carrying priority_rank/quick_win/status, plus the
+        drop-announcement counters."""
+        job_id = await self._seed(test_store)
+        r = await api_client.get(f"/api/crawl/{job_id}/fix-focus", headers=auth_headers)
+        assert r.status_code == 200
+        body = r.json()
+        for focus in ("seo", "geo"):
+            assert focus in body
+            fl = body[focus]
+            for k in ("pages", "pages_total", "pages_shown", "items_hidden"):
+                assert k in fl, f"{focus}.{k} missing"
+        # the SEO title issue landed in seo; the geo issue in geo
+        seo_codes = [it["issue_code"] for p in body["seo"]["pages"] for it in p["items"]]
+        geo_codes = [it["issue_code"] for p in body["geo"]["pages"] for it in p["items"]]
+        assert "TITLE_MISSING" in seo_codes
+        assert "GEO_SUMMARY_BURIED" in geo_codes
+        item = body["seo"]["pages"][0]["items"][0]
+        for k in ("issue_code", "priority_rank", "quick_win", "status", "human_description"):
+            assert k in item, f"item.{k} missing (frontend depends on it)"
+        assert item["status"] == "open"
+
+    @pytest.mark.asyncio
+    async def test_ff3_persists_no_rebuild(self, api_client, auth_headers, test_store):
+        """First GET persists the snapshot; it's saved on the job (returnable
+        without re-scanning)."""
+        job_id = await self._seed(test_store)
+        await api_client.get(f"/api/crawl/{job_id}/fix-focus", headers=auth_headers)
+        job = await test_store.get_job(job_id)
+        assert job.fix_focus is not None
+        assert job.fix_focus["seo"]["pages_total"] >= 1
+
+    @pytest.mark.asyncio
+    async def test_ff4b_check_toggle_and_errors(self, api_client, auth_headers, test_store):
+        job_id = await self._seed(test_store)
+        await api_client.get(f"/api/crawl/{job_id}/fix-focus", headers=auth_headers)
+        # valid toggle → 200, status checked
+        ok = await api_client.post(
+            f"/api/crawl/{job_id}/fix-focus/check",
+            json={"page_url": "https://example.com/about", "issue_code": "TITLE_MISSING",
+                  "checked": True}, headers=auth_headers)
+        assert ok.status_code == 200
+        assert ok.json()["status"] == "checked"
+        # persisted
+        job = await test_store.get_job(job_id)
+        checked = [it for p in job.fix_focus["seo"]["pages"] for it in p["items"]
+                   if it["issue_code"] == "TITLE_MISSING"][0]
+        assert checked["status"] == "checked"
+        # unknown item → 404
+        bad = await api_client.post(
+            f"/api/crawl/{job_id}/fix-focus/check",
+            json={"page_url": "https://example.com/about", "issue_code": "NOPE",
+                  "checked": True}, headers=auth_headers)
+        assert bad.status_code == 404
+        # missing field → 422
+        malformed = await api_client.post(
+            f"/api/crawl/{job_id}/fix-focus/check",
+            json={"page_url": "https://example.com/about"}, headers=auth_headers)
+        assert malformed.status_code == 422
+
+    @pytest.mark.asyncio
+    async def test_ff4d_verify_page_reuses_rescan_and_reconciles(
+        self, api_client, auth_headers, test_store, monkeypatch
+    ):
+        """verify-page reuses the rescan-url path (FF5.B) and reconciles the
+        snapshot: a resolved code → verified, an unfixed one → still_present."""
+        job_id = await self._seed(test_store)
+        await api_client.get(f"/api/crawl/{job_id}/fix-focus", headers=auth_headers)
+
+        import api.routers.crawl as crawl_mod
+        calls = {"n": 0}
+
+        async def fake_rescan(jid, url, store):
+            calls["n"] += 1
+            return {
+                "url": "https://example.com/about",
+                "resolved_codes": ["TITLE_MISSING"],
+                "by_category": {"ai_readiness": [{"issue_code": "GEO_SUMMARY_BURIED"}]},
+            }
+
+        monkeypatch.setattr(crawl_mod, "rescan_url", fake_rescan)
+        r = await api_client.post(
+            f"/api/crawl/{job_id}/fix-focus/verify-page?url=https://example.com/about",
+            headers=auth_headers)
+        assert r.status_code == 200
+        assert calls["n"] == 1, "verify-page must reuse the rescan-url path (FF5.B)"
+        body = r.json()
+        assert body["verified"] == ["TITLE_MISSING"]
+        assert body["still_present"] == ["GEO_SUMMARY_BURIED"]
+        # snapshot updated + persisted
+        job = await test_store.get_job(job_id)
+        statuses = {it["issue_code"]: it["status"]
+                    for f in ("seo", "geo") for p in job.fix_focus[f]["pages"]
+                    for it in p["items"]}
+        assert statuses["TITLE_MISSING"] == "verified"
+        assert statuses["GEO_SUMMARY_BURIED"] == "still_present"
+
+    @pytest.mark.asyncio
+    async def test_fix_focus_unknown_job_404(self, api_client, auth_headers):
+        r = await api_client.get("/api/crawl/nope/fix-focus", headers=auth_headers)
+        assert r.status_code == 404

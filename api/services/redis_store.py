@@ -98,6 +98,7 @@ class RedisJobStore:
             "sitemap_url_found", "sitemap_url_count",
             "executive_summary",
             "geo_report",
+            "fix_focus",
             "scoring_model_version",
         }
         unknown = set(fields) - _ALLOWED
@@ -110,6 +111,10 @@ class RedisJobStore:
                 mapping[k] = ""
             elif isinstance(v, datetime):
                 mapping[k] = v.isoformat()
+            elif isinstance(v, (list, dict)):
+                # JSON blob (fix_focus / geo_report / list fields) — never str(),
+                # which would emit a non-parseable Python repr.
+                mapping[k] = json.dumps(v)
             else:
                 mapping[k] = str(v)
 
@@ -629,6 +634,8 @@ class RedisJobStore:
             error_message=m.get("error_message") or None,
             settings=CrawlSettings(**settings_data),
             llms_txt_custom=m.get("llms_txt_custom") or None,
+            # Fix Focus snapshot — JSON blob written by update_job(fix_focus=...).
+            fix_focus=json.loads(m["fix_focus"]) if m.get("fix_focus") else None,
             # R5.6 — legacy hashes lack this key; "" and missing both → None.
             scoring_model_version=m.get("scoring_model_version") or None,
         )

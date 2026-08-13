@@ -370,6 +370,26 @@ def test_checker_modules_import_before_any_def():
     )
 
 
+def test_ff1c_focus_bucket_single_source():
+    """CRITICAL (Fix Focus FF1.C): the AI/GEO bucket has ONE definition.
+
+    `job_store_base` (Agent Health score) and `registry.focus_bucket` (Fix Focus)
+    must resolve issues to the same GEO set — enforced by import, not by two
+    hand-maintained copies. If someone re-literals the set in job_store_base, this
+    fails: Agent Health and Fix Focus would silently disagree on what "AI/GEO" means.
+    """
+    from api.crawler.checkers import registry
+    from api.services import job_store_base
+
+    assert job_store_base._AGENT_READINESS_CATEGORIES is registry.AGENT_READINESS_CATEGORIES
+    assert job_store_base._AGENT_READINESS_EXTRA_CODES is registry.AGENT_READINESS_EXTRA_CODES
+    # focus_bucket must agree with _is_agent_issue on every catalogue code.
+    for code, spec in registry._CATALOGUE.items():
+        geo = registry.focus_bucket(spec.category, code) == "geo"
+        agent = job_store_base._is_agent_issue(spec.category, code)
+        assert geo == agent, f"{code}: focus_bucket/agent disagree"
+
+
 class TestIssueCodeParity:
     """
     Ensure frontend issueHelp.js and backend _CATALOGUE stay in sync.

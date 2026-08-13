@@ -63,6 +63,41 @@ export async function getPagePriority(jobId) {
   return checkResponse(res)
 }
 
+// ── Fix Focus checklist (2026-08-13) ─────────────────────────────────────
+export async function getFixFocus(jobId, focus = 'all') {
+  const params = new URLSearchParams({ focus })
+  const res = await fetch(`/api/crawl/${jobId}/fix-focus?${params}`, {
+    headers: authHeaders(),
+  })
+  return checkResponse(res)
+}
+
+export async function regenerateFixFocus(jobId) {
+  const res = await fetch(`/api/crawl/${jobId}/fix-focus/regenerate`, {
+    method: 'POST',
+    headers: authHeaders(),
+  })
+  return checkResponse(res)
+}
+
+export async function toggleFixFocusItem(jobId, pageUrl, issueCode, checked) {
+  const res = await fetch(`/api/crawl/${jobId}/fix-focus/check`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify({ page_url: pageUrl, issue_code: issueCode, checked }),
+  })
+  return checkResponse(res)
+}
+
+export async function verifyFixFocusPage(jobId, url) {
+  const params = new URLSearchParams({ url })
+  const res = await fetch(`/api/crawl/${jobId}/fix-focus/verify-page?${params}`, {
+    method: 'POST',
+    headers: authHeaders(),
+  })
+  return checkResponse(res)
+}
+
 export async function cancelCrawl(jobId) {
   const res = await fetch(`/api/crawl/${jobId}/cancel`, {
     method: 'POST',
