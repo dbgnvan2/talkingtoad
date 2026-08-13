@@ -321,6 +321,55 @@ def test_score_calculation_is_deterministic():
     )
 
 
+def test_checker_modules_import_before_any_def():
+    """CRITICAL: every checker module must place all module-level imports BEFORE
+    its first top-level def/class.
+
+    Why this matters (real regression it guards):
+    A name used in a *function annotation* (``def f(x: Issue)``) is evaluated at
+    def-time on Python < 3.14. If the import that provides that name sits BELOW
+    the def, the module raises ``NameError`` at import time on 3.11/3.12/3.13 —
+    the versions the production Dockerfile pins (``python:3.11-slim``). On the
+    3.14 dev machine PEP 649 makes annotations lazy, so the module imports fine
+    and the whole test suite stays green while production boot is broken.
+
+    This exact bug shipped in the MI7 batch: ``analytics.py`` referenced ``Issue``
+    in ``_check_cta_tracking``'s annotation while the registry import sat below
+    it. A plain import test can't catch it on 3.14 — only this structural check
+    does. Enforcing "imports before defs" makes the class un-shippable regardless
+    of the interpreter running CI.
+    """
+    import ast
+    import glob
+
+    checkers_dir = os.path.join(
+        os.path.dirname(__file__), "..", "api", "crawler", "checkers"
+    )
+    violations = []
+    for path in sorted(glob.glob(os.path.join(checkers_dir, "*.py"))):
+        tree = ast.parse(open(path, encoding="utf-8").read())
+        first_def = None
+        for node in tree.body:
+            if (
+                isinstance(
+                    node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)
+                )
+                and first_def is None
+            ):
+                first_def = node.lineno
+            if isinstance(node, (ast.Import, ast.ImportFrom)):
+                if first_def is not None:
+                    violations.append(
+                        f"{os.path.basename(path)}: import at line "
+                        f"{node.lineno} is AFTER first def/class at line "
+                        f"{first_def} — breaks import on Python < 3.14 if the "
+                        f"name is used in a def-time annotation."
+                    )
+    assert not violations, "Import-after-def in checker module(s):\n" + "\n".join(
+        violations
+    )
+
+
 class TestIssueCodeParity:
     """
     Ensure frontend issueHelp.js and backend _CATALOGUE stay in sync.

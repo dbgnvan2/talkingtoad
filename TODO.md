@@ -93,6 +93,18 @@ CLN4 strictly improved the matched case):
   count under a `ga4_`-named field. Nothing external reads it; rename to
   `direct_config_calls` when convenient (update `test_mi2_*` if they assert on it).
 
+### From the 2026-08-13 MI7 /csdp sweep (learning-qa; both findings FIXED)
+- [x] **Production-breaking import-order bug** — `analytics.py` used `Issue` in an
+  annotation above its import; `NameError` on the pinned Python 3.11, hidden on the
+  3.14 dev box. Fixed (import hoisted) + guard `test_checker_modules_import_before_any_def`.
+- [x] **P7 `track-`/`track_` prefix collision** — content classes (`track-order` …)
+  read as tracked. Fixed via `CTA_TRACKING_CLASS_CONTENT_BLOCKLIST` + 2 adversarial tests.
+- [ ] **Residual (open risk, P7):** the blocklist excludes only *exact* known content
+  tokens. A novel `track-<contentword>` class (e.g. `track-inventory`) not in the list
+  still collides. Acceptable for an advisory/info check; extend the blocklist in
+  `analytics_patterns.py` as real content classes surface, or revisit whether the bare
+  `track-`/`track_` prefix convention should require a co-occurring `data-*`/onclick marker.
+
 ## ✅ Completed
 
 - [x] **Technical-debt cleanup batch — CLN0–CLN8 (2026-08-08):** cleared the

@@ -140,6 +140,27 @@ CTA_TRACKING_CLASS_MARKERS: tuple[str, ...] = (
     "track-", "track_",
     "ga-event", "ga4-event", "gtm-track", "analytics-event",
 )
+# `track-` / `track_` are also ordinary English-word prefixes, so a handful of
+# CONTENT classes collide with the tracking convention: `track-order` is a
+# "track your order" widget, not an analytics marker. A collision is doubly
+# harmful — it hides the gap on that button AND falsely establishes "tracking
+# convention in use" on the page, so MI7 then false-fires on other genuinely
+# untracked CTAs. These EXACT tokens are treated as NOT tracking. Config-editable;
+# add site content classes here. (Nonprofit note: `track-donation` / `track-donate`
+# are intentionally absent — in this domain they're far more likely a real
+# donation-tracking marker than content.)
+CTA_TRACKING_CLASS_CONTENT_BLOCKLIST: frozenset[str] = frozenset({
+    "track-order", "track_order",
+    "track-list", "track_list",
+    "track-changes", "track_changes",
+    "track-shipment", "track_shipment",
+    "track-status", "track_status",
+    "track-info", "track_info",
+    "track-package", "track_package",
+    "track-progress", "track_progress",
+    "track-record", "track_record",
+    "track-title", "track_title",
+})
 CTA_TRACKING_DATA_PREFIXES: tuple[str, ...] = (
     "data-track", "data-ga", "data-gtm", "data-event", "data-analytics",
 )

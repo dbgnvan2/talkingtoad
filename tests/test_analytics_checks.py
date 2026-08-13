@@ -208,6 +208,37 @@ def test_mi7_generic_track_classes_are_not_tracking_markers():
     assert "CTA_TRACKING_MISSING" not in _codes(_page(html, head=False))
 
 
+def test_mi7_content_track_prefix_classes_are_not_tracking_markers():
+    """Adversarial (2026-08-13 sweep, P7 residual): a content class that merely
+    STARTS WITH `track-`/`track_` (a "track your order"/"track shipment" widget)
+    is NOT the analytics convention. Both forms are `track-<word>`, so the prefix
+    match alone can't tell them apart — the blocklist must.
+
+    The genuine markers (`track-donate`, `track-hero`, `track_beginX`) must stay
+    tracked; only the blocklisted content tokens are excluded."""
+    from api.crawler.checkers.analytics import _cta_is_tracked
+    # content prefixes → NOT tracked
+    for tok in ["track-order", "track_order", "track-list", "track-changes",
+                "track-shipment", "track-status", "track-info"]:
+        assert not _cta_is_tracked({"class": f"btn {tok}"}), tok
+        assert not _cta_is_tracked({"class": "btn", "context_classes": [tok]}), tok
+    # real markers → still tracked (no regression to the intended convention)
+    for tok in ["track-donate", "track-hero", "track-startcounselling", "track_begincounselling"]:
+        assert _cta_is_tracked({"class": f"elementor-button {tok}"}), tok
+
+
+def test_mi7_content_track_class_does_not_establish_page_convention():
+    """Adversarial (2026-08-13 sweep, P7): the doubly-harmful case. A page whose
+    ONLY `track-*` token is a content class (`track-order`) must NOT be treated as
+    "tracking convention in use" — otherwise a genuinely untracked Donate button
+    elsewhere on that page gets a spurious CTA_TRACKING_MISSING (false positive of
+    the whole check on a page that uses zero analytics markers)."""
+    html = (GA4
+            + '<a class="elementor-button track-order" href="/orders">Track your order</a>'
+            + _DONATE_UNTRACKED)
+    assert "CTA_TRACKING_MISSING" not in _codes(_page(html, head=False))
+
+
 def test_mi7_counselling_vocabulary_recognised():
     """The conversion vocabulary covers counselling/intake/consultation/request
     (the site's real CTAs), while browse CTAs stay excluded."""

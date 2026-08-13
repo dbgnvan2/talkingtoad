@@ -16,12 +16,14 @@ Spec: docs/pending/2026-08-06_measurement-integrity-checks.md
 from urllib.parse import urlparse, parse_qs
 
 from api.crawler.parser import ParsedPage
+from api.crawler.checkers.registry import Issue, make_issue
 import re
 
 from api.crawler.analytics_patterns import (
     CAMPAIGN_PARAM_NAMES,
     CTA_INTENT_TERMS,
     CTA_ONCLICK_MARKERS,
+    CTA_TRACKING_CLASS_CONTENT_BLOCKLIST,
     CTA_TRACKING_CLASS_MARKERS,
     CTA_TRACKING_DATA_PREFIXES,
     CURRENT_TAG_TYPES,
@@ -46,9 +48,17 @@ def _cta_is_tracked(cta: dict) -> bool:
     Markers are matched per class TOKEN by PREFIX (not as a substring over a
     concatenated blob), so a generic class like ``slick-track`` / ``fast-track``
     / a ``data-slick-track`` attr does NOT count as tracking (that substring bug
-    both hid real gaps and misfired — 2026-08-09 sweep)."""
+    both hid real gaps and misfired — 2026-08-09 sweep). Content classes that
+    merely START with ``track-`` / ``track_`` (``track-order``, ``track-list``)
+    are excluded via ``CTA_TRACKING_CLASS_CONTENT_BLOCKLIST`` — the same-form
+    prefix collision that would otherwise false-establish the page convention
+    and mis-fire MI7 on genuinely untracked CTAs (2026-08-13 sweep, P7)."""
     class_tokens = (cta.get("class") or "").lower().split() + (cta.get("context_classes") or [])
-    if any(tok.startswith(CTA_TRACKING_CLASS_MARKERS) for tok in class_tokens):
+    if any(
+        tok.startswith(CTA_TRACKING_CLASS_MARKERS)
+        and tok not in CTA_TRACKING_CLASS_CONTENT_BLOCKLIST
+        for tok in class_tokens
+    ):
         return True
     data_names = [d.lower() for d in (cta.get("data_attrs") or [])] + (cta.get("context_data") or [])
     if any(name.startswith(CTA_TRACKING_DATA_PREFIXES) for name in data_names):
@@ -81,7 +91,6 @@ def _check_cta_tracking(page: ParsedPage, issues: list[Issue]) -> None:
         extra={"untracked_ctas": untracked[:10],
                "untracked_count": len(untracked),
                "tracked_count": tracked_count}))
-from api.crawler.checkers.registry import Issue, make_issue
 
 
 def _check_analytics(page: ParsedPage, issues: list[Issue]) -> None:
