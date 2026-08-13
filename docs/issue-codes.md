@@ -8,7 +8,7 @@ generator: scripts/generate_issue_codes_doc.py
 
 > **This file is auto-generated.** Do not edit by hand — your changes will be overwritten the next time the generator runs. To update an issue code, edit `api/crawler/issue_checker.py` (`_CATALOGUE`, `_ISSUE_SCORING`, `_AI_READINESS_CONFIDENCE`) and re-run `python scripts/generate_issue_codes_doc.py`.
 
-**161 issue codes** across 13 categories.
+**162 issue codes** across 13 categories.
 
 ## Table of contents
 
@@ -22,7 +22,7 @@ generator: scripts/generate_issue_codes_doc.py
 - [URL_STRUCTURE](#url_structure) (4)
 - [IMAGE](#image) (14)
 - [AI_READINESS](#ai_readiness) (71)
-- [ANALYTICS](#analytics) (6)
+- [ANALYTICS](#analytics) (7)
 - [RENDERING](#rendering) (1)
 - [SEMANTIC_HTML](#semantic_html) (4)
 
@@ -1827,7 +1827,7 @@ AI crawler user agents (GPTBot, ClaudeBot) receive substantially less content th
 <a id="analytics"></a>
 ## ANALYTICS
 
-_6 codes in this category._
+_7 codes in this category._
 
 ### ANALYTICS_ID_INCONSISTENT
 **Severity:** 🔵 info | **Impact:** 2 | **Effort:** 2
@@ -1890,6 +1890,22 @@ Without Consent Mode, analytics may collect data before consent (a privacy/GDPR 
 If you serve EU/UK visitors, set up Consent Mode v2 in GTM alongside your consent banner (advisory — this is a heuristic markup check, not legal advice).
 
 **Plain-English:** Consent Mode Not Detected
+
+---
+
+### CTA_TRACKING_MISSING
+**Severity:** 🔵 info | **Impact:** 1 | **Effort:** 1 | **Fixability:** content_edit
+
+**What it is**
+GA4 doesn't measure internal button clicks on its own. This page uses a click-tracking convention on some buttons, but a conversion CTA is missing it.
+
+**Why it matters**
+If a Donate / Book / Contact button isn't instrumented, you can't see how many people clicked it — the conversion you most need to measure is invisible.
+
+**How to fix**
+Add the same click-tracking marker your other buttons use (the class or data-* attribute your GA4 event listener reads) to the untagged conversion buttons. If you track via Google Tag Manager, add a click trigger for them there instead. Verify in GA4 DebugView that the event fires.
+
+**Plain-English:** Conversion Button Not Tracked
 
 ---
 

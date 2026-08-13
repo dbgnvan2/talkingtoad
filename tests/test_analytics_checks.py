@@ -117,6 +117,53 @@ def test_gt3_4_google_tag_plus_gtm_is_duplicate():
     assert "ANALYTICS_TAG_DUPLICATE" in _codes(_page(GOOGLE_TAG + GTM))
 
 
+# ── MI7 — CTA measurement coverage ──────────────────────────────────────────
+# A "tracked" element establishes the convention on the page; a conversion CTA
+# (donate/book/…) missing the marker is then flagged. GA4 lives in the body here
+# too (script detection scans all scripts), so head=False keeps tag + CTAs together.
+_TRACKED = '<button class="btn track-hero">Learn more</button>'          # tracked, non-conversion
+_DONATE_UNTRACKED = '<a class="elementor-button" href="/donate">Donate now</a>'
+
+
+def _cta_issue(html):
+    return next((i for i in check_page(_page(html, head=False)) if i.code == "CTA_TRACKING_MISSING"), None)
+
+
+def test_mi7_untracked_conversion_cta_flagged():
+    """MI7.4.1: convention in use (a track- button) + a conversion CTA with no
+    marker + a tag ⇒ CTA_TRACKING_MISSING listing the untracked CTA."""
+    iss = _cta_issue(GA4 + _TRACKED + _DONATE_UNTRACKED)
+    assert iss is not None
+    assert any("Donate" in t for t in iss.extra["untracked_ctas"])
+
+
+def test_mi7_all_ctas_tracked_not_flagged():
+    """MI7.4.2 (adversarial): every conversion CTA carries the track- marker ⇒ clean."""
+    html = (GA4 + _TRACKED
+            + '<a class="elementor-button track-donate" href="/d">Donate</a>'
+            + '<button class="track-book">Book a session</button>')
+    assert "CTA_TRACKING_MISSING" not in _codes(_page(html, head=False))
+
+
+def test_mi7_no_convention_not_flagged():
+    """MI7.4.3: no marker convention on the page (GTM-only style) ⇒ silent — we
+    can't see GTM click triggers, so we don't guess (no false positive)."""
+    assert "CTA_TRACKING_MISSING" not in _codes(_page(GA4 + _DONATE_UNTRACKED, head=False))
+
+
+def test_mi7_requires_a_tag():
+    """MI7.4.4: no measurement tag ⇒ MI1 fires, MI7 does not (no double-flag)."""
+    codes = _codes(_page(_TRACKED + _DONATE_UNTRACKED, head=False))
+    assert "ANALYTICS_TAG_MISSING" in codes
+    assert "CTA_TRACKING_MISSING" not in codes
+
+
+def test_mi7_non_conversion_button_ignored():
+    """MI7.4.5: an untracked NON-conversion button (Menu) does not fire MI7."""
+    html = GA4 + _TRACKED + '<button class="btn">Menu</button>'
+    assert "CTA_TRACKING_MISSING" not in _codes(_page(html, head=False))
+
+
 # ── MI3 (cross-page) ─────────────────────────────────────────────────────────
 def _p(html, url):
     res = FetchResult(url=url, final_url=url, status_code=200, headers={},

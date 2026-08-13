@@ -337,6 +337,7 @@ _ISSUE_SCORING: dict[str, tuple[int, int]] = {
     "CONSENT_MODE_MISSING":         (2, 3),
     "SELF_REFERENCING_UTM":         (2, 1),
     "OUTBOUND_LINK_UNTRACKABLE":    (1, 1),
+    "CTA_TRACKING_MISSING":         (1, 1),
 }
 
 
@@ -529,6 +530,7 @@ _CALIBRATION: dict[str, tuple[str, str, bool]] = {
     "CONSENT_MODE_MISSING": ("Heuristic", "moderate", False),           # → 2, info
     "SELF_REFERENCING_UTM": ("Reasonable proxy", "small", False),       # → 2, info
     "OUTBOUND_LINK_UNTRACKABLE": ("Heuristic", "small", False),         # → 1, info
+    "CTA_TRACKING_MISSING": ("Heuristic", "small", False),             # → 1, info
 }
 
 # Deliberate deviations from the pure matrix (auditor adjudication of the 21
@@ -2114,6 +2116,25 @@ _CATALOGUE: dict[str, _IssueSpec] = {
                     "you can't measure partner referrals, donation-processor handoffs, or social links.",
         how_to_fix="Add an aria-label (or descriptive alt text on the image) to the link so it has an "
                    "identifiable label in GA4's outbound-click events.",
+        fixability="content_edit",
+    ),
+    "CTA_TRACKING_MISSING": _IssueSpec(
+        category="analytics", severity="info",
+        description="This page tags some buttons for click-tracking, but one or more conversion "
+                    "buttons (e.g. Donate, Book, Contact) carry no tracking marker — so those "
+                    "clicks may not be measured.",
+        recommendation="Add your click-tracking marker (the class or data-* attribute your GA4 "
+                       "event listener looks for) to the untagged conversion buttons, or track "
+                       "them via a GTM click trigger.",
+        human_description="Conversion Button Not Tracked",
+        what_it_is="GA4 doesn't measure internal button clicks on its own. This page uses a "
+                   "click-tracking convention on some buttons, but a conversion CTA is missing it.",
+        impact_desc="If a Donate / Book / Contact button isn't instrumented, you can't see how "
+                    "many people clicked it — the conversion you most need to measure is invisible.",
+        how_to_fix="Add the same click-tracking marker your other buttons use (the class or data-* "
+                   "attribute your GA4 event listener reads) to the untagged conversion buttons. If "
+                   "you track via Google Tag Manager, add a click trigger for them there instead. "
+                   "Verify in GA4 DebugView that the event fires.",
         fixability="content_edit",
     ),
 }

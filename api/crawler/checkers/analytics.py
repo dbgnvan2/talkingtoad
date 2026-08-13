@@ -16,12 +16,63 @@ Spec: docs/pending/2026-08-06_measurement-integrity-checks.md
 from urllib.parse import urlparse, parse_qs
 
 from api.crawler.parser import ParsedPage
+import re
+
 from api.crawler.analytics_patterns import (
     CAMPAIGN_PARAM_NAMES,
+    CTA_INTENT_TERMS,
+    CTA_ONCLICK_MARKERS,
+    CTA_TRACKING_CLASS_MARKERS,
+    CTA_TRACKING_DATA_PREFIXES,
     CURRENT_TAG_TYPES,
     DIRECT_MEASUREMENT_TYPES,
     UTM_PARAM_PREFIXES,
 )
+
+# Conversion-intent match, word-boundary anchored so "give" doesn't match
+# "caregiver" and "order" doesn't match "border". Multi-word terms (sign up)
+# work in the alternation.
+_CTA_INTENT_RE = re.compile(
+    r"\b(" + "|".join(re.escape(t) for t in CTA_INTENT_TERMS) + r")\b", re.I
+)
+
+
+def _cta_is_tracked(cta: dict) -> bool:
+    """True when the CTA carries a detectable click-tracking marker (a
+    convention class, a data-* tracking attr, or an inline gtag/dataLayer call)."""
+    cls = (cta.get("class") or "").lower()
+    if any(m in cls for m in CTA_TRACKING_CLASS_MARKERS):
+        return True
+    if any(d.lower().startswith(CTA_TRACKING_DATA_PREFIXES) for d in (cta.get("data_attrs") or [])):
+        return True
+    onclick = (cta.get("onclick") or "").lower()
+    return any(m in onclick for m in CTA_ONCLICK_MARKERS)
+
+
+def _cta_is_conversion(cta: dict) -> bool:
+    return bool(_CTA_INTENT_RE.search(cta.get("text") or ""))
+
+
+def _check_cta_tracking(page: ParsedPage, issues: list[Issue]) -> None:
+    """MI7 — flag conversion CTAs missing the site's click-tracking convention.
+
+    Fires ONLY when the page demonstrably uses a marker convention (≥1 tracked
+    CTA), then lists the conversion CTAs that lack it. A GTM-only site (no HTML
+    markers) is silent — GTM click triggers aren't visible in static HTML, so we
+    don't guess (no false positives). Advisory / info.
+    """
+    ctas = page.cta_elements or []
+    if not any(_cta_is_tracked(c) for c in ctas):
+        return  # no tracking convention in use on this page → don't guess
+    untracked = [c["text"] for c in ctas if _cta_is_conversion(c) and not _cta_is_tracked(c)]
+    if not untracked:
+        return
+    tracked_count = sum(1 for c in ctas if _cta_is_tracked(c))
+    issues.append(make_issue(
+        "CTA_TRACKING_MISSING", page.url,
+        extra={"untracked_ctas": untracked[:10],
+               "untracked_count": len(untracked),
+               "tracked_count": tracked_count}))
 from api.crawler.checkers.registry import Issue, make_issue
 
 
@@ -63,6 +114,9 @@ def _check_analytics(page: ParsedPage, issues: list[Issue]) -> None:
         # fired we skip this entirely, so no-tag pages don't double-flag).
         if page.has_consent_mode is False:
             issues.append(make_issue("CONSENT_MODE_MISSING", page.url))
+
+        # MI7 — CTA measurement coverage (only when a tag exists; else MI1 covers it).
+        _check_cta_tracking(page, issues)
 
     # MI5 — self-referencing UTM / campaign params on INTERNAL links only.
     utm_links: list[str] = []

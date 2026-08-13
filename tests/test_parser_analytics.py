@@ -74,6 +74,29 @@ def test_google_ads_gtag_is_not_ga4():
     assert p.analytics_tags is None  # no G- id → no ga4 detection, nothing else present
 
 
+def test_cta_elements_extracted_with_markers():
+    """MI7.4.6: parser records button-like CTAs with text + marker attributes;
+    a track- class, a data-track attr, and an inline gtag onclick all surface."""
+    html = ("<html><head><title>t</title></head><body>"
+            '<a class="elementor-button track-donate" href="/donate">Donate now</a>'
+            '<button data-track-event="book">Book a session</button>'
+            "<button onclick=\"gtag('event','x')\">Contact us</button>"
+            '<a class="btn" href="/x">Read more</a>'
+            "<span>not a button</span>"
+            "</body></html>")
+    res = FetchResult(url=BASE + "p", final_url=BASE + "p", status_code=200, headers={},
+                      html=html, content_type="text/html")
+    p = parse_page(res, BASE)
+    ctas = p.cta_elements
+    assert ctas, "CTA elements must be extracted"
+    by_text = {c["text"]: c for c in ctas}
+    assert {"Donate now", "Book a session", "Contact us", "Read more"} <= set(by_text)
+    assert "not a button" not in by_text
+    assert "track-donate" in by_text["Donate now"]["class"]
+    assert "data-track-event" in by_text["Book a session"]["data_attrs"]
+    assert "gtag(" in by_text["Contact us"]["onclick"]
+
+
 def test_gt3_2_google_tag_typed_and_id_extracted():
     """GT3.2: a Google tag (GT-…) is typed 'google_tag' with its GT- id — not
     ga4, not a dropped None (the livingsystems.ca form)."""

@@ -3153,6 +3153,24 @@ const issueHelp = {
       "Give the link an aria-label (or descriptive alt text on its image) so it has an identifiable " +
       "label in analytics' outbound-click events.",
   },
+  CTA_TRACKING_MISSING: {
+    title: "Conversion button not tracked",
+    category: "analytics",
+    severity: "info",
+    mission_impact: "A Donate / Book / Contact button on this page may not be measured, so you can't see how many people clicked it.",
+    definition:
+      "GA4 doesn't measure internal button clicks on its own. This page tags some buttons for " +
+      "click-tracking (a class or data-* attribute your event listener reads), but a conversion " +
+      "button (e.g. Donate, Book, Register) is missing that marker.",
+    impact:
+      "The conversion you most need to measure is invisible — you can't tell how many people " +
+      "clicked Donate or Book, so you can't judge which pages or campaigns actually drive action.",
+    fix:
+      "Add the same click-tracking marker your other buttons use to the untagged conversion " +
+      "buttons, or add a Google Tag Manager click trigger for them. Then confirm the event fires " +
+      "in GA4 DebugView. (Note: this check reads the page HTML — it can't see clicks tracked only " +
+      "inside GTM, so verify there if you use it.)",
+  },
   };
 
 

@@ -116,6 +116,7 @@ class ParsedPage:
     analytics_tags: list = None          # list[dict]: {"type","id","via"} detections; None if none
     has_consent_mode: bool | None = None # Google Consent Mode v2 signal seen (None when no tag)
     untrackable_outbound_hrefs: list = None  # external image/icon links with no identifiable label
+    cta_elements: list = None            # MI7: button-like CTAs {text,class,onclick,data_attrs}
 
     # v2.1 GEO Analyzer fields
     is_spa_shell: bool = False           # raw HTML is a JS app shell with near-zero text
@@ -474,6 +475,7 @@ def parse_page(
         analytics_tags=_extract_analytics_tags(soup),
         has_consent_mode=_detect_consent_mode(soup),
         untrackable_outbound_hrefs=_find_untrackable_outbound_links(soup, page_url),
+        cta_elements=_extract_cta_elements(soup),
         # v2.1 GEO Analyzer fields
         is_spa_shell=_detect_spa_shell(soup),
         author_detected=_detect_author(soup),
@@ -827,6 +829,53 @@ def _find_untrackable_outbound_links(soup: BeautifulSoup, page_url: str) -> list
             continue  # empty anchor with no visual — handled by the empty-anchor check
         hrefs.append(absolute)
     return hrefs or None
+
+
+_MAX_CTA_ELEMENTS = 300  # bound the per-page CTA payload on huge pages (P9)
+
+
+def _extract_cta_elements(soup: BeautifulSoup) -> list | None:
+    """Structural extraction of button-like CTA elements for MI7 (measurement
+    coverage). Returns compact ``{text, class, onclick, data_attrs}`` dicts for
+    ``<button>``, ``role="button"``, and button-styled ``<a>``/``<input>``.
+
+    Editorial classification — which are *conversion* CTAs and which count as
+    *tracked* — is applied by the analytics checker (config in
+    ``analytics_patterns.py``), not here, keeping vocabulary out of the parser.
+
+    Spec: docs/pending/2026-08-09_cta-tracking-coverage.md (MI7)
+    """
+    from api.crawler.analytics_patterns import CTA_BUTTON_CLASS_HINTS
+
+    out: list[dict] = []
+    for el in soup.find_all(["button", "a", "input"]):
+        classes = " ".join(el.get("class", []) or [])
+        cl = classes.lower()
+        role = (el.get("role") or "").lower()
+        name = el.name
+        if name == "button" or role == "button":
+            is_cta = True
+        elif name == "input":
+            is_cta = (el.get("type") or "").lower() in ("submit", "button")
+        else:  # <a>
+            is_cta = bool(_BUTTON_CLASS_RE.search(classes)) or any(h in cl for h in CTA_BUTTON_CLASS_HINTS)
+        if not is_cta:
+            continue
+        text = (el.get_text(" ", strip=True)
+                or (el.get("aria-label") or "")
+                or (el.get("value") or "")
+                or (el.get("title") or "")).strip()
+        if not text:
+            continue  # unnamed control — can't classify conversion intent
+        out.append({
+            "text": text[:120],
+            "class": classes,
+            "onclick": (el.get("onclick") or ""),
+            "data_attrs": [k for k in el.attrs if k.lower().startswith("data-")],
+        })
+        if len(out) >= _MAX_CTA_ELEMENTS:
+            break
+    return out or None
 
 
 def _count_external_scripts(soup: BeautifulSoup, page_url: str) -> int:

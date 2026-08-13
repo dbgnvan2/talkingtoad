@@ -876,6 +876,7 @@ present on the page, not that it fires.
 | `CONSENT_MODE_MISSING` | per page | info | A tag is present but no Google Consent Mode v2 signal (`gtag('consent',…)`) is detected. Suppressed when `ANALYTICS_TAG_MISSING` fires. Advisory (EU/UK). |
 | `SELF_REFERENCING_UTM` | per page | info | An internal link carries `utm_*` (blank/upper-case included) or a click-id (`gclid`, `fbclid`, …), restarting the GA4 session source. External links excluded. |
 | `OUTBOUND_LINK_UNTRACKABLE` | per page | info | An external image/icon link has no text, `aria-label`, `title`, or image `alt` — GA4's outbound-click event records an empty `link_text`. |
+| `CTA_TRACKING_MISSING` | per page | info | The page **uses a click-tracking marker convention** (≥1 CTA carries a `track-*`/`data-track*` class-or-attr or inline `gtag(`), but a **conversion CTA** (button-like element whose text matches a conversion term — donate/book/contact/register/…) is **missing** it. Fires only with a measurement tag present; silent when no convention is detected (GTM-only sites — GTM click triggers aren't visible in HTML). Markup-only, advisory. (MI7, 2026-08-09) |
 
 Scoring is derived through the R5/R3 calibration model (`_CALIBRATION` →
 `_IMPACT_MATRIX`): tag-missing/duplicate → impact 4 (warning, quick wins), the rest

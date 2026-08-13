@@ -109,3 +109,34 @@ UTM_PARAM_PREFIXES: tuple[str, ...] = ("utm_",)
 # Non-utm campaign params that also break/override attribution when placed on an
 # internal link (Google Ads / Meta / Mailchimp click ids).
 CAMPAIGN_PARAM_NAMES: frozenset[str] = frozenset({"gclid", "gbraid", "wbraid", "fbclid", "mc_eid", "msclkid"})
+
+# ── MI7 — CTA measurement-coverage (2026-08-09) ─────────────────────────────
+# Conversion-intent terms: a CTA whose accessible text contains one of these is a
+# "conversion CTA" worth measuring. Nav toggles / "read more" are excluded on
+# purpose (low value, high noise). Editorial vocabulary (global rule #9).
+CTA_INTENT_TERMS: tuple[str, ...] = (
+    "donate", "give", "pledge", "book", "schedule", "appointment", "contact",
+    "register", "sign up", "signup", "subscribe", "apply", "join", "volunteer",
+    "get started", "enrol", "enroll", "rsvp", "reserve", "buy", "shop",
+    "checkout", "purchase", "order",
+)
+
+# A CTA counts as "tracked" when a click-tracking marker is detected on it:
+#   - its class contains any CTA_TRACKING_CLASS_MARKERS substring, OR
+#   - it has a data-* attribute whose name starts with any CTA_TRACKING_DATA_PREFIXES, OR
+#   - its onclick contains any CTA_ONCLICK_MARKERS call.
+# Defaults cover the common `track-*` class convention (a JS listener fires a GA4
+# event on click). Config-editable to match a site's own convention.
+CTA_TRACKING_CLASS_MARKERS: tuple[str, ...] = (
+    "track-", "-track", "ga-event", "ga4-event", "gtm-track", "analytics-event",
+)
+CTA_TRACKING_DATA_PREFIXES: tuple[str, ...] = (
+    "data-track", "data-ga", "data-gtm", "data-event", "data-analytics",
+)
+CTA_ONCLICK_MARKERS: tuple[str, ...] = ("gtag(", "datalayer.push", "ga(")
+
+# Builder button classes that mark an <a>/<input> as a button-like CTA, on top of
+# the generic \b(btn|button|cta)\b already used elsewhere in the parser.
+CTA_BUTTON_CLASS_HINTS: tuple[str, ...] = (
+    "elementor-button", "wp-block-button__link", "wp-element-button",
+)
