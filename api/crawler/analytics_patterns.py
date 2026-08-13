@@ -119,6 +119,8 @@ CTA_INTENT_TERMS: tuple[str, ...] = (
     "register", "sign up", "signup", "subscribe", "apply", "join", "volunteer",
     "get started", "enrol", "enroll", "rsvp", "reserve", "buy", "shop",
     "checkout", "purchase", "order",
+    # Service/consultation conversions (counselling, therapy, coaching, etc.)
+    "counselling", "counseling", "intake", "consultation", "consult", "request",
 )
 
 # A CTA counts as "tracked" when a click-tracking marker is detected on it:
@@ -128,7 +130,9 @@ CTA_INTENT_TERMS: tuple[str, ...] = (
 # Defaults cover the common `track-*` class convention (a JS listener fires a GA4
 # event on click). Config-editable to match a site's own convention.
 CTA_TRACKING_CLASS_MARKERS: tuple[str, ...] = (
-    "track-", "-track", "ga-event", "ga4-event", "gtm-track", "analytics-event",
+    # both hyphen and underscore conventions (track-donate / track_donate)
+    "track-", "track_", "-track", "_track",
+    "ga-event", "ga4-event", "gtm-track", "analytics-event",
 )
 CTA_TRACKING_DATA_PREFIXES: tuple[str, ...] = (
     "data-track", "data-ga", "data-gtm", "data-event", "data-analytics",

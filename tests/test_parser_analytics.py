@@ -97,6 +97,21 @@ def test_cta_elements_extracted_with_markers():
     assert "gtag(" in by_text["Contact us"]["onclick"]
 
 
+def test_cta_ancestor_marker_captured_in_context():
+    """MI7: a track_ class on the widget WRAPPER (not the <a>) is captured in the
+    CTA's ancestor `context` so the checker can detect wrapper-based tracking."""
+    html = ("<html><head><title>t</title></head><body>"
+            '<div class="elementor-widget elementor-widget-button track_beginCounselling">'
+            '<span><a class="elementor-button" href="/x">Begin Counselling Intake</a></span>'
+            "</div></body></html>")
+    res = FetchResult(url=BASE + "p", final_url=BASE + "p", status_code=200, headers={},
+                      html=html, content_type="text/html")
+    p = parse_page(res, BASE)
+    cta = p.cta_elements[0]
+    assert "track" not in cta["class"].lower()          # marker is NOT on the <a>
+    assert "track_begincounselling" in cta["context"]   # it IS on an ancestor
+
+
 def test_gt3_2_google_tag_typed_and_id_extracted():
     """GT3.2: a Google tag (GT-…) is typed 'google_tag' with its GT- id — not
     ga4, not a dropped None (the livingsystems.ca form)."""

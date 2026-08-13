@@ -832,12 +832,35 @@ def _find_untrackable_outbound_links(soup: BeautifulSoup, page_url: str) -> list
 
 
 _MAX_CTA_ELEMENTS = 300  # bound the per-page CTA payload on huge pages (P9)
+# How many ancestors to scan for a tracking marker. Click-tracking JS commonly
+# uses `closest('[class*="track-"]')`, and page builders (Elementor, Gutenberg)
+# put the custom class on the WIDGET WRAPPER, not the inner <a>. 4 levels covers
+# button → button-wrapper → widget-container → widget (the Elementor depth).
+_MAX_CTA_ANCESTORS = 4
+
+
+def _cta_ancestor_context(el) -> str:
+    """Lowercased class + data-attr-name text of *el*'s nearest ancestors, so the
+    checker can detect a tracking marker sitting on a wrapper element (the common
+    page-builder pattern), not just on the button itself."""
+    parts: list[str] = []
+    node = getattr(el, "parent", None)
+    for _ in range(_MAX_CTA_ANCESTORS):
+        name = getattr(node, "name", None)
+        if node is None or name in (None, "body", "html", "[document]"):
+            break
+        parts.append(" ".join(node.get("class") or []))
+        parts.extend(k for k in getattr(node, "attrs", {}) if k.lower().startswith("data-"))
+        node = getattr(node, "parent", None)
+    return " ".join(parts).lower()
 
 
 def _extract_cta_elements(soup: BeautifulSoup) -> list | None:
     """Structural extraction of button-like CTA elements for MI7 (measurement
-    coverage). Returns compact ``{text, class, onclick, data_attrs}`` dicts for
-    ``<button>``, ``role="button"``, and button-styled ``<a>``/``<input>``.
+    coverage). Returns compact ``{text, class, onclick, data_attrs, context}``
+    dicts for ``<button>``, ``role="button"``, and button-styled ``<a>``/
+    ``<input>``. ``context`` is the ancestor class/data-attr text, so a tracking
+    marker on a wrapper element is detectable.
 
     Editorial classification — which are *conversion* CTAs and which count as
     *tracked* — is applied by the analytics checker (config in
@@ -872,6 +895,7 @@ def _extract_cta_elements(soup: BeautifulSoup) -> list | None:
             "class": classes,
             "onclick": (el.get("onclick") or ""),
             "data_attrs": [k for k in el.attrs if k.lower().startswith("data-")],
+            "context": _cta_ancestor_context(el),
         })
         if len(out) >= _MAX_CTA_ELEMENTS:
             break

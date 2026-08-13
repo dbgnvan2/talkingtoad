@@ -38,10 +38,17 @@ _CTA_INTENT_RE = re.compile(
 
 
 def _cta_is_tracked(cta: dict) -> bool:
-    """True when the CTA carries a detectable click-tracking marker (a
-    convention class, a data-* tracking attr, or an inline gtag/dataLayer call)."""
-    cls = (cta.get("class") or "").lower()
-    if any(m in cls for m in CTA_TRACKING_CLASS_MARKERS):
+    """True when the CTA carries a detectable click-tracking marker — on the
+    element itself OR on an ancestor wrapper (``context``). Page builders put the
+    custom class on the widget wrapper and the click-listener uses ``closest()``,
+    so a marker several levels up still means the button is tracked. Markers: a
+    convention class, a ``data-*`` tracking attr, or an inline gtag/dataLayer call."""
+    # class markers + ancestor context (context is class + data-attr names, so a
+    # class marker like `track-` also catches a `data-track` in an ancestor).
+    haystack = (cta.get("class") or "").lower() + " " + (cta.get("context") or "")
+    if any(m in haystack for m in CTA_TRACKING_CLASS_MARKERS):
+        return True
+    if any(p in haystack for p in CTA_TRACKING_DATA_PREFIXES):
         return True
     if any(d.lower().startswith(CTA_TRACKING_DATA_PREFIXES) for d in (cta.get("data_attrs") or [])):
         return True

@@ -164,6 +164,45 @@ def test_mi7_non_conversion_button_ignored():
     assert "CTA_TRACKING_MISSING" not in _codes(_page(html, head=False))
 
 
+# Real-world (livingsystems.ca): the track-/track_ class sits on the Elementor
+# WIDGET WRAPPER, not the <a> — the click-listener uses closest(). It must still
+# count as tracked. Both hyphen and underscore conventions are used.
+def _widget(mark, text, href="/x"):
+    m = f" {mark}" if mark else ""
+    return f'<div class="elementor-widget elementor-widget-button{m}"><a class="elementor-button" href="{href}">{text}</a></div>'
+
+
+def test_mi7_marker_on_ancestor_wrapper_and_underscore_variant():
+    """A track- (hyphen) and a track_ (underscore) marker on the WRAPPER both
+    count as tracked; with every conversion CTA tracked, MI7 is silent."""
+    html = (GA4
+            + _widget("track-startCounselling", "Start Counselling")
+            + _widget("track_beginCounselling", "Begin Counselling Intake"))
+    assert "CTA_TRACKING_MISSING" not in _codes(_page(html, head=False))
+
+
+def test_mi7_fires_when_wrapper_convention_present_but_a_conversion_untracked():
+    """Convention in use (a track- wrapper) + a conversion CTA in a plain wrapper
+    (no marker) ⇒ MI7 fires, listing the untracked conversion."""
+    html = (GA4
+            + _widget("track-startCounselling", "Start Counselling")   # tracked convention
+            + _widget(None, "Request Information"))                     # untracked conversion
+    iss = _cta_issue(html)
+    assert iss is not None
+    assert any("Request Information" in t for t in iss.extra["untracked_ctas"])
+
+
+def test_mi7_counselling_vocabulary_recognised():
+    """The conversion vocabulary covers counselling/intake/consultation/request
+    (the site's real CTAs), while browse CTAs stay excluded."""
+    from api.crawler.checkers.analytics import _cta_is_conversion
+    for t in ["Start Counselling", "Begin Counselling Intake", "Request Information",
+              "Book a consultation", "Donate now"]:
+        assert _cta_is_conversion({"text": t}), t
+    for t in ["Learn More", "View All Posts", "Menu", "Read the blog"]:
+        assert not _cta_is_conversion({"text": t}), t
+
+
 # ── MI3 (cross-page) ─────────────────────────────────────────────────────────
 def _p(html, url):
     res = FetchResult(url=url, final_url=url, status_code=200, headers={},
