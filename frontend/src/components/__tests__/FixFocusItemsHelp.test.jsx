@@ -33,16 +33,36 @@ describe('FixFocusItemsHelp', () => {
     mockOk(SNAPSHOT)
     renderWithProviders(<FixFocusItemsHelp jobId="job1" />)
     // TITLE_MISSING appears on two SEO pages, but its help renders exactly once.
-    await waitFor(() => expect(screen.getByText('Page title missing')).toBeInTheDocument())
-    expect(screen.getAllByText('Page title missing')).toHaveLength(1)
+    await waitFor(() => expect(screen.getByText('Missing title')).toBeInTheDocument())
+    expect(screen.getAllByText('Missing title')).toHaveLength(1)
+  })
+
+  it('titles each entry with the checklist label (human_description), not the issueHelp title', async () => {
+    mockOk(SNAPSHOT)
+    renderWithProviders(<FixFocusItemsHelp jobId="job1" />)
+    // The heading matches what the checklist shows ("Missing title"), NOT
+    // issueHelp.js's own title ("Page title missing"), so help lines up with the list.
+    await waitFor(() => expect(screen.getByText('Missing title')).toBeInTheDocument())
+    expect(screen.queryByText('Page title missing')).not.toBeInTheDocument()
   })
 
   it('renders the what-it-is and fix fields from issueHelp', async () => {
     mockOk(SNAPSHOT)
     renderWithProviders(<FixFocusItemsHelp jobId="job1" />)
-    await waitFor(() => expect(screen.getByText('Page title missing')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText('Missing title')).toBeInTheDocument())
     expect(screen.getByText('What it is')).toBeInTheDocument()
     expect(screen.getByText('How to fix')).toBeInTheDocument()
+  })
+
+  it('orders items A–Z by their checklist label', async () => {
+    mockOk(SNAPSHOT)
+    renderWithProviders(<FixFocusItemsHelp jobId="job1" />)
+    await waitFor(() => expect(screen.getByText('Disconnect page')).toBeInTheDocument())
+    // "Disconnect page" (D) must appear before "Missing title" (M), regardless of
+    // priority — it's alphabetical, not priority-ordered.
+    const disconnect = screen.getByText('Disconnect page')
+    const missing = screen.getByText('Missing title')
+    expect(disconnect.compareDocumentPosition(missing) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 
   it('falls back to human_description when there is no help entry', async () => {

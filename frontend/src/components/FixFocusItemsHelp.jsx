@@ -37,8 +37,16 @@ export default function FixFocusItemsHelp({ jobId }) {
         }
       }
       const list = Array.from(byCode.entries())
-        .map(([code, meta]) => ({ code, ...meta, help: getIssueHelp(code) }))
-        .sort((a, b) => (b.priority_rank - a.priority_rank) || a.code.localeCompare(b.code))
+        .map(([code, meta]) => {
+          const help = getIssueHelp(code)
+          // Title with the SAME label the checklist shows (human_description) so
+          // the help entry lines up with its checklist item; the what-it-is/fix
+          // body still comes from issueHelp. Fall back to the help title, then code.
+          const title = meta.human_description || (help && help.title) || code
+          return { code, ...meta, help, title }
+        })
+        // A–Z by the checklist label so an item is easy to find.
+        .sort((a, b) => a.title.localeCompare(b.title))
       setItems(list)
     } catch (e) {
       setError(e.message || 'Failed to load item help')
@@ -65,10 +73,9 @@ export default function FixFocusItemsHelp({ jobId }) {
       {items && !loading && items.length > 0 && (
         <ul className="space-y-3">
           {items.map((item) => {
-            const title = (item.help && item.help.title) || item.human_description || item.code
             return (
               <li key={item.code} className="border border-gray-100 rounded-xl p-3">
-                <p className="font-semibold text-gray-800 text-sm">{title}</p>
+                <p className="font-semibold text-gray-800 text-sm">{item.title}</p>
                 {item.help && item.help.definition && (
                   <div className="mt-1">
                     <p className="text-[10px] font-semibold text-indigo-700 uppercase tracking-wide">What it is</p>
