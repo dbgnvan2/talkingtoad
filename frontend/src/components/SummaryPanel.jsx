@@ -6,6 +6,8 @@ import SiteRecommendationsPanel from './SiteRecommendationsPanel.jsx'
 import OrphanedSummaryCards from './OrphanedSummaryCards.jsx'
 import TopPriorityGroups from './TopPriorityGroups.jsx'
 import Top10Pages from './Top10Pages.jsx'
+import FixFocusPanel from './FixFocusPanel.jsx'
+import FixFocusItemsHelp from './FixFocusItemsHelp.jsx'
 import LLMSTxtGenerator from './LLMSTxtGenerator.jsx'
 import StatCard from './StatCard.jsx'
 import Spinner from './Spinner.jsx'
@@ -165,6 +167,13 @@ export default function SummaryPanel({ summary, domain, jobId, onCategoryClick, 
       <OrphanedSummaryCards jobId={jobId} onOrphanImagesClick={() => onCategoryClick(TAB_ORPHAN_IMAGES - 1)} onOrphanPagesClick={() => onCategoryClick(TAB_ORPHAN_PAGES - 1)} />
 
       <TopPriorityGroups jobId={jobId} onPageClick={onPageClick} />
+
+      {/* Fix Focus checklist + its deduped item help, beside the Top 5 Priority Fixes */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <FixFocusPanel jobId={jobId} />
+        <FixFocusItemsHelp jobId={jobId} />
+      </div>
+
       <Top10Pages jobId={jobId} onPageClick={onPageClick} />
       <LLMSTxtGenerator jobId={jobId} />
     </div>
