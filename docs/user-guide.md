@@ -100,6 +100,16 @@ Some problems affect your whole site rather than a single page — serving pages
 
 The summary tab shows your five highest-priority issues to fix first. Each issue has an **Impact** score (how badly it hurts SEO) and an **Effort** score (how hard it is to fix). The priority ranking combines both.
 
+### Fix Focus checklist
+
+Beside the Top 5 Priority Fixes, the **Fix Focus** panel turns your report into a finite, tickable to-do list. It shows the highest-priority fixes split into two lists — **SEO** and **AI/GEO** — grouped by page and capped at the top 10 pages per list (when more qualify, it tells you how many pages and items are hidden). A green **quick win** tag marks the easy, high-value items.
+
+- **Tick items off as you fix them.** Your ticks are **saved with the crawl**, so you can leave and come back without re-running the scan.
+- **Verify a page.** After you've fixed something, click **Verify page** on that page. TalkingToad re-scans just that one page: items it confirms are gone turn **verified**, and anything still there is flagged **still present** so a not-quite-fixed item doesn't quietly look done. (A page that's erroring — returning a 4xx/5xx — is not marked verified.)
+- **Regenerate** rebuilds the list from your latest scan while keeping the ticks on items that still apply. Use it after you've fixed a batch, or when Verify tells you new issues appeared on a page.
+
+Next to Fix Focus is a **Fix Focus Items Help** panel — a plain-English glossary for the items on your list. Each distinct item is explained **once** (so an item that appears on many pages isn't repeated), listed **A–Z** by the same name shown on the checklist, with what it is and how to fix it. Fix Focus is also available as its own **Fix Focus** tab if you want the full-width view.
+
 ### Quick Wins
 
 Alongside the priority list you'll see a separate **Quick Wins** list. These are issues that are both **high impact** and **low effort** — the easy, high-value fixes that give you the most improvement for the least work. Quick Wins are picked independently of the priority ranking, so it's worth scanning this list even after you've worked through your Top Priority Fixes.
