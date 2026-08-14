@@ -45,8 +45,9 @@ export default function FixFocusItemsHelp({ jobId }) {
           const title = meta.human_description || (help && help.title) || code
           return { code, ...meta, help, title }
         })
-        // A–Z by the checklist label so an item is easy to find.
-        .sort((a, b) => a.title.localeCompare(b.title))
+        // A–Z by the checklist label so an item is easy to find; code breaks ties
+        // so two codes sharing a label have a deterministic order.
+        .sort((a, b) => a.title.localeCompare(b.title) || a.code.localeCompare(b.code))
       setItems(list)
     } catch (e) {
       setError(e.message || 'Failed to load item help')

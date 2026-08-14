@@ -1118,9 +1118,11 @@ and **AI/GEO** — grouped by page and capped at **10 pages per focus**, ordered
   state. Fix Focus is **also** surfaced on the **Summary** dashboard, in a responsive row
   immediately after the Top 5 Priority Fixes panel, beside a **Fix Focus Items Help** panel
   (`FixFocusItemsHelp.jsx`) — a deduped glossary that explains each DISTINCT issue code on the
-  list exactly once (across SEO+GEO and across pages), pulling title + "what it is" + fix from
-  `issueHelp.js` (falling back to the item's `human_description` when a code has no help entry),
-  ordered by max `priority_rank`. → `tests/test_fix_focus.py`,
+  list exactly once (across SEO+GEO and across pages). Each entry is **titled with the same
+  label the checklist shows** (`human_description`) so it lines up with its checklist item, with
+  the "what it is" + fix body from `issueHelp.js` keyed by code (title falls back to the
+  `issueHelp` title, then the code); the list is ordered **A–Z** by that label for quick lookup.
+  → `tests/test_fix_focus.py`,
   `tests/test_crawl_router_contracts.py::TestFixFocusEndpoints`, `frontend`:
   `FixFocusPanel.test.jsx`, `FixFocusItemsHelp.test.jsx`. *(Spec: this section supersedes the
   pending micro-specs `2026-08-13_fix-focus-checklist.md` and `2026-08-13_fix-focus-summary-and-help.md`.)*
