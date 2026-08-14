@@ -1113,10 +1113,17 @@ and **AI/GEO** — grouped by page and capped at **10 pages per focus**, ordered
   current issue set: a code still seen → `still_present`, otherwise → `verified`; new codes →
   `newly_found`, surfaced but not injected into the frozen list). A page returning HTTP ≥ 400 is
   **not** reconciled (`reconciled:false`) so an erroring page never false-verifies.
-- **Frontend.** A new **Fix Focus** tab in Results renders both focuses with checkboxes, a
-  per-page **Verify** button, and **Regenerate**; toggle/verify failures surface in the panel's
-  error state. → `tests/test_fix_focus.py`, `tests/test_crawl_router_contracts.py::TestFixFocusEndpoints`,
-  `frontend`: `FixFocusPanel.test.jsx`. *(Spec: this section supersedes the pending micro-spec.)*
+- **Frontend.** A **Fix Focus** tab in Results renders both focuses with checkboxes, a per-page
+  **Verify** button, and **Regenerate**; toggle/verify failures surface in the panel's error
+  state. Fix Focus is **also** surfaced on the **Summary** dashboard, in a responsive row
+  immediately after the Top 5 Priority Fixes panel, beside a **Fix Focus Items Help** panel
+  (`FixFocusItemsHelp.jsx`) — a deduped glossary that explains each DISTINCT issue code on the
+  list exactly once (across SEO+GEO and across pages), pulling title + "what it is" + fix from
+  `issueHelp.js` (falling back to the item's `human_description` when a code has no help entry),
+  ordered by max `priority_rank`. → `tests/test_fix_focus.py`,
+  `tests/test_crawl_router_contracts.py::TestFixFocusEndpoints`, `frontend`:
+  `FixFocusPanel.test.jsx`, `FixFocusItemsHelp.test.jsx`. *(Spec: this section supersedes the
+  pending micro-specs `2026-08-13_fix-focus-checklist.md` and `2026-08-13_fix-focus-summary-and-help.md`.)*
 
 ---
 

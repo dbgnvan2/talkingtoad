@@ -119,6 +119,14 @@ CLN4 strictly improved the matched case):
   half is now fixed for the shared `update_job` path, but these two fields aren't in the
   Redis job mapping. Add them alongside `fix_focus` when convenient.
 
+### From the 2026-08-13 Fix Focus Summary-placement sweep (learning-qa; low, benign)
+- [ ] **Double-generate on first Summary view (benign):** the Summary now mounts both
+  `FixFocusPanel` and `FixFocusItemsHelp`, so two concurrent `GET /fix-focus?focus=all` fire.
+  On the first-ever view (`job.fix_focus` is None) both build+persist a snapshot (last-writer-
+  wins on `generated_at` only — no checked/verified state exists yet, so nothing a user cares
+  about is lost, and each panel renders its own response). Every later load is a read (no
+  write). If ever tidying: lift the fetch to a shared parent/context so Summary makes one call.
+
 ## ✅ Completed
 
 - [x] **Technical-debt cleanup batch — CLN0–CLN8 (2026-08-08):** cleared the

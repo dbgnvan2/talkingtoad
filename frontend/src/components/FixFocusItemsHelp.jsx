@@ -25,7 +25,7 @@ export default function FixFocusItemsHelp({ jobId }) {
         const f = data && data[focus]
         if (!f || !f.pages) continue
         for (const page of f.pages) {
-          for (const it of page.items) {
+          for (const it of (page.items || [])) {
             const cur = byCode.get(it.issue_code)
             if (!cur || it.priority_rank > cur.priority_rank) {
               byCode.set(it.issue_code, {
