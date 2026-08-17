@@ -49,6 +49,17 @@ def test_u3_www_scheme_slash_tolerant_join():
     assert recs[0].url == "https://www.livingsystems.ca/counselling/"
 
 
+def test_u3_absent_inquiries_stays_none_in_ledger():
+    """Sweep #1 (P2): a page with no inquiries writes ga4_conversions_mo=None,
+    not 0 — so ranking can't mistake 'unknown' for 'proven zero'."""
+    seed = parse_priority_upload({"pages": [
+        {"url": "https://livingsystems.ca/", "clicks": 5, "impressions": 50},  # no inquiries
+    ]}, TARGET)
+    pages = [_crawled("https://livingsystems.ca/")]
+    recs = build_ledger_records(seed, pages, period="2026-08", recorded_at=NOW.isoformat())
+    assert recs[0].ga4_conversions_mo is None
+
+
 def test_u3_seed_page_not_crawled_is_skipped():
     """A seed URL with no matching crawled page contributes no ledger row (P2 —
     no phantom record for a page that wasn't scanned)."""

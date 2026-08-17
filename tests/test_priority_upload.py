@@ -94,6 +94,30 @@ def test_u1_malformed_no_pages_rejected():
             parse_priority_upload(bad, TARGET)
 
 
+def test_u1_absent_inquiries_is_none_not_zero():
+    """Sweep #1 (P2): absent `inquiries` → conversions None (unknown), never 0 —
+    so ga4_conversions_mo keeps 'no data' distinct from 'measured zero'."""
+    raw = {"pages": [
+        {"url": "https://livingsystems.ca/a", "clicks": 1, "impressions": 2},  # no inquiries
+        {"url": "https://livingsystems.ca/b", "clicks": 1, "impressions": 2, "inquiries": 0},
+    ]}
+    seed = parse_priority_upload(raw, TARGET)
+    assert seed["pages"][0]["conversions"] is None      # absent → None
+    assert seed["pages"][1]["conversions"] == 0          # present 0 → measured zero
+
+
+def test_u1_wrong_generated_for_rejected_absent_tolerated():
+    """Sweep #3: a file another tool stamped is rejected; an absent marker is
+    tolerated (domain guard is the primary protection)."""
+    with pytest.raises(PriorityUploadError, match="not TalkingToad"):
+        parse_priority_upload(
+            {"generated_for": "some-other-tool",
+             "pages": [{"url": "https://livingsystems.ca/a"}]}, TARGET)
+    # absent generated_for → accepted (domain guard still applies)
+    ok = parse_priority_upload({"pages": [{"url": "https://livingsystems.ca/a"}]}, TARGET)
+    assert ok["used"] == 1
+
+
 def test_u1_string_metrics_coerced():
     """GSC CSVs can yield stringy numbers; parser coerces without crashing."""
     raw = {"pages": [{"url": "https://livingsystems.ca/s", "clicks": "7",

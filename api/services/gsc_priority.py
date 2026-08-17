@@ -40,6 +40,18 @@ def _float(v) -> float:
         return 0.0
 
 
+def _int_or_none(v):
+    """Nullable coercion — absent/None stays None. Used for `inquiries` →
+    `ga4_conversions_mo`, a field where "no data" must stay distinguishable from a
+    measured zero (P2 — see api/models/performance.py)."""
+    if v is None:
+        return None
+    try:
+        return int(float(v))
+    except (TypeError, ValueError):
+        return None
+
+
 def parse_priority_upload(raw, target_url: str) -> dict:
     """Parse a GSC `priority_pages.json` object against the scan's ``target_url``.
 
@@ -49,6 +61,14 @@ def parse_priority_upload(raw, target_url: str) -> dict:
     and counted, not fatal (P2 — surface, don't silently drop)."""
     if not isinstance(raw, dict):
         raise PriorityUploadError("The priority file must be a JSON object.")
+    # `generated_for` is the GSC app's signature. Reject a file another tool
+    # stamped with a different value; an ABSENT marker is tolerated (the per-URL
+    # domain guard below is the primary protection — a softening of §3 for
+    # robustness against future producers that omit the header).
+    gf = raw.get("generated_for")
+    if gf is not None and gf != "talkingtoad":
+        raise PriorityUploadError(
+            f"This priority file was produced for '{gf}', not TalkingToad.")
     pages_in = raw.get("pages")
     if not isinstance(pages_in, list) or not pages_in:
         raise PriorityUploadError("The priority file has no 'pages' list.")
@@ -79,7 +99,8 @@ def parse_priority_upload(raw, target_url: str) -> dict:
             "impressions": impressions,
             "ctr": (clicks / impressions) if impressions else 0.0,  # derived (§3)
             "position": _float(row.get("avg_position")),            # avg_position → position
-            "conversions": _int(row.get("inquiries")),              # inquiries → conversions
+            # inquiries → conversions; NULLABLE (absent ≠ measured zero, P2)
+            "conversions": _int_or_none(row.get("inquiries")),
             "top_queries": [q for q in (row.get("top_queries") or []) if isinstance(q, str)],
         })
 

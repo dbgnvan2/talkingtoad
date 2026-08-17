@@ -605,6 +605,14 @@ async def start_crawl(
         held = priority_seed["held_out_offdomain"] + priority_seed["held_out_blank"]
         note = f"GSC priority: seeded {priority_seed['used']} of {priority_seed['total']} pages"
         scope_notes.append(note + (f" ({held} held out)" if held else ""))
+        # P9 — the seed is fronted before discovered links, so a seed as large as
+        # the page budget silently turns "order" into "restrict". Warn loudly
+        # (D-N1: seed orders, never restricts) rather than quietly narrowing.
+        if settings.max_pages and len(priority_urls) >= settings.max_pages:
+            scope_notes.append(
+                f"GSC priority: {len(priority_urls)} seed pages ≥ the "
+                f"{settings.max_pages}-page crawl budget — non-priority pages may not "
+                f"be crawled. Raise 'Max pages' to crawl the rest.")
 
     job = CrawlJob(
         job_id=str(uuid4()),

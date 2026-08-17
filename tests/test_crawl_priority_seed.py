@@ -53,6 +53,18 @@ class TestStartIntake:
         assert r.json()["error"]["code"] == "INVALID_PRIORITY_FILE"
 
     @pytest.mark.asyncio
+    async def test_seed_over_budget_warns_loudly(self, api_client, auth_headers, test_store):
+        """Sweep #2 (P9): a seed >= max_pages would silently restrict the crawl —
+        /start must warn (D-N1: seed orders, never restricts)."""
+        r = await api_client.post("/api/crawl/start", headers=auth_headers, json={
+            "target_url": BASE,
+            "settings": {"max_pages": 2},
+            "gsc_priority": _gsc_file("/a", "/b", "/c"),  # 3 seed pages ≥ budget 2
+        })
+        assert r.status_code == 202
+        assert any("crawl budget" in n for n in r.json().get("scope_notes", []))
+
+    @pytest.mark.asyncio
     async def test_no_seed_is_normal_scan(self, api_client, auth_headers, test_store):
         r = await api_client.post("/api/crawl/start", headers=auth_headers,
                                   json={"target_url": BASE})
