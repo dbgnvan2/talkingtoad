@@ -24,9 +24,12 @@ async function checkResponse(res) {
   return res.json()
 }
 
-export async function startCrawl(targetUrl, settings = {}) {
+export async function startCrawl(targetUrl, settings = {}, gscPriority = null) {
   const body = { target_url: targetUrl }
   if (Object.keys(settings).length) body.settings = settings
+  // Optional GSC priority upload (parsed priority_pages.json) — the browser reads
+  // the file and embeds the JSON here so the hosted server never touches the disk.
+  if (gscPriority) body.gsc_priority = gscPriority
   const res = await fetch('/api/crawl/start', {
     method: 'POST',
     headers: authHeaders(),

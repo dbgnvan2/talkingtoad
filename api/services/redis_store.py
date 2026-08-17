@@ -99,6 +99,7 @@ class RedisJobStore:
             "executive_summary",
             "geo_report",
             "fix_focus",
+            "priority_seed",
             "scoring_model_version",
         }
         unknown = set(fields) - _ALLOWED
@@ -636,6 +637,7 @@ class RedisJobStore:
             llms_txt_custom=m.get("llms_txt_custom") or None,
             # Fix Focus snapshot — JSON blob written by update_job(fix_focus=...).
             fix_focus=json.loads(m["fix_focus"]) if m.get("fix_focus") else None,
+            priority_seed=json.loads(m["priority_seed"]) if m.get("priority_seed") else None,
             # R5.6 — legacy hashes lack this key; "" and missing both → None.
             scoring_model_version=m.get("scoring_model_version") or None,
         )

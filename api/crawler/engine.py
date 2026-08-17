@@ -168,6 +168,10 @@ class CrawlSettings:
     # resolved from an authoritative source (WP REST or typed sitemaps) at the
     # router layer — the engine never classifies a URL by pattern.
     scope_urls: set[str] | None = None
+    # GSC priority seed (2026-08-14, U2): an ORDERED list of URLs to crawl first
+    # (right after the homepage, before sitemap URLs). Advisory — same-domain,
+    # in-scope, deduped; off-domain/out-of-scope entries are skipped, never fatal.
+    priority_urls: list[str] | None = None
 
 
 @dataclass
@@ -391,6 +395,23 @@ async def run_crawl(
 
         def _in_scope(u: str) -> bool:
             return scope_urls is None or u == normalised_start or u in scope_urls
+
+        # Priority seed (GSC upload, U2): front these URLs so they're crawled
+        # first — right after the homepage, before sitemap URLs. Advisory: enqueue
+        # only same-domain, in-scope, not-already-seen URLs; a bad entry is skipped.
+        if not settings.single_page and settings.priority_urls:
+            for pu in settings.priority_urls:
+                try:
+                    norm = normalise_url(pu)
+                except ValueError:
+                    continue
+                if norm == normalised_start or norm in depth_map:
+                    continue
+                if not is_same_domain(norm, normalised_start) or not _in_scope(norm):
+                    continue
+                queue.append((norm, None))
+                depth_map[norm] = None
+                discovered_from.setdefault(norm, "(gsc-priority)")
 
         # Seed from sitemap — skipped in single_page mode
         if not settings.single_page:

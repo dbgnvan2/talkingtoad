@@ -11,11 +11,11 @@ export function useCrawl() {
   const [error, setError] = useState(null)
   const navigate = useNavigate()
 
-  async function start(targetUrl, settings) {
+  async function start(targetUrl, settings, gscPriority = null) {
     setLoading(true)
     setError(null)
     try {
-      const data = await startCrawl(targetUrl, settings)
+      const data = await startCrawl(targetUrl, settings, gscPriority)
       localStorage.setItem('talkingtoad_last_job', JSON.stringify({
         job_id: data.job_id,
         target_url: targetUrl,

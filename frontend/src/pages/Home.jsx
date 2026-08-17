@@ -47,6 +47,28 @@ export default function Home() {
   const [singleLoading, setSingleLoading] = useState(false)
   const [singleError, setSingleError] = useState(null)
   const { start, loading, error } = useCrawl()
+  // Optional GSC priority file (parsed priority_pages.json) — enriches the scan.
+  const [gscPriority, setGscPriority] = useState(null)
+  const [gscFileName, setGscFileName] = useState('')
+  const [gscError, setGscError] = useState(null)
+
+  async function handleGscFile(e) {
+    const file = e.target.files && e.target.files[0]
+    setGscError(null)
+    setGscPriority(null)
+    setGscFileName('')
+    if (!file) return
+    try {
+      const obj = JSON.parse(await file.text())
+      if (!obj || !Array.isArray(obj.pages) || obj.pages.length === 0) {
+        throw new Error('not a priority_pages file (no "pages" list)')
+      }
+      setGscPriority(obj)
+      setGscFileName(file.name)
+    } catch (err) {
+      setGscError(`Could not read that file: ${err.message}`)
+    }
+  }
 
   useEffect(() => {
     getRecentJobs(5)
@@ -127,7 +149,7 @@ export default function Home() {
       }
     }
 
-    start(finalUrl, settings)
+    start(finalUrl, settings, gscPriority)
   }
 
   async function handleScanPage(e) {
@@ -221,6 +243,30 @@ export default function Home() {
             </div>
             <p className="text-xs text-gray-400 mt-1">
               https:// is added automatically — just enter the domain
+            </p>
+          </div>
+
+          {/* Optional GSC priority file — enriches the scan (ranking + crawl order) */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              GSC priority file <span className="text-gray-400 font-normal">(optional)</span>
+            </label>
+            <input
+              type="file"
+              accept=".json,application/json"
+              onChange={handleGscFile}
+              className="block w-full text-xs text-gray-600 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:bg-green-50 file:text-green-700 hover:file:bg-green-100"
+            />
+            {gscFileName && !gscError && (
+              <p className="text-xs text-green-700 mt-1">
+                Using {gscFileName} — {gscPriority?.pages?.length ?? 0} priority pages to scan first.
+              </p>
+            )}
+            {gscError && <p className="text-xs text-red-600 mt-1">{gscError}</p>}
+            <p className="text-xs text-gray-400 mt-1">
+              Attach your GSC app's <span className="font-mono">priority_pages.json</span> to scan
+              your highest-traffic pages first and rank results by Search Console data. Leave empty
+              for a normal scan.
             </p>
           </div>
 

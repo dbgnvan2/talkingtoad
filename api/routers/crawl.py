@@ -55,6 +55,12 @@ from api.services.fix_focus import (
     merge_checked_state,
     set_checked,
 )
+from api.services.gsc_priority import (
+    PriorityUploadError,
+    build_ledger_records,
+    parse_priority_upload,
+    seed_urls,
+)
 from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
@@ -363,6 +369,27 @@ async def _run_crawl_background(
         if result.images:
             await store.save_images(result.images)
 
+        # U3 — GSC priority upload: join the uploaded per-page metrics onto the
+        # crawled pages and write them to the Performance Ledger, so Page Priority
+        # ranks with GSC data (i). Same join as /api/performance/ingest, sourced
+        # from the file. Guarded so a ledger hiccup never fails the crawl itself.
+        if not result.cancelled and pages:
+            try:
+                seed_job = await store.get_job(job_id)
+                seed = seed_job.priority_seed if seed_job else None
+                if seed and seed.get("pages"):
+                    now = datetime.now(timezone.utc)
+                    ledger = build_ledger_records(
+                        seed, pages,
+                        period=now.strftime("%Y-%m"), recorded_at=now.isoformat(),
+                    )
+                    if ledger:
+                        await store.save_performance_records(ledger)
+                        logger.info("priority_seed_ledger",
+                                    extra={"job_id": job_id, "records": len(ledger)})
+            except Exception:
+                logger.exception("priority_seed_ledger_failed", extra={"job_id": job_id})
+
         final_status = "cancelled" if result.cancelled else "complete"
         await store.update_job(
             job_id,
@@ -563,13 +590,35 @@ async def start_crawl(
             extra={"target_url": target_url, "in_scope": len(scope_urls), "notes": scope_notes},
         )
 
+    # GSC priority upload (U1/U2, optional): the browser sends the parsed
+    # priority_pages.json object in the body as `gsc_priority`. Domain-guarded; a
+    # wrong-site/malformed file fails fast rather than silently seeding nothing.
+    priority_seed: dict | None = None
+    priority_urls: list[str] | None = None
+    gsc_priority = body.get("gsc_priority")
+    if gsc_priority:
+        try:
+            priority_seed = parse_priority_upload(gsc_priority, target_url)
+        except PriorityUploadError as e:
+            return _err("INVALID_PRIORITY_FILE", str(e), 422)
+        priority_urls = seed_urls(priority_seed)
+        held = priority_seed["held_out_offdomain"] + priority_seed["held_out_blank"]
+        note = f"GSC priority: seeded {priority_seed['used']} of {priority_seed['total']} pages"
+        scope_notes.append(note + (f" ({held} held out)" if held else ""))
+
     job = CrawlJob(
         job_id=str(uuid4()),
         target_url=target_url,
         sitemap_url=sitemap_url,
         settings=settings,
+        priority_seed=priority_seed,
     )
     await store.create_job(job)
+    # Blob fields aren't in create_job's fixed INSERT — persist the seed via the
+    # allowlisted update path so the background crawl (which re-fetches the job)
+    # sees it for the post-crawl ledger join (U3).
+    if priority_seed is not None:
+        await store.update_job(job.job_id, priority_seed=priority_seed)
 
     cancel_event = asyncio.Event()
     _cancel_events[job.job_id] = cancel_event
@@ -585,6 +634,7 @@ async def start_crawl(
         suppress_banner_h1=settings.suppress_banner_h1,
         single_page=settings.single_page,
         scope_urls=scope_urls,
+        priority_urls=priority_urls,
     )
 
     background_tasks.add_task(

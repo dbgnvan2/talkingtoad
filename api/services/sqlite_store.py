@@ -94,6 +94,7 @@ class SQLiteJobStore:
             ("executive_summary", "TEXT"),
             ("geo_report", "TEXT"),
             ("fix_focus", "TEXT"),
+            ("priority_seed", "TEXT"),
             ("scoring_model_version", "TEXT"),
         ]
         for col, col_type in job_columns:
@@ -247,6 +248,7 @@ class SQLiteJobStore:
             "executive_summary",
             "geo_report",
             "fix_focus",
+            "priority_seed",
             "scoring_model_version",
         }
         unknown = set(fields) - _ALLOWED
@@ -1648,6 +1650,7 @@ def _row_to_job(row: dict) -> CrawlJob:
         executive_summary=row.get("executive_summary"),
         geo_report=json.loads(row["geo_report"]) if row.get("geo_report") else None,
         fix_focus=json.loads(row["fix_focus"]) if row.get("fix_focus") else None,
+        priority_seed=json.loads(row["priority_seed"]) if row.get("priority_seed") else None,
         # R5.6 — legacy rows predate this column; .get() yields None (no crash).
         scoring_model_version=row.get("scoring_model_version"),
     )

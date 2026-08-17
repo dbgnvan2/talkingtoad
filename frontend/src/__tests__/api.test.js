@@ -16,6 +16,7 @@ import {
   removeIgnoredImagePattern,
   getIgnoredImagePatterns,
   verifyBrokenLinks,
+  startCrawl,
 } from '../api.js'
 
 describe('API module', () => {
@@ -43,6 +44,24 @@ describe('API module', () => {
         expect.stringContaining('metadata'),
         expect.any(Object)
       )
+    })
+  })
+
+  describe('startCrawl', () => {
+    it('embeds gsc_priority in the body when a priority file is provided (U4)', async () => {
+      global.fetch.mockImplementation(() => mockFetchResponse({ job_id: 'j1' }))
+      const priority = { generated_for: 'talkingtoad', pages: [{ url: 'https://x.org/' }] }
+      await startCrawl('https://x.org', {}, priority)
+      const body = JSON.parse(global.fetch.mock.calls[0][1].body)
+      expect(body.target_url).toBe('https://x.org')
+      expect(body.gsc_priority).toEqual(priority)
+    })
+
+    it('omits gsc_priority for a normal scan', async () => {
+      global.fetch.mockImplementation(() => mockFetchResponse({ job_id: 'j1' }))
+      await startCrawl('https://x.org', {})
+      const body = JSON.parse(global.fetch.mock.calls[0][1].body)
+      expect(body.gsc_priority).toBeUndefined()
     })
   })
 
