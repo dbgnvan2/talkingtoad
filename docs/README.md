@@ -16,6 +16,7 @@ Complete documentation for TalkingToad — an SEO crawler with WordPress integra
 |---|---|
 | [architecture.md](architecture.md) | Full system architecture, crawler pipeline, data models |
 | [api.md](api.md) | API endpoint reference (request/response schemas, auth) |
+| [gsc-priority-pages-contract.md](gsc-priority-pages-contract.md) | Frozen hand-off contract: the `priority_pages.json` shape TalkingToad reads from the GSC app (§6.12) |
 | [issue-codes.md](issue-codes.md) | Issue codes with descriptions, severity, category (auto-generated from `_CATALOGUE`) |
 | [thresholds.md](thresholds.md) | Canonical table of every numeric threshold the app uses |
 | [user-guide.md](user-guide.md) | End-user guide to running audits and fixes |
