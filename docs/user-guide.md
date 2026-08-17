@@ -25,6 +25,21 @@ To check one specific page without crawling the whole site, paste its full URL i
 
 This is useful for verifying that a fix worked without running a full re-crawl.
 
+### Attaching a GSC priority file (optional)
+
+If you use the companion **GSC reporting app**, it produces a `priority_pages.json` listing your
+highest-traffic pages with their Search Console numbers. On the scan-start screen you can attach
+that file (the **"GSC priority file"** box). When you do, TalkingToad:
+
+- **scans your most important pages first** (rather than crawling in whatever order it discovers
+  links), and
+- **ranks the results using your Search Console data** (clicks, impressions, position, inquiries),
+  so the Page Priority queue reflects what actually earns traffic.
+
+It's entirely optional — leave it empty and the scan runs exactly as before. The file is read in
+your browser and sent with the scan; TalkingToad never reaches into your computer's files. If you
+attach the wrong site's file, the scan tells you and ignores it.
+
 ---
 
 ## Choosing What to Check

@@ -127,6 +127,16 @@ CLN4 strictly improved the matched case):
   about is lost, and each panel renders its own response). Every later load is a read (no
   write). If ever tidying: lift the fetch to a shared parent/context so Summary makes one call.
 
+### From the 2026-08-14 GSC priority-upload feature (deferred v1 scope)
+- [ ] **Rich PerformanceBundle (i-plus):** v1 reads the flat `priority_pages.json` (GSC
+  clicks/impressions/position + inquiries + top_queries). The richer signals — GA4 sessions,
+  `conversions_by_event`, URL-Inspection `index_state` (PB5), GTM audit (PB9), `source_breakdown`
+  incl. `ai_referral` — need the GSC app to pull them and emit the `PerformanceBundle`
+  (`2026-08-11_performance-bundle-producer-contract.md`), then TT would accept that shape too
+  (upload or `/api/performance/ingest`). Out of scope for the upload v1.
+- [ ] **Seed freshness:** `priority_pages.json` has no `generated_at`; TT stamps ledger freshness
+  from upload time. If real staleness display is wanted, ask the GSC app to add `generated_at`.
+
 ## ✅ Completed
 
 - [x] **Technical-debt cleanup batch — CLN0–CLN8 (2026-08-08):** cleared the

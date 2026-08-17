@@ -34,7 +34,7 @@ same doc's §9 verification matrix.
 | Method | Endpoint | Description |
 |---|---|---|
 | POST | `/api/crawl/discover-scope` | Partial-scan setup: read-only probe of a URL's content types. Body `{target_url}` → `{is_wordpress, discovery_tier, types[], categories[], category_scope_supported, notes}`. No credentials; SSRF-guarded per hop. |
-| POST | `/api/crawl/start` | Submit a new crawl job. Returns `job_id`. Optional `settings.content_scope = {mode, type_keys[], category_ids[]}` restricts the crawl to selected content types (`mode="types"`); omitted / `mode="full"` crawls the whole site. May return `scope_notes[]`. |
+| POST | `/api/crawl/start` | Submit a new crawl job. Returns `job_id`. Optional `settings.content_scope = {mode, type_keys[], category_ids[]}` restricts the crawl to selected content types (`mode="types"`); omitted / `mode="full"` crawls the whole site. Optional `gsc_priority` = a parsed GSC `priority_pages.json` object (the browser reads the file and embeds it) — seeds the crawl with high-traffic pages first and joins Search Console metrics into the ledger for ranking; domain-guarded, a wrong-site/wrong-tool file → 422 `INVALID_PRIORITY_FILE` (§6.12). May return `scope_notes[]`. |
 | POST | `/api/crawl/scan-page?url={url}` | Fetch and analyse a single URL synchronously. Returns `job_id` immediately. |
 | GET | `/api/crawl/{job_id}/status` | Poll job progress and status. |
 | POST | `/api/crawl/{job_id}/cancel` | Cancel a running crawl. |

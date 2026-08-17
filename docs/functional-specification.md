@@ -1127,6 +1127,36 @@ and **AI/GEO** — grouped by page and capped at **10 pages per focus**, ordered
   `FixFocusPanel.test.jsx`, `FixFocusItemsHelp.test.jsx`. *(Spec: this section supersedes the
   pending micro-specs `2026-08-13_fix-focus-checklist.md` and `2026-08-13_fix-focus-summary-and-help.md`.)*
 
+### 6.12 GSC priority upload — seed the crawl + rank by Search Console (2026-08-14)
+
+An **optional, user-uploaded** hand-off from the sibling GSC reporting app. On the scan-start
+screen the user may attach that app's `priority_pages.json`; the browser reads and JSON-parses it
+and embeds the object in the `POST /api/crawl/start` body as `gsc_priority` (the hosted server
+never reads the user's disk). No file → a normal scan, unchanged. **ONE file drives both flows.**
+
+- **Contract (reconciled to the real produced file).** Per page: `url` (absolute), `clicks`,
+  `impressions`, `avg_position`, `inquiries`, `top_queries[]` (strings); top level `generated_for`,
+  `site` (bare host). `api/services/gsc_priority.py::parse_priority_upload` domain-guards each URL
+  against the scan target (`is_same_domain`), holds out off-domain/blank rows and **announces
+  "seeded N of M"** (P2), coerces stringy numbers, rejects a file another tool stamped
+  (`generated_for` ≠ "talkingtoad") or one with no in-domain page (422 `INVALID_PRIORITY_FILE`).
+  `inquiries` is **nullable** → `ga4_conversions_mo` (absent ≠ measured zero, P2).
+- **(ii) crawl seed.** The ranked `pages[].url` list is passed to the engine as `priority_urls`
+  and **fronted in the frontier right after the homepage, before sitemap URLs** — advisory:
+  same-domain, in-scope, deduped, subject to the identical robots/SSRF/`max_pages` guards as any
+  URL; `single_page` skips it. A seed ≥ `max_pages` would silently restrict the crawl, so `/start`
+  emits a loud scope note (D-N1: seed **orders**, never restricts).
+- **(i) ranking.** After the crawl, `build_ledger_records` joins the seed's per-page metrics onto
+  crawled pages (same `match_key`/`build_crawled_key_map` as `/api/performance/ingest`) → the
+  Performance Ledger (`clicks`, `impressions`, `ctr` derived, `avg_position`→`position`,
+  `inquiries`→`ga4_conversions_mo`), stamped from upload time (D-N4). Page Priority then ranks with
+  Search Console data. The seed persists as a `priority_seed` job blob (SQLite + Redis).
+- **Deferred (v1 out of scope):** the rich `PerformanceBundle` (GA4 sessions, `conversions_by_event`,
+  URL-Inspection `index_state`, GTM) — the GSC app doesn't pull those; TT reads the flat file it
+  already emits, so v1 needs **no GSC-app code**. → `tests/test_priority_upload.py`,
+  `tests/test_priority_upload_ledger.py`, `tests/test_crawl_priority_seed.py`, `frontend`:
+  `api.test.js`. *(Spec: supersedes pending `2026-08-14_gsc-performance-handoff-plan.md`.)*
+
 ---
 
 ## 7. Reporting and export
