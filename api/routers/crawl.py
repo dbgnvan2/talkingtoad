@@ -379,9 +379,22 @@ async def _run_crawl_background(
                 seed = seed_job.priority_seed if seed_job else None
                 if seed and seed.get("pages"):
                     now = datetime.now(timezone.utc)
+                    period = now.strftime("%Y-%m")
+                    # Read-merge (P5): only when the upload OMITTED a GSC field
+                    # (None) do we fetch the prior same-period rows to carry real
+                    # values forward. F9 always emits these, so this is normally
+                    # skipped — no per-page reads on the common path.
+                    existing_by_key: dict = {}
+                    if any(p.get("clicks") is None or p.get("impressions") is None
+                           or p.get("position") is None for p in seed["pages"]):
+                        for pg in pages:
+                            prior = [r for r in await store.get_performance_records(url=pg.url)
+                                     if r.period == period]
+                            if prior:
+                                existing_by_key[pg.url] = prior[-1]
                     ledger = build_ledger_records(
-                        seed, pages,
-                        period=now.strftime("%Y-%m"), recorded_at=now.isoformat(),
+                        seed, pages, period=period, recorded_at=now.isoformat(),
+                        existing_by_key=existing_by_key,
                     )
                     if ledger:
                         await store.save_performance_records(ledger)

@@ -70,3 +70,37 @@ def test_u3_seed_page_not_crawled_is_skipped():
     pages = [_crawled("https://livingsystems.ca/crawled")]
     recs = build_ledger_records(seed, pages, period="2026-08", recorded_at=NOW.isoformat())
     assert [r.url for r in recs] == ["https://livingsystems.ca/crawled"]
+
+
+def test_f3_absent_clicks_carries_forward_prior_gsc():
+    """Sweep F3 (P5): an upload row that OMITS clicks/impressions must NOT wipe a
+    prior real ledger value — it carries forward from the existing same-period row
+    (matching the bundle-ingest read-merge), instead of overwriting with 0."""
+    from api.models.performance import PerformanceRecord
+    seed = parse_priority_upload({"pages": [
+        {"url": "https://livingsystems.ca/", "inquiries": 2},  # no clicks/impressions/position
+    ]}, TARGET)
+    assert seed["pages"][0]["clicks"] is None            # absent → None, not 0
+    pages = [_crawled("https://livingsystems.ca/")]
+    prior = {"https://livingsystems.ca/": PerformanceRecord(
+        url="https://livingsystems.ca/", period="2026-08",
+        gsc_clicks_mo=138, gsc_impressions_mo=1494, gsc_avg_position_mo=23.5)}
+    recs = build_ledger_records(seed, pages, period="2026-08",
+                                recorded_at=NOW.isoformat(), existing_by_key=prior)
+    assert recs[0].gsc_clicks_mo == 138                  # carried forward, NOT wiped
+    assert recs[0].gsc_impressions_mo == 1494
+    assert recs[0].ga4_conversions_mo == 2               # the new value is still written
+
+
+def test_f3_present_clicks_overwrites_prior():
+    """A present value (the upload IS the latest GSC snapshot) overwrites the prior."""
+    from api.models.performance import PerformanceRecord
+    seed = parse_priority_upload({"pages": [
+        {"url": "https://livingsystems.ca/", "clicks": 5, "impressions": 50},
+    ]}, TARGET)
+    pages = [_crawled("https://livingsystems.ca/")]
+    prior = {"https://livingsystems.ca/": PerformanceRecord(
+        url="https://livingsystems.ca/", period="2026-08", gsc_clicks_mo=138)}
+    recs = build_ledger_records(seed, pages, period="2026-08",
+                                recorded_at=NOW.isoformat(), existing_by_key=prior)
+    assert recs[0].gsc_clicks_mo == 5                    # present → overwrites

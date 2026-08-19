@@ -41,13 +41,24 @@ def _float(v) -> float:
 
 
 def _int_or_none(v):
-    """Nullable coercion — absent/None stays None. Used for `inquiries` →
-    `ga4_conversions_mo`, a field where "no data" must stay distinguishable from a
-    measured zero (P2 — see api/models/performance.py)."""
+    """Nullable coercion — absent/None/unparseable stays None. Used for GSC numeric
+    fields where a *missing* value must not be written as a definitive 0 (which
+    would (a) mistake unknown for measured-zero on ranking, and (b) wipe a prior
+    ledger row's real value on write — P2/P5)."""
     if v is None:
         return None
     try:
         return int(float(v))
+    except (TypeError, ValueError):
+        return None
+
+
+def _float_or_none(v):
+    """Nullable float coercion (see _int_or_none)."""
+    if v is None:
+        return None
+    try:
+        return float(v)
     except (TypeError, ValueError):
         return None
 
@@ -91,16 +102,26 @@ def parse_priority_upload(raw, target_url: str) -> dict:
         if not same:
             held_out_offdomain += 1
             continue
-        clicks = _int(row.get("clicks"))
-        impressions = _int(row.get("impressions"))
+        # GSC numeric fields are NULLABLE: a *missing* field stays None so the
+        # ledger write carries forward any prior real value instead of clobbering
+        # it with a spurious 0 (P5 — match the bundle ingest's read-merge). A
+        # present 0 is a real measured zero. F9 always emits these, so None is the
+        # partial/hand-edited-file edge.
+        clicks = _int_or_none(row.get("clicks"))
+        impressions = _int_or_none(row.get("impressions"))
+        if clicks is None:
+            ctr = None                                   # unknown clicks → unknown ctr
+        elif impressions:
+            ctr = clicks / impressions                   # derived (§3)
+        else:
+            ctr = 0.0                                     # measured 0 impressions → 0 ctr
         seed_pages.append({
             "url": url,
             "clicks": clicks,
             "impressions": impressions,
-            "ctr": (clicks / impressions) if impressions else 0.0,  # derived (§3)
-            "position": _float(row.get("avg_position")),            # avg_position → position
-            # inquiries → conversions; NULLABLE (absent ≠ measured zero, P2)
-            "conversions": _int_or_none(row.get("inquiries")),
+            "ctr": ctr,
+            "position": _float_or_none(row.get("avg_position")),    # avg_position → position
+            "conversions": _int_or_none(row.get("inquiries")),      # inquiries → conversions
             "top_queries": [q for q in (row.get("top_queries") or []) if isinstance(q, str)],
         })
 
@@ -126,7 +147,8 @@ def seed_urls(parsed: dict) -> list[str]:
     return [p["url"] for p in parsed.get("pages", [])]
 
 
-def build_ledger_records(parsed: dict, crawled_pages, *, period: str, recorded_at: str):
+def build_ledger_records(parsed: dict, crawled_pages, *, period: str, recorded_at: str,
+                         existing_by_key: dict | None = None):
     """Join the seed's per-page metrics onto crawled pages → PerformanceRecords (i).
 
     Uses the same www/scheme/slash-tolerant join as ``/api/performance/ingest``
@@ -134,11 +156,18 @@ def build_ledger_records(parsed: dict, crawled_pages, *, period: str, recorded_a
     page to attach to and is skipped (it simply never enters the ledger). ``period``
     and ``recorded_at`` come from the upload time (D-N4 — freshness from upload).
     ``inquiries`` are GA4 key events per page, so they map to ``ga4_conversions_mo``.
+
+    ``existing_by_key`` (optional): prior PerformanceRecords keyed by storage_key
+    for the SAME period. When the upload OMITS a GSC field (parsed as None), the
+    prior real value is carried forward instead of being overwritten with 0 — the
+    same read-merge the bundle ingest does, so a partial file can't wipe traffic
+    (P5). Absent → 0 only when there is no prior row.
     """
     # Local imports keep this module import-light and avoid any cycle.
     from api.models.performance import PerformanceRecord
     from api.services.perf_join import build_crawled_key_map, match_key
 
+    existing_by_key = existing_by_key or {}
     key_map = build_crawled_key_map(crawled_pages)
     records: list = []
     for p in parsed.get("pages", []):
@@ -149,13 +178,18 @@ def build_ledger_records(parsed: dict, crawled_pages, *, period: str, recorded_a
         storage_key = key_map.get(k)
         if storage_key is None:
             continue  # seed URL wasn't crawled — nothing to attach metrics to
+        prior = existing_by_key.get(storage_key)
         records.append(PerformanceRecord(
             url=storage_key,
             period=period,
-            gsc_clicks_mo=p["clicks"],
-            gsc_impressions_mo=p["impressions"],
-            gsc_ctr_mo=p["ctr"],
-            gsc_avg_position_mo=p["position"],
+            gsc_clicks_mo=p["clicks"] if p["clicks"] is not None
+            else (prior.gsc_clicks_mo if prior else 0),
+            gsc_impressions_mo=p["impressions"] if p["impressions"] is not None
+            else (prior.gsc_impressions_mo if prior else 0),
+            gsc_ctr_mo=p["ctr"] if p["ctr"] is not None
+            else (prior.gsc_ctr_mo if prior else 0.0),
+            gsc_avg_position_mo=p["position"] if p["position"] is not None
+            else (prior.gsc_avg_position_mo if prior else 0.0),
             ga4_conversions_mo=p["conversions"],   # GSC "inquiries" = GA4 key events
             recorded_at=recorded_at,
             source_generated_at=recorded_at,

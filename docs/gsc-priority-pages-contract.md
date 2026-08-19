@@ -64,11 +64,11 @@ The GSC app does **not** POST to TalkingToad — no TT URL, no shared secret, no
 | Field | Required | Type | TalkingToad's use |
 |---|---|---|---|
 | `url` | **yes** | absolute `https://…` | Crawl-seed order (ii) **and** the ledger join key (i). Must be the **same registrable domain** as the scan; off-domain/blank rows are **held out and counted** ("used N of M"). |
-| `clicks` | optional | int (default 0) | Ranking (i). |
-| `impressions` | optional | int (default 0) | Ranking (i); **CTR is derived** = `clicks / impressions`. |
-| `avg_position` | optional | float | Ranking (i) → `position`. |
+| `clicks` | optional | int **or null** | Ranking (i). A present value (incl. a real `0`) overwrites the ledger; **null/absent carries forward any prior value** rather than writing `0` (so a partial file can't wipe traffic). Send a real value for every page. |
+| `impressions` | optional | int **or null** | Ranking (i); **CTR is derived** = `clicks / impressions`. Same null-carry-forward rule as `clicks`. |
+| `avg_position` | optional | float **or null** | Ranking (i) → `position`. Same null-carry-forward rule. |
 | `inquiries` | optional | int **or null** | Conversion signal (i) → `ga4_conversions_mo`. **Null/absent stays "unknown"; a present `0` is a real measured zero** — never send `0` to mean "no data" (it would corrupt ranking). |
-| `top_queries` | optional | list of **strings** | Striking-distance list (i). Plain query strings (not objects). |
+| `top_queries` | optional | list of **strings** | **Collected but not yet consumed** — TT parses it into the seed, but there is no striking-distance surface today (future: PB3). Safe to send; don't rely on it appearing anywhere yet. |
 | `path` | ignored | — | TT derives it. |
 
 ## Validation & rejection (what TT does with a bad file)
@@ -87,6 +87,12 @@ The GSC app does **not** POST to TalkingToad — no TT URL, no shared secret, no
   is joined onto the crawled page and written to the Performance Ledger, so the **Page Priority**
   queue ranks by Search Console reality. Freshness is stamped from **upload time** (the file has no
   `generated_at`; add one if real staleness display is ever wanted).
+- **Ledger is history, keyed by URL (intended):** the ledger stores one row per `(url, period)` and
+  Page Priority reads the latest row for each URL **regardless of which scan uploaded it**. So you
+  upload once for a period and **every subsequent scan of that site that period shows the GSC data**
+  — you don't re-upload each scan. A consequence: a scan run *without* an upload still shows the
+  last-uploaded GSC numbers for that site (the panel's lag disclaimer covers this). This is by
+  design, not a per-audit snapshot.
 
 ## Producer checklist (GSC app)
 - [x] Emit `pages[].url` as **absolute** `https://host/path`, same domain as the site.
