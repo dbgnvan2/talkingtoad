@@ -573,3 +573,42 @@ class TestPagePriorityConversions:
         assert page["gsc"] is not None
         assert page["gsc"]["conversions"] == 7          # PW2: surfaced
         assert page["gsc"]["clicks"] == 138
+
+
+class TestPriorityUploadEndToEnd:
+    """F2 (consolidated-arc sweep): the load-bearing seam — parse a real upload,
+    build_ledger_records joined to crawled pages, save, then /page-priority, and
+    assert the file's clicks actually drive rank order. Every stage was unit-tested
+    in isolation; this guards the join-key + ranking seam end-to-end (only the live
+    run had exercised it). Spec: 2026-08-14_gsc-performance-handoff-plan.md / §6.9."""
+
+    @pytest.mark.asyncio
+    async def test_upload_to_rank_order_end_to_end(self, api_client, auth_headers, test_store):
+        from api.services.gsc_priority import parse_priority_upload, build_ledger_records
+        job_id = str(uuid4())
+        await test_store.create_job(CrawlJob(
+            job_id=job_id, target_url="https://example.com", status="complete", pages_crawled=2))
+        crawled = [
+            CrawledPage(job_id=job_id, url="https://example.com/low", status_code=200,
+                        crawled_at=datetime.now(timezone.utc)),
+            CrawledPage(job_id=job_id, url="https://example.com/high", status_code=200,
+                        crawled_at=datetime.now(timezone.utc)),
+        ]
+        await test_store.save_pages(crawled)
+        seed = parse_priority_upload({"generated_for": "talkingtoad", "pages": [
+            {"url": "https://example.com/high", "clicks": 100, "impressions": 1000,
+             "avg_position": 5.0, "inquiries": 3},
+            {"url": "https://example.com/low", "clicks": 5, "impressions": 50,
+             "avg_position": 9.0, "inquiries": 0},
+        ]}, "https://example.com")
+        recs = build_ledger_records(seed, crawled, period="2026-08",
+                                    recorded_at=datetime.now(timezone.utc).isoformat())
+        await test_store.save_performance_records(recs)
+
+        r = await api_client.get(f"/api/crawl/{job_id}/page-priority", headers=auth_headers)
+        assert r.status_code == 200
+        urls = [p["url"] for p in r.json()["pages"]]
+        # clicks drive rank: /high (100) ranks before /low (5) — the seam
+        assert urls.index("https://example.com/high") < urls.index("https://example.com/low")
+        high = next(p for p in r.json()["pages"] if p["url"] == "https://example.com/high")
+        assert high["gsc"]["clicks"] == 100 and high["gsc"]["conversions"] == 3

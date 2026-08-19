@@ -92,9 +92,12 @@ The GSC app does **not** POST to TalkingToad — no TT URL, no shared secret, no
 - [x] Emit `pages[].url` as **absolute** `https://host/path`, same domain as the site.
 - [x] Keep file order = priority order.
 - [x] `generated_for: "talkingtoad"`.
-- [ ] Send `inquiries: null` (or omit) when a page has **no** conversion data; `0` only for a
-      genuine measured zero. *(Today F9 defaults missing to `0` — the one field worth revisiting so
-      "unknown" and "zero" stay distinct.)*
+- [ ] Send `inquiries: null` (or omit the field) when a page has **no** conversion data; use `0`
+      **only** for a genuine measured zero. TalkingToad preserves a received `null`/absent as
+      *unknown* (it does **not** rank the page as proven-zero, and shows a dash), but treats a
+      received `0` as a measured zero that ranks/displays as zero. **F9 currently defaults missing
+      conversions to `0`, which collapses this distinction — change it to emit `null` so a page with
+      unknown conversions isn't mistaken for one measured at zero.**
 - [ ] *(optional, future)* add `generated_at` (ISO-8601 UTC) for freshness display.
 
 ## Versioning

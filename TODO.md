@@ -144,6 +144,34 @@ CLN4 strictly improved the matched case):
   (`gsc_clicks_mo: int = 0`) so it's not a live bug, but align them to the same guard for
   consistency when convenient.
 
+### From the 2026-08-14 consolidated GSC-arc sweep (learning-qa; cross-cutting)
+- [x] **F1 — stale frozen-contract note** (docs/gsc-priority-pages-contract.md): clarified TT
+  preserves received null/absent inquiries as unknown vs a received 0 as measured-zero, and that
+  F9's current 0-default collapses the distinction. Fixed.
+- [x] **F2 — no end-to-end rank-order test**: added
+  `test_crawl_router_contracts.py::TestPriorityUploadEndToEnd::test_upload_to_rank_order_end_to_end`
+  (parse → build_ledger_records → save → /page-priority → assert clicks drive order). Fixed.
+- [ ] **F3 — sibling-writer overwrite inconsistency (P5/P2, narrow trigger):**
+  `save_performance_records` overwrites GSC fields unconditionally, but the bundle-ingest path
+  (`api/routers/performance.py`) read-merges GSC first so a GSC-omitting writer can't wipe a prior
+  row. The seed path (`build_ledger_records`) has no read-merge, and the parser coerces a *missing*
+  `clicks`/`impressions` to 0 — so for a `(url, period)` already holding real GSC data (a
+  PerformanceBundle ingested earlier the same month), a later priority upload whose row omits clicks
+  would write 0, wiping real traffic. **Narrow:** requires bundle+seed in one month or a partial
+  hand-edited file, and F9 always emits clicks today. *Deferred (reason):* the clean fix makes
+  clicks/impressions nullable + routes the seed write through the same read-merge the bundle uses —
+  best done when `_match_key`/the merge logic is factored out of performance.py (see the 2026-08-06
+  F4 item). Until then, F9 always emitting clicks avoids the trigger.
+- [ ] **`top_queries` parsed but not wired (P21, contract overclaim):** the contract lists
+  `top_queries` as "Striking-distance list (i)" and `parse_priority_upload` collects it, but
+  `PerformanceRecord` has no field for it and nothing stores/displays it. Harmless; either wire it
+  (a striking-distance surface, PB3) or soften the contract wording.
+- [ ] **Ledger read is global-by-url, not job-scoped (open risk):** `get_page_priority` reads
+  `get_performance_records(url=page.url)` — the most-recent-period row for that URL regardless of
+  which job uploaded it. So a new no-upload scan of a site can surface GSC metrics a *prior* job
+  uploaded. Consistent with the "ledger = history" design + the panel's lag disclaimer, but the
+  Page Priority GSC columns are not scoped to the current audit. Decide if that's intended.
+
 ## ✅ Completed
 
 - [x] **Technical-debt cleanup batch — CLN0–CLN8 (2026-08-08):** cleared the
