@@ -156,16 +156,12 @@ def rank_pages(pages: list[dict]) -> list[dict]:
         weight, label = classify_page_bucket(p["health_score"], p["review_flag"])
         p["_bucket_weight"] = weight
         p["bucket"] = label
-    ordered = sorted(
-        pages,
-        key=lambda p: (
-            p["_bucket_weight"],
-            -_traffic_key(p)[0],   # clicks desc
-            -_traffic_key(p)[1],   # conversions desc (tiebreak)
-            p["health_score"],
-            p.get("url", ""),
-        ),
-    )
+    def _sort_key(p: dict) -> tuple:
+        clicks, conversions = _traffic_key(p)  # once per element
+        return (p["_bucket_weight"], -clicks, -conversions,
+                p["health_score"], p.get("url", ""))
+
+    ordered = sorted(pages, key=_sort_key)
     for i, p in enumerate(ordered, start=1):
         p["priority_rank"] = i
         p.pop("_bucket_weight", None)

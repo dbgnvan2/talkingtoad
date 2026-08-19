@@ -137,6 +137,13 @@ CLN4 strictly improved the matched case):
 - [ ] **Seed freshness:** `priority_pages.json` has no `generated_at`; TT stamps ledger freshness
   from upload time. If real staleness display is wanted, ask the GSC app to add `generated_at`.
 
+### From the 2026-08-14 PW ranking /csdp sweep (learning-qa; adjacent, not fixed)
+- [ ] **Panel null-check consistency (cosmetic):** `PagePriorityPanel.jsx` renders the new
+  `conversions` cell with a `!= null ? … : '—'` guard, but the pre-existing Clicks/Impr. cells use
+  `p.gsc ? p.gsc.clicks : '—'` (no value null-check). Those fields are non-nullable ints
+  (`gsc_clicks_mo: int = 0`) so it's not a live bug, but align them to the same guard for
+  consistency when convenient.
+
 ## ✅ Completed
 
 - [x] **Technical-debt cleanup batch — CLN0–CLN8 (2026-08-08):** cleared the

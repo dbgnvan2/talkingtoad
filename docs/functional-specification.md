@@ -1051,7 +1051,21 @@ R5.0) rather than a raw impact sum. `refresh_trigger.rank_pages` performs the
 ordering, and `evaluate_refresh` produces each page's review flag; the queue
 works with **or without** GSC data — a page with no Performance Ledger records
 is ranked by health alone. Returns `{pages: [{url, health_score, gsc,
-review_flag: {flagged, reasons}}], total}`. → `tests/test_page_priority.py`
+review_flag: {flagged, reasons}}], total}`, where `gsc` carries
+`{clicks, impressions, ctr, position, conversions}` (conversions `None` when
+unknown). → `tests/test_page_priority.py`
+
+**Within-bucket ordering (PW, 2026-08-14).** The Authority-Matrix bucket is the primary key
+(needs-work-first). WITHIN a bucket, pages are ordered by descending **clicks**, then descending
+**conversions** (tiebreak), then worst health, then url — the full key is
+`(bucket, −clicks, −conversions, health, url)`. Clicks lead (PW-D1): a high-click page is
+high-value whether a journey entry point or an underperformer. With no GSC data every traffic key
+is `(0, 0)`, so the order collapses to the prior health-only ordering — unchanged for non-GSC
+scans. Conversions come from `ga4_conversions_mo` (the GSC upload's `inquiries`, §6.12);
+`None`→`0` for the sort only (the stored/displayed value keeps `None`). Surfaced as a **Conv.**
+column in the panel. → `tests/test_refresh_trigger.py::TestRankPagesPW`,
+`tests/test_crawl_router_contracts.py::TestPagePriorityConversions`, `frontend`:
+`PagePriorityPanel.test.jsx`. *(Spec: supersedes pending `2026-08-14_traffic-conversion-weighted-priority.md`.)*
 
 **Frontend — Hide control.** The Page Priority panel's loaded-state action is a **Hide**
 button that collapses and clears the ranked table; re-opening the panel re-ranks from the
