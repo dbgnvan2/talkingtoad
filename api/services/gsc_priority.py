@@ -147,6 +147,46 @@ def seed_urls(parsed: dict) -> list[str]:
     return [p["url"] for p in parsed.get("pages", [])]
 
 
+def _seed_omits_gsc_field(parsed: dict) -> bool:
+    """True if any seed page left a GSC numeric field absent (None) — the only
+    case that needs a read-merge (F9 full files never do, so the common path is a
+    cheap no-op)."""
+    return any(
+        p.get("clicks") is None or p.get("impressions") is None or p.get("position") is None
+        for p in parsed.get("pages", [])
+    )
+
+
+async def build_existing_merge_map(store, crawled_pages, parsed: dict, period: str) -> dict:
+    """Prior same-period ledger rows keyed by the crawled-page url, for the F3
+    read-merge. Returns ``{}`` (NO store reads) unless the upload omitted a GSC
+    field. Reads are restricted to crawled pages that are actually in the seed
+    (F3 efficiency), and scoped to ``period`` (a carry-forward only makes sense
+    within the same month). Extracted so the gate/period/keying is unit-testable."""
+    if not _seed_omits_gsc_field(parsed):
+        return {}
+    from api.services.perf_join import match_key
+
+    seed_keys: set[str] = set()
+    for p in parsed.get("pages", []):
+        try:
+            seed_keys.add(match_key(p["url"]))
+        except ValueError:
+            continue
+    out: dict = {}
+    for pg in crawled_pages:
+        try:
+            if match_key(pg.url) not in seed_keys:
+                continue
+        except ValueError:
+            continue
+        prior = [r for r in await store.get_performance_records(url=pg.url)
+                 if r.period == period]
+        if prior:
+            out[pg.url] = prior[-1]
+    return out
+
+
 def build_ledger_records(parsed: dict, crawled_pages, *, period: str, recorded_at: str,
                          existing_by_key: dict | None = None):
     """Join the seed's per-page metrics onto crawled pages → PerformanceRecords (i).
@@ -179,17 +219,22 @@ def build_ledger_records(parsed: dict, crawled_pages, *, period: str, recorded_a
         if storage_key is None:
             continue  # seed URL wasn't crawled — nothing to attach metrics to
         prior = existing_by_key.get(storage_key)
+        # Resolve clicks/impressions/position per-field (present → use it; absent →
+        # carry prior, else 0), THEN derive ctr from the RESOLVED clicks/impressions
+        # so a mixed-null row (e.g. clicks present, impressions carried) can never
+        # store a ctr inconsistent with its own clicks/impressions (F1).
+        clicks = p["clicks"] if p["clicks"] is not None else (prior.gsc_clicks_mo if prior else 0)
+        impressions = (p["impressions"] if p["impressions"] is not None
+                       else (prior.gsc_impressions_mo if prior else 0))
+        position = (p["position"] if p["position"] is not None
+                    else (prior.gsc_avg_position_mo if prior else 0.0))
         records.append(PerformanceRecord(
             url=storage_key,
             period=period,
-            gsc_clicks_mo=p["clicks"] if p["clicks"] is not None
-            else (prior.gsc_clicks_mo if prior else 0),
-            gsc_impressions_mo=p["impressions"] if p["impressions"] is not None
-            else (prior.gsc_impressions_mo if prior else 0),
-            gsc_ctr_mo=p["ctr"] if p["ctr"] is not None
-            else (prior.gsc_ctr_mo if prior else 0.0),
-            gsc_avg_position_mo=p["position"] if p["position"] is not None
-            else (prior.gsc_avg_position_mo if prior else 0.0),
+            gsc_clicks_mo=clicks,
+            gsc_impressions_mo=impressions,
+            gsc_ctr_mo=(clicks / impressions) if impressions else 0.0,
+            gsc_avg_position_mo=position,
             ga4_conversions_mo=p["conversions"],   # GSC "inquiries" = GA4 key events
             recorded_at=recorded_at,
             source_generated_at=recorded_at,

@@ -57,6 +57,7 @@ from api.services.fix_focus import (
 )
 from api.services.gsc_priority import (
     PriorityUploadError,
+    build_existing_merge_map,
     build_ledger_records,
     parse_priority_upload,
     seed_urls,
@@ -380,18 +381,10 @@ async def _run_crawl_background(
                 if seed and seed.get("pages"):
                     now = datetime.now(timezone.utc)
                     period = now.strftime("%Y-%m")
-                    # Read-merge (P5): only when the upload OMITTED a GSC field
-                    # (None) do we fetch the prior same-period rows to carry real
-                    # values forward. F9 always emits these, so this is normally
-                    # skipped — no per-page reads on the common path.
-                    existing_by_key: dict = {}
-                    if any(p.get("clicks") is None or p.get("impressions") is None
-                           or p.get("position") is None for p in seed["pages"]):
-                        for pg in pages:
-                            prior = [r for r in await store.get_performance_records(url=pg.url)
-                                     if r.period == period]
-                            if prior:
-                                existing_by_key[pg.url] = prior[-1]
+                    # Read-merge (P5): carry a prior real GSC value forward when the
+                    # upload omitted a field — a no-op (no reads) unless it did.
+                    existing_by_key = await build_existing_merge_map(
+                        store, pages, seed, period)
                     ledger = build_ledger_records(
                         seed, pages, period=period, recorded_at=now.isoformat(),
                         existing_by_key=existing_by_key,

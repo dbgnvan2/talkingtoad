@@ -104,3 +104,47 @@ def test_f3_present_clicks_overwrites_prior():
     recs = build_ledger_records(seed, pages, period="2026-08",
                                 recorded_at=NOW.isoformat(), existing_by_key=prior)
     assert recs[0].gsc_clicks_mo == 5                    # present → overwrites
+
+
+def test_f1_ctr_consistent_with_resolved_clicks_impressions():
+    """Sweep F1: a mixed-null row (clicks present, impressions carried forward)
+    stores a ctr derived from the RESOLVED clicks/impressions — never a 0 that
+    disagrees with its own clicks/impressions."""
+    from api.models.performance import PerformanceRecord
+    seed = parse_priority_upload({"pages": [
+        {"url": "https://livingsystems.ca/", "clicks": 5},  # impressions omitted
+    ]}, TARGET)
+    assert seed["pages"][0]["impressions"] is None
+    pages = [_crawled("https://livingsystems.ca/")]
+    prior = {"https://livingsystems.ca/": PerformanceRecord(
+        url="https://livingsystems.ca/", period="2026-08", gsc_impressions_mo=1000)}
+    recs = build_ledger_records(seed, pages, period="2026-08",
+                                recorded_at=NOW.isoformat(), existing_by_key=prior)
+    r = recs[0]
+    assert r.gsc_clicks_mo == 5 and r.gsc_impressions_mo == 1000
+    assert abs(r.gsc_ctr_mo - 5 / 1000) < 1e-9   # derived from resolved, not 0.0
+
+
+async def test_f2_merge_map_gate_period_and_seed_scope():
+    """Sweep F2: build_existing_merge_map — no reads when the file is complete;
+    when a field is omitted, fetch only the SAME-period prior row for seed URLs."""
+    from api.models.job import CrawlJob
+    from api.models.performance import PerformanceRecord
+    from api.services.gsc_priority import build_existing_merge_map
+    from api.services.sqlite_store import SQLiteJobStore
+    url = "https://livingsystems.ca/"
+    async with SQLiteJobStore(db_path=":memory:") as store:
+        await store.create_job(CrawlJob(job_id="j1", target_url=TARGET, status="complete"))
+        await store.save_performance_records([
+            PerformanceRecord(url=url, period="2026-08", gsc_clicks_mo=137),
+            PerformanceRecord(url=url, period="2026-07", gsc_clicks_mo=99),  # other period
+        ])
+        pages = [_crawled(url)]
+        full = parse_priority_upload(
+            {"pages": [{"url": url, "clicks": 5, "impressions": 50, "avg_position": 9.0}]}, TARGET)
+        # complete file → gate closed → NO reads, empty map
+        assert await build_existing_merge_map(store, pages, full, "2026-08") == {}
+        # partial file (clicks omitted) → fetch the 2026-08 row, not 2026-07
+        partial = parse_priority_upload({"pages": [{"url": url, "inquiries": 1}]}, TARGET)
+        m = await build_existing_merge_map(store, pages, partial, "2026-08")
+        assert url in m and m[url].gsc_clicks_mo == 137
