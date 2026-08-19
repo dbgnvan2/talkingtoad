@@ -92,6 +92,28 @@ describe('PagePriorityPanel', () => {
     expect(screen.getByText(/Rank pages/)).toBeInTheDocument()
   })
 
+  it('renders the conversions column (PW3), dash for null', async () => {
+    global.fetch.mockImplementation(() =>
+      Promise.resolve({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({
+          pages: [
+            { url: 'https://x/a', health_score: 40, gsc: { clicks: 138, impressions: 1494, conversions: 7 }, review_flag: { flagged: true, reasons: ['Vulnerable Star'] }, priority_rank: 1, bucket: 'Vulnerable Star' },
+            { url: 'https://x/b', health_score: 90, gsc: { clicks: 5, impressions: 50, conversions: null }, review_flag: { flagged: false, reasons: [] }, priority_rank: 2, bucket: 'OK' },
+          ],
+          total: 2,
+        }),
+      })
+    )
+    renderWithProviders(<PagePriorityPanel jobId="job1" />)
+    fireEvent.click(screen.getByText(/Rank pages/))
+    await waitFor(() => expect(screen.getByText('Conv.')).toBeInTheDocument())
+    expect(screen.getByText('7')).toBeInTheDocument()      // known conversions
+    // null conversions render as a dash (unknown ≠ zero)
+    expect(screen.getAllByText('—').length).toBeGreaterThan(0)
+  })
+
   it('shows an error state when the request fails', async () => {
     global.fetch.mockImplementation(() => Promise.resolve({ ok: false, status: 500, json: () => Promise.resolve({ error: { message: 'boom' } }) }))
     renderWithProviders(<PagePriorityPanel jobId="job1" />)

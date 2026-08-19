@@ -4,7 +4,7 @@ from datetime import date
 
 import pytest
 
-from api.services.refresh_trigger import evaluate_refresh, ReviewFlag
+from api.services.refresh_trigger import evaluate_refresh, rank_pages, ReviewFlag
 from api.models.performance import PerformanceRecord
 
 TODAY = date(2026, 6, 1)
@@ -187,3 +187,56 @@ class TestDeterminism:
         flag = ReviewFlag(flagged=True, reasons=["Staleness"])
         with pytest.raises(AttributeError):
             flag.flagged = False  # type: ignore[misc]
+
+
+class TestRankPagesPW:
+    """PW (2026-08-14) — within-bucket ordering by clicks, then conversions.
+    Spec: docs/pending/2026-08-14_traffic-conversion-weighted-priority.md
+    """
+    NOFLAG = ReviewFlag(flagged=False, reasons=[])
+    STAR = ReviewFlag(flagged=True, reasons=["Vulnerable Star"])
+
+    @staticmethod
+    def _page(url, health, flag=None, clicks=None, conversions=None):
+        gsc = None
+        if clicks is not None or conversions is not None:
+            gsc = {"clicks": clicks or 0, "conversions": conversions}
+        return {"url": url, "health_score": health,
+                "review_flag": flag or TestRankPagesPW.NOFLAG, "gsc": gsc}
+
+    def _order(self, pages):
+        return [p["url"] for p in rank_pages(pages)]
+
+    def test_pw1a_clicks_break_within_bucket(self):
+        # same bucket (OK) + same health → higher clicks ranks first
+        pages = [self._page("/low", 70, clicks=5), self._page("/high", 70, clicks=100)]
+        assert self._order(pages) == ["/high", "/low"]
+
+    def test_pw1b_conversions_break_click_ties(self):
+        # equal clicks → higher conversions first
+        pages = [self._page("/a", 70, clicks=10, conversions=1),
+                 self._page("/b", 70, clicks=10, conversions=5)]
+        assert self._order(pages) == ["/b", "/a"]
+
+    def test_pw1c_no_gsc_falls_back_to_health(self):
+        # no gsc data → worst-health-first, exactly as before
+        pages = [self._page("/h90", 90), self._page("/h70", 70)]
+        assert self._order(pages) == ["/h70", "/h90"]
+
+    def test_pw1d_bucket_beats_traffic(self):
+        # a Vulnerable Star (bucket 0) with 5 clicks outranks an OK page with 100
+        pages = [self._page("/ok", 90, self.NOFLAG, clicks=100),
+                 self._page("/star", 30, self.STAR, clicks=5)]
+        assert self._order(pages)[0] == "/star"
+
+    def test_pw1e_none_conversions_sort_as_zero(self):
+        # known conversions (3) outrank unknown (None→0); no crash
+        pages = [self._page("/known", 70, clicks=10, conversions=3),
+                 self._page("/unknown", 70, clicks=10, conversions=None)]
+        assert self._order(pages) == ["/known", "/unknown"]
+
+    def test_pw1f_high_clicks_low_conversions_ranks_high(self):
+        # clicks primary: a high-click zero-conversion page still beats a low-click one
+        pages = [self._page("/lowclick", 70, clicks=2, conversions=9),
+                 self._page("/highclick", 70, clicks=100, conversions=0)]
+        assert self._order(pages)[0] == "/highclick"

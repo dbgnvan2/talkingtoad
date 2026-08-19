@@ -547,3 +547,29 @@ class TestFixFocusEndpoints:
     async def test_fix_focus_unknown_job_404(self, api_client, auth_headers):
         r = await api_client.get("/api/crawl/nope/fix-focus", headers=auth_headers)
         assert r.status_code == 404
+
+
+class TestPagePriorityConversions:
+    """PW2 (2026-08-14): /page-priority surfaces GSC conversions per page so the
+    ranking tiebreak + panel can use them. Spec: 2026-08-14_traffic-conversion-weighted-priority.md"""
+
+    @pytest.mark.asyncio
+    async def test_pw2_conversions_in_payload(self, api_client, auth_headers, test_store):
+        from api.models.performance import PerformanceRecord
+        job_id = str(uuid4())
+        url = "https://example.com/about"
+        await test_store.create_job(CrawlJob(
+            job_id=job_id, target_url="https://example.com", status="complete", pages_crawled=1))
+        await test_store.save_pages([CrawledPage(
+            job_id=job_id, url=url, status_code=200, title="About",
+            crawled_at=datetime.now(timezone.utc))])
+        await test_store.save_performance_records([PerformanceRecord(
+            url=url, period="2026-08", gsc_clicks_mo=138, gsc_impressions_mo=1494,
+            gsc_ctr_mo=0.09, gsc_avg_position_mo=23.5, ga4_conversions_mo=7)])
+
+        r = await api_client.get(f"/api/crawl/{job_id}/page-priority", headers=auth_headers)
+        assert r.status_code == 200
+        page = r.json()["pages"][0]
+        assert page["gsc"] is not None
+        assert page["gsc"]["conversions"] == 7          # PW2: surfaced
+        assert page["gsc"]["clicks"] == 138

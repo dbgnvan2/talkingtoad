@@ -130,13 +130,27 @@ def classify_page_bucket(health_score: int, flag: ReviewFlag) -> tuple[int, str]
     return _BUCKET_OK, "OK"
 
 
+def _traffic_key(p: dict) -> tuple[int, int]:
+    """Within-bucket value signal (PW, 2026-08-14): (clicks, conversions), read
+    from the row's ``gsc`` sub-dict, ``None``/missing → 0. Clicks lead (PW-D1: a
+    high-click page ranks high whether it's a journey entry point or an
+    underperformer); conversions break click ties. Coalescing None→0 here is a
+    sort convenience only — the stored ``ga4_conversions_mo`` keeps its None (P2)."""
+    g = p.get("gsc") or {}
+    return (g.get("clicks") or 0, g.get("conversions") or 0)
+
+
 def rank_pages(pages: list[dict]) -> list[dict]:
     """Sort page dicts into the work-queue order and stamp priority_rank/bucket.
 
     Each input dict must have ``health_score`` (int) and ``review_flag``
-    (a :class:`ReviewFlag`). Returns the same dicts, sorted, with
-    ``bucket`` (label) and ``priority_rank`` (1-based) added. Stable: ties
-    broken by ascending health (worst first), then url for determinism.
+    (a :class:`ReviewFlag`), and MAY carry a ``gsc`` sub-dict with ``clicks`` /
+    ``conversions``. Order: bucket first (Authority Matrix, needs-work-first),
+    then — WITHIN a bucket — descending clicks, then descending conversions, then
+    ascending health (worst first), then url. With no GSC data every traffic key
+    is (0, 0), so the order collapses to the prior health-only ordering (a scan
+    with no upload / no GSC is unchanged). Returns the same dicts, sorted, with
+    ``bucket`` (label) and ``priority_rank`` (1-based) added.
     """
     for p in pages:
         weight, label = classify_page_bucket(p["health_score"], p["review_flag"])
@@ -144,7 +158,13 @@ def rank_pages(pages: list[dict]) -> list[dict]:
         p["bucket"] = label
     ordered = sorted(
         pages,
-        key=lambda p: (p["_bucket_weight"], p["health_score"], p.get("url", "")),
+        key=lambda p: (
+            p["_bucket_weight"],
+            -_traffic_key(p)[0],   # clicks desc
+            -_traffic_key(p)[1],   # conversions desc (tiebreak)
+            p["health_score"],
+            p.get("url", ""),
+        ),
     )
     for i, p in enumerate(ordered, start=1):
         p["priority_rank"] = i

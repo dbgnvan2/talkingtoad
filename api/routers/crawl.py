@@ -1555,6 +1555,9 @@ async def get_page_priority(
                 "impressions": latest.gsc_impressions_mo,
                 "ctr": latest.gsc_ctr_mo,
                 "position": latest.gsc_avg_position_mo,
+                # PW: conversions drive within-bucket rank (tiebreak) + surfaced in
+                # the panel. None stays None (unknown ≠ zero); rank coalesces.
+                "conversions": latest.ga4_conversions_mo,
             },
             "review_flag": flag,  # replaced with a dict below after ranking
         })

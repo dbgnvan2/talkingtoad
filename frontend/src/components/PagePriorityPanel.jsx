@@ -108,6 +108,7 @@ export default function PagePriorityPanel({ jobId }) {
                 <th className="py-2 pr-3 text-right">Citability</th>
                 <th className="py-2 pr-3 text-right">Clicks</th>
                 <th className="py-2 pr-3 text-right">Impr.</th>
+                <th className="py-2 pr-3 text-right">Conv.</th>
               </tr>
             </thead>
             <tbody>
@@ -124,6 +125,7 @@ export default function PagePriorityPanel({ jobId }) {
                   <td className="py-2 pr-3 text-right"><CitabilityBadge grade={p.citability_grade} /></td>
                   <td className="py-2 pr-3 text-right font-mono text-gray-600">{p.gsc ? p.gsc.clicks : '—'}</td>
                   <td className="py-2 pr-3 text-right font-mono text-gray-600">{p.gsc ? p.gsc.impressions : '—'}</td>
+                  <td className="py-2 pr-3 text-right font-mono text-gray-600">{p.gsc && p.gsc.conversions != null ? p.gsc.conversions : '—'}</td>
                 </tr>
               ))}
             </tbody>
