@@ -6,6 +6,50 @@ import SeverityBadge from './SeverityBadge.jsx'
 import IssueHelpPanel from './IssueHelpPanel.jsx'
 import Spinner from './Spinner.jsx'
 
+/**
+ * "What to look for" — the offending elements for one issue.
+ *
+ * The lines are rendered SERVER-side (api/services/issue_evidence.py) and shipped
+ * on every issue as `evidence`. Deliberately not re-implemented here: a second
+ * copy of a 15-shape renderer in another language is a drift waiting to happen
+ * (P19), and this way the panel, the PDF and the Excel export cannot disagree.
+ */
+export function IssueEvidence({ evidence, evidenceTotal }) {
+  if (!Array.isArray(evidence) || evidence.length === 0) return null
+  return (
+    <div className="mb-6 p-4 bg-amber-50 border border-amber-200 rounded-xl">
+      <h4 className="text-[10px] font-black text-amber-800 uppercase tracking-widest mb-2">
+        What to look for
+      </h4>
+      <ul className="space-y-1">
+        {evidence.map((line, idx) => {
+          const indented = line.startsWith('  ')
+          const text = line.trim()
+          const isHeading = !indented && text.endsWith(':')
+          return (
+            <li
+              key={`${text}-${idx}`}
+              className={
+                isHeading
+                  ? 'text-xs font-bold text-amber-900 mt-2 first:mt-0'
+                  : `text-xs text-gray-800 break-all ${indented ? 'pl-4 font-mono' : ''}`
+              }
+            >
+              {text}
+            </li>
+          )
+        })}
+      </ul>
+      {evidenceTotal > evidence.length && (
+        <p className="text-[11px] text-amber-800 mt-2">
+          Showing {evidence.length} of {evidenceTotal}. The full list is in the
+          spreadsheet export.
+        </p>
+      )}
+    </div>
+  )
+}
+
 export default function CategoryPanel({ jobId, category, domain, onPageClick, onShowHelp, onSummaryRefresh, focusIssueCode = null }) {
   const toast = useToast()
   const [data, setData] = useState(null)
@@ -95,6 +139,9 @@ export default function CategoryPanel({ jobId, category, domain, onPageClick, on
   const groups = useMemo(() => {
     if (!data?.issues) return {}
     return data.issues.reduce((acc, iss) => {
+      // The group inherits the first issue's fields, `evidence` included. That
+      // is the representative page's evidence, not the union — the same choice
+      // the PDF makes, and the affected-page list below covers the rest.
       if (!acc[iss.issue_code]) acc[iss.issue_code] = { ...iss, count: 0, pages: [] }
       acc[iss.issue_code].count++
       acc[iss.issue_code].pages.push(iss.page_url)
@@ -368,6 +415,7 @@ export default function CategoryPanel({ jobId, category, domain, onPageClick, on
                 <div>
                   {FIXABLE_LINK_CODES.has(group.issue_code) ? (
                     <>
+                      <IssueEvidence evidence={group.evidence} evidenceTotal={group.evidence_total} />
                       <h4 className="text-sm font-bold text-gray-700 mb-4">Broken URLs — click "Show Source Pages" to see where these links are</h4>
                       <div className="space-y-3">
                         {group.pages.map(brokenUrl => (
@@ -385,6 +433,7 @@ export default function CategoryPanel({ jobId, category, domain, onPageClick, on
                     </>
                   ) : (
                     <>
+                      <IssueEvidence evidence={group.evidence} evidenceTotal={group.evidence_total} />
                       <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-4">Affected Pages</h4>
                       <div className="grid grid-cols-1 gap-2">
                         {group.pages.map(url => (

@@ -82,3 +82,80 @@ describe('CategoryPanel — focused issue code', () => {
     })
   })
 })
+
+// ── The gap this closes: evidence in the category panel ────────────────────
+//
+// Clicking a systemic defect landed the reader on a list of affected pages and
+// nothing about WHAT was wrong on them. The PDF and the By-Page view had the
+// detail; the category view did not.
+
+const WITH_EVIDENCE = {
+  issues: [
+    {
+      issue_code: 'UNSAFE_CROSS_ORIGIN_LINK', severity: 'info', category: 'security',
+      human_description: 'Unsafe External Link',
+      description: 'External link opens in a new tab without rel',
+      recommendation: 'Add rel.', page_url: 'https://x/b',
+      extra: {},
+      evidence: [
+        'Unsafe links:',
+        '  "Partner site" -> https://partner.org/a',
+        '  "Other org" -> https://other.org/b',
+      ],
+      evidence_total: 2,
+    },
+  ],
+}
+
+describe('CategoryPanel — what to look for', () => {
+  beforeEach(() => {
+    global.fetch.mockImplementation(() => mockFetchResponse(WITH_EVIDENCE))
+  })
+
+  it('shows the offending elements, not just the affected pages', async () => {
+    renderPanel('UNSAFE_CROSS_ORIGIN_LINK')
+    await waitFor(() => {
+      expect(screen.getByText('What to look for')).toBeInTheDocument()
+    })
+    expect(screen.getByText('"Partner site" -> https://partner.org/a')).toBeInTheDocument()
+    expect(screen.getByText('"Other org" -> https://other.org/b')).toBeInTheDocument()
+  })
+
+  it('still shows the affected pages alongside', async () => {
+    renderPanel('UNSAFE_CROSS_ORIGIN_LINK')
+    await waitFor(() => {
+      expect(screen.getByText('https://x/b')).toBeInTheDocument()
+    })
+  })
+
+  it('renders nothing when an issue has no evidence', async () => {
+    global.fetch.mockImplementation(() => mockFetchResponse({
+      issues: [{ ...WITH_EVIDENCE.issues[0], evidence: [], evidence_total: 0 }],
+    }))
+    renderPanel('UNSAFE_CROSS_ORIGIN_LINK')
+    await waitFor(() => {
+      expect(screen.getByText('https://x/b')).toBeInTheDocument()
+    })
+    expect(screen.queryByText('What to look for')).not.toBeInTheDocument()
+  })
+
+  it('tolerates an older payload with no evidence field at all', async () => {
+    const { evidence, evidence_total, ...withoutEvidence } = WITH_EVIDENCE.issues[0]
+    global.fetch.mockImplementation(() => mockFetchResponse({ issues: [withoutEvidence] }))
+    renderPanel('UNSAFE_CROSS_ORIGIN_LINK')
+    await waitFor(() => {
+      expect(screen.getByText('https://x/b')).toBeInTheDocument()
+    })
+    expect(screen.queryByText('What to look for')).not.toBeInTheDocument()
+  })
+
+  it('discloses a truncated evidence list', async () => {
+    global.fetch.mockImplementation(() => mockFetchResponse({
+      issues: [{ ...WITH_EVIDENCE.issues[0], evidence_total: 120 }],
+    }))
+    renderPanel('UNSAFE_CROSS_ORIGIN_LINK')
+    await waitFor(() => {
+      expect(screen.getByText(/Showing 3 of 120/i)).toBeInTheDocument()
+    })
+  })
+})

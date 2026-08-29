@@ -1016,7 +1016,23 @@ genuinely uncapped, since the PDF points the reader there.
 `PAGE_IS_THE_EVIDENCE` records the codes whose fix is "edit this page" with no
 sub-element to name. A test asserts every entry is a real code and that every
 high-volume code renders evidence — so a silent finding is a decision, not an
-oversight. → `tests/test_issue_evidence.py` (41 tests).
+oversight.
+
+**One implementation, server-side.** `_issue_dict` — the single serialiser all
+seven list endpoints use — ships the rendered lines as `evidence` /
+`evidence_total`, so the Results category panel, the By-Page view, the PDF and the
+Excel export cannot disagree. A JS port of a 15-shape renderer was rejected: a
+second implementation in another language is a drift waiting to happen (P19),
+and the category panel's `IssueEvidence` component only formats what the server
+already rendered. On job 05cd2496 that is 1,212 of 2,137 issues across 34 codes.
+
+**Exempt anchors reach the evidence too.** `_apply_exempt_anchors` previously
+rewrote only the description, leaving the raw hrefs in `extra`. Harmless while
+nothing rendered them — the moment `evidence` did, the UI would have shown the
+very anchors the user exempted. It now filters `extra` and recomputes the
+evidence for the issues it modifies.
+→ `tests/test_issue_evidence.py` (51 tests), `frontend`:
+`CategoryPanelFocus.test.jsx`.
 
 **Existing crawls:** the renderer works on stored data immediately; the three
 capture fixes need a re-crawl, because those hrefs were never written.

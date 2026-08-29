@@ -505,10 +505,32 @@ def _apply_exempt_anchors(issues: list, exempt_urls: set[str]) -> list:
         suffix = f" and {n - 5} more" if n > 5 else ""
         new_desc = f"{n} link{'s' if n > 1 else ''} with no anchor text: {listed}{suffix}"
 
+        # The exempt list also has to be applied to `extra` — it previously
+        # rewrote only the description, so the raw hrefs survived in the payload.
+        # Harmless while nothing rendered them; the moment `evidence` did, the
+        # UI would have shown the very anchors the user exempted.
+        def _clean_extra(extra: dict | None) -> dict | None:
+            if not isinstance(extra, dict):
+                return extra
+            cleaned = dict(extra)
+            for key in ("empty_anchors", "empty_anchor_hrefs"):
+                rows = cleaned.get(key)
+                if not isinstance(rows, list):
+                    continue
+                cleaned[key] = [
+                    r for r in rows
+                    if (r.get("href") if isinstance(r, dict) else r) not in exempt_urls
+                ]
+            return cleaned
+
         if isinstance(issue, dict):
-            issue = {**issue, "description": new_desc}
+            new_extra = _clean_extra(issue.get("extra"))
+            issue = {**issue, "description": new_desc, "extra": new_extra}
+            if "evidence" in issue:
+                issue.update(_evidence_fields(issue.get("issue_code"), new_extra))
         else:
             issue.description = new_desc
+            issue.extra = _clean_extra(getattr(issue, "extra", None))
         filtered.append(issue)
 
     return filtered
@@ -1940,7 +1962,25 @@ def _issue_dict(issue: Issue) -> dict:
         # model (computed_field) so it is always consistent with impact/effort;
         # serialised here so both list endpoints can surface a Quick-Wins badge.
         "quick_win": issue.quick_win,
+        # EV (2026-08-29) — the rendered "what to look for" lines, computed
+        # SERVER-side from `extra`. Deliberately not ported to JS: a second
+        # implementation of a 15-shape renderer is a drift waiting to happen
+        # (P19), and this is the single serialiser all seven consumers use, so
+        # every surface gets the same evidence the PDF and Excel show.
+        **_evidence_fields(issue.issue_code, issue.extra),
     }
+
+
+def _evidence_fields(issue_code: str, extra: dict | None) -> dict:
+    """`evidence` / `evidence_total` for one issue. Never raises."""
+    try:
+        from api.services.issue_evidence import evidence_lines
+
+        lines, total = evidence_lines(issue_code, extra)
+    except Exception:  # noqa: BLE001 — evidence must never break a list endpoint
+        logger.warning("issue_evidence_failed", extra={"code": issue_code}, exc_info=True)
+        return {"evidence": [], "evidence_total": 0}
+    return {"evidence": lines, "evidence_total": total}
 
 
 @router.get("/{job_id}/images", response_model=None)

@@ -373,3 +373,139 @@ class TestEvidenceMatchesItsOwnSection:
             "by_category": {"ai_readiness": 2}}))
         assert "Inline styles account for 49%" in text
         assert "Upcoming Conferences" in text
+
+
+# ── The API contract: one implementation, server-side ───────────────────────
+
+
+class TestEvidenceInTheApiPayload:
+    """EV closed the report gap; this closes the GUI gap without a JS port.
+
+    A second implementation of a 15-shape renderer in another language is a drift
+    waiting to happen (P19). `_issue_dict` is the single serialiser all seven
+    consumers use, so shipping the rendered lines from there means the category
+    panel, the By-Page view, the PDF and the Excel export cannot disagree.
+    """
+
+    def test_ev_issue_dict_ships_rendered_evidence(self):
+        from api.models.issue import Issue as IssueModel
+        from api.routers.crawl import _issue_dict
+
+        issue = IssueModel(
+            job_id="j", page_url=PAGE, category="security", severity="info",
+            issue_code="UNSAFE_CROSS_ORIGIN_LINK", description="d",
+            recommendation="r",
+            extra={"unsafe_links": [{"href": "https://partner.org/a",
+                                     "text": "Partner site"}],
+                   "unsafe_links_total": 1},
+        )
+        payload = _issue_dict(issue)
+        assert "evidence" in payload and "evidence_total" in payload
+        assert any("partner.org/a" in line for line in payload["evidence"])
+
+    def test_ev_issue_dict_evidence_is_empty_not_missing(self):
+        """A code whose page URL is the whole story ships [], not a missing key —
+        the frontend must not have to distinguish absent from empty."""
+        from api.models.issue import Issue as IssueModel
+        from api.routers.crawl import _issue_dict
+
+        payload = _issue_dict(IssueModel(
+            job_id="j", page_url=PAGE, category="metadata", severity="info",
+            issue_code="META_DESC_MISSING", description="d", recommendation="r"))
+        assert payload["evidence"] == []
+        assert payload["evidence_total"] == 0
+
+    def test_ev_issue_dict_never_raises_on_a_bad_extra(self):
+        from api.models.issue import Issue as IssueModel
+        from api.routers.crawl import _issue_dict
+
+        payload = _issue_dict(IssueModel(
+            job_id="j", page_url=PAGE, category="metadata", severity="info",
+            issue_code="META_DESC_MISSING", description="d", recommendation="r",
+            extra={"weird": object} if False else {"weird": {"nested": 1}}))
+        assert payload["evidence"] == []
+
+    @pytest.mark.asyncio
+    async def test_ev_results_endpoint_carries_evidence(
+        self, api_client, auth_headers, test_store
+    ):
+        """P25: the payload is what the GUI can render, so assert the surface."""
+        from datetime import datetime, timezone
+
+        from api.models.issue import Issue as IssueModel
+        from api.models.job import CrawlJob
+        from api.models.page import CrawledPage
+
+        job_id = "job-ev"
+        await test_store.create_job(CrawlJob(
+            job_id=job_id, target_url=PAGE, status="complete",
+            started_at=datetime.now(timezone.utc)))
+        await test_store.save_pages([CrawledPage(job_id=job_id, url=PAGE, status_code=200)])
+        await test_store.save_issues([IssueModel(
+            job_id=job_id, page_url=PAGE, category="security", severity="info",
+            issue_code="UNSAFE_CROSS_ORIGIN_LINK", description="d", recommendation="r",
+            extra={"unsafe_links": [{"href": "https://partner.org/a"}],
+                   "unsafe_links_total": 1})])
+
+        resp = await api_client.get(f"/api/crawl/{job_id}/results", headers=auth_headers)
+        assert resp.status_code == 200
+        issue = resp.json()["issues"][0]
+        assert any("partner.org/a" in line for line in issue["evidence"])
+
+
+class TestExemptAnchorsReachTheEvidence:
+    """The exempt-anchor filter rewrote only the description, leaving the raw
+    hrefs in `extra`. Harmless while nothing rendered them — the moment
+    `evidence` did, the UI would have shown the very anchors the user exempted.
+    """
+
+    def test_ev_exempted_anchor_is_removed_from_extra(self):
+        from api.routers.crawl import _apply_exempt_anchors
+
+        issue = {
+            "issue_code": "LINK_EMPTY_ANCHOR",
+            "description": "2 links with no anchor text: https://x/keep, https://x/drop",
+            "extra": {"empty_anchors": [{"href": "https://x/keep"},
+                                        {"href": "https://x/drop"}]},
+            "evidence": ["Links with no accessible name:", "  https://x/drop"],
+            "evidence_total": 2,
+        }
+        out = _apply_exempt_anchors([issue], {"https://x/drop"})
+        assert len(out) == 1
+        hrefs = [a["href"] for a in out[0]["extra"]["empty_anchors"]]
+        assert hrefs == ["https://x/keep"]
+
+    def test_ev_evidence_is_recomputed_after_exemption(self):
+        from api.routers.crawl import _apply_exempt_anchors
+
+        issue = {
+            "issue_code": "LINK_EMPTY_ANCHOR",
+            "description": "2 links with no anchor text: https://x/keep, https://x/drop",
+            "extra": {"empty_anchors": [{"href": "https://x/keep"},
+                                        {"href": "https://x/drop"}]},
+            "evidence": [], "evidence_total": 0,
+        }
+        out = _apply_exempt_anchors([issue], {"https://x/drop"})
+        rendered = " ".join(out[0]["evidence"])
+        assert "https://x/keep" in rendered
+        assert "https://x/drop" not in rendered, (
+            "the evidence must not show an anchor the user exempted"
+        )
+
+    def test_ev_issue_with_all_anchors_exempted_is_dropped(self):
+        from api.routers.crawl import _apply_exempt_anchors
+
+        issue = {
+            "issue_code": "LINK_EMPTY_ANCHOR",
+            "description": "1 link with no anchor text: https://x/drop",
+            "extra": {"empty_anchors": [{"href": "https://x/drop"}]},
+            "evidence": [], "evidence_total": 0,
+        }
+        assert _apply_exempt_anchors([issue], {"https://x/drop"}) == []
+
+    def test_ev_other_codes_are_untouched(self):
+        from api.routers.crawl import _apply_exempt_anchors
+
+        issue = {"issue_code": "META_DESC_MISSING", "description": "d",
+                 "extra": {}, "evidence": [], "evidence_total": 0}
+        assert _apply_exempt_anchors([issue], {"https://x/drop"}) == [issue]
