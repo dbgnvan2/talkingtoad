@@ -106,6 +106,7 @@ class RedisJobStore:
             "web_vitals",
             "wp_audit",
             "blueprints",
+            "offsite_links",
         }
         unknown = set(fields) - _ALLOWED
         if unknown:
@@ -634,6 +635,7 @@ class RedisJobStore:
             "web_vitals": json.dumps(job.web_vitals) if job.web_vitals else "",
             "wp_audit": json.dumps(job.wp_audit) if job.wp_audit else "",
             "blueprints": json.dumps(job.blueprints) if job.blueprints else "",
+            "offsite_links": json.dumps(job.offsite_links) if job.offsite_links else "",
         }
 
     def _mapping_to_job(self, m: dict) -> CrawlJob:
@@ -662,6 +664,7 @@ class RedisJobStore:
             web_vitals=json.loads(m["web_vitals"]) if m.get("web_vitals") else None,
             wp_audit=json.loads(m["wp_audit"]) if m.get("wp_audit") else None,
             blueprints=json.loads(m["blueprints"]) if m.get("blueprints") else None,
+            offsite_links=json.loads(m["offsite_links"]) if m.get("offsite_links") else None,
         )
 
     def _issue_to_dict(self, i: Issue) -> dict:

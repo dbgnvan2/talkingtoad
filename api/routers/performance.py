@@ -73,9 +73,38 @@ class BundlePage(BaseModel):
     ga4: BundleGA4 | None = None
 
 
+class BundleLinkingSite(BaseModel):
+    domain: str
+    linking_pages: int = 0
+    target_pages: int = 0
+
+
+class BundleLinkedPage(BaseModel):
+    url: str
+    incoming_links: int = 0
+    linking_sites: int = 0
+
+
+class BundleLinks(BaseModel):
+    """D1 — Search Console's own Links report.
+
+    First-party, free, and already inside the OAuth scope the producer holds. The
+    alternative was renting a third-party backlink index: a recurring cost, a
+    per-customer key, and therefore the parked multi-tenant work. Declined.
+    Spec: docs/pending/2026-08-29_D1-off-site-authority.md
+    """
+    generated_at: str | None = None
+    total_external_links: int | None = None
+    referring_domains: int | None = None
+    top_linking_sites: list[BundleLinkingSite] = []
+    top_linked_pages: list[BundleLinkedPage] = []
+    top_linking_text: list[dict] = []
+
+
 class BundleSite(BaseModel):
     ga4_site_search_terms: list[dict] | None = None
     gtm_audit: dict | None = None
+    links: BundleLinks | None = None
 
 
 class PerformanceBundle(BaseModel):
@@ -217,6 +246,15 @@ async def ingest_bundle(bundle: PerformanceBundle, job_id: str):
         deferred.append("top_queries")
     if bundle.site and (bundle.site.gtm_audit or bundle.site.ga4_site_search_terms):
         deferred.append("site")
+
+    # D1 — the Links section is site-level, so it is stored on the job rather
+    # than in the per-URL ledger. Absent section = no change, never an error:
+    # every producer predating this contract must keep working.
+    if bundle.site and bundle.site.links is not None:
+        try:
+            await store.update_job(job_id, offsite_links=bundle.site.links.model_dump())
+        except Exception:  # noqa: BLE001
+            logger.warning("offsite_links_persist_failed", extra={"job_id": job_id})
 
     return IngestResult(
         ingested=len(records),

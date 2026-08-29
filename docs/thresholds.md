@@ -224,6 +224,9 @@ Matrix): 180-day technical-improvement staleness and 20% traffic-decay drop.
 | CWV minimum request interval | 1.1s | `api/config/web_vitals.json` (published limit: 100 queries / 100s) |
 | Blueprint title / description / lead bounds | 60 chars / 70-160 chars / 40-80 words | `api/config/blueprints.json` (mirrors the catalogue's own thresholds) |
 | Blueprint lead grounding overlap floor | 50% of meaningful words | `api/services/blueprints.py` |
+| Off-site linking sites shown | 20 | `TT_OFFSITE_SITE_CAP` env, `api/services/offsite.py` |
+| Off-site minimum incoming links to count as authority | 2 | `TT_OFFSITE_MIN_INCOMING` env |
+| Off-site leverage health ceiling | 80 | `TT_OFFSITE_LEVERAGE_HEALTH` env |
 | Performance-ledger join warning floor | 5% of pages | `TT_PERF_JOIN_WARN_RATIO` env, `api/services/page_priority.py` |
 | Top pages by impressions shown | 15 | `build_performance_summary(top_n=...)` |
 | Entity description minimum words | 5 | `api/config/entity_values.json` `min_description_words` |

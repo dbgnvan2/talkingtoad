@@ -15,6 +15,28 @@ this document except where a field feeds a pending consumer phase (noted per-fie
 
 ---
 
+> **Update 2026-08-29 (D1) — one section still to produce: `site.links`.**
+> TalkingToad's consumer half is **shipped and waiting** (functional-specification
+> §7.10, `tests/test_offsite.py`). The contract accepts the section today; absent,
+> it is a clean no-op.
+>
+> ```jsonc
+> "site": { "links": {
+>   "generated_at": "…", "total_external_links": 707, "referring_domains": 187,
+>   "top_linking_sites": [{"domain": "…", "linking_pages": 14, "target_pages": 3}],
+>   "top_linked_pages":  [{"url": "…", "incoming_links": 41, "linking_sites": 12}],
+>   "top_linking_text":  [{"text": "…", "count": 22}]
+> } }
+> ```
+>
+> Source: the Search Console API's own links data — already inside the OAuth scope
+> this producer holds. No new vendor, no new key.
+>
+> Why it is worth the call: `top_linked_pages` joined against TalkingToad's crawl
+> finds **external sites linking to URLs that 404** — link equity being discarded,
+> recoverable with a one-hop redirect. Neither a backlink tool nor an analytics
+> export can produce that alone.
+
 ## 1. How TalkingToad consumes this (why the shape matters)
 
 TalkingToad ranks a nonprofit's pages by **traffic × conversions × health**, flags

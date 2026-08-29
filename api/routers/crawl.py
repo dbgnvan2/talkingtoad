@@ -1752,6 +1752,28 @@ async def export_pdf_report(
     prevalence = await _prevalence_for(store, job_id)
     summary = _with_prevalence(summary, prevalence)
 
+    # D1 — off-site authority joined to the crawl. None when the producer
+    # supplied no links section; the section is then omitted and named in Caveats.
+    offsite = None
+    try:
+        from api.services.offsite import build_offsite, to_dict as _offsite_dict
+
+        if job.offsite_links:
+            broken = {
+                i.page_url for i in issues
+                if i.issue_code.startswith("BROKEN_LINK_") and i.page_url
+            }
+            orphans = {
+                i.page_url for i in issues
+                if i.issue_code == "ORPHAN_PAGE" and i.page_url
+            }
+            offsite = _offsite_dict(build_offsite(
+                job.offsite_links, priority_pages or [],
+                broken_target_urls=broken, orphan_urls=orphans,
+            ))
+    except Exception:
+        logger.warning("offsite_unavailable", extra={"job_id": job_id})
+
     # Try to generate AI executive summary (optional — skipped if no API keys)
     executive_summary = None
     try:
@@ -1793,6 +1815,7 @@ async def export_pdf_report(
             prevalence=prevalence,
             performance_failed=performance_failed,
             include_blueprints=include_blueprints,
+            offsite=offsite,
         )
         logger.info("pdf_report_generated", extra={"job_id": job_id, "size_bytes": len(pdf_bytes)})
         pdf_domain = urlparse(job.target_url).netloc.replace("www.", "")

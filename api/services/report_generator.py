@@ -339,6 +339,116 @@ def _render_web_vitals_section(pdf, vitals: dict | None) -> None:
         pdf.ln(1)
 
 
+def _render_offsite_section(pdf, offsite: dict | None) -> None:
+    """Off-site authority from Search Console's Links report, joined to the crawl (D1).
+
+    The joins are the reason this exists. A referring-domain count is available
+    anywhere; "an external site links to a page of yours that 404s" needs both the
+    link data and the crawl, and no other tool in the stack holds both.
+    """
+    if not offsite:
+        return
+
+    pdf.add_page()
+    pdf.chapter_title("Off-Site Authority")
+    pdf.set_font('helvetica', '', 10)
+    pdf.set_text_color(*COLOR_GRAY_600)
+    pdf.set_x(25.4)
+    pdf.multi_cell(W, 5, pdf.clean_text(
+        "From Search Console's own Links report - first-party data, not a "
+        "third-party estimate. Third-party authority scores and full backlink "
+        "graphs are not included; see Scope, Method and Caveats."
+    ))
+    pdf.ln(3)
+
+    for label, key in (("Referring domains", "referring_domains"),
+                       ("Total external links", "total_external_links")):
+        value = offsite.get(key)
+        if value is None:
+            continue
+        pdf.set_x(25.4)
+        pdf.set_font('helvetica', 'B', 11)
+        pdf.set_text_color(*COLOR_GRAY_500)
+        pdf.cell(70, 8, pdf.clean_text(label + ":"))
+        pdf.set_font('helvetica', 'B', 12)
+        pdf.set_text_color(*COLOR_GRAY_800)
+        pdf.cell(W - 70, 8, f"{value:,}", new_x="LMARGIN", new_y="NEXT")
+    pdf.ln(3)
+
+    def _join_block(title, rows, blurb, colour=COLOR_WARNING):
+        if not rows:
+            return
+        if pdf.get_y() > 225:
+            pdf.add_page()
+        pdf.set_x(25.4)
+        pdf.set_font('helvetica', 'B', 12)
+        pdf.set_text_color(*COLOR_GRAY_800)
+        pdf.cell(W, 7, pdf.clean_text(title), new_x="LMARGIN", new_y="NEXT")
+        pdf.set_x(25.4)
+        pdf.set_font('helvetica', '', 9)
+        pdf.set_text_color(*COLOR_GRAY_600)
+        pdf.multi_cell(W, 4.5, pdf.clean_text(blurb))
+        pdf.ln(1)
+        for row in rows:
+            if pdf.get_y() > 248:
+                pdf.add_page()
+            pdf.set_x(30)
+            pdf.set_font('helvetica', '', 9)
+            pdf.set_text_color(*COLOR_GRAY_800)
+            pdf.multi_cell(W - 5, 4.5, pdf.clean_text(_short_url(row["url"])))
+            pdf.set_x(34)
+            pdf.set_font('helvetica', '', 8)
+            pdf.set_text_color(*colour)
+            bits = [f"{row.get('incoming_links', 0)} incoming links"]
+            if row.get("linking_sites"):
+                bits.append(f"from {row['linking_sites']} sites")
+            if row.get("health_score") is not None:
+                bits.append(f"health {row['health_score']}")
+            pdf.multi_cell(W - 5, 4, pdf.clean_text(" | ".join(bits)))
+        pdf.ln(3)
+
+    _join_block(
+        "External links pointing at broken pages",
+        offsite.get("links_to_broken_targets") or [],
+        "Other sites are linking to these URLs and the URLs do not resolve. The "
+        "link exists and its value is being discarded; a one-hop redirect to the "
+        "right page recovers it. This is the highest-return fix on this page.",
+        COLOR_CRITICAL,
+    )
+    _join_block(
+        "Earned authority on pages with fixable problems",
+        offsite.get("earned_authority_poor_health") or [],
+        "These pages have real incoming links AND a low health score. The hard "
+        "part - getting other sites to link to you - is already done.",
+    )
+    _join_block(
+        "Linked pages your own site does not link to",
+        offsite.get("orphaned_authority") or [],
+        "Other sites link to these pages, but the crawl found no internal link "
+        "path to them. That authority is not circulating through your site.",
+    )
+
+    sites = offsite.get("top_linking_sites") or []
+    if sites:
+        if pdf.get_y() > 230:
+            pdf.add_page()
+        pdf.set_x(25.4)
+        pdf.set_font('helvetica', 'B', 12)
+        pdf.set_text_color(*COLOR_GRAY_800)
+        total = offsite.get("top_linking_sites_total", len(sites))
+        heading = ("Top linking sites" if total <= len(sites)
+                   else f"Top linking sites (showing {len(sites)} of {total})")
+        pdf.cell(W, 7, pdf.clean_text(heading), new_x="LMARGIN", new_y="NEXT")
+        pdf.set_font('helvetica', '', 9)
+        pdf.set_text_color(*COLOR_GRAY_600)
+        for site in sites:
+            if pdf.get_y() > 250:
+                pdf.add_page()
+            pdf.set_x(30)
+            pdf.multi_cell(W - 5, 4.5, pdf.clean_text(
+                f"{site.get('domain', '')} - {site.get('linking_pages', 0)} linking pages"))
+
+
 def _render_priority_pages_section(
     pdf, priority_pages: list[dict] | None, performance: dict | None, limit: int = 15
 ) -> None:
@@ -740,7 +850,8 @@ def _render_wp_audit_section(pdf, audit: dict | None) -> None:
 
 
 def _render_caveats_section(pdf, job, summary, *, performance, image_summary,
-                            prevalence, performance_failed: bool = False) -> None:
+                            prevalence, performance_failed: bool = False,
+                            offsite: dict | None = None) -> None:
     """What was covered, what every cap dropped, and what was NOT checked (E7.2).
 
     Always rendered. An omitted section elsewhere in this report is named here
@@ -850,10 +961,21 @@ def _render_caveats_section(pdf, job, summary, *, performance, image_summary,
             "CMS and plugin configuration. TalkingToad reads only what the site "
             "serves publicly; it never signs in to WordPress during a scan."
         )
+    if offsite:
+        _OFFSITE_CAVEAT = (
+            "Third-party authority scores, full backlink graphs and directory-listing "
+            "consistency. Search Console's own link data IS included (see Off-Site "
+            "Authority); the rest needs a commercial index TalkingToad does not license."
+        )
+    else:
+        _OFFSITE_CAVEAT = (
+            "Off-site authority - backlinks, referring domains and directory listings. "
+            "Search Console link data was not supplied for this site, and third-party "
+            "authority scores need a commercial index TalkingToad does not license."
+        )
     _para("What this audit did not check", bold=True, color=COLOR_GRAY_800, size=12)
     for line in [
-        "Off-site authority - backlinks, referring domains and directory listings. These "
-        "need a third-party index TalkingToad does not license.",
+        _OFFSITE_CAVEAT,
         _CWV_CAVEAT,
         "Server logs, hosting configuration and CDN behaviour.",
         _CMS_CAVEAT,
@@ -904,6 +1026,7 @@ async def generate_pdf_report(
     prevalence: list | None = None,
     performance_failed: bool = False,
     include_blueprints: bool = False,
+    offsite: dict | None = None,
 ) -> bytes:
     pdf = TalkingToadReport()
     pdf.alias_nb_pages()
@@ -1025,6 +1148,7 @@ async def generate_pdf_report(
     # Scope & Caveats section — a missing section must never read as a pass (E7.4).
     _render_performance_section(pdf, performance)
     _render_web_vitals_section(pdf, getattr(job, "web_vitals", None))
+    _render_offsite_section(pdf, offsite)
     _render_priority_pages_section(pdf, priority_pages, performance)
 
     # ── Page 3: Top 10 Pages ──────────────────────────────────────────────
@@ -1462,6 +1586,7 @@ async def generate_pdf_report(
         image_summary=image_summary,
         prevalence=prevalence,
         performance_failed=performance_failed,
+        offsite=offsite,
     )
 
     pdf.set_x(25.4)

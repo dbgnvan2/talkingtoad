@@ -128,3 +128,8 @@ class CrawlJob(BaseModel):
     # an APPROVED draft may be exported. AI-drafted copy for a counselling
     # nonprofit needs a human between the model and the client PDF.
     blueprints: list | None = None
+    # D1 (2026-08-29) — Search Console's own Links report, supplied by the
+    # producer in the Performance Bundle's site section. Site-level, so it lives
+    # on the job rather than in the per-URL ledger. None means "not supplied",
+    # which the report states rather than rendering as "no links".
+    offsite_links: dict | None = None

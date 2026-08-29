@@ -1451,6 +1451,47 @@ is called uncapped, because both the PDF and the Results issue card point the
 reader there for the full list.
 → `tests/test_report_roadmap.py`.
 
+### 7.10 Off-site authority (D1, 2026-08-29)
+
+`api/services/offsite.py`, fed by a new `links` section on the Performance
+Bundle's `site` object (`api/routers/performance.py`).
+
+**A vendor backlink index was declined.** Semrush/Ahrefs/Moz are a recurring cost
+with a per-customer key, and a per-customer key is the parked multi-tenant work
+(`docs/TODO-MULTITENANT.md`). But "we cannot buy the third-party estimate" was
+never the same as "off-site is out of reach": Search Console reports referring
+domains, top linking sites and top linked pages for free, inside the OAuth scope
+the producer app already holds. So this is a **contract extension, not an
+integration** — no new vendor, no new key, no multi-tenant prerequisite.
+
+**The join is worth more than the number**, and these three need both halves:
+
+- **External links pointing at broken pages.** Another site links to a URL that
+  404s: the link exists and its value is being discarded, and a one-hop redirect
+  recovers it. Neither a backlink tool nor an analytics export can find this
+  alone — it needs the crawl's broken-link set. A broken target is reported once,
+  not also as earned authority; "fix the redirect" is a different action from
+  "improve the page".
+- **Earned authority on pages with fixable problems.** Real incoming links AND a
+  low health score: the hard part is already done. A single stray link does not
+  qualify (`TT_OFFSITE_MIN_INCOMING`).
+- **Linked pages the site does not link to internally.** Authority that is not
+  circulating.
+
+The join uses the same `ledger_key` as E3 — an exact match silently lost 96% of
+the Performance Ledger before that fix, and repeating it here would be the same
+bug in a new place (P5). `pages_in_report` vs `pages_matched` makes a join failure
+visible rather than silent.
+
+Absent section → `build_offsite` returns `None`, the report omits the section, and
+the E7 caveat becomes precise: Search Console link data IS included when supplied;
+third-party authority scores, full backlink graphs and directory-listing
+consistency are not, and it says why. → `tests/test_offsite.py` (21 tests).
+
+**Producer dependency:** TalkingToad's half is complete and the contract accepts
+the section today. The data arrives once the sibling reporting app adds the GSC
+links call. → also `docs/pending/2026-08-11_performance-bundle-producer-contract.md`.
+
 ### 7.9 Page blueprints (D4, 2026-08-29)
 
 `api/services/blueprints.py`, surfaced by `POST /api/ai/blueprints/{job_id}`
