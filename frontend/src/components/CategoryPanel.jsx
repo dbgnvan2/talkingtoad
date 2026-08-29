@@ -6,7 +6,7 @@ import SeverityBadge from './SeverityBadge.jsx'
 import IssueHelpPanel from './IssueHelpPanel.jsx'
 import Spinner from './Spinner.jsx'
 
-export default function CategoryPanel({ jobId, category, domain, onPageClick, onShowHelp, onSummaryRefresh }) {
+export default function CategoryPanel({ jobId, category, domain, onPageClick, onShowHelp, onSummaryRefresh, focusIssueCode = null }) {
   const toast = useToast()
   const [data, setData] = useState(null)
   const [expandedCode, setExpandedCode] = useState(null)
@@ -23,6 +23,27 @@ export default function CategoryPanel({ jobId, category, domain, onPageClick, on
     setMarkedFixed(new Set())
     getResultsByCategory(jobId, category.key).then(setData).catch(() => setData({ issues: [] }))
   }, [jobId, category.key])
+
+  // E4: when the reader clicked a systemic defect, open that issue rather than
+  // dropping them at the top of a category with a dozen collapsed rows.
+  useEffect(() => {
+    if (focusIssueCode) setExpandedCode(focusIssueCode)
+  }, [focusIssueCode, category.key])
+
+  useEffect(() => {
+    if (!focusIssueCode || !data) return
+    const el = document.getElementById(`issue-${focusIssueCode}`)
+    // Scrolling is a convenience, not the feature. Not every environment
+    // implements scrollIntoView (jsdom does not), and throwing here tore down
+    // the whole panel — losing the issue the reader had just asked to see.
+    if (el && typeof el.scrollIntoView === 'function') {
+      try {
+        el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      } catch {
+        /* a failed scroll must never cost the reader the panel */
+      }
+    }
+  }, [focusIssueCode, data])
 
   async function handleVerifyBrokenLinks() {
     setVerifying(true)
@@ -326,7 +347,7 @@ export default function CategoryPanel({ jobId, category, domain, onPageClick, on
         <div className="py-12 bg-white rounded-2xl border border-gray-100 text-center text-gray-400 font-medium font-serif italic">No issues found in this category.</div>
       ) : (
         Object.values(groups).map(group => (
-          <div key={group.issue_code} className="bg-white border border-gray-200 rounded-2xl overflow-hidden shadow-sm hover:border-gray-300 transition-colors">
+          <div key={group.issue_code} id={`issue-${group.issue_code}`} className="bg-white border border-gray-200 rounded-2xl overflow-hidden shadow-sm hover:border-gray-300 transition-colors">
             <button
               onClick={() => setExpandedCode(expandedCode === group.issue_code ? null : group.issue_code)}
               className="w-full flex items-center justify-between px-6 py-5"

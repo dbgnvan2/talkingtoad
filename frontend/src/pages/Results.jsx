@@ -80,6 +80,9 @@ export default function Results() {
   const navigate = useNavigate()
   const [activeTab, setActiveTab] = useState(TAB_SUMMARY)
   const [activeSeverity, setActiveSeverity] = useState(null) // 'critical', 'warning', or 'info'
+  // E4: the issue code a systemic-defect row asked to open, so the category
+  // panel can expand straight to it instead of leaving the reader to hunt.
+  const [focusIssueCode, setFocusIssueCode] = useState(null)
   const [summary, setSummary] = useState(null)
   const [summaryError, setSummaryError] = useState(null)
   const [csvError, setCsvError] = useState(null)
@@ -193,14 +196,14 @@ export default function Results() {
           <SeverityPanel jobId={jobId} severity={activeSeverity} domain={domain} onPageClick={setFocusedPageUrl} onBack={() => setActiveSeverity(null)} />
         )}
         {!activeSeverity && activeTab === TAB_SUMMARY && (
-          <SummaryPanel summary={summary} domain={domain} onCategoryClick={i => { setActiveSeverity(null); setActiveTab(i + 1) }} onSeverityClick={sev => { setActiveTab(TAB_SUMMARY); setActiveSeverity(sev) }} onPageClick={setFocusedPageUrl} jobId={jobId} onShowPdfModal={() => setShowPdfModal(true)} onShowCategoryHelp={setShowCategoryHelp} onShowGeoSettings={() => setShowGeoSettings(true)} />
+          <SummaryPanel summary={summary} domain={domain} onCategoryClick={(i, issueCode) => { setActiveSeverity(null); setFocusIssueCode(issueCode || null); setActiveTab(i + 1) }} onSeverityClick={sev => { setActiveTab(TAB_SUMMARY); setActiveSeverity(sev) }} onPageClick={setFocusedPageUrl} jobId={jobId} onShowPdfModal={() => setShowPdfModal(true)} onShowCategoryHelp={setShowCategoryHelp} onShowGeoSettings={() => setShowGeoSettings(true)} />
         )}
         {!activeSeverity && activeTab >= 1 && activeTab <= CATEGORIES.length && (
           CATEGORIES[activeTab - 1].key === 'image'
             ? <ImageAnalysisPanel jobId={jobId} domain={domain} onPageClick={setFocusedPageUrl} onShowHelp={() => setShowCategoryHelp('image')} />
             : CATEGORIES[activeTab - 1].key === 'ai_readiness'
             ? <AIReadinessPanel jobId={jobId} domain={domain} onPageClick={setFocusedPageUrl} onShowHelp={() => setShowCategoryHelp('ai_readiness')} />
-            : <CategoryPanel jobId={jobId} category={CATEGORIES[activeTab - 1]} domain={domain} onPageClick={setFocusedPageUrl} onShowHelp={() => setShowCategoryHelp(CATEGORIES[activeTab - 1].key)} onSummaryRefresh={loadSummary} />
+            : <CategoryPanel jobId={jobId} category={CATEGORIES[activeTab - 1]} domain={domain} onPageClick={setFocusedPageUrl} onShowHelp={() => setShowCategoryHelp(CATEGORIES[activeTab - 1].key)} onSummaryRefresh={loadSummary} focusIssueCode={focusIssueCode} />
         )}
         {!activeSeverity && activeTab === TAB_BY_PAGE && (
           <ByPagePanel jobId={jobId} domain={domain} onPageClick={setFocusedPageUrl} />

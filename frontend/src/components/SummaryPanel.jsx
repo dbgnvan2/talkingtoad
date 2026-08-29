@@ -125,30 +125,66 @@ export default function SummaryPanel({ summary, domain, jobId, onCategoryClick, 
       </div>
 
       {/* E4 — systemic defects: one template or setting is responsible, so one
-          fix resolves many pages. Shown only when something actually qualifies. */}
-      {summary.systemic_count > 0 && (
-        <div className="p-4 bg-amber-50 border border-amber-200 rounded-lg">
-          <p className="text-sm font-bold text-amber-900">
-            {summary.systemic_count} systemic defect{summary.systemic_count !== 1 ? 's' : ''} found
-          </p>
-          <p className="text-xs text-amber-800 mt-1">
-            These come from one template, theme setting or editorial habit — fixing the cause once resolves many pages. They are listed first in the PDF and Excel exports. Each row shows its actual footprint below; the threshold lives in the backend config, so no percentage is quoted here.
-          </p>
-          <ul className="mt-2 space-y-1">
-            {(summary.prevalence || [])
-              .filter((p) => p.tier === 'systemic')
-              .slice(0, 5)
-              .map((p) => (
-                <li key={p.code} className="text-sm text-gray-800">
-                  <span className="font-semibold">{p.human_description}</span>
-                  <span className="text-gray-600">
-                    {' '}— {p.pages_affected} of {p.indexable_pages} indexable pages ({Math.round(p.share * 100)}%)
-                  </span>
-                </li>
-              ))}
-          </ul>
-        </div>
-      )}
+          fix resolves many pages. Shown only when something actually qualifies.
+          Every defect is listed and every row is clickable: a summary that says
+          "16 found" and shows five is a dead end, and the whole point of the
+          section is that the reader can go and act on each one. */}
+      {summary.systemic_count > 0 && (() => {
+        const systemic = (summary.prevalence || []).filter((p) => p.tier === 'systemic')
+        return (
+          <div className="p-4 bg-amber-50 border border-amber-200 rounded-lg">
+            <p className="text-sm font-bold text-amber-900">
+              {summary.systemic_count} systemic defect{summary.systemic_count !== 1 ? 's' : ''} found
+            </p>
+            <p className="text-xs text-amber-800 mt-1">
+              These come from one template, theme setting or editorial habit — fixing the cause once resolves many pages. They are listed first in the PDF and Excel exports. Click any row to open that issue and see the affected pages.
+            </p>
+            <ul className="mt-3 space-y-1">
+              {systemic.map((p) => {
+                const categoryIndex = CATEGORIES.findIndex((c) => c.key === p.category)
+                const clickable = categoryIndex >= 0
+                return (
+                  <li key={p.code}>
+                    <button
+                      type="button"
+                      disabled={!clickable}
+                      onClick={() => clickable && onCategoryClick(categoryIndex, p.code)}
+                      title={clickable
+                        ? `Open ${p.human_description} in ${CATEGORIES[categoryIndex].label}`
+                        : 'This finding has no category view'}
+                      className={`w-full text-left px-3 py-2 rounded-lg border transition-all ${
+                        clickable
+                          ? 'bg-white border-amber-100 hover:border-amber-300 hover:bg-amber-100 cursor-pointer'
+                          : 'bg-white border-amber-100 cursor-default'
+                      }`}
+                    >
+                      <span className="text-sm font-semibold text-gray-800">
+                        {p.human_description}
+                      </span>
+                      <span className="text-sm text-gray-600">
+                        {' '}— {p.pages_affected} of {p.indexable_pages} indexable pages ({Math.round(p.share * 100)}%)
+                      </span>
+                      {clickable && (
+                        <span className="text-xs text-amber-700 font-bold ml-2">
+                          {CATEGORIES[categoryIndex].label} →
+                        </span>
+                      )}
+                    </button>
+                  </li>
+                )
+              })}
+            </ul>
+            {/* The count and the list come from different fields; if they ever
+                disagree the reader must be told, not shown a shorter list. */}
+            {systemic.length !== summary.systemic_count && (
+              <p className="text-xs text-amber-800 mt-2">
+                Showing {systemic.length} of {summary.systemic_count}. The full list is
+                in the PDF and Excel exports.
+              </p>
+            )}
+          </div>
+        )
+      })()}
 
       {/* High-Level Stats */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
