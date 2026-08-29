@@ -262,6 +262,83 @@ def _render_performance_section(pdf, performance: dict | None) -> None:
             pdf.ln(1)
 
 
+def _render_web_vitals_section(pdf, vitals: dict | None) -> None:
+    """Core Web Vitals for the top priority pages (D2).
+
+    Every row states whether it is FIELD data (real Chrome users) or LAB data
+    (one synthetic run). Presenting a lab number as user experience is the single
+    way this section could become actively misleading.
+    """
+    if not vitals or not vitals.get("rows"):
+        return
+
+    pdf.add_page()
+    pdf.chapter_title("Core Web Vitals")
+    pdf.set_font('helvetica', '', 10)
+    pdf.set_text_color(*COLOR_GRAY_600)
+    pdf.set_x(25.4)
+    pdf.multi_cell(W, 5, pdf.clean_text(
+        f"Measured for the top {vitals.get('requested', 0)} pages of the priority "
+        f"queue, on a {vitals.get('strategy', 'mobile')} profile. "
+        f"FIELD figures are the 75th percentile across real Chrome users over the "
+        f"last 28 days. LAB figures are a single synthetic test run — useful for "
+        f"diagnosis, but not a measurement of what your visitors experience. "
+        f"Only field data raises a finding."
+    ))
+    pdf.ln(3)
+
+    counts = (f"{vitals.get('field_count', 0)} field, "
+              f"{vitals.get('lab_count', 0)} lab, "
+              f"{vitals.get('unavailable_count', 0)} not measured")
+    pdf.set_x(25.4)
+    pdf.set_font('helvetica', 'B', 10)
+    pdf.set_text_color(*COLOR_GRAY_800)
+    pdf.cell(W, 6, pdf.clean_text(counts), new_x="LMARGIN", new_y="NEXT")
+
+    if vitals.get("retryable_failures"):
+        pdf.set_x(25.4)
+        pdf.set_font('helvetica', 'B', 9)
+        pdf.set_text_color(*COLOR_WARNING)
+        pdf.multi_cell(W, 5, pdf.clean_text(
+            f"{vitals['retryable_failures']} page(s) could not be measured because "
+            f"the API was rate-limited or unavailable. That is a temporary failure, "
+            f"not a result — re-run to complete them."
+        ))
+    pdf.ln(3)
+
+    for row in vitals["rows"]:
+        if pdf.get_y() > 240:
+            pdf.add_page()
+        pdf.set_x(25.4)
+        pdf.set_font('helvetica', '', 9)
+        pdf.set_text_color(*COLOR_GRAY_800)
+        pdf.multi_cell(W, 5, pdf.clean_text(_short_url(row.get("url", ""))))
+
+        pdf.set_x(30)
+        pdf.set_font('helvetica', '', 9)
+        source = row.get("source")
+        if source == "unavailable":
+            pdf.set_text_color(*COLOR_GRAY_500)
+            pdf.multi_cell(W - 5, 4.5, pdf.clean_text(
+                f"Not measured — {row.get('unavailable_reason') or 'no data available'}. "
+                f"A page with no field data is not a fast page; it is one too few "
+                f"people visited for Chrome to report anonymously."
+            ))
+        else:
+            pdf.set_text_color(*COLOR_GRAY_600)
+            bits = [f"{'FIELD (real users)' if source == 'field' else 'LAB (synthetic run)'}"]
+            if row.get("lcp_ms") is not None:
+                bits.append(f"LCP {row['lcp_ms'] / 1000:.1f}s")
+            if row.get("inp_ms") is not None:
+                bits.append(f"INP {row['inp_ms']:.0f}ms")
+            if row.get("cls") is not None:
+                bits.append(f"CLS {row['cls']:.2f}")
+            if row.get("performance_score") is not None:
+                bits.append(f"Lighthouse {row['performance_score']}/100")
+            pdf.multi_cell(W - 5, 4.5, pdf.clean_text(" | ".join(bits)))
+        pdf.ln(1)
+
+
 def _render_priority_pages_section(
     pdf, priority_pages: list[dict] | None, performance: dict | None, limit: int = 15
 ) -> None:
@@ -600,12 +677,26 @@ def _render_caveats_section(pdf, job, summary, *, performance, image_summary,
         pdf.ln(2)
 
     # ── What was NOT checked ──
+    # E7 promised Core Web Vitals were unchecked. Once D2 can run, that line has
+    # to reflect whether it actually did — shipping the capability without
+    # updating this would make the report lie in the other direction.
+    _vitals = getattr(job, "web_vitals", None)
+    if _vitals and _vitals.get("rows"):
+        _CWV_CAVEAT = (
+            "Core Web Vitals were measured, but only for the top "
+            f"{_vitals.get('requested', 0)} pages of the priority queue, and only "
+            "where enough real-user data exists. The rest of the site is unmeasured."
+        )
+    else:
+        _CWV_CAVEAT = (
+            "Core Web Vitals and real-user performance. Page weight and image size "
+            "are measured; loading behaviour in a real browser is not."
+        )
     _para("What this audit did not check", bold=True, color=COLOR_GRAY_800, size=12)
     for line in [
         "Off-site authority - backlinks, referring domains and directory listings. These "
         "need a third-party index TalkingToad does not license.",
-        "Core Web Vitals and real-user performance. Page weight and image size are "
-        "measured; loading behaviour in a real browser is not.",
+        _CWV_CAVEAT,
         "Server logs, hosting configuration and CDN behaviour.",
         "CMS and plugin configuration. TalkingToad reads only what the site serves "
         "publicly; it never signs in to WordPress during a scan.",
@@ -775,6 +866,7 @@ async def generate_pdf_report(
     # it does not, both sections are OMITTED and the omission is recorded in the
     # Scope & Caveats section — a missing section must never read as a pass (E7.4).
     _render_performance_section(pdf, performance)
+    _render_web_vitals_section(pdf, getattr(job, "web_vitals", None))
     _render_priority_pages_section(pdf, priority_pages, performance)
 
     # ── Page 3: Top 10 Pages ──────────────────────────────────────────────

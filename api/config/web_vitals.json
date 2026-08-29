@@ -1,0 +1,33 @@
+{
+  "_comment": [
+    "D2 — Core Web Vitals thresholds and API settings.",
+    "Thresholds are Google's own published 'poor' boundaries. Only the POOR band",
+    "raises a finding: a report that flags two thirds of the web as broken is",
+    "noise, so 'needs improvement' is reported as a number, not as a defect.",
+    "Spec: docs/pending/2026-08-29_D2-core-web-vitals.md"
+  ],
+
+  "poor_thresholds": {
+    "lcp_ms": 4000,
+    "inp_ms": 500,
+    "cls": 0.25
+  },
+
+  "good_thresholds": {
+    "lcp_ms": 2500,
+    "inp_ms": 200,
+    "cls": 0.1
+  },
+
+  "crux_endpoint": "https://chromeuxreport.googleapis.com/v1/records:queryRecord",
+  "psi_endpoint": "https://www.googleapis.com/pagespeedonline/v5/runPagespeed",
+
+  "default_top_n": 10,
+  "max_top_n": 25,
+  "strategy": "mobile",
+
+  "request_timeout_s": 60,
+  "max_retries": 3,
+  "retry_backoff_s": 2.0,
+  "min_interval_s": 1.1
+}

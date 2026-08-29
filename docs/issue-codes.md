@@ -8,7 +8,7 @@ generator: scripts/generate_issue_codes_doc.py
 
 > **This file is auto-generated.** Do not edit by hand — your changes will be overwritten the next time the generator runs. To update an issue code, edit `api/crawler/issue_checker.py` (`_CATALOGUE`, `_ISSUE_SCORING`, `_AI_READINESS_CONFIDENCE`) and re-run `python scripts/generate_issue_codes_doc.py`.
 
-**167 issue codes** across 13 categories.
+**170 issue codes** across 13 categories.
 
 ## Table of contents
 
@@ -23,7 +23,7 @@ generator: scripts/generate_issue_codes_doc.py
 - [IMAGE](#image) (14)
 - [AI_READINESS](#ai_readiness) (75)
 - [ANALYTICS](#analytics) (7)
-- [RENDERING](#rendering) (1)
+- [RENDERING](#rendering) (4)
 - [SEMANTIC_HTML](#semantic_html) (4)
 
 ---
@@ -2024,7 +2024,55 @@ Edit the link to point to the clean internal URL with no utm_* parameters. Reser
 <a id="rendering"></a>
 ## RENDERING
 
-_1 codes in this category._
+_4 codes in this category._
+
+### CWV_CLS_POOR
+**Severity:** 🟡 warning | **Impact:** 6 | **Effort:** 2
+
+**What it is**
+Cumulative Layout Shift is one of Google's Core Web Vitals. This figure is the 75th percentile across real Chrome users over the last 28 days - not a synthetic test - so it reflects what visitors actually experience.
+
+**Why it matters**
+Core Web Vitals are a confirmed Google ranking input, and content that jumps as it loads makes people tap the wrong thing. A page in the 'poor' band is losing both ranking and visitors who leave before it becomes usable.
+
+**How to fix**
+Give images and embeds explicit width and height so the browser can reserve their space, and stop banners or ads being injected above content that has already rendered.
+
+**Plain-English:** Poor Cumulative Layout Shift
+
+---
+
+### CWV_INP_POOR
+**Severity:** 🟡 warning | **Impact:** 6 | **Effort:** 3
+
+**What it is**
+Interaction to Next Paint is one of Google's Core Web Vitals. This figure is the 75th percentile across real Chrome users over the last 28 days - not a synthetic test - so it reflects what visitors actually experience.
+
+**Why it matters**
+Core Web Vitals are a confirmed Google ranking input, and a page that does not respond to taps feels broken. A page in the 'poor' band is losing both ranking and visitors who leave before it becomes usable.
+
+**How to fix**
+Reduce the JavaScript that runs when someone taps or types. Look for large scripts from page builders, chat widgets and analytics tags competing on the main thread, and defer anything not needed for the first interaction.
+
+**Plain-English:** Poor Interaction to Next Paint
+
+---
+
+### CWV_LCP_POOR
+**Severity:** 🟡 warning | **Impact:** 6 | **Effort:** 3
+
+**What it is**
+Largest Contentful Paint is one of Google's Core Web Vitals. This figure is the 75th percentile across real Chrome users over the last 28 days - not a synthetic test - so it reflects what visitors actually experience.
+
+**Why it matters**
+Core Web Vitals are a confirmed Google ranking input, and a slow main image or heading is the most visible kind of slow. A page in the 'poor' band is losing both ranking and visitors who leave before it becomes usable.
+
+**How to fix**
+Find the largest element in the first screenful - usually the hero image or heading - and make it load sooner. Serve the image in a modern format at the right size, exclude it from lazy-loading, and remove render-blocking CSS and fonts ahead of it.
+
+**Plain-English:** Poor Largest Contentful Paint
+
+---
 
 ### JS_DEPENDENT_NAVIGATION
 **Severity:** 🟡 warning | **Impact:** 6 | **Effort:** 3

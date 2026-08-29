@@ -1,0 +1,32 @@
+{
+ "id": "https://livingsystems.ca/what-kind-of-help-is-helpful/",
+ "lighthouseResult": {
+  "requestedUrl": "https://livingsystems.ca/what-kind-of-help-is-helpful/",
+  "categories": {
+   "performance": {
+    "id": "performance",
+    "score": 0.42
+   }
+  },
+  "audits": {
+   "largest-contentful-paint": {
+    "id": "largest-contentful-paint",
+    "numericValue": 5820.4,
+    "numericUnit": "millisecond",
+    "displayValue": "5.8 s"
+   },
+   "cumulative-layout-shift": {
+    "id": "cumulative-layout-shift",
+    "numericValue": 0.036,
+    "numericUnit": "unitless",
+    "displayValue": "0.036"
+   },
+   "total-blocking-time": {
+    "id": "total-blocking-time",
+    "numericValue": 890,
+    "numericUnit": "millisecond",
+    "displayValue": "890 ms"
+   }
+  }
+ }
+}

@@ -362,7 +362,7 @@ High-level inventory. Each row maps to detailed sections later.
 
 ## 4. Audit capabilities
 
-The crawler emits **167 distinct issue codes** organised into 13
+The crawler emits **170 distinct issue codes** organised into 13
 categories. Each code has: impact (0–10), effort (0–5), fixability
 (`wp_fixable` / `content_edit` / `developer_needed`), and a confidence label.
 
@@ -1342,6 +1342,55 @@ sorted "Top 10 Pages to Fix First" by raw issue count.
   an underperformer.
 
 → `tests/test_performance_report.py`, fixture `tests/fixtures/performance/livingsystems_ledger.json` (a real 555-row export).
+
+### 7.4b Core Web Vitals (D2, 2026-08-29)
+
+`api/services/web_vitals.py`, surfaced by `POST /api/crawl/{id}/web-vitals` —
+**opt-in, post-scan, never inside the crawl** (guarded by
+`tests/test_web_vitals.py::test_d2_1b_scan_never_calls_web_vitals_apis`). The
+binding CrUX/PSI constraint is 100 queries per 100 seconds, so a whole-site sweep
+would add minutes to every run for data that only matters where traffic is. Scope
+is the top N of the §6.9 priority queue (`default_top_n` 10, hard max 25).
+
+**Why this does not cross the producer line.** The Performance Bundle contract
+says "TalkingToad does not do OAuth to Google — the producer owns acquisition."
+That rule is about *account-scoped* data: reading a Search Console property needs
+the owner's authorisation. CrUX and PSI are API-key gated and callable for any
+public URL without touching an account — a different class.
+
+**Field and lab are never conflated.** CrUX field data (75th percentile across
+real Chrome users, 28-day window) is the **only** source that raises a finding.
+PSI lab data is one synthetic run and is diagnostic context only; every rendered
+row states which it is. Google is discontinuing CrUX field data *inside* the PSI
+response, so field data comes from the CrUX API directly. Lighthouse has no INP
+audit, and Total Blocking Time is deliberately **not** mapped onto `inp_ms`.
+
+Three codes, field-only, category `rendering`, `Established` confidence:
+`CWV_LCP_POOR` (>4.0s), `CWV_INP_POOR` (>500ms), `CWV_CLS_POOR` (>0.25) —
+Google's own "poor" boundaries, in `api/config/web_vitals.json`. Only the poor
+band fires; "needs improvement" is reported as a number, because flagging two
+thirds of the web is noise.
+
+Findings are **persisted** so they reach the report, the summary and the health
+score. A re-run clears the job's prior CWV rows first: the measurement is a
+snapshot of a rolling window, so the newest run replaces the older one and a page
+that improves loses its finding rather than keeping a stale negative (P8/P1).
+
+A 429 is **retryable, never a terminal "no data"** — quota exhaustion on page 8
+of 10 must not make pages 9 and 10 look fine. A page with no CrUX record is
+reported "not measured", never "good". The API key is env-only and is **scrubbed**
+from every error string: Google takes it as a query parameter, so an httpx
+transport error carries it into the log and the 502 body without that.
+
+No key → the section is omitted and named in Caveats, and the E7 "Core Web Vitals
+not checked" line becomes conditional on whether the collection actually ran.
+
+**Fixture caveat (P19/P20):** the checked-in CrUX/PSI payloads are **constructed
+from the documented contracts, not recorded** — no key was available and the
+shared keyless PSI pool returned 429. The parsers degrade to "not measured" on an
+unrecognised shape, and `TestLiveApiContract` runs against the real API as soon as
+`TT_PSI_API_KEY` is set. See `tests/fixtures/web_vitals/README.md`.
+→ `tests/test_web_vitals.py` (46 tests).
 
 ### 7.5 Site prevalence and Site Hygiene (E4, 2026-08-29)
 

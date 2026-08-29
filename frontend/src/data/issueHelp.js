@@ -2888,6 +2888,56 @@ const issueHelp = {
   },
   // ── E6 (2026-08-29) — stacked overlay links ──────────────────────────────
   // Spec: docs/pending/2026-08-29_E6-stacked-duplicate-links.md
+  // ── D2 (2026-08-29) — Core Web Vitals, FIELD data only ──────────────────
+  // Spec: docs/pending/2026-08-29_D2-core-web-vitals.md
+  CWV_LCP_POOR: {
+    title: "Poor Largest Contentful Paint",
+    category: "rendering",
+    severity: "warning",
+    confidence: "Established",
+    definition:
+      "Largest Contentful Paint measures how long until the biggest thing in the first screenful - usually a hero image or heading - has rendered. This figure is the 75th percentile across real Chrome users over the past 28 days, not a synthetic test.",
+    impact:
+      "Evidence tier: Established. Core Web Vitals are a confirmed Google ranking input, and a slow main element is the most visible kind of slow: visitors leave before the page looks like anything.",
+    fix:
+      "Identify the largest element in the first screenful and make it load sooner. Serve the image in a modern format at the size actually displayed, exclude it from lazy-loading, and remove render-blocking CSS and fonts queued ahead of it.",
+    good_vs_bad:
+      "Good: under 2.5 seconds. Bad: over 4 seconds - which is where this fires.",
+    how_it_can_mislead:
+      "This is a 28-day rolling average of real visits, so a fix made today will not show here for several weeks. A page with no figure at all is not fast - it is unmeasured, because too few people visited it for Chrome to report anonymously.",
+  },
+  CWV_INP_POOR: {
+    title: "Poor Interaction to Next Paint",
+    category: "rendering",
+    severity: "warning",
+    confidence: "Established",
+    definition:
+      "Interaction to Next Paint measures how long the page takes to visibly respond after someone taps, clicks or types. The figure is the 75th percentile across real Chrome users over the past 28 days.",
+    impact:
+      "Evidence tier: Established. A page that does not respond to a tap feels broken even when it is merely busy, and Core Web Vitals are a confirmed Google ranking input.",
+    fix:
+      "Reduce the JavaScript that runs on interaction. Page builders, chat widgets and analytics tags commonly compete for the main thread; defer anything not needed for the first interaction and split large bundles.",
+    good_vs_bad:
+      "Good: under 200ms. Bad: over 500ms - which is where this fires.",
+    how_it_can_mislead:
+      "INP is a field-only metric: there is no lab equivalent, so a synthetic test cannot tell you this. If no figure appears, the page has too few real visits to measure.",
+  },
+  CWV_CLS_POOR: {
+    title: "Poor Cumulative Layout Shift",
+    category: "rendering",
+    severity: "warning",
+    confidence: "Established",
+    definition:
+      "Cumulative Layout Shift measures how much the page jumps around while loading. The figure is the 75th percentile across real Chrome users over the past 28 days.",
+    impact:
+      "Evidence tier: Established. Content that moves as it loads makes people tap the wrong thing, and Core Web Vitals are a confirmed Google ranking input.",
+    fix:
+      "Give every image and embed an explicit width and height so the browser can reserve space before they load, and stop banners, cookie notices or ads being injected above content that has already rendered.",
+    good_vs_bad:
+      "Good: under 0.1. Bad: over 0.25 - which is where this fires.",
+    how_it_can_mislead:
+      "A high score often comes from one offending element rather than the whole page. It is also a 28-day average, so a recent fix will not show immediately.",
+  },
   LINK_STACKED_DUPLICATE: {
     title: "Stacked duplicate links",
     category: "metadata",

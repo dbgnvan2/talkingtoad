@@ -149,6 +149,29 @@ def generate_excel_report(
                     ws_road.cell(row=row, column=col, value=v)
                 row += 1
 
+    # ── Web Vitals Sheet (D2) ──────────────────────────────────────────────
+    _vitals = getattr(job, "web_vitals", None)
+    if _vitals and _vitals.get("rows"):
+        ws_cwv = wb.create_sheet(title="Web Vitals")
+        ws_cwv["A1"] = "Core Web Vitals"
+        ws_cwv["A1"].font = header_font
+        ws_cwv["A2"] = ("FIELD = 75th percentile across real Chrome users, last 28 days. "
+                        "LAB = one synthetic run. Only field data raises a finding.")
+        headers = ["URL", "Source", "LCP (ms)", "INP (ms)", "CLS",
+                   "Lighthouse score", "Not measured because"]
+        for col, h in enumerate(headers, 1):
+            ws_cwv.cell(row=4, column=col, value=h).font = label_font
+        row = 5
+        for r in _vitals["rows"]:
+            values = [r.get("url"), r.get("source"), r.get("lcp_ms"), r.get("inp_ms"),
+                      r.get("cls"), r.get("performance_score"),
+                      r.get("unavailable_reason")]
+            for col, v in enumerate(values, 1):
+                ws_cwv.cell(row=row, column=col, value=v)
+            row += 1
+        ws_cwv.column_dimensions['A'].width = 70
+        ws_cwv.column_dimensions['G'].width = 50
+
     # ── Prevalence Sheet (E4.3) ────────────────────────────────────────────
     # How much of the indexable estate each defect touches. Scoring is unchanged;
     # this is the breadth lens. Spec: docs/pending/2026-08-29_E4-site-prevalence-escalation.md

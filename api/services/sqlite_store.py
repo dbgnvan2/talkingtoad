@@ -99,6 +99,7 @@ class SQLiteJobStore:
             # E1.4 — image-cap disclosure (analysed N of M)
             ("images_seen_total", "INTEGER"),
             ("images_collected", "INTEGER"),
+            ("web_vitals", "TEXT"),
         ]
         for col, col_type in job_columns:
             try:
@@ -255,6 +256,7 @@ class SQLiteJobStore:
             "scoring_model_version",
             "images_seen_total",
             "images_collected",
+            "web_vitals",
         }
         unknown = set(fields) - _ALLOWED
         if unknown:
@@ -1689,6 +1691,7 @@ def _row_to_job(row: dict) -> CrawlJob:
         # which surfaces must render as such rather than as full coverage.
         images_seen_total=row.get("images_seen_total"),
         images_collected=row.get("images_collected"),
+        web_vitals=json.loads(row["web_vitals"]) if row.get("web_vitals") else None,
     )
 
 

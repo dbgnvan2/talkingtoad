@@ -1574,6 +1574,90 @@ async def get_page_priority(
     return {"pages": ranked, "total": len(ranked)}
 
 
+@router.post("/{job_id}/web-vitals", response_model=None)
+async def collect_web_vitals_endpoint(
+    job_id: str,
+    top_n: int | None = Query(None, ge=1, le=25,
+                              description="Pages to measure (default from config, max 25)"),
+    store: SQLiteJobStore | RedisJobStore = Depends(get_store),
+) -> dict | JSONResponse:
+    """Core Web Vitals for the top pages of the §6.9 priority queue (D2).
+
+    User-triggered and post-scan by design — never inside the crawl. The binding
+    CrUX/PSI constraint is 100 queries per 100 seconds, so a whole-site sweep
+    would add minutes to every run for data that only matters where traffic is.
+    Spec: docs/pending/2026-08-29_D2-core-web-vitals.md
+    """
+    from api.services.web_vitals import api_key, collect_web_vitals
+
+    job = await store.get_job(job_id)
+    if job is None:
+        return _err("JOB_NOT_FOUND", "No crawl job found with the given ID.", 404)
+
+    try:
+        report = await collect_web_vitals(store, job_id, top_n=top_n)
+    except Exception as exc:
+        # scrub(): the Google APIs take the key as a query parameter, so a
+        # transport error's message carries it. It must not reach the log or the
+        # response body.
+        from api.services.web_vitals import scrub
+
+        logger.exception("web_vitals_failed", extra={"job_id": job_id})
+        return _err("WEB_VITALS_ERROR",
+                    scrub(f"Could not collect Core Web Vitals: {exc}"), 502)
+
+    payload = {
+        "job_id": job_id,
+        "strategy": report.strategy,
+        "requested": report.requested,
+        "field_count": report.field_count,
+        "lab_count": report.lab_count,
+        "unavailable_count": report.unavailable_count,
+        "retryable_failures": report.retryable_failures,
+        # Surfaced so the caller can distinguish "this site is fine" from
+        # "we could not measure it" — never the API key itself.
+        "had_api_key": bool(api_key()),
+        "rows": [
+            {
+                "url": r.url, "source": r.source,
+                "lcp_ms": r.lcp_ms, "inp_ms": r.inp_ms, "cls": r.cls,
+                "performance_score": r.performance_score,
+                "unavailable_reason": r.unavailable_reason,
+                "retryable": r.retryable,
+            }
+            for r in report.rows
+        ],
+    }
+    try:
+        await store.update_job(job_id, web_vitals=payload)
+    except Exception:
+        logger.warning("web_vitals_persist_failed", extra={"job_id": job_id})
+
+    # Persist the findings so they reach the report, the summary and the health
+    # score like any other issue. Without this the three CWV codes would exist in
+    # the catalogue and never appear on a real run (P21 — built but not wired).
+    #
+    # Re-running must not duplicate: clear this job's prior CWV rows first. The
+    # measurement is a snapshot of a 28-day window, so the newest run replaces
+    # the older one rather than accumulating alongside it.
+    from api.services.web_vitals import CWV_CODES, vitals_issues
+
+    try:
+        measured_urls = {r.url for r in report.rows}
+        for url in measured_urls:
+            for code in CWV_CODES:
+                await store.delete_issues_by_code_and_url(job_id, code, url)
+        new_issues = [_engine_issue_to_model(i, job_id) for i in vitals_issues(report)]
+        if new_issues:
+            await store.save_issues(new_issues)
+        payload["issues_recorded"] = len(new_issues)
+    except Exception:
+        logger.exception("web_vitals_issue_persist_failed", extra={"job_id": job_id})
+        payload["issues_recorded"] = None
+
+    return payload
+
+
 @router.get("/{job_id}/export/csv", response_model=None)
 async def export_csv_full(
     job_id: str,

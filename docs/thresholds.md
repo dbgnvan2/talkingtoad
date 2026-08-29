@@ -219,6 +219,9 @@ Matrix): 180-day technical-improvement staleness and 20% traffic-decay drop.
 | Stacked-link group minimum size | 2 | `api/config/link_patterns.json` `min_group_size` |
 | Evidence rows stored per issue | 20 | `TT_EVIDENCE_CAP` env, `api/crawler/checkers/security.py` |
 | Evidence rows rendered in the PDF | 10 | `TT_EVIDENCE_ROW_CAP` env, `api/services/issue_evidence.py` |
+| CWV pages measured (default / max) | 10 / 25 | `api/config/web_vitals.json` |
+| CWV poor band — LCP / INP / CLS | 4000ms / 500ms / 0.25 | `api/config/web_vitals.json` (Google's own boundaries) |
+| CWV minimum request interval | 1.1s | `api/config/web_vitals.json` (published limit: 100 queries / 100s) |
 | Performance-ledger join warning floor | 5% of pages | `TT_PERF_JOIN_WARN_RATIO` env, `api/services/page_priority.py` |
 | Top pages by impressions shown | 15 | `build_performance_summary(top_n=...)` |
 | Entity description minimum words | 5 | `api/config/entity_values.json` `min_description_words` |

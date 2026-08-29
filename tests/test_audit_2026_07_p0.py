@@ -77,8 +77,9 @@ def test_make_issue_known_code_still_works():
 def test_scoring_catalogue_bijection():
     assert set(_CATALOGUE) == set(_ISSUE_SCORING)
     # 155 (v2.6 baseline) + 6 analytics (2026-08-06) + 1 CTA-tracking (2026-08-09)
-    # + 4 entity-value checks (E5, 2026-08-29) + 1 stacked links (E6) = 167
-    assert len(_ISSUE_SCORING) == len(_CATALOGUE) == 167
+    # + 4 entity-value checks (E5, 2026-08-29) + 1 stacked links (E6)
+    # + 3 Core Web Vitals (D2, 2026-08-29) = 170
+    assert len(_ISSUE_SCORING) == len(_CATALOGUE) == 170
 
 
 # ── R0.2: Claude-User honors robots.txt (was wrongly False) ───────────────────

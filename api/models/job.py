@@ -116,3 +116,7 @@ class CrawlJob(BaseModel):
     # audits read back as None, which surfaces render as "not recorded".
     images_seen_total: int | None = None
     images_collected: int | None = None
+    # D2 (2026-08-29) — Core Web Vitals, collected by an opt-in post-scan step.
+    # None means "not collected", which the report must render as such rather
+    # than as "this site is fast".
+    web_vitals: dict | None = None

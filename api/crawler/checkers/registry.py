@@ -12,10 +12,10 @@ integrity of this file is enforced by five CI parity invariants — see
 
 Single source of truth for:
     - ``Issue`` dataclass and ``_IssueSpec`` dataclass
-    - ``_ISSUE_SCORING`` (impact, effort) by code — 167 codes
-    - ``_CATALOGUE`` (every issue spec) — 167 codes
+    - ``_ISSUE_SCORING`` (impact, effort) by code — 170 codes
+    - ``_CATALOGUE`` (every issue spec) — 170 codes
     - ``_AI_READINESS_CONFIDENCE`` (confidence labels) — 71 codes
-      (of 167 total; the 91 non-ai_readiness codes carry no confidence label)
+      (of 170 total; the 91 non-ai_readiness codes carry no confidence label)
     - ``_STOP_WORDS`` and ``_GENERIC_ANCHOR_TEXTS`` (shared helpers)
     - Size-limit constants
     - ``make_issue()`` factory, ``_sig_words()``, ``_titles_mismatch()``
@@ -260,6 +260,12 @@ _ISSUE_SCORING: dict[str, tuple[int, int]] = {
     "CONTENT_STALE":              (1, 3),
     # Phase 3 new checks
     "ANCHOR_TEXT_GENERIC":        (2, 2),
+    # D2 (2026-08-29) — Core Web Vitals, FIELD data only. Established is the
+    # right tier: CWV are a Google-confirmed ranking input, which is stronger
+    # evidence than most of the AI-readiness catalogue carries.
+    "CWV_LCP_POOR":               (6, 3),
+    "CWV_INP_POOR":               (6, 3),
+    "CWV_CLS_POOR":               (6, 2),
     # E6 (2026-08-29) — stacked overlay links; sibling of ANCHOR_TEXT_GENERIC.
     "LINK_STACKED_DUPLICATE":     (2, 2),
     "HEADING_EMPTY":              (1, 1),
@@ -426,6 +432,9 @@ _CALIBRATION: dict[str, tuple[str, str, bool]] = {
     "AI_TXT_MISSING": ("Heuristic", "small", False),
     "AMPHTML_BROKEN": ("Reasonable proxy", "small", False),
     "ANCHOR_TEXT_GENERIC": ("Established", "small", False),
+    "CWV_LCP_POOR": ("Established", "moderate", False),
+    "CWV_INP_POOR": ("Established", "moderate", False),
+    "CWV_CLS_POOR": ("Established", "moderate", False),
     "LINK_STACKED_DUPLICATE": ("Reasonable proxy", "small", False),
     "AUTHOR_BYLINE_MISSING": ("Reasonable proxy", "moderate", False),
     "AUTHOR_IDENTITY_INCONSISTENT": ("Heuristic", "small", False),
@@ -1179,6 +1188,51 @@ _CATALOGUE: dict[str, _IssueSpec] = {
         recommendation="Consolidate duplicate images to a single URL. This saves server space "
                        "and improves caching efficiency.",
         human_description="Duplicate Image",
+        fixability="developer_needed",
+    ),
+    "CWV_LCP_POOR": _IssueSpec(
+        category="rendering", severity="warning",
+        description="Largest Contentful Paint for real users is in Google's 'poor' band",
+        recommendation="Find the largest element in the first screenful - usually the hero image or heading - and make it load sooner. Serve the image in a modern format at the right size, exclude it from lazy-loading, and remove render-blocking CSS and fonts ahead of it.",
+        human_description="Poor Largest Contentful Paint",
+        what_it_is="Largest Contentful Paint is one of Google's Core Web Vitals. This figure is "
+                   "the 75th percentile across real Chrome users over the last 28 "
+                   "days - not a synthetic test - so it reflects what visitors "
+                   "actually experience.",
+        impact_desc="Core Web Vitals are a confirmed Google ranking input, and "
+                    "a slow main image or heading is the most visible kind of slow. A page in the 'poor' band is losing both ranking "
+                    "and visitors who leave before it becomes usable.",
+        how_to_fix="Find the largest element in the first screenful - usually the hero image or heading - and make it load sooner. Serve the image in a modern format at the right size, exclude it from lazy-loading, and remove render-blocking CSS and fonts ahead of it.",
+        fixability="developer_needed",
+    ),
+    "CWV_INP_POOR": _IssueSpec(
+        category="rendering", severity="warning",
+        description="Interaction to Next Paint for real users is in Google's 'poor' band",
+        recommendation="Reduce the JavaScript that runs when someone taps or types. Look for large scripts from page builders, chat widgets and analytics tags competing on the main thread, and defer anything not needed for the first interaction.",
+        human_description="Poor Interaction to Next Paint",
+        what_it_is="Interaction to Next Paint is one of Google's Core Web Vitals. This figure is "
+                   "the 75th percentile across real Chrome users over the last 28 "
+                   "days - not a synthetic test - so it reflects what visitors "
+                   "actually experience.",
+        impact_desc="Core Web Vitals are a confirmed Google ranking input, and "
+                    "a page that does not respond to taps feels broken. A page in the 'poor' band is losing both ranking "
+                    "and visitors who leave before it becomes usable.",
+        how_to_fix="Reduce the JavaScript that runs when someone taps or types. Look for large scripts from page builders, chat widgets and analytics tags competing on the main thread, and defer anything not needed for the first interaction.",
+        fixability="developer_needed",
+    ),
+    "CWV_CLS_POOR": _IssueSpec(
+        category="rendering", severity="warning",
+        description="Cumulative Layout Shift for real users is in Google's 'poor' band",
+        recommendation="Give images and embeds explicit width and height so the browser can reserve their space, and stop banners or ads being injected above content that has already rendered.",
+        human_description="Poor Cumulative Layout Shift",
+        what_it_is="Cumulative Layout Shift is one of Google's Core Web Vitals. This figure is "
+                   "the 75th percentile across real Chrome users over the last 28 "
+                   "days - not a synthetic test - so it reflects what visitors "
+                   "actually experience.",
+        impact_desc="Core Web Vitals are a confirmed Google ranking input, and "
+                    "content that jumps as it loads makes people tap the wrong thing. A page in the 'poor' band is losing both ranking "
+                    "and visitors who leave before it becomes usable.",
+        how_to_fix="Give images and embeds explicit width and height so the browser can reserve their space, and stop banners or ads being injected above content that has already rendered.",
         fixability="developer_needed",
     ),
     "LINK_STACKED_DUPLICATE": _IssueSpec(

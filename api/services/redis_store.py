@@ -103,6 +103,7 @@ class RedisJobStore:
             "scoring_model_version",
             "images_seen_total",
             "images_collected",
+            "web_vitals",
         }
         unknown = set(fields) - _ALLOWED
         if unknown:
@@ -628,6 +629,7 @@ class RedisJobStore:
             # E1.4 — image-cap disclosure; "" sentinel for None.
             "images_seen_total": "" if job.images_seen_total is None else str(job.images_seen_total),
             "images_collected": "" if job.images_collected is None else str(job.images_collected),
+            "web_vitals": json.dumps(job.web_vitals) if job.web_vitals else "",
         }
 
     def _mapping_to_job(self, m: dict) -> CrawlJob:
@@ -653,6 +655,7 @@ class RedisJobStore:
             # E1.4 — legacy hashes lack these keys; "" and missing both → None.
             images_seen_total=int(m["images_seen_total"]) if m.get("images_seen_total") else None,
             images_collected=int(m["images_collected"]) if m.get("images_collected") else None,
+            web_vitals=json.loads(m["web_vitals"]) if m.get("web_vitals") else None,
         )
 
     def _issue_to_dict(self, i: Issue) -> dict:
