@@ -82,6 +82,11 @@ class ParsedPage:
     mixed_content_active_count: int = 0  # script/iframe/stylesheet — browser-BLOCKED
     mixed_content_passive_count: int = 0 # img/media — auto-upgraded / warning only
     unsafe_cross_origin_count: int = 0   # target=_blank without noopener/noreferrer
+    # Evidence lists for the three link/resource checks that were count-only
+    # until 2026-08-29. A count names the page; the fixer needs the element.
+    mixed_content_items: list = None          # [{url, tag, severity}]
+    unsafe_cross_origin_links: list = None    # [{href, text, rel}]
+    internal_nofollow_links: list = None      # [{href, text}]
     has_hsts: bool | None = None         # None = HTTP page; True/False = HTTPS page
 
     # v1.5 bug-fix / new check fields
@@ -309,6 +314,9 @@ def parse_page(
             empty_anchor_count=0,
             stacked_link_groups=[],
             internal_nofollow_count=0,
+            mixed_content_items=[],
+            unsafe_cross_origin_links=[],
+            internal_nofollow_links=[],
             lang_attr=None,
         )
 
@@ -460,6 +468,9 @@ def parse_page(
         mixed_content_active_count=_count_mixed_content_active(soup, page_url),
         mixed_content_passive_count=_count_mixed_content_passive(soup, page_url),
         unsafe_cross_origin_count=_count_unsafe_cross_origin(soup, page_url),
+        mixed_content_items=_find_mixed_content(soup, page_url),
+        unsafe_cross_origin_links=_find_unsafe_cross_origin(soup, page_url),
+        internal_nofollow_links=_find_internal_nofollow(soup, page_url, base_url),
         has_hsts=_check_hsts(result.headers, page_url),
         img_missing_alt_count=_count_img_missing_alt(soup),
         img_missing_alt_srcs=_find_img_missing_alt_srcs(soup, page_url),
@@ -986,13 +997,23 @@ _MIXED_ACTIVE_TAGS = {"script": "src", "iframe": "src"}
 _MIXED_PASSIVE_TAGS = {"img": "src", "audio": "src", "video": "src", "source": "src"}
 
 
-def _count_http_src(soup: BeautifulSoup, tagmap: dict[str, str]) -> int:
-    n = 0
+def _find_http_src(soup: BeautifulSoup, tagmap: dict[str, str]) -> list[dict]:
+    """The http:// resources on the page, with the tag that loads each one.
+
+    A count alone names a page but not the thing to fix. Whoever has to edit the
+    template needs the URL and the element — see `_find_unsafe_cross_origin`.
+    """
+    found: list[dict] = []
     for tag_name, attr in tagmap.items():
         for tag in soup.find_all(tag_name):
-            if (tag.get(attr) or "").startswith("http://"):
-                n += 1
-    return n
+            url = (tag.get(attr) or "").strip()
+            if url.startswith("http://"):
+                found.append({"url": url, "tag": tag_name})
+    return found
+
+
+def _count_http_src(soup: BeautifulSoup, tagmap: dict[str, str]) -> int:
+    return len(_find_http_src(soup, tagmap))
 
 
 def _count_mixed_content_active(soup: BeautifulSoup, page_url: str) -> int:
@@ -1021,9 +1042,44 @@ def _count_mixed_content(soup: BeautifulSoup, page_url: str) -> int:
     return _count_mixed_content_active(soup, page_url) + _count_mixed_content_passive(soup, page_url)
 
 
-def _count_unsafe_cross_origin(soup: BeautifulSoup, page_url: str) -> int:
-    """Count external target=_blank links missing noopener/noreferrer."""
-    count = 0
+def _find_mixed_content(soup: BeautifulSoup, page_url: str) -> list[dict]:
+    """Every http:// resource on an https page, tagged active or passive.
+
+    Evidence for MIXED_CONTENT. Active resources are browser-BLOCKED; passive
+    ones are auto-upgraded or warned about — the operator needs to know which,
+    and which URL.
+    """
+    if not page_url.startswith("https://"):
+        return []
+    found: list[dict] = []
+    for item in _find_http_src(soup, _MIXED_ACTIVE_TAGS):
+        found.append({**item, "severity": "active"})
+    for tag in soup.find_all("link"):
+        rel = tag.get("rel", [])
+        if isinstance(rel, str):
+            rel = [rel]
+        href = (tag.get("href") or "").strip()
+        if "stylesheet" in [r.lower() for r in rel] and href.startswith("http://"):
+            found.append({"url": href, "tag": "link", "severity": "active"})
+    for item in _find_http_src(soup, _MIXED_PASSIVE_TAGS):
+        found.append({**item, "severity": "passive"})
+    return found
+
+
+def _find_unsafe_cross_origin(soup: BeautifulSoup, page_url: str) -> list[dict]:
+    """External ``target=_blank`` links missing noopener/noreferrer, WITH the href.
+
+    Purpose: make the finding fixable. Reporting "6 unsafe external links on this
+             page" names the page but not the links, so the operator has to
+             re-audit the page by hand to act on it — which is most of the work
+             the tool was supposed to save.
+    Tests:   tests/test_issue_evidence.py::TestUnsafeCrossOriginEvidence
+
+    Sibling of `_find_empty_anchors` / `_find_img_missing_alt_srcs`, which have
+    always returned evidence. These three link/resource checks were counted but
+    never captured (P5 — the same class, fixed together).
+    """
+    found: list[dict] = []
     for tag in soup.find_all("a", href=True):
         target = tag.get("target", "")
         if target.lower() != "_blank":
@@ -1042,8 +1098,17 @@ def _count_unsafe_cross_origin(soup: BeautifulSoup, page_url: str) -> int:
             rel_val = rel_val.split()
         rel_lower = [r.lower() for r in rel_val]
         if "noopener" not in rel_lower and "noreferrer" not in rel_lower:
-            count += 1
-    return count
+            found.append({
+                "href": absolute,
+                "text": (tag.get_text(strip=True) or "")[:80],
+                "rel": " ".join(rel_val) if rel_val else "",
+            })
+    return found
+
+
+def _count_unsafe_cross_origin(soup: BeautifulSoup, page_url: str) -> int:
+    """Count external target=_blank links missing noopener/noreferrer."""
+    return len(_find_unsafe_cross_origin(soup, page_url))
 
 
 def _check_hsts(headers: dict[str, str], page_url: str) -> bool | None:
@@ -1349,9 +1414,9 @@ def _extract_pdf_metadata(content: bytes) -> dict | None:
         return None
 
 
-def _count_internal_nofollow(soup: BeautifulSoup, page_url: str, base_url: str) -> int:
-    """Count internal links that carry rel="nofollow"."""
-    count = 0
+def _find_internal_nofollow(soup: BeautifulSoup, page_url: str, base_url: str) -> list[dict]:
+    """Internal links carrying rel="nofollow", WITH the href (see `_find_unsafe_cross_origin`)."""
+    found: list[dict] = []
     for tag in soup.find_all("a", href=True):
         href = tag["href"].strip()
         if not href or href.startswith(("#", "javascript:", "mailto:", "tel:", "data:")):
@@ -1366,8 +1431,16 @@ def _count_internal_nofollow(soup: BeautifulSoup, page_url: str, base_url: str) 
         if isinstance(rel_val, str):
             rel_val = rel_val.split()
         if "nofollow" in [r.lower() for r in rel_val]:
-            count += 1
-    return count
+            found.append({
+                "href": absolute,
+                "text": (tag.get_text(strip=True) or "")[:80],
+            })
+    return found
+
+
+def _count_internal_nofollow(soup: BeautifulSoup, page_url: str, base_url: str) -> int:
+    """Count internal links that carry rel="nofollow"."""
+    return len(_find_internal_nofollow(soup, page_url, base_url))
 
 
 # ---------------------------------------------------------------------------

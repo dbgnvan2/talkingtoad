@@ -985,6 +985,42 @@ accessible **name**, not visible text — a third-party tool reporting a much
 higher "links without anchor text" count is measuring something else.
 → `tests/test_stacked_links.py`.
 
+### 4.16 Issue evidence — WHICH element is wrong (EV, 2026-08-29)
+
+Owner-reported: *"you report issues like 'Unsafe External Link' but you don't
+provide the link, so it's not easy to find and fix."* Two independent faults.
+
+**Three checks counted without capturing.** `UNSAFE_CROSS_ORIGIN_LINK`,
+`MIXED_CONTENT` and `INTERNAL_NOFOLLOW` stored only a count, while their siblings
+`IMG_ALT_MISSING` and `LINK_EMPTY_ANCHOR` had always returned an evidence list
+(P5). `_find_unsafe_cross_origin`, `_find_mixed_content` and
+`_find_internal_nofollow` now return the offending elements and the `_count_*`
+helpers are `len()` of those, so a count cannot drift from its evidence.
+Mixed-content rows carry `severity: active|passive` — a blocked `<script>` and an
+auto-upgraded `<img>` are different problems.
+
+**The report rendered no evidence at all.** Most codes already carried it —
+`ANCHOR_TEXT_GENERIC` the anchor text and href, `SEMANTIC_DENSITY_LOW` a written
+diagnosis, `SCHEMA_VISIBLE_MISMATCH` the exact off-page value — and the PDF showed
+only affected page URLs. On the real 2,137-issue job, **34 codes** were carrying
+usable evidence the report discarded (P25).
+
+`api/services/issue_evidence.py` renders any code's `extra` from the ~15 recurring
+shapes it actually uses, enumerated from a real job. A per-code formatter table was
+rejected: 167 entries, and it would silently omit the next code added. Pure
+measurements are skipped (the description states them); unknown keys are skipped
+rather than dumped, because raw JSON in a client report is worse than nothing.
+Surfaced as **"What to look for:"** in the PDF and a matching Excel column that is
+genuinely uncapped, since the PDF points the reader there.
+
+`PAGE_IS_THE_EVIDENCE` records the codes whose fix is "edit this page" with no
+sub-element to name. A test asserts every entry is a real code and that every
+high-volume code renders evidence — so a silent finding is a decision, not an
+oversight. → `tests/test_issue_evidence.py` (41 tests).
+
+**Existing crawls:** the renderer works on stored data immediately; the three
+capture fixes need a re-crawl, because those hrefs were never written.
+
 **Configuration.** E4–E7 introduced `api/config/*.json` with a loader
 (`api.config.load_config`) that validates required keys and raises at import on
 a malformed file, so editorial content lives outside Python source (rule 9) and a

@@ -592,8 +592,13 @@ def check_page(
 
     # ── Internal nofollow links ───────────────────────────────────────────
     if page.internal_nofollow_count > 0:
+        _nofollow = getattr(page, "internal_nofollow_links", None) or []
         issues.append(make_issue("INTERNAL_NOFOLLOW", url,
-                                 extra={"internal_nofollow_count": page.internal_nofollow_count}))
+                                 extra={"internal_nofollow_count": page.internal_nofollow_count,
+                                        # Evidence: which internal links carry
+                                        # rel="nofollow" (see security.py).
+                                        "nofollow_links": _nofollow[:20],
+                                        "nofollow_links_total": len(_nofollow)}))
 
     # ── Page size ─────────────────────────────────────────────────────────
     _page_size_threshold = page_size_limit_kb * 1024

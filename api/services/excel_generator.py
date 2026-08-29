@@ -402,7 +402,7 @@ def generate_excel_report(
         # E2: linking pages travel with broken-link rows so the "full list is in
         # the spreadsheet export" line in the UI and the PDF is actually true.
         headers = ["Severity", "URL", "Issue Code", "Description", "Recommendation",
-                   "Linking pages", "Linking pages (total)"]
+                   "What to look for", "Linking pages", "Linking pages (total)"]
         ws.append(headers)
         
         # Style headers
@@ -411,15 +411,24 @@ def generate_excel_report(
             cell.fill = header_fill
             cell.alignment = Alignment(horizontal="center")
 
+        from api.services.issue_evidence import evidence_for_excel
+
         for issue in by_cat[cat]:
             extra = getattr(issue, "extra", None) or {}
             linking = extra.get("occurrence_urls") or []
+            # Uncapped on purpose, and this time verifiably so: the PDF caps its
+            # evidence list and points the reader here for the rest.
+            try:
+                evidence = evidence_for_excel(issue.issue_code, extra)
+            except Exception:
+                evidence = ""
             ws.append([
                 issue.severity.upper(),
                 issue.page_url or "Site-wide",
                 issue.issue_code,
                 issue.description,
                 issue.recommendation,
+                evidence,
                 "\n".join(linking) if linking else "",
                 extra.get("occurrence_urls_total") if linking else None,
             ])
@@ -431,7 +440,8 @@ def generate_excel_report(
         ws.column_dimensions['D'].width = 60
         ws.column_dimensions['E'].width = 60
         ws.column_dimensions['F'].width = 70
-        ws.column_dimensions['G'].width = 20
+        ws.column_dimensions['G'].width = 70
+        ws.column_dimensions['H'].width = 20
         
         # Add auto-filter
         ws.auto_filter.ref = ws.dimensions

@@ -217,6 +217,8 @@ Matrix): 180-day technical-improvement staleness and 20% traffic-decay drop.
 | Prevalence tier "widespread" | share >= 0.10 AND >= 10 pages | `api/config/prevalence.json` |
 | Roadmap items shown per phase | 12 | `api/services/remediation.py` `build_roadmap(limit_per_phase=...)` |
 | Stacked-link group minimum size | 2 | `api/config/link_patterns.json` `min_group_size` |
+| Evidence rows stored per issue | 20 | `TT_EVIDENCE_CAP` env, `api/crawler/checkers/security.py` |
+| Evidence rows rendered in the PDF | 10 | `TT_EVIDENCE_ROW_CAP` env, `api/services/issue_evidence.py` |
 | Performance-ledger join warning floor | 5% of pages | `TT_PERF_JOIN_WARN_RATIO` env, `api/services/page_priority.py` |
 | Top pages by impressions shown | 15 | `build_performance_summary(top_n=...)` |
 | Entity description minimum words | 5 | `api/config/entity_values.json` `min_description_words` |

@@ -402,6 +402,41 @@ def _render_systemic_defects_section(pdf, prevalence: list | None) -> None:
         pdf.ln(3)
 
 
+def _render_issue_evidence(pdf, issue) -> None:
+    """Render the offending elements for one issue, from its `extra` payload.
+
+    Spec:  docs/pending/2026-08-29_EV-issue-evidence.md
+    Tests: tests/test_issue_evidence.py::TestReportRendering
+    """
+    from api.services.issue_evidence import evidence_lines
+
+    extra = getattr(issue, "extra", None)
+    code = getattr(issue, "issue_code", None) or getattr(issue, "code", "")
+    try:
+        lines, _total = evidence_lines(code, extra)
+    except Exception:  # noqa: BLE001 — evidence must never break a report
+        logger.warning("issue_evidence_failed", extra={"code": code}, exc_info=True)
+        return
+    if not lines:
+        return
+
+    if pdf.get_y() > 235:
+        pdf.add_page()
+    pdf.set_x(25.4)
+    pdf.set_font('helvetica', 'B', 9)
+    pdf.set_text_color(*COLOR_GRAY_600)
+    pdf.cell(W, 6, "What to look for:", new_x="LMARGIN", new_y="NEXT")
+
+    pdf.set_font('helvetica', '', 8)
+    pdf.set_text_color(*COLOR_GRAY_800)
+    for line in lines:
+        if pdf.get_y() > 250:
+            pdf.add_page()
+        pdf.set_x(30 if line.startswith("  ") else 28)
+        pdf.multi_cell(W - 5, 4, pdf.clean_text(line.strip()))
+    pdf.ln(1)
+
+
 def _render_roadmap_section(pdf, issues, prevalence, priority_pages) -> None:
     """Owner / phase / effort / done-when per finding (E7.1)."""
     if not issues:
@@ -1122,6 +1157,13 @@ async def generate_pdf_report(
                 how = help_entry.get("fix") or first.how_to_fix or first.recommendation or ""
                 if what or how:
                     pdf.draw_help_section(what, impact_text, how)
+
+            # Evidence — WHICH element on the page is wrong (2026-08-29).
+            # Previously the report showed only the affected page URLs, so a
+            # finding like "6 unsafe external links" named the page and left the
+            # operator to re-audit it by hand. Most codes already carried the
+            # detail in `extra`; nothing rendered it (P25).
+            _render_issue_evidence(pdf, iss)
 
             # Affected URLs (always shown — this is the core value of the report)
             if include_pages and urls:

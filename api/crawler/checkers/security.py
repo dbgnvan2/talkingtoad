@@ -9,8 +9,16 @@ from urllib.parse import urlparse
 
 from api.crawler.parser import ParsedPage
 
+import os
+
 from api.crawler.checkers.registry import Issue, make_issue
 
+
+
+# How many evidence rows to carry on one issue. The uncapped total travels
+# alongside so a truncated list is disclosed, never passed off as complete
+# (rule 6). Mirrors the E2 broken-link source cap.
+_EVIDENCE_CAP = int(os.getenv("TT_EVIDENCE_CAP", "20"))
 
 def _check_security(
     page: ParsedPage,
@@ -42,11 +50,16 @@ def _check_security(
     if page.mixed_content_count > 0:
         active = getattr(page, "mixed_content_active_count", 0) or 0
         passive = getattr(page, "mixed_content_passive_count", 0) or 0
+        items = getattr(page, "mixed_content_items", None) or []
         issues.append(make_issue("MIXED_CONTENT", url,
                                  extra={"mixed_count": page.mixed_content_count,
                                         "active_count": active,
                                         "passive_count": passive,
-                                        "has_active": active > 0}))
+                                        "has_active": active > 0,
+                                        # Evidence: WHICH resources. A count named
+                                        # the page but not the thing to fix.
+                                        "mixed_content_items": items[:_EVIDENCE_CAP],
+                                        "mixed_content_items_total": len(items)}))
 
     # MISSING_HSTS — emit once per host
     if page.has_hsts is False:
@@ -59,5 +72,11 @@ def _check_security(
 
     # UNSAFE_CROSS_ORIGIN_LINK
     if page.unsafe_cross_origin_count > 0:
+        links = getattr(page, "unsafe_cross_origin_links", None) or []
         issues.append(make_issue("UNSAFE_CROSS_ORIGIN_LINK", url,
-                                 extra={"unsafe_link_count": page.unsafe_cross_origin_count}))
+                                 extra={"unsafe_link_count": page.unsafe_cross_origin_count,
+                                        # Evidence: the actual hrefs. Without these
+                                        # the operator has to re-audit the page by
+                                        # hand to act on the finding.
+                                        "unsafe_links": links[:_EVIDENCE_CAP],
+                                        "unsafe_links_total": len(links)}))
