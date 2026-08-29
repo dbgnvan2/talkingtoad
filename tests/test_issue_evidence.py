@@ -305,3 +305,71 @@ class TestReadableLabels:
     def test_ev_unknown_key_still_gets_a_readable_fallback(self):
         lines, _ = evidence_lines("X", {"some_new_list": ["a value"]})
         assert any(line.startswith("Some new list") for line in lines)
+
+
+class TestEvidenceMatchesItsOwnSection:
+    """The renderer must show the evidence for the issue it is printed under.
+
+    The first wiring passed a leaked loop variable from an earlier section. It
+    was in scope, raised nothing, and rendered another issue's evidence — the
+    kind of bug that only a content assertion catches.
+    """
+
+    @pytest.mark.asyncio
+    async def test_ev_each_section_shows_its_own_evidence(self):
+        job = CrawlJob(job_id="j", target_url=PAGE, status="complete",
+                       started_at=datetime.now(timezone.utc))
+        issues = [
+            IssueModel(
+                job_id="j", page_url=PAGE, category="security", severity="info",
+                issue_code="UNSAFE_CROSS_ORIGIN_LINK",
+                description="External link opens in a new tab without rel",
+                recommendation="Add rel.", human_description="Unsafe External Link",
+                extra={"unsafe_links": [{"href": "https://partner.org/only-here"}],
+                       "unsafe_links_total": 1},
+            ),
+            IssueModel(
+                job_id="j", page_url=PAGE, category="metadata", severity="info",
+                issue_code="ANCHOR_TEXT_GENERIC",
+                description="Generic anchor text", recommendation="Describe it.",
+                human_description="Non-Descriptive Link Text",
+                extra={"examples": [{"href": "https://x/target-here",
+                                     "text": "Read More"}]},
+            ),
+        ]
+        text = _pdf_text(await generate_pdf_report(job, issues, {
+            "health_score": 90, "agent_health_score": 90, "pages_crawled": 1,
+            "total_issues": 2, "by_severity": {"info": 2},
+            "by_category": {"security": 1, "metadata": 1}}))
+
+        assert "partner.org/only-here" in text
+        assert "target-here" in text
+        assert "Read More" in text
+
+    @pytest.mark.asyncio
+    async def test_ev_real_job_codes_reach_the_pdf(self):
+        """End-to-end on a realistic payload: a diagnosis and a heading list both
+        render, proving the renderer is reached for more than one shape."""
+        job = CrawlJob(job_id="j", target_url=PAGE, status="complete",
+                       started_at=datetime.now(timezone.utc))
+        issues = [
+            IssueModel(
+                job_id="j", page_url=PAGE, category="ai_readiness", severity="info",
+                issue_code="SEMANTIC_DENSITY_LOW", description="Low text ratio",
+                recommendation="Trim markup.", human_description="High Code-to-Text Ratio",
+                extra={"ratio": 0.028,
+                       "diagnosis": "Inline styles account for 49% of the page."},
+            ),
+            IssueModel(
+                job_id="j", page_url=PAGE, category="ai_readiness", severity="info",
+                issue_code="CONVERSATIONAL_H2_MISSING", description="No question headings",
+                recommendation="Use questions.", human_description="Non-Conversational Headings",
+                extra={"h2_headings": ["Upcoming Conferences", "Counselling"]},
+            ),
+        ]
+        text = _pdf_text(await generate_pdf_report(job, issues, {
+            "health_score": 90, "agent_health_score": 90, "pages_crawled": 1,
+            "total_issues": 2, "by_severity": {"info": 2},
+            "by_category": {"ai_readiness": 2}}))
+        assert "Inline styles account for 49%" in text
+        assert "Upcoming Conferences" in text

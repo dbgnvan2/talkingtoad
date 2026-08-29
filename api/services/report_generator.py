@@ -1537,7 +1537,10 @@ async def generate_pdf_report(
             # finding like "6 unsafe external links" named the page and left the
             # operator to re-audit it by hand. Most codes already carried the
             # detail in `extra`; nothing rendered it (P25).
-            _render_issue_evidence(pdf, iss)
+            # `first` is this group's representative issue. Passing `iss` here
+            # (a leaked variable from the checklist loop above) was in scope,
+            # raised nothing, and rendered the wrong issue's evidence.
+            _render_issue_evidence(pdf, first)
 
             # Affected URLs (always shown — this is the core value of the report)
             if include_pages and urls:
