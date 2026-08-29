@@ -349,16 +349,21 @@ async def _run_crawl_background(
 
         pages = [_engine_page_to_model(p, job_id) for p in result.pages]
         issues = [_engine_issue_to_model(i, job_id) for i in result.issues]
+        # E2.3: link_type is DERIVED by the engine (a same-host 404 is internal —
+        # it was hardcoded "external" here, so every internal broken link was
+        # mislabelled), and status_code is persisted so a transient 503 stays
+        # distinguishable from a permanent 404 (P1).
         broken_links = [
             Link(
                 job_id=job_id,
-                source_url=src,
-                target_url=tgt,
-                link_text=txt,
-                link_type="external",
+                source_url=ref.source_url,
+                target_url=ref.target_url,
+                link_text=ref.link_text,
+                link_type=ref.link_type,
+                status_code=ref.status_code,
                 is_broken=True,
             )
-            for tgt, src, txt in result.broken_link_sources
+            for ref in result.broken_link_sources
         ]
 
         if pages:
@@ -407,6 +412,10 @@ async def _run_crawl_background(
             sitemap_found=result.sitemap_found,
             sitemap_url_found=result.sitemap_url_found,
             sitemap_url_count=result.sitemap_url_count,
+            # E1.4: persist the image-cap disclosure numbers with the job so
+            # every export can state coverage honestly.
+            images_seen_total=result.images_seen_total,
+            images_collected=result.images_collected,
         )
         logger.info("crawl_persisted", extra={"job_id": job_id, "status": final_status})
 

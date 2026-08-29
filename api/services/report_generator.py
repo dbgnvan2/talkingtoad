@@ -326,7 +326,22 @@ async def generate_pdf_report(
         pdf.set_font('helvetica', '', 10)
         pdf.set_text_color(*COLOR_GRAY_600)
         pdf.set_x(25.4)
-        pdf.multi_cell(W, 5, "Analysis of all images found during the crawl, including accessibility, performance, and optimization metrics.")
+        pdf.multi_cell(W, 5, "Analysis of images found during the crawl, including accessibility, performance, and optimization metrics.")
+
+        # E1.4 (rule 6, P9): when the per-job image cap turned images away, say so
+        # here rather than letting the health score read as full coverage.
+        seen_total = getattr(job, "images_seen_total", None)
+        collected = getattr(job, "images_collected", None)
+        if seen_total and collected is not None and seen_total > collected:
+            pdf.ln(2)
+            pdf.set_x(25.4)
+            pdf.set_font('helvetica', 'B', 10)
+            pdf.set_text_color(*COLOR_WARNING)
+            pdf.multi_cell(W, 5, pdf.clean_text(
+                f"Coverage: analysed {collected} of {seen_total} distinct images found. "
+                f"The scores below describe the analysed sample, not the whole site."
+            ))
+            pdf.set_text_color(*COLOR_GRAY_600)
         pdf.ln(5)
 
         # Image stats

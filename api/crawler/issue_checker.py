@@ -480,7 +480,8 @@ def check_page(
 
     # ── Image alt text ────────────────────────────────────────────────────
     if page.img_missing_alt_count > 0:
-        srcs = page.img_missing_alt_srcs or []
+        raw_srcs = page.img_missing_alt_srcs or []
+        srcs = list(raw_srcs)
         # Filter out images matching ignored patterns (e.g. theme SVG icons)
         if ignored_image_patterns:
             srcs = [s for s in srcs if not any(p in s for p in ignored_image_patterns)]
@@ -493,6 +494,23 @@ def check_page(
             issue.description = (
                 f"{len(srcs)} image{'s' if len(srcs) > 1 else ''} "
                 f"missing alt text: {listed}{suffix}"
+            )
+            issues.append(issue)
+        elif not raw_srcs:
+            # E1.3 (P2): the URL list was never populated — no URL could be
+            # resolved for any of the offending tags. That is a resolution
+            # failure, NOT "no images are missing alt": the count says otherwise.
+            # Report it on the count rather than dropping a real finding.
+            # (When `raw_srcs` WAS populated and the ignore-patterns filter
+            # emptied it, that is a deliberate suppression and stays silent.)
+            issue = make_issue("IMG_ALT_MISSING", url,
+                               extra={"missing_alt_count": page.img_missing_alt_count,
+                                      "img_missing_alt_srcs": [],
+                                      "unresolved": True})
+            n = page.img_missing_alt_count
+            issue.description = (
+                f"{n} image{'s' if n > 1 else ''} missing alt text "
+                f"(image URLs could not be resolved from the HTML)"
             )
             issues.append(issue)
 

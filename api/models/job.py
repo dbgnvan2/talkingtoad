@@ -109,3 +109,10 @@ class CrawlJob(BaseModel):
     # stamped at creation from a single source of truth. Legacy audits saved
     # before this field existed read back as None.
     scoring_model_version: str | None = SCORING_MODEL_VERSION
+    # E1.4 (2026-08-29) — image-cap disclosure. `images_seen_total` counts every
+    # DISTINCT image URL the crawl found; `images_collected` is how many survived
+    # the per-job cap and were analysed. When they differ, every surface must say
+    # "analysed N of M" instead of implying full coverage (P9, rule 6). Legacy
+    # audits read back as None, which surfaces render as "not recorded".
+    images_seen_total: int | None = None
+    images_collected: int | None = None

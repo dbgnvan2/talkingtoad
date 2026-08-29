@@ -10,7 +10,7 @@ import inspect
 import logging
 import os
 import re
-from collections import deque
+from collections import OrderedDict, deque
 from dataclasses import dataclass, field
 from typing import Callable
 from urllib.parse import urlparse
@@ -71,6 +71,42 @@ _DEFAULT_MAX_PAGES = int(os.getenv("MAX_PAGES_PER_CRAWL", "500"))
 _MIN_CRAWL_DELAY_MS = 200
 _EXTERNAL_LINK_CAP_PER_PAGE = 50
 _EXTERNAL_LINK_CAP_PER_JOB = 500
+
+# E2.2 (rule 8) — how many linking pages to carry in an issue's evidence list.
+# The uncapped total always travels alongside it as `occurrence_urls_total`, so
+# every surface can say "showing 50 of 120" instead of implying 50 is all there is.
+_BROKEN_LINK_SOURCE_CAP = int(os.getenv("TT_BROKEN_LINK_SOURCE_CAP", "50"))
+
+
+def _broken_link_extra(
+    *,
+    target_url: str,
+    sources: list[str],
+    first_source: str | None = None,
+    anchor_texts: list[str] | None = None,
+) -> dict:
+    """Build the `extra` payload for a broken-link issue.
+
+    Purpose: carry EVERY page that links to a broken target, capped for size but
+             with the true total alongside, so a template-wide defect reads as one.
+    Spec:    docs/pending/2026-08-29_E2-broken-link-source-attribution.md#E2.2
+    Tests:   tests/test_broken_link_attribution.py::TestBrokenLinkExtra
+
+    `source_url` is retained for backwards compatibility with existing consumers.
+    """
+    listed = sources[:_BROKEN_LINK_SOURCE_CAP]
+    extra = {
+        "target_url": target_url,
+        "occurrences": len(sources),
+        "occurrence_urls": listed,
+        "occurrence_urls_total": len(sources),
+    }
+    primary = first_source or (sources[0] if sources else None)
+    if primary:
+        extra["source_url"] = primary
+    if anchor_texts:
+        extra["anchor_texts"] = [t for t in anchor_texts[:_BROKEN_LINK_SOURCE_CAP] if t]
+    return extra
 
 # Social media and other platforms known to block automated HTTP requests.
 # Checking these produces false positives (e.g. LinkedIn returns 999, Facebook
@@ -175,6 +211,25 @@ class CrawlSettings:
 
 
 @dataclass
+class BrokenLinkRef:
+    """One (target, source) pair for a broken link, with the facts needed to
+    persist it faithfully.
+
+    Purpose: replace the legacy 3-tuple, which forced the router to hardcode
+             `link_type="external"` and to drop `status_code` entirely — so a
+             same-host 404 was stored as external and a transient 503 was
+             indistinguishable from a permanent 404 (P1).
+    Spec:    docs/pending/2026-08-29_E2-broken-link-source-attribution.md#E2.3
+    Tests:   tests/test_broken_link_attribution.py
+    """
+    target_url: str
+    source_url: str
+    link_text: str | None = None
+    status_code: int | None = None
+    link_type: str = "external"   # "internal" | "external", derived, never assumed
+
+
+@dataclass
 class CrawlResult:
     job_id: str
     pages: list[ParsedPage]
@@ -182,9 +237,12 @@ class CrawlResult:
     pages_crawled: int
     external_links_checked: int
     cancelled: bool = False
-    # (target_url, source_url, link_text) for every broken external link found.
-    # Stored so the router can persist them to the links table for the Fix panel.
-    broken_link_sources: list[tuple[str, str, str | None]] = field(default_factory=list)
+    # E2.3: one BrokenLinkRef per (target, source) pair for every broken link,
+    # internal and external. Stored so the router can persist them to the links
+    # table for the Fix panel. Was a list[tuple[str, str, str | None]] before
+    # 2026-08-29 — a return-contract change, so every call site was updated in
+    # the same commit (P22) and test_architecture_constraints guards the old shape.
+    broken_link_sources: list[BrokenLinkRef] = field(default_factory=list)
     # v1.9image: Analyzed images with scores and issues
     images: list[ImageInfo] = field(default_factory=list)
     # Crawl discovery info for display
@@ -196,6 +254,12 @@ class CrawlResult:
     # Number of distinct URLs skipped because they fell outside the selected
     # content-type scope (partial scan). 0 when no scoping is active.
     scope_skipped: int = 0
+    # E1.4 (P9, rule 6): distinct image URLs SEEN across the crawl vs the number
+    # that survived the per-job cap and were analysed. When these differ, every
+    # surface must say "analysed N of M" rather than implying full coverage.
+    # Spec: docs/pending/2026-08-29_E1-lazy-loaded-image-extraction.md#E1.4
+    images_seen_total: int = 0
+    images_collected: int = 0
 
 
 # ---------------------------------------------------------------------------
@@ -429,13 +493,24 @@ async def run_crawl(
         # Format: {"source_url": str, "target_url": str, "link_text": str|None}
         external_link_queue: list[dict] = []
         external_per_page_count: dict[str, int] = {}
-        external_targets_seen: set[str] = set()  # deduplicate by target URL
-        # (target_url, source_url, link_text) for every broken link (internal + external)
-        broken_link_sources: list[tuple[str, str, str | None]] = []
+        # E2.1: a target is FETCHED once (dedupe by URL, unchanged) but every page
+        # that links to it is retained. Keeping only the first source is what made
+        # 120 broken internal links report as 10 targets with occurrences=1, hiding
+        # that a single reusable-block edit fixes most of them.
+        # Spec: docs/pending/2026-08-29_E2-broken-link-source-attribution.md#E2.1
+        external_target_sources: "OrderedDict[str, list[dict]]" = OrderedDict()
+        # Every page that linked to an internal URL, in discovery order. Additive:
+        # `discovered_from` keeps its first-discoverer depth/parent semantics (P12).
+        discovered_from_all: dict[str, list[str]] = {}
+        # Every broken link found (internal + external), one record per (target, source).
+        broken_link_sources: list[BrokenLinkRef] = []
 
         # Image data: collected during internal crawl, analyzed after
         # Format: dict from parser with url, page_url, alt, srcset, etc.
-        _IMAGE_URL_CAP_PER_JOB = 150
+        # E1.4: the cap is configurable (rule 8) and what it drops is announced
+        # (rule 6) — `image_targets_seen` counts every DISTINCT image URL found,
+        # including those the cap turned away, so the report can say "N of M".
+        _IMAGE_URL_CAP_PER_JOB = int(os.getenv("TT_IMAGE_URL_CAP_PER_JOB", "150"))
         image_data_queue: list[dict] = []
         image_targets_seen: set[str] = set()
 
@@ -595,11 +670,23 @@ async def run_crawl(
                     broken = issue_for_status(result.status_code, url)
                     if broken:
                         source = discovered_from.get(url)
-                        broken.extra = {"source_url": source} if source else {}
+                        # E2.2: every page that links here, not just the first.
+                        all_sources = [
+                            s for s in discovered_from_all.get(url, [])
+                            if s and s != "(sitemap)"
+                        ]
+                        if source and source != "(sitemap)" and source not in all_sources:
+                            all_sources.insert(0, source)
+                        broken.extra = _broken_link_extra(
+                            target_url=url, sources=all_sources, first_source=source
+                        )
                         # Store in broken_link_sources so the links table gets populated
                         # (enables "Show Source Pages" for internal broken links)
-                        if source and source != "(sitemap)":
-                            broken_link_sources.append((url, source, None))
+                        for src in all_sources:
+                            broken_link_sources.append(BrokenLinkRef(
+                                target_url=url, source_url=src, link_text=None,
+                                status_code=result.status_code, link_type="internal",
+                            ))
                     page_issues = [broken] if broken else []
                 else:
                     try:
@@ -654,27 +741,49 @@ async def run_crawl(
                             depth_map[norm] = child_depth
                         discovered_from.setdefault(norm, url)
                         queue.append((norm, depth_map[norm]))
+                    # E2.1: record EVERY page that links here, whether or not the
+                    # target is already queued/visited. `discovered_from` above
+                    # keeps its first-discoverer semantics untouched (P12); this
+                    # is purely additive and is what lets a 4xx page report all
+                    # the pages that need editing, not just the first one found.
+                    sources = discovered_from_all.setdefault(norm, [])
+                    if url not in sources:
+                        sources.append(url)
                 else:
                     # Collect external links for later checking (subject to caps)
-                    per_page = external_per_page_count.get(url, 0)
                     target = link.url
-                    if per_page < _EXTERNAL_LINK_CAP_PER_PAGE and target not in external_targets_seen:
+                    if target in external_target_sources:
+                        # Already queued for fetching — record this additional
+                        # source and move on. Does NOT consume the per-page quota:
+                        # that quota limits how many DISTINCT targets one page
+                        # contributes, not how many pages point at a known target.
+                        srcs = external_target_sources[target]
+                        if not any(s["source_url"] == url for s in srcs):
+                            srcs.append({"source_url": url, "link_text": link.text})
+                        continue
+                    per_page = external_per_page_count.get(url, 0)
+                    if per_page < _EXTERNAL_LINK_CAP_PER_PAGE:
                         external_link_queue.append({
                             "source_url": url,
                             "target_url": target,
                             "link_text": link.text,
                         })
                         external_per_page_count[url] = per_page + 1
-                        external_targets_seen.add(target)
+                        external_target_sources[target] = [
+                            {"source_url": url, "link_text": link.text}
+                        ]
 
             # Collect image data for full analysis (v1.9image)
             if is_html:
                 if page.image_data:
                     for img_data in page.image_data:
                         img_url = img_data.get("url")
-                        if img_url and img_url not in image_targets_seen and len(image_data_queue) < _IMAGE_URL_CAP_PER_JOB:
+                        if not img_url or img_url in image_targets_seen:
+                            continue
+                        # Count every distinct URL seen, cap or no cap (E1.4).
+                        image_targets_seen.add(img_url)
+                        if len(image_data_queue) < _IMAGE_URL_CAP_PER_JOB:
                             image_data_queue.append(img_data)
-                            image_targets_seen.add(img_url)
 
         # ── 5. External link checking ─────────────────────────────────────
         external_checked = 0
@@ -744,27 +853,64 @@ async def run_crawl(
             if result is not None:
                 target = ext["target_url"]
                 source_url = ext["source_url"]
+                # E2.2: every page that links to this target, not just the one
+                # that happened to be crawled first.
+                srcs = external_target_sources.get(target) or [
+                    {"source_url": source_url, "link_text": ext.get("link_text")}
+                ]
+                source_urls = [s["source_url"] for s in srcs]
+                anchor_texts = [s.get("link_text") for s in srcs]
+                link_type = "internal" if is_same_domain(target, normalised_start) else "external"
+
+                def _record(status_code: int | None) -> None:
+                    for s in srcs:
+                        broken_link_sources.append(BrokenLinkRef(
+                            target_url=target,
+                            source_url=s["source_url"],
+                            link_text=s.get("link_text"),
+                            status_code=status_code,
+                            link_type=link_type,
+                        ))
+
                 if result.status_code == 0 and result.error:
                     issue = make_issue("EXTERNAL_LINK_TIMEOUT", source_url)
-                    issue.extra = {"target_url": target}
+                    issue.extra = _broken_link_extra(
+                        target_url=target, sources=source_urls,
+                        first_source=source_url, anchor_texts=anchor_texts,
+                    )
                     issue.description = f"Link to {target} did not respond — destination may be slow or unavailable"
                     all_issues.append(issue)
-                    broken_link_sources.append((target, source_url, ext.get("link_text")))
+                    _record(None)
                 else:
                     issue = issue_for_status(result.status_code, target)
                     if issue:
                         issue.page_url = source_url
-                        issue.extra = {"target_url": target}
+                        issue.extra = _broken_link_extra(
+                            target_url=target, sources=source_urls,
+                            first_source=source_url, anchor_texts=anchor_texts,
+                        )
                         issue.description = f"Link to {target} returns {result.status_code}"
                         all_issues.append(issue)
-                        broken_link_sources.append((target, source_url, ext.get("link_text")))
+                        _record(result.status_code)
 
         # ── 5.5 Image analysis (v1.9image) ─────────────────────────────────
         # Collect image metadata from HTML without fetching actual images
         # Full image data (dimensions, size) fetched on-demand via API
         all_images: list[ImageInfo] = []
 
-        print(f"[IMG] image_data_queue has {len(image_data_queue)} entries")
+        # E1.4 (rule 6): a cap on core input must announce what it drops.
+        if len(image_targets_seen) > len(image_data_queue):
+            log.warning(
+                "image_cap_reached",
+                extra={
+                    "images_seen": len(image_targets_seen),
+                    "images_queued": len(image_data_queue),
+                    "cap": _IMAGE_URL_CAP_PER_JOB,
+                },
+            )
+
+        print(f"[IMG] image_data_queue has {len(image_data_queue)} entries "
+              f"(of {len(image_targets_seen)} distinct image URLs seen)")
 
         try:
             image_config = {
@@ -1023,6 +1169,8 @@ async def run_crawl(
             sitemap_url_found=_sitemap_url_found,
             sitemap_url_count=_sitemap_url_count,
             scope_skipped=len(scope_skipped_urls),
+            images_seen_total=len(image_targets_seen),
+            images_collected=len(all_images),
         )
 
 

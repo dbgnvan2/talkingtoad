@@ -23,6 +23,11 @@ PER_TARGET_CODES: frozenset[str] = frozenset({
 })
 _OCC_STEP = float(os.getenv("TT_OCCURRENCE_STEP", "0.25"))
 _OCC_CEIL = float(os.getenv("TT_OCCURRENCE_CEIL", "2.0"))
+# E2.2 — how many linking pages to carry in the evidence list. The uncapped
+# total always travels with it (`occurrence_urls_total`) so a capped list is
+# disclosed rather than passed off as complete (rule 6). Mirrors
+# engine._BROKEN_LINK_SOURCE_CAP; both read the same env var.
+_SOURCE_LIST_CAP = int(os.getenv("TT_BROKEN_LINK_SOURCE_CAP", "50"))
 
 
 def occurrence_multiplier(n: int) -> float:
@@ -48,7 +53,6 @@ def collapse_per_target_occurrences(issues: list[Issue]) -> list[Issue]:
     collapsed: list[Issue] = []
     for (page_url, code), group in grouped.items():
         first = group[0]
-        n = len(group)
         # Evidence URL for the occurrence list: `target_url` for broken/timeout
         # links, `redirect_to` for redirect codes, or `source_url` for an
         # internal broken PAGE (the page itself 4xx/5xx; source_url is where it
@@ -57,8 +61,53 @@ def collapse_per_target_occurrences(issues: list[Issue]) -> list[Issue]:
         def _evidence(x):
             return x.get("target_url") or x.get("redirect_to") or x.get("source_url")
 
-        targets = [_evidence(g.extra) for g in group if g.extra and _evidence(g.extra)]
-        first.extra = {**(first.extra or {}), "occurrences": n, "occurrence_urls": targets}
+        # E2.2 — a member may ALREADY represent many affected links: the engine
+        # now emits one broken-link issue per TARGET carrying every page that
+        # links to it. Summing each member's own `occurrences` preserves §2's
+        # original meaning (n = total affected links) instead of resetting it to
+        # the number of Issue objects, which post-E2 is no longer the same thing.
+        # Pre-E2 every member carried no `occurrences`, so this sums to len(group)
+        # and the behaviour is identical for callers that don't set it.
+        n = sum(int((g.extra or {}).get("occurrences", 1)) for g in group)
+
+        # Source pages the operator must edit. Union across the group, order
+        # preserved, deduped. Falls back to the legacy target/redirect evidence
+        # for issues that carry no source list (redirect codes, older callers).
+        source_urls: list[str] = []
+        seen_sources: set[str] = set()
+        has_source_lists = False
+        for g in group:
+            extra = g.extra or {}
+            if "occurrence_urls_total" in extra:
+                has_source_lists = True
+                for u in extra.get("occurrence_urls") or []:
+                    if u and u not in seen_sources:
+                        seen_sources.add(u)
+                        source_urls.append(u)
+        if not has_source_lists:
+            for g in group:
+                u = _evidence(g.extra) if g.extra else None
+                if u and u not in seen_sources:
+                    seen_sources.add(u)
+                    source_urls.append(u)
+
+        # The distinct broken destinations in this group — kept alongside the
+        # source list so "which links" and "which pages" are both answerable.
+        targets = []
+        for g in group:
+            t = _evidence(g.extra) if g.extra else None
+            if t and t not in targets:
+                targets.append(t)
+
+        merged = {**(first.extra or {})}
+        merged["occurrences"] = n
+        merged["occurrence_urls"] = source_urls[:_SOURCE_LIST_CAP]
+        merged["occurrence_urls_total"] = len(source_urls)
+        if targets:
+            merged["affected_targets"] = targets[:_SOURCE_LIST_CAP]
+            merged["affected_targets_total"] = len(targets)
+        first.extra = merged
+
         if n > 1:
             base_impact, effort = _ISSUE_SCORING[code]
             first.impact = round(base_impact * occurrence_multiplier(n))

@@ -96,6 +96,9 @@ class SQLiteJobStore:
             ("fix_focus", "TEXT"),
             ("priority_seed", "TEXT"),
             ("scoring_model_version", "TEXT"),
+            # E1.4 — image-cap disclosure (analysed N of M)
+            ("images_seen_total", "INTEGER"),
+            ("images_collected", "INTEGER"),
         ]
         for col, col_type in job_columns:
             try:
@@ -250,6 +253,8 @@ class SQLiteJobStore:
             "fix_focus",
             "priority_seed",
             "scoring_model_version",
+            "images_seen_total",
+            "images_collected",
         }
         unknown = set(fields) - _ALLOWED
         if unknown:
@@ -1653,6 +1658,10 @@ def _row_to_job(row: dict) -> CrawlJob:
         priority_seed=json.loads(row["priority_seed"]) if row.get("priority_seed") else None,
         # R5.6 — legacy rows predate this column; .get() yields None (no crash).
         scoring_model_version=row.get("scoring_model_version"),
+        # E1.4 — legacy rows predate these columns; None means "not recorded",
+        # which surfaces must render as such rather than as full coverage.
+        images_seen_total=row.get("images_seen_total"),
+        images_collected=row.get("images_collected"),
     )
 
 

@@ -1085,6 +1085,60 @@ class TestImgAltMissing:
         assert "IMG_ALT_MISSING" not in codes
 
 
+class TestImgAltMissingNotSilencedByEmptySrcs:
+    """E1.3 (P2) — an empty URL list must not silence a non-zero count.
+
+    Pre-E1 the checker read `if srcs:` and the parser could only ever populate
+    `img_missing_alt_srcs` from a literal `src` attribute. On a lazy-loading site
+    the count said 10 and the list was empty, so the finding was dropped: job
+    05cd2496 reported IMG_ALT_MISSING on 1 page of 272 while the homepage alone
+    had 10 of 11 images with no alt text.
+
+    Note the test helper `_page` auto-generates srcs from the count — a synthetic
+    ideal that is itself why this went unnoticed (P19). These tests pass the
+    empty list explicitly.
+
+    Spec: docs/pending/2026-08-29_E1-lazy-loaded-image-extraction.md#E1.3
+    """
+
+    def test_e1_3a_alt_missing_not_silenced_by_empty_srcs(self):
+        page = _page(img_missing_alt_count=10, img_missing_alt_srcs=[])
+        issues = check_page(page)
+        issue = next((i for i in issues if i.code == "IMG_ALT_MISSING"), None)
+        assert issue is not None, "a count of 10 with no resolvable URLs is still a finding"
+        assert issue.extra["missing_alt_count"] == 10
+        assert issue.extra["unresolved"] is True
+
+    def test_e1_3a_unresolved_description_states_the_limitation(self):
+        page = _page(img_missing_alt_count=4, img_missing_alt_srcs=[])
+        issue = next(i for i in check_page(page) if i.code == "IMG_ALT_MISSING")
+        assert "could not be resolved" in issue.description
+
+    def test_e1_3a_resolved_srcs_take_the_rich_path(self):
+        """When URLs ARE available the original message is unchanged."""
+        page = _page(img_missing_alt_count=1,
+                     img_missing_alt_srcs=["https://example.com/a.jpg"])
+        issue = next(i for i in check_page(page) if i.code == "IMG_ALT_MISSING")
+        assert issue.extra.get("unresolved") is None
+        assert "a.jpg" in issue.description
+
+    def test_e1_3a_deliberate_suppression_still_silences(self):
+        """A list that WAS populated and was then emptied by ignored_image_patterns
+        is a deliberate suppression and must stay silent — the new branch must not
+        resurrect it."""
+        page = _page(
+            img_missing_alt_count=2,
+            img_missing_alt_srcs=["https://example.com/icons/location.svg",
+                                  "https://example.com/icons/call.svg"],
+        )
+        codes = _codes(check_page(page, ignored_image_patterns=[".svg"]))
+        assert "IMG_ALT_MISSING" not in codes
+
+    def test_e1_3a_zero_count_never_emits(self):
+        page = _page(img_missing_alt_count=0, img_missing_alt_srcs=[])
+        assert "IMG_ALT_MISSING" not in _codes(check_page(page))
+
+
 # ---------------------------------------------------------------------------
 # Bug fix: MISSING_VIEWPORT_META (parser had has_viewport_meta but no issue emitted)
 # ---------------------------------------------------------------------------

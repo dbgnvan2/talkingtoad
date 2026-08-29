@@ -1063,34 +1063,100 @@ def _count_img_missing_alt(soup: BeautifulSoup) -> int:
     return count
 
 
+# ── E1: lazy-load aware image URL resolution ─────────────────────────────────
+# Lazy-loading plugins (Smush, Elementor, WP Rocket, a3 Lazy Load, …) put a
+# `data:` placeholder in `src` and the real URL in a data-* attribute. Reading
+# only `src` therefore sees NOTHING on such a site: measured on livingsystems.ca
+# (Smush), 9 of 9 images on one page and 11 of 11 on the homepage were invisible,
+# so a 272-page crawl stored 13 images and printed "Image Health 97%" over them.
+# Spec: docs/pending/2026-08-29_E1-lazy-loaded-image-extraction.md#E1.1
+_LAZY_SRC_ATTRS: tuple[str, ...] = (
+    "data-src", "data-lazy-src", "data-original", "data-lazy", "data-echo",
+)
+_LAZY_SRCSET_ATTRS: tuple[str, ...] = ("data-srcset", "data-lazy-srcset")
+
+
+def _resolve_img_src(tag, page_url: str = "") -> str | None:
+    """Return the absolute real URL for an ``<img>``, seeing through lazy-load
+    placeholders, or ``None`` when no http(s) URL can be resolved.
+
+    Purpose: one shared resolver so every image consumer sees the same URL set.
+    Spec:    docs/pending/2026-08-29_E1-lazy-loaded-image-extraction.md#E1.1
+    Tests:   tests/test_parser_lazy_images.py::TestResolveImgSrc
+
+    Order: a real ``src`` wins; otherwise each of ``_LAZY_SRC_ATTRS`` in turn;
+    otherwise the first candidate of ``srcset`` then ``_LAZY_SRCSET_ATTRS``.
+    """
+    candidates: list[str] = []
+
+    raw_src = (tag.get("src") or "").strip()
+    if raw_src and not raw_src.startswith("data:"):
+        candidates.append(raw_src)
+
+    for attr in _LAZY_SRC_ATTRS:
+        val = (tag.get(attr) or "").strip()
+        if val and not val.startswith("data:"):
+            candidates.append(val)
+
+    for attr in ("srcset",) + _LAZY_SRCSET_ATTRS:
+        parsed_set = _parse_srcset(tag.get(attr, "") or "", page_url)
+        if parsed_set:
+            candidates.append(parsed_set[0])
+
+    for candidate in candidates:
+        try:
+            absolute = urljoin(page_url, candidate) if page_url else candidate
+        except Exception:
+            continue
+        if urlparse(absolute).scheme in ("http", "https"):
+            return absolute
+    return None
+
+
+def _img_has_srcset(tag) -> bool:
+    """True when the tag carries a srcset in any form (plain or lazy)."""
+    return any((tag.get(a) or "").strip() for a in ("srcset",) + _LAZY_SRCSET_ATTRS)
+
+
+def _img_srcset_candidates(tag, page_url: str = "") -> list[str]:
+    """Parsed srcset candidates from whichever srcset attribute is populated."""
+    for attr in ("srcset",) + _LAZY_SRCSET_ATTRS:
+        parsed = _parse_srcset(tag.get(attr, "") or "", page_url)
+        if parsed:
+            return parsed
+    return []
+
+
 def _find_img_missing_alt_srcs(soup: BeautifulSoup, page_url: str = "") -> list[str]:
-    """Return absolute src URLs of <img> tags that are missing or have empty alt attributes."""
-    from urllib.parse import urljoin
+    """Return absolute URLs of <img> tags that are missing or have empty alt attributes.
+
+    E1.2: iterates every ``<img>`` (no ``src=True`` filter) and resolves the URL
+    through ``_resolve_img_src``, so lazy-loaded images are included. A tag whose
+    URL cannot be resolved is omitted from THIS list but still counts toward
+    ``_count_img_missing_alt`` — the caller must not treat an empty list as
+    "no missing alt" (see issue_checker, E1.3).
+    """
     srcs = []
-    for tag in soup.find_all("img", src=True):
+    for tag in soup.find_all("img"):
         alt = tag.get("alt")
         # Flag if alt is missing (None) or empty/whitespace-only
         if alt is None or (isinstance(alt, str) and not alt.strip()):
-            src = tag["src"].strip()
-            if src and not src.startswith("data:"):
-                srcs.append(urljoin(page_url, src) if page_url else src)
+            resolved = _resolve_img_src(tag, page_url)
+            if resolved:
+                srcs.append(resolved)
     return srcs
 
 
 def _extract_image_urls(soup: BeautifulSoup, page_url: str) -> list[str]:
-    """Return absolute URLs of all <img src> attributes on the page (for broken-image checks)."""
+    """Return absolute URLs of all images on the page (for broken-image checks).
+
+    E1.2: lazy-load aware — see ``_resolve_img_src``.
+    """
     urls: list[str] = []
-    for tag in soup.find_all("img", src=True):
-        src = tag["src"].strip()
-        if not src or src.startswith("data:"):
-            continue
-        try:
-            absolute = urljoin(page_url, src)
-        except Exception:
-            continue
-        parsed = urlparse(absolute)
-        if parsed.scheme in ("http", "https"):
-            urls.append(absolute)
+    for tag in soup.find_all("img"):
+        resolved = _resolve_img_src(tag, page_url)
+        if resolved:
+            urls.append(resolved)
     return urls
 
 
@@ -1199,22 +1265,23 @@ def _extract_image_data(soup: BeautifulSoup, page_url: str) -> list[dict]:
     The engine will merge this with fetched data (dimensions, size, etc.).
     """
     images = []
-    for tag in soup.find_all("img", src=True):
-        src = tag["src"].strip()
-        if not src or src.startswith("data:"):
-            continue
-
-        try:
-            absolute_url = urljoin(page_url, src)
-        except Exception:
-            continue
-
-        parsed = urlparse(absolute_url)
-        if parsed.scheme not in ("http", "https"):
+    for tag in soup.find_all("img"):
+        # E1.2: lazy-load aware. `src` may be a data: placeholder with the real
+        # URL in data-src/data-srcset — see _resolve_img_src.
+        absolute_url = _resolve_img_src(tag, page_url)
+        if not absolute_url:
             continue
 
         # Extract filename from URL path
         filename = _extract_filename_from_url(absolute_url)
+
+        raw_src = (tag.get("src") or "").strip()
+        # A data: placeholder in `src` IS a lazy-load marker, as is loading="lazy".
+        is_lazy = (
+            tag.get("loading", "").lower() == "lazy"
+            or raw_src.startswith("data:")
+            or any((tag.get(a) or "").strip() for a in _LAZY_SRC_ATTRS)
+        )
 
         img_data = {
             "url": absolute_url,
@@ -1224,9 +1291,9 @@ def _extract_image_data(soup: BeautifulSoup, page_url: str) -> list[dict]:
             "filename": filename,
             "rendered_width": _parse_dimension(tag.get("width")),
             "rendered_height": _parse_dimension(tag.get("height")),
-            "is_lazy_loaded": tag.get("loading", "").lower() == "lazy",
-            "has_srcset": bool(tag.get("srcset")),
-            "srcset_candidates": _parse_srcset(tag.get("srcset", ""), page_url),
+            "is_lazy_loaded": is_lazy,
+            "has_srcset": _img_has_srcset(tag),
+            "srcset_candidates": _img_srcset_candidates(tag, page_url),
             "is_decorative": _detect_decorative(tag),
             "surrounding_text": _extract_surrounding_text(tag, limit=300),
         }

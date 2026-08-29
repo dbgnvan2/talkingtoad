@@ -101,6 +101,8 @@ class RedisJobStore:
             "fix_focus",
             "priority_seed",
             "scoring_model_version",
+            "images_seen_total",
+            "images_collected",
         }
         unknown = set(fields) - _ALLOWED
         if unknown:
@@ -618,6 +620,9 @@ class RedisJobStore:
             "llms_txt_custom": job.llms_txt_custom or "",
             # R5.6 — "" sentinel for None; read back via `or None` below.
             "scoring_model_version": job.scoring_model_version or "",
+            # E1.4 — image-cap disclosure; "" sentinel for None.
+            "images_seen_total": "" if job.images_seen_total is None else str(job.images_seen_total),
+            "images_collected": "" if job.images_collected is None else str(job.images_collected),
         }
 
     def _mapping_to_job(self, m: dict) -> CrawlJob:
@@ -640,6 +645,9 @@ class RedisJobStore:
             priority_seed=json.loads(m["priority_seed"]) if m.get("priority_seed") else None,
             # R5.6 — legacy hashes lack this key; "" and missing both → None.
             scoring_model_version=m.get("scoring_model_version") or None,
+            # E1.4 — legacy hashes lack these keys; "" and missing both → None.
+            images_seen_total=int(m["images_seen_total"]) if m.get("images_seen_total") else None,
+            images_collected=int(m["images_collected"]) if m.get("images_collected") else None,
         )
 
     def _issue_to_dict(self, i: Issue) -> dict:
