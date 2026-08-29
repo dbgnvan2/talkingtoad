@@ -2909,6 +2909,105 @@ const issueHelp = {
       "isn't always fixable today. This flags the gap; it does not judge whether you should have " +
       "a Wikipedia entry.",
   },
+  // ── E5 (2026-08-29) — Organization/LocalBusiness VALUE checks ────────────
+  // Spec: docs/pending/2026-08-29_E5-entity-value-checks.md
+  ENTITY_HOURS_DEFAULT: {
+    title: "Default opening hours published",
+    category: "ai_readiness",
+    severity: "warning",
+    confidence: "Established",
+    definition:
+      "The structured data publishes opening hours for every day of the week at the SEO " +
+      "plugin's default times (typically 9:00-17:00), which is what the field contains when " +
+      "nobody has entered the real hours.",
+    impact:
+      "Evidence tier: Established. Unlike a missing field, this actively asserts something " +
+      "false. Search engines can show these hours to someone deciding whether to visit or " +
+      "call, and inaccurate hours undermine the rest of your entity data.",
+    fix:
+      "In your SEO plugin's Local SEO settings, enter the verified public hours, or turn off " +
+      "opening-hours output entirely. If the address is an administrative office with no " +
+      "walk-in hours, disable it rather than inventing a schedule.",
+    good_vs_bad:
+      "Good: Mon-Thu 9:00-17:00 with the weekend absent, matching what the contact page says. " +
+      "Bad: all seven days at 9:00-17:00 for an organisation that takes appointments only.",
+    how_it_can_mislead:
+      "A business genuinely open 09:00-17:00 seven days a week will be flagged. Check the " +
+      "hours against reality; if they are correct, suppress this code for your site.",
+  },
+  ENTITY_NAP_INCOMPLETE: {
+    title: "Incomplete organization details",
+    category: "ai_readiness",
+    severity: "warning",
+    confidence: "Established",
+    definition:
+      "The Organization or LocalBusiness block is missing identity fields that its declared " +
+      "type implies — address, telephone, email or logo. A node typed as a physical place " +
+      "with no address is the common case.",
+    impact:
+      "Evidence tier: Established. These fields are how search engines and AI assistants " +
+      "connect your website to a real organisation. Missing them weakens local visibility, " +
+      "knowledge-panel eligibility and the confidence with which you can be cited.",
+    fix:
+      "Complete the listed fields in your SEO plugin's Site Representation and Local SEO " +
+      "settings, using the same values that appear in your footer and on your contact page. " +
+      "If you have no customer-facing premises, change the declared type instead of inventing " +
+      "an address.",
+    good_vs_bad:
+      "Good: LocalBusiness with a full postal address, telephone, email and logo, all matching " +
+      "the visible contact page. Bad: a node typed Organization and Place carrying only a name " +
+      "and a URL.",
+    how_it_can_mislead:
+      "An online-only organisation has no street address to give. The finding lists the fields " +
+      "your declared type promises — the fix may be to narrow the type rather than to fill the " +
+      "fields.",
+  },
+  ENTITY_FIELD_EMPTY: {
+    title: "Empty entity field",
+    category: "ai_readiness",
+    severity: "info",
+    confidence: "Established",
+    definition:
+      "A field is present in the structured data but carries nothing — an empty string, an " +
+      "empty list, or an empty object. A telephone published as [] is the usual example.",
+    impact:
+      "Evidence tier: Established. An empty value can be worse than an absent one: it passes " +
+      "presence checks while giving consumers nothing usable, and it is a reliable sign a " +
+      "settings screen was opened and left half-finished.",
+    fix:
+      "Enter the value in your SEO plugin settings. The field is already configured to be " +
+      "published, so this is a settings edit rather than a decision about what to declare.",
+    good_vs_bad:
+      'Good: telephone: "+1-604-555-0100". Bad: telephone: [] — the property is announced and ' +
+      "then carries nothing.",
+    how_it_can_mislead:
+      "Some plugins emit an empty array for a field the site deliberately does not publish. If " +
+      "the omission is intentional, remove the field rather than filling it.",
+  },
+  ENTITY_VALUE_PLACEHOLDER: {
+    title: "Placeholder value in structured data",
+    category: "ai_readiness",
+    severity: "info",
+    confidence: "Reasonable proxy",
+    definition:
+      "A structured-data field carries a placeholder or template default instead of real " +
+      'content — values such as "site logo", "Just another WordPress site", or a description ' +
+      "too short to describe anything.",
+    impact:
+      "Evidence tier: Reasonable proxy. These fields feed your site's entity description in " +
+      "search results and AI answers. A leftover placeholder there is published as your own " +
+      "official description of yourself.",
+    fix:
+      "Edit the field in your SEO plugin's Site Representation settings and write the real " +
+      "value. Review the site description, organisation name and legal name together — they " +
+      "are usually set on the same screen and tend to be wrong together.",
+    good_vs_bad:
+      'Good: description: "A Canadian nonprofit offering Bowen family systems counselling and ' +
+      'training." Bad: description: "site logo".',
+    how_it_can_mislead:
+      'A business legitimately named something like "Example Ltd." is not flagged — only the ' +
+      "listed placeholder vocabulary and descriptions below the minimum word count are.",
+  },
   AUTHOR_IDENTITY_INCONSISTENT: {
     title: "Inconsistent author identity",
     category: "ai_readiness",

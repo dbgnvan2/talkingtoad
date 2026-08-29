@@ -411,6 +411,253 @@ def _check_entity_consistency(pages, start_url) -> list[Issue]:
         issues.append(make_issue("AUTHOR_IDENTITY_INCONSISTENT", rep,
                                  extra={"name_to_urls": {n: sorted(u) for n, u in name_to_urls.items()
                                                          if len(u) > 1}}))
+
+    issues.extend(_check_entity_values(pages, start_url))
+    return issues
+
+
+# ---------------------------------------------------------------------------
+# E5 — Organization / LocalBusiness VALUE checks
+#
+# SCHEMA_ORG_MISSING only asks whether the node exists. Nothing asked whether
+# what it says is true, complete, or non-default. Verified on livingsystems.ca
+# on 2026-08-29, a site a third-party tool rated "100% markup health":
+#
+#   WebSite.description       "site logo"          <- placeholder in schema
+#   Organization.legalName    inconsistent casing
+#   Organization.description  contains "afforadble"
+#   telephone                 []                   <- present but empty
+#   openingHoursSpecification 7 days 09:00-17:00   <- plugin default, published
+#   @type ["Organization","Place"] with no address at all
+#
+# Spec:  docs/pending/2026-08-29_E5-entity-value-checks.md
+# Tests: tests/test_entity_values.py
+# ---------------------------------------------------------------------------
+
+_ENTITY_CFG_KEYS = (
+    "placeholder_values", "placeholder_fields", "min_description_words",
+    "default_hours", "nap_required_fields", "address_subfields",
+    "premises_types", "organization_types",
+)
+
+
+def _entity_cfg() -> dict:
+    from api.config import load_config
+
+    return load_config("entity_values", required_keys=_ENTITY_CFG_KEYS)
+
+
+def _is_empty_value(value) -> bool:
+    """True when a field is PRESENT but carries nothing.
+
+    Distinct from absent: an empty ``telephone: []`` means someone opened the
+    field and did not fill it, so the fix is a settings edit rather than a
+    decision. Letting an empty value flow through as if it were content is the
+    P14 shape.
+    """
+    if value is None:
+        return True
+    if isinstance(value, str):
+        return not value.strip()
+    if isinstance(value, (list, tuple, set, dict)):
+        return len(value) == 0
+    return False
+
+
+def _entity_nodes(page):
+    """Yield (node, types) for every Organization/LocalBusiness/Place node."""
+    cfg = _entity_cfg()
+    wanted = set(cfg["premises_types"]) | set(cfg["organization_types"])
+    for obj in _iter_schema_objects(getattr(page, "schema_blocks", None)):
+        types = _types_of(obj)
+        if types & wanted:
+            yield obj, types
+
+
+def _check_placeholder_values(page, cfg) -> list[dict]:
+    """Fields whose value is a known placeholder or too short to be real."""
+    placeholders = {str(v).strip().casefold() for v in cfg["placeholder_values"]}
+    fields = cfg["placeholder_fields"]
+    min_words = int(cfg["min_description_words"])
+    found: list[dict] = []
+
+    # Placeholder checks apply to ANY node carrying these fields, including
+    # WebSite — livingsystems.ca leaks "site logo" through WebSite.description,
+    # which is what search engines read for the site entity.
+    for obj in _iter_schema_objects(getattr(page, "schema_blocks", None)):
+        node_type = ", ".join(sorted(_types_of(obj))) or "Thing"
+        for field in fields:
+            value = obj.get(field)
+            if not isinstance(value, str):
+                continue
+            stripped = value.strip()
+            if not stripped:
+                continue
+            if stripped.casefold() in placeholders:
+                found.append({"node": node_type, "field": field, "value": stripped,
+                              "reason": "known placeholder"})
+            elif field == "description" and len(stripped.split()) < min_words:
+                found.append({"node": node_type, "field": field, "value": stripped,
+                              "reason": f"under {min_words} words"})
+    return found
+
+
+def _check_default_hours(page, cfg) -> list[dict]:
+    """openingHoursSpecification that is the plugin default for every day."""
+    default = cfg["default_hours"]
+    want_days = int(default["days"])
+    found: list[dict] = []
+    for obj, _types in _entity_nodes(page):
+        spec = obj.get("openingHoursSpecification")
+        entries = spec if isinstance(spec, list) else ([spec] if isinstance(spec, dict) else [])
+        for entry in entries:
+            if not isinstance(entry, dict):
+                continue
+            days = entry.get("dayOfWeek")
+            days = days if isinstance(days, list) else ([days] if days else [])
+            opens = str(entry.get("opens") or "").strip()
+            closes = str(entry.get("closes") or "").strip()
+            if (len(days) >= want_days
+                    and opens == default["opens"]
+                    and closes == default["closes"]):
+                found.append({"days": len(days), "opens": opens, "closes": closes})
+    return found
+
+
+def _self_entity_nodes(page) -> list[tuple[dict, set[str]]]:
+    """The entity nodes that describe THIS site, not third parties.
+
+    A page listing several Organization nodes (partners, funders, a member
+    directory) is a third-party context — telling the operator that a partner's
+    address is missing would be noise and, worse, unfixable. Mirrors the
+    reasoning already applied in ``_org_names`` (P7).
+
+    With exactly one node, that node is us. With several, keep only those whose
+    ``url`` shares the page's host; if none does, we cannot tell which is us and
+    take none.
+    """
+    nodes = list(_entity_nodes(page))
+    if len(nodes) <= 1:
+        return nodes
+    try:
+        host = urlparse(page.url).netloc.replace("www.", "").casefold()
+    except Exception:
+        return []
+    owned = []
+    for obj, types in nodes:
+        url = obj.get("url")
+        if isinstance(url, str) and url.strip():
+            try:
+                if urlparse(url).netloc.replace("www.", "").casefold() == host:
+                    owned.append((obj, types))
+            except Exception:
+                continue
+    return owned
+
+
+def _check_nap(page, cfg) -> tuple[list[str], list[dict]]:
+    """Return (missing_fields, empty_fields) for the page's own entity nodes."""
+    premises_types = set(cfg["premises_types"])
+    required = cfg["nap_required_fields"]
+    address_subfields = cfg["address_subfields"]
+
+    missing: list[str] = []
+    empty: list[dict] = []
+
+    for obj, types in _self_entity_nodes(page):
+        node_type = ", ".join(sorted(types))
+        is_premises = bool(types & premises_types)
+        wanted = list(required["organization"])
+        if is_premises:
+            wanted += list(required["premises"])
+
+        for field in wanted:
+            if field not in obj:
+                missing.append(f"{node_type}.{field}")
+            elif _is_empty_value(obj[field]):
+                empty.append({"node": node_type, "field": field})
+
+        # An address that exists but is hollow is as unusable as none at all.
+        address = obj.get("address")
+        if is_premises and isinstance(address, dict):
+            for sub in address_subfields:
+                if sub not in address:
+                    missing.append(f"{node_type}.address.{sub}")
+                elif _is_empty_value(address[sub]):
+                    empty.append({"node": node_type, "field": f"address.{sub}"})
+
+    return missing, empty
+
+
+def _check_entity_values(pages, start_url) -> list[Issue]:
+    """Site-scoped value checks over the entity graph (E5.1–E5.4).
+
+    Emitted once, at the page carrying the entity node — the homepage where
+    possible. These are site facts, not page facts: charging them per page would
+    multiply one settings error across the whole crawl (R5.1).
+    """
+    if not pages:
+        return []
+    try:
+        cfg = _entity_cfg()
+    except Exception:  # noqa: BLE001 — a bad config must not kill a crawl
+        logger.warning("entity_values_config_unavailable", exc_info=True)
+        return []
+
+    # Prefer the start URL's page; fall back to the shallowest page that has an
+    # entity node at all.
+    start_key = (start_url or "").rstrip("/")
+    candidates = [p for p in pages if (p.url or "").rstrip("/") == start_key]
+    if not candidates:
+        candidates = [p for p in pages if any(True for _ in _entity_nodes(p))]
+    if not candidates:
+        return []
+    page = candidates[0]
+    rep = page.url
+
+    issues: list[Issue] = []
+
+    placeholders = _check_placeholder_values(page, cfg)
+    if placeholders:
+        issues.append(make_issue(
+            "ENTITY_VALUE_PLACEHOLDER", rep,
+            extra={"fields": placeholders[:20], "fields_total": len(placeholders)},
+        ))
+        listed = ", ".join(f'{f["node"]}.{f["field"]} = "{f["value"]}"'
+                           for f in placeholders[:3])
+        issues[-1].description = f"Placeholder value published in structured data: {listed}"
+
+    hours = _check_default_hours(page, cfg)
+    if hours:
+        first = hours[0]
+        issues.append(make_issue(
+            "ENTITY_HOURS_DEFAULT", rep,
+            extra={"entries": hours[:5],
+                   "opens": first["opens"], "closes": first["closes"]},
+        ))
+        issues[-1].description = (
+            f"Opening hours are published as {first['opens']}-{first['closes']} on all "
+            f"{first['days']} days — the plugin default, not verified hours"
+        )
+
+    missing, empty = _check_nap(page, cfg)
+    if empty:
+        issues.append(make_issue(
+            "ENTITY_FIELD_EMPTY", rep,
+            extra={"fields": empty[:20], "fields_total": len(empty)},
+        ))
+        listed = ", ".join(f'{f["node"]}.{f["field"]}' for f in empty[:3])
+        issues[-1].description = f"Entity fields are present but empty: {listed}"
+    if missing:
+        issues.append(make_issue(
+            "ENTITY_NAP_INCOMPLETE", rep,
+            extra={"missing_fields": missing[:20], "missing_fields_total": len(missing)},
+        ))
+        issues[-1].description = (
+            f"{len(missing)} identity field{'s' if len(missing) != 1 else ''} absent from "
+            f"structured data: {', '.join(missing[:3])}"
+        )
+
     return issues
 
 

@@ -1523,66 +1523,17 @@ async def get_page_priority(
     Gems surfaced as opportunities. Works with OR without GSC data — when no
     Performance Ledger records exist for a page, it's ranked by health alone.
     """
-    from api.services.refresh_trigger import evaluate_refresh, rank_pages
+    # E3.1 — the assembly lives in api/services/page_priority.py so the PDF and
+    # Excel exports rank pages the same way this endpoint does. Before that
+    # extraction the ranking existed only here and in the GUI panel, and the
+    # client-facing PDF sorted by raw issue count (P25).
+    from api.services.page_priority import build_page_priority, serialise_review_flags
 
     job = await store.get_job(job_id)
     if not job:
         return _err("JOB_NOT_FOUND", f"No job with id {job_id}", 404)
 
-    pages = await store.get_pages(job_id)
-    issues = await store.get_all_issues(job_id)
-
-    # Per-page health via the canonical capped+suppressed model (R5.0) — NOT a
-    # raw ``100 − Σ impact`` sum (which ignored the category cap and cluster
-    # suppression and diverged from compute_impact_health).
-    from api.services.job_store_base import compute_page_health, compute_citability_grade
-
-    # CLN5: drop user-suppressed codes before grading so per-page health AND the
-    # citability column reconcile with site health (both previously used raw
-    # rows). SQLite-only suppression; no-ops on Redis, matching Redis get_summary.
-    _gs = getattr(store, "get_suppressed_codes", None)
-    suppressed = set(await _gs()) if _gs else set()
-    rows_by_url: dict[str, list[tuple[str, int, str]]] = {}
-    for issue in issues:
-        if issue.page_url and issue.issue_code not in suppressed:
-            key = issue.page_url.rstrip("/")
-            rows_by_url.setdefault(key, []).append(
-                (issue.issue_code, issue.impact or 0, issue.category or "")
-            )
-
-    today = datetime.now(timezone.utc).date()
-    rows: list[dict] = []
-    for page in pages:
-        key = page.url.rstrip("/")
-        page_rows = rows_by_url.get(key, [])
-        health_score = compute_page_health(page_rows)
-        # E5: per-page GEO/citability grade (rollup of ai_readiness issues).
-        citability_grade = compute_citability_grade(page_rows)
-        records = await store.get_performance_records(url=page.url)
-        flag = evaluate_refresh(records, health_score, today=today)
-        latest = sorted(records, key=lambda r: r.period)[-1] if records else None
-        rows.append({
-            "url": page.url,
-            "health_score": health_score,
-            "citability_grade": citability_grade,
-            "gsc": None if latest is None else {
-                "clicks": latest.gsc_clicks_mo,
-                "impressions": latest.gsc_impressions_mo,
-                "ctr": latest.gsc_ctr_mo,
-                "position": latest.gsc_avg_position_mo,
-                # PW: conversions drive within-bucket rank (tiebreak) + surfaced in
-                # the panel. None stays None (unknown ≠ zero); rank coalesces.
-                "conversions": latest.ga4_conversions_mo,
-            },
-            "review_flag": flag,  # replaced with a dict below after ranking
-        })
-
-    ranked = rank_pages(rows)
-    # Serialise ReviewFlag -> dict for JSON.
-    for r in ranked:
-        f = r.pop("review_flag")
-        r["review_flag"] = {"flagged": f.flagged, "reasons": f.reasons}
-
+    ranked = serialise_review_flags(await build_page_priority(store, job_id))
     return {"pages": ranked, "total": len(ranked)}
 
 
@@ -1648,6 +1599,24 @@ async def export_pdf_report(
     if summary_only:
         include_pages = False
 
+    # E3 — the same ranking the /page-priority endpoint and the GUI panel use.
+    # Guarded so a ledger hiccup degrades the report rather than failing the
+    # export; on failure both stay None and the sections are omitted, which the
+    # Scope & Caveats section then records (E7.4) rather than passing off as clean.
+    performance = None
+    priority_pages = None
+    try:
+        from api.services.page_priority import (
+            build_page_priority,
+            build_performance_summary,
+            serialise_review_flags,
+        )
+        priority_pages = serialise_review_flags(await build_page_priority(store, job_id))
+        performance = await build_performance_summary(store, job_id)
+    except Exception as exc:
+        logger.warning("page_priority_unavailable_for_report",
+                       extra={"job_id": job_id, "error": str(exc)})
+
     # Try to generate AI executive summary (optional — skipped if no API keys)
     executive_summary = None
     try:
@@ -1684,6 +1653,8 @@ async def export_pdf_report(
             image_summary=image_summary,
             top_images=top_images,
             executive_summary=executive_summary,
+            performance=performance,
+            priority_pages=priority_pages,
         )
         logger.info("pdf_report_generated", extra={"job_id": job_id, "size_bytes": len(pdf_bytes)})
         pdf_domain = urlparse(job.target_url).netloc.replace("www.", "")
@@ -1716,6 +1687,21 @@ async def export_excel_report(
     image_summary = await store.get_image_summary(job_id)
     images_list = await store.get_images(job_id, page=1, limit=500, sort_by="score")
 
+    # E3.4 — Excel parity with the PDF. Same source of truth, same guard.
+    performance = None
+    priority_pages = None
+    try:
+        from api.services.page_priority import (
+            build_page_priority,
+            build_performance_summary,
+            serialise_review_flags,
+        )
+        priority_pages = serialise_review_flags(await build_page_priority(store, job_id))
+        performance = await build_performance_summary(store, job_id)
+    except Exception as exc:
+        logger.warning("page_priority_unavailable_for_excel",
+                       extra={"job_id": job_id, "error": str(exc)})
+
     try:
         from urllib.parse import urlparse as _urlparse
         excel_domain = _urlparse(job.target_url).netloc.replace("www.", "")
@@ -1723,6 +1709,8 @@ async def export_excel_report(
             job, issues, summary,
             image_summary=image_summary,
             images=images_list,
+            performance=performance,
+            priority_pages=priority_pages,
         )
         return StreamingResponse(
             io.BytesIO(excel_bytes),

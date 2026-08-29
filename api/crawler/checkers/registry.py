@@ -12,10 +12,10 @@ integrity of this file is enforced by five CI parity invariants — see
 
 Single source of truth for:
     - ``Issue`` dataclass and ``_IssueSpec`` dataclass
-    - ``_ISSUE_SCORING`` (impact, effort) by code — 162 codes
-    - ``_CATALOGUE`` (every issue spec) — 162 codes
+    - ``_ISSUE_SCORING`` (impact, effort) by code — 166 codes
+    - ``_CATALOGUE`` (every issue spec) — 166 codes
     - ``_AI_READINESS_CONFIDENCE`` (confidence labels) — 71 codes
-      (of 162 total; the 91 non-ai_readiness codes carry no confidence label)
+      (of 166 total; the 91 non-ai_readiness codes carry no confidence label)
     - ``_STOP_WORDS`` and ``_GENERIC_ANCHOR_TEXTS`` (shared helpers)
     - Size-limit constants
     - ``make_issue()`` factory, ``_sig_words()``, ``_titles_mismatch()``
@@ -354,6 +354,14 @@ _ISSUE_SCORING: dict[str, tuple[int, int]] = {
     # test_r3_calibration.py). Tiers reviewed 2026-07-22 — no rework outstanding.
     "ENTITY_NAME_INCONSISTENT":     (4, 2),
     "ENTITY_SAMEAS_MISSING":        (2, 1),
+    # E5 (2026-08-29) — Organization/LocalBusiness VALUE checks. Impacts follow
+    # derive_impact() from the (confidence, effect_size) tiers below, as
+    # asserted by test_r3_calibration.py. ENTITY_HOURS_DEFAULT is the highest of
+    # the four: unlike a missing field it actively asserts something false.
+    "ENTITY_HOURS_DEFAULT":         (6, 1),
+    "ENTITY_NAP_INCOMPLETE":        (6, 2),
+    "ENTITY_FIELD_EMPTY":           (2, 1),
+    "ENTITY_VALUE_PLACEHOLDER":     (2, 1),
     "AUTHOR_IDENTITY_INCONSISTENT": (1, 2),
     "NEAR_DUPLICATE_BODY":          (4, 3),
     "BOILERPLATE_RATIO_HIGH":       (1, 2),
@@ -449,6 +457,10 @@ _CALIBRATION: dict[str, tuple[str, str, bool]] = {
     "DOCUMENT_PROPS_MISSING": ("Established", "small", False),
     "ENTITY_NAME_INCONSISTENT": ("Reasonable proxy", "moderate", False),
     "ENTITY_SAMEAS_MISSING": ("Reasonable proxy", "small", False),
+    "ENTITY_HOURS_DEFAULT": ("Established", "moderate", False),
+    "ENTITY_NAP_INCOMPLETE": ("Established", "moderate", False),
+    "ENTITY_FIELD_EMPTY": ("Established", "small", False),
+    "ENTITY_VALUE_PLACEHOLDER": ("Reasonable proxy", "small", False),
     "EXTERNAL_CITATIONS_LOW": ("Heuristic", "moderate", True),
     "EXTERNAL_LINK_SKIPPED": ("Heuristic", "none", False),
     "EXTERNAL_LINK_TIMEOUT": ("Heuristic", "small", False),
@@ -609,6 +621,12 @@ _SITE_SCOPED_CODES: frozenset[str] = frozenset({
     # "Search Everywhere" GEO (P1) — findings that are site-level properties.
     "ENTITY_NAME_INCONSISTENT",
     "AUTHOR_IDENTITY_INCONSISTENT",
+    # E5 (2026-08-29) — entity VALUE checks. One settings error must be charged
+    # once, not once per crawled page.
+    "ENTITY_HOURS_DEFAULT",
+    "ENTITY_NAP_INCOMPLETE",
+    "ENTITY_FIELD_EMPTY",
+    "ENTITY_VALUE_PLACEHOLDER",
     "NEAR_DUPLICATE_BODY",
     # Analytics & Measurement — a site-wide tagging property (2026-08-06 spec).
     "ANALYTICS_ID_INCONSISTENT",
@@ -1973,6 +1991,84 @@ _CATALOGUE: dict[str, _IssueSpec] = {
         how_to_fix="Add sameAs URLs to the Organization/Person JSON-LD block.",
         fixability="content_edit",
     ),
+    # ── E5 (2026-08-29) — entity VALUE checks ───────────────────────────────
+    # SCHEMA_ORG_MISSING only asks whether the node exists. These four ask
+    # whether what it says is true, complete and non-default. All four are
+    # site-scoped (one settings error must not be charged on every page) and
+    # developer_needed — they are SEO-plugin settings, and the WordPress-safety
+    # constraint forbids TalkingToad writing them.
+    # Spec: docs/pending/2026-08-29_E5-entity-value-checks.md
+    "ENTITY_HOURS_DEFAULT": _IssueSpec(
+        category="ai_readiness", severity="warning", scope="site",
+        description="Opening hours are published for every day at the SEO plugin's default "
+                    "times, which are almost certainly not the real hours",
+        recommendation="Verify the organisation's real public hours and enter them, or turn off "
+                       "opening-hours output entirely. Never publish a default as a fact — a "
+                       "search engine will show it to someone deciding whether to visit.",
+        human_description="Default Opening Hours Published",
+        what_it_is="Local SEO plugins pre-fill opening hours with 9:00-17:00 for all seven days. "
+                   "If nobody changes them, those invented hours are published to search engines "
+                   "as verified fact.",
+        impact_desc="Unlike a missing field, this actively asserts something false. It can send "
+                    "someone to a closed door, and it undermines the entity data around it.",
+        how_to_fix="In your SEO plugin's Local SEO settings, either enter the verified opening "
+                   "hours or disable opening-hours output. If the address is an administrative "
+                   "office with no public hours, disable it.",
+        fixability="developer_needed",
+    ),
+    "ENTITY_NAP_INCOMPLETE": _IssueSpec(
+        category="ai_readiness", severity="warning", scope="site",
+        description="The Organization/LocalBusiness structured data is missing identity fields "
+                    "(name, address, telephone, email, logo) that its declared type implies",
+        recommendation="Complete the missing fields, or stop declaring a type that promises them. "
+                       "A node typed as a physical place with no address tells search engines "
+                       "less than no node at all.",
+        human_description="Incomplete Organization Details",
+        what_it_is="Structured data declares what kind of entity you are. Declaring a physical "
+                   "location commits you to an address, a phone number and contact details; "
+                   "leaving them out leaves the entity unresolvable.",
+        impact_desc="Search engines and AI assistants use these fields to connect your site to a "
+                    "real organisation. Missing fields weaken local visibility, knowledge-panel "
+                    "eligibility and citation confidence.",
+        how_to_fix="Fill in the listed fields in your SEO plugin's Site Representation and Local "
+                   "SEO settings, using the same values shown in your footer and contact page. "
+                   "If you have no customer-facing premises, change the type instead of "
+                   "inventing an address.",
+        fixability="developer_needed",
+    ),
+    "ENTITY_FIELD_EMPTY": _IssueSpec(
+        category="ai_readiness", severity="info", scope="site",
+        description="An entity field is present in the structured data but carries no value "
+                    "(an empty string, list or object)",
+        recommendation="Fill in the field or remove it. An empty field is a setting somebody "
+                       "opened and did not complete — it is a quicker fix than a missing one.",
+        human_description="Empty Entity Field",
+        what_it_is="A field like telephone published as an empty list. The markup claims the "
+                   "property exists while carrying nothing, so consumers see a broken value "
+                   "rather than an absent one.",
+        impact_desc="An empty value can be worse than an absent one: it satisfies presence checks "
+                    "while giving nothing usable, and it is a reliable sign the settings screen "
+                    "was left half-finished.",
+        how_to_fix="Enter the value in your SEO plugin settings. The field is already configured "
+                   "to be published, so this is a settings edit rather than a decision.",
+        fixability="developer_needed",
+    ),
+    "ENTITY_VALUE_PLACEHOLDER": _IssueSpec(
+        category="ai_readiness", severity="info", scope="site",
+        description="A structured-data field carries a placeholder or template default value "
+                    "instead of real content",
+        recommendation="Replace the placeholder with the real value. Search engines read these "
+                       "fields as your official self-description.",
+        human_description="Placeholder Value in Structured Data",
+        what_it_is="Values like \"site logo\", \"Just another WordPress site\", or a "
+                   "one-word description that a theme or plugin left behind and nobody replaced.",
+        impact_desc="These fields feed the site's entity description in search and AI answers. A "
+                    "placeholder there is published as your official description of yourself.",
+        how_to_fix="Edit the field in your SEO plugin's Site Representation settings and write "
+                   "the real value. Check the site description, organisation name and legal name "
+                   "together, as they are usually set on the same screen.",
+        fixability="developer_needed",
+    ),
     "AUTHOR_IDENTITY_INCONSISTENT": _IssueSpec(
         category="ai_readiness", severity="info", scope="site",
         description="The same author name appears under differing author URLs (or one URL under "
@@ -2261,6 +2357,10 @@ _AI_READINESS_CONFIDENCE: dict[str, str] = {
     "DOCUMENT_PROPS_MISSING": "Established",
     "ENTITY_NAME_INCONSISTENT": "Reasonable proxy",
     "ENTITY_SAMEAS_MISSING": "Reasonable proxy",
+    "ENTITY_HOURS_DEFAULT": "Established",
+    "ENTITY_NAP_INCOMPLETE": "Established",
+    "ENTITY_FIELD_EMPTY": "Established",
+    "ENTITY_VALUE_PLACEHOLDER": "Reasonable proxy",
     "EXTERNAL_CITATIONS_LOW": "Heuristic",
     "FAQ_SCHEMA_MISSING": "Established",
     "FAQ_ANSWERS_NOT_IN_HTML": "Reasonable proxy",

@@ -70,4 +70,9 @@ def test_p1_codes_serialized(monkeypatch):
                 "confidence_label": i.confidence_label, "extra": i.extra,
             }
             json.dumps(payload)  # raises TypeError if a set/other non-JSON leaked
-            assert i.confidence_label in ("Reasonable proxy", "Heuristic")
+            # "Established" joined the set with the E5 entity-value checks
+            # (2026-08-29). The assertion's intent is that every such code
+            # carries a VALID tier, not that only two tiers exist.
+            assert i.confidence_label in (
+                "Established", "Reasonable proxy", "Heuristic"
+            )

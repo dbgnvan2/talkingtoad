@@ -8,7 +8,7 @@ generator: scripts/generate_issue_codes_doc.py
 
 > **This file is auto-generated.** Do not edit by hand — your changes will be overwritten the next time the generator runs. To update an issue code, edit `api/crawler/issue_checker.py` (`_CATALOGUE`, `_ISSUE_SCORING`, `_AI_READINESS_CONFIDENCE`) and re-run `python scripts/generate_issue_codes_doc.py`.
 
-**162 issue codes** across 13 categories.
+**166 issue codes** across 13 categories.
 
 ## Table of contents
 
@@ -21,7 +21,7 @@ generator: scripts/generate_issue_codes_doc.py
 - [SECURITY](#security) (6)
 - [URL_STRUCTURE](#url_structure) (4)
 - [IMAGE](#image) (14)
-- [AI_READINESS](#ai_readiness) (71)
+- [AI_READINESS](#ai_readiness) (75)
 - [ANALYTICS](#analytics) (7)
 - [RENDERING](#rendering) (1)
 - [SEMANTIC_HTML](#semantic_html) (4)
@@ -990,7 +990,7 @@ Image takes too long to load (over 1 second)
 
 Site readiness for AI search engines (Google AI Overviews, ChatGPT, Perplexity, etc.). Every code in this category carries a confidence label per the v2.0 spec: **Established** (vendor-confirmed effect), **Reasonable proxy** (industry consensus + Google's published best practices), **Heuristic** (industry consensus only, no vendor confirmation).
 
-_71 codes in this category._
+_75 codes in this category._
 
 ### AI_BOT_BLANKET_DISALLOW
 **Severity:** 🔴 critical | **Confidence:** Established | **Impact:** 9 | **Effort:** 1
@@ -1441,6 +1441,38 @@ PDF is missing internal Title or Subject metadata
 
 ---
 
+### ENTITY_FIELD_EMPTY
+**Severity:** 🔵 info | **Confidence:** Established | **Impact:** 2 | **Effort:** 1
+
+**What it is**
+A field like telephone published as an empty list. The markup claims the property exists while carrying nothing, so consumers see a broken value rather than an absent one.
+
+**Why it matters**
+An empty value can be worse than an absent one: it satisfies presence checks while giving nothing usable, and it is a reliable sign the settings screen was left half-finished.
+
+**How to fix**
+Enter the value in your SEO plugin settings. The field is already configured to be published, so this is a settings edit rather than a decision.
+
+**Plain-English:** Empty Entity Field
+
+---
+
+### ENTITY_HOURS_DEFAULT
+**Severity:** 🟡 warning | **Confidence:** Established | **Impact:** 6 | **Effort:** 1
+
+**What it is**
+Local SEO plugins pre-fill opening hours with 9:00-17:00 for all seven days. If nobody changes them, those invented hours are published to search engines as verified fact.
+
+**Why it matters**
+Unlike a missing field, this actively asserts something false. It can send someone to a closed door, and it undermines the entity data around it.
+
+**How to fix**
+In your SEO plugin's Local SEO settings, either enter the verified opening hours or disable opening-hours output. If the address is an administrative office with no public hours, disable it.
+
+**Plain-English:** Default Opening Hours Published
+
+---
+
 ### ENTITY_NAME_INCONSISTENT
 **Severity:** 🟡 warning | **Confidence:** Reasonable proxy | **Impact:** 4 | **Effort:** 2 | **Fixability:** content_edit
 
@@ -1457,6 +1489,22 @@ Standardise Organization.name across all pages/templates to a single spelling.
 
 ---
 
+### ENTITY_NAP_INCOMPLETE
+**Severity:** 🟡 warning | **Confidence:** Established | **Impact:** 6 | **Effort:** 2
+
+**What it is**
+Structured data declares what kind of entity you are. Declaring a physical location commits you to an address, a phone number and contact details; leaving them out leaves the entity unresolvable.
+
+**Why it matters**
+Search engines and AI assistants use these fields to connect your site to a real organisation. Missing fields weaken local visibility, knowledge-panel eligibility and citation confidence.
+
+**How to fix**
+Fill in the listed fields in your SEO plugin's Site Representation and Local SEO settings, using the same values shown in your footer and contact page. If you have no customer-facing premises, change the type instead of inventing an address.
+
+**Plain-English:** Incomplete Organization Details
+
+---
+
 ### ENTITY_SAMEAS_MISSING
 **Severity:** 🔵 info | **Confidence:** Reasonable proxy | **Impact:** 2 | **Effort:** 1 | **Fixability:** content_edit
 
@@ -1470,6 +1518,22 @@ Without sameAs, there is no explicit link to the knowledge graph, weakening enti
 Add sameAs URLs to the Organization/Person JSON-LD block.
 
 **Plain-English:** No sameAs Entity Links
+
+---
+
+### ENTITY_VALUE_PLACEHOLDER
+**Severity:** 🔵 info | **Confidence:** Reasonable proxy | **Impact:** 2 | **Effort:** 1
+
+**What it is**
+Values like "site logo", "Just another WordPress site", or a one-word description that a theme or plugin left behind and nobody replaced.
+
+**Why it matters**
+These fields feed the site's entity description in search and AI answers. A placeholder there is published as your official description of yourself.
+
+**How to fix**
+Edit the field in your SEO plugin's Site Representation settings and write the real value. Check the site description, organisation name and legal name together, as they are usually set on the same screen.
+
+**Plain-English:** Placeholder Value in Structured Data
 
 ---
 

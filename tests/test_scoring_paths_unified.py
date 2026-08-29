@@ -72,13 +72,37 @@ def test_all_health_paths_agree():
 
 
 def test_secondary_sites_use_shared_helper():
-    """crawl.py and citations.py must import/derive from the canonical helper,
-    not recompute a raw ``100 - sum``.  A grep-style guard against regression."""
+    """crawl.py and citations.py must derive per-page health from the canonical
+    helper, not recompute a raw ``100 - sum``.  A grep-style guard against
+    regression.
+
+    E3.1 (2026-08-29) moved the page-priority assembly out of `crawl.py` into
+    `api/services/page_priority.py` so the PDF and Excel exports rank pages the
+    same way the endpoint does. The guard's intent is unchanged — the canonical
+    helper must still be what produces the number — so it now follows the one
+    permitted delegation instead of grepping a single file. Widening it to
+    "somewhere in the repo" would make it unfalsifiable, so the delegate is named.
+    """
     import inspect
 
     from api.routers import citations, crawl
+    from api.services import page_priority
 
     crawl_src = inspect.getsource(crawl)
     cite_src = inspect.getsource(citations)
-    assert "compute_page_health" in crawl_src
+    priority_src = inspect.getsource(page_priority)
+
+    assert "compute_page_health" in priority_src, (
+        "page_priority must use the canonical helper"
+    )
+    assert "compute_page_health" in crawl_src or "page_priority" in crawl_src, (
+        "crawl.py must use the canonical helper or delegate to page_priority"
+    )
     assert "compute_page_health" in cite_src
+
+    # Whichever route it takes, no caller may reintroduce a raw sum.
+    for name, src in (("crawl", crawl_src), ("citations", cite_src),
+                      ("page_priority", priority_src)):
+        assert "100 - sum(" not in src and "100 - total_impact" not in src, (
+            f"{name} recomputes a raw health sum instead of using the helper"
+        )

@@ -25,7 +25,12 @@ _SITE_CODES = ["HTTP_PAGE", "HTTPS_REDIRECT_MISSING", "MIXED_CONTENT",
                "ENTITY_NAME_INCONSISTENT", "AUTHOR_IDENTITY_INCONSISTENT",
                "NEAR_DUPLICATE_BODY",
                # Analytics & Measurement (2026-08-06 spec) — site-wide tagging property
-               "ANALYTICS_ID_INCONSISTENT"]
+               "ANALYTICS_ID_INCONSISTENT",
+               # E5 (2026-08-29) — entity VALUE checks are settings facts, not
+               # page facts: charging them per page would multiply one
+               # misconfiguration across the whole crawl.
+               "ENTITY_HOURS_DEFAULT", "ENTITY_NAP_INCOMPLETE",
+               "ENTITY_FIELD_EMPTY", "ENTITY_VALUE_PLACEHOLDER"]
 
 
 def _imp(code: str) -> int:

@@ -13,6 +13,8 @@ def generate_excel_report(
     summary: dict,
     image_summary: dict = None,
     images: list = None,
+    performance: dict | None = None,
+    priority_pages: list[dict] | None = None,
 ) -> bytes:
     """Generate a multi-sheet Excel workbook from crawl data."""
     wb = Workbook()
@@ -111,6 +113,98 @@ def generate_excel_report(
             ws_ai.cell(row=row, column=3, value=issue.confidence_label or "")
             ws_ai.cell(row=row, column=4, value=issue.page_url or "")
             ws_ai.cell(row=row, column=5, value=issue.description or "")
+
+    # ── Performance Sheet (E3.4) ───────────────────────────────────────────
+    # Excel parity with the PDF: the same ranking must be reachable from every
+    # export surface, not just the one that happened to be wired first (P25).
+    # Spec: docs/pending/2026-08-29_E3-performance-data-in-report.md#E3.4
+    if performance:
+        ws_perf = wb.create_sheet(title="Performance")
+        ws_perf["A1"] = "Search Performance"
+        ws_perf["A1"].font = header_font
+        ws_perf["A2"] = performance.get("source", "")
+        ws_perf["A3"] = "Periods:"
+        ws_perf["B3"] = ", ".join(performance.get("periods") or [])
+        ws_perf["A3"].font = label_font
+        if performance.get("is_stale"):
+            ws_perf["A4"] = "Data age (days):"
+            ws_perf["B4"] = performance.get("data_age_days")
+            ws_perf["A4"].font = label_font
+
+        site_rows = [
+            ("Impressions", performance.get("total_impressions", 0)),
+            ("Clicks", performance.get("total_clicks", 0)),
+            ("Average CTR", performance.get("site_ctr", 0.0)),
+            ("GA4 sessions", performance.get("total_sessions", 0)),
+            ("Conversions", performance.get("total_conversions", 0)),
+            ("AI-assistant sessions", performance.get("total_ai_referral_sessions", 0)),
+            ("Pages with data", performance.get("pages_with_data", 0)),
+        ]
+        row = 6
+        for label, value in site_rows:
+            ws_perf.cell(row=row, column=1, value=label).font = label_font
+            ws_perf.cell(row=row, column=2, value=value)
+            row += 1
+
+        row += 1
+        ws_perf.cell(row=row, column=1, value="Top pages by impressions").font = label_font
+        row += 1
+        headers = ["URL", "Impressions", "Clicks", "CTR", "Avg position",
+                   "Sessions", "Conversions", "Health", "Period"]
+        for col, h in enumerate(headers, 1):
+            ws_perf.cell(row=row, column=col, value=h).font = label_font
+        row += 1
+        # Uncapped on purpose: the spreadsheet is where the full list belongs.
+        for r in performance.get("top_by_impressions") or []:
+            for col, key in enumerate(
+                ["url", "impressions", "clicks", "ctr", "position",
+                 "sessions", "conversions", "health_score", "period"], 1
+            ):
+                ws_perf.cell(row=row, column=col, value=r.get(key))
+            row += 1
+
+        if performance.get("low_ctr_high_impression"):
+            row += 1
+            ws_perf.cell(row=row, column=1,
+                         value="Seen but not clicked (above-median impressions, "
+                               "below-average CTR)").font = label_font
+            row += 1
+            for col, h in enumerate(headers, 1):
+                ws_perf.cell(row=row, column=col, value=h).font = label_font
+            row += 1
+            for r in performance["low_ctr_high_impression"]:
+                for col, key in enumerate(
+                    ["url", "impressions", "clicks", "ctr", "position",
+                     "sessions", "conversions", "health_score", "period"], 1
+                ):
+                    ws_perf.cell(row=row, column=col, value=r.get(key))
+                row += 1
+
+    # ── Priority Pages Sheet (E3.4) ────────────────────────────────────────
+    if priority_pages:
+        ws_pri = wb.create_sheet(title="Priority Pages")
+        ws_pri["A1"] = "Page Priority Work Queue"
+        ws_pri["A1"].font = header_font
+        headers = ["Rank", "URL", "Bucket", "Health", "Citability",
+                   "Clicks", "Impressions", "CTR", "Position", "Conversions",
+                   "Review flags"]
+        for col, h in enumerate(headers, 1):
+            ws_pri.cell(row=3, column=col, value=h).font = label_font
+        row = 4
+        for r in priority_pages:
+            gsc = r.get("gsc") or {}
+            flag = r.get("review_flag") or {}
+            reasons = flag.get("reasons") if isinstance(flag, dict) else getattr(flag, "reasons", None)
+            values = [
+                r.get("priority_rank"), r.get("url"), r.get("bucket"),
+                r.get("health_score"), r.get("citability_grade"),
+                gsc.get("clicks"), gsc.get("impressions"), gsc.get("ctr"),
+                gsc.get("position"), gsc.get("conversions"),
+                "; ".join(reasons) if reasons else "",
+            ]
+            for col, v in enumerate(values, 1):
+                ws_pri.cell(row=row, column=col, value=v)
+            row += 1
 
     # ── Images Sheet ───────────────────────────────────────────────────────
     if image_summary and image_summary.get("total_images", 0) > 0:

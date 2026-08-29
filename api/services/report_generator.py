@@ -81,6 +81,232 @@ class TalkingToadReport(FPDF):
 
         self.ln(1)
 
+
+# ---------------------------------------------------------------------------
+# E3 — Search Performance and Priority Pages
+# Spec: docs/pending/2026-08-29_E3-performance-data-in-report.md
+# Tests: tests/test_performance_report.py
+# ---------------------------------------------------------------------------
+
+
+def _fmt_pct(value: float) -> str:
+    """Format a 0–1 ratio as a percentage. Ledger CTRs are stored as ratios."""
+    return f"{value * 100:.2f}%"
+
+
+def _short_url(url: str, limit: int = 62) -> str:
+    """Trim the scheme and, if still long, the middle — keeping both ends, which
+    is where the identifying information lives."""
+    trimmed = url.replace("https://", "").replace("http://", "").rstrip("/")
+    if len(trimmed) <= limit:
+        return trimmed
+    keep = (limit - 3) // 2
+    return f"{trimmed[:keep]}...{trimmed[-keep:]}"
+
+
+def _reorder_by_priority(top_pages: list[dict], priority_pages: list[dict]) -> list[dict]:
+    """Re-order `top_pages` to follow the §6.9 work-queue order (E3.3).
+
+    Pages absent from the priority queue keep their original relative order and
+    follow the ranked ones — dropping them would silently shrink the section.
+    """
+    rank_by_url = {
+        (p.get("url") or "").rstrip("/"): p.get("priority_rank", 10**6)
+        for p in priority_pages
+    }
+    original = {id(p): i for i, p in enumerate(top_pages)}
+    return sorted(
+        top_pages,
+        key=lambda p: (
+            rank_by_url.get((p.get("url") or "").rstrip("/"), 10**6),
+            original[id(p)],
+        ),
+    )
+
+
+def _render_performance_section(pdf, performance: dict | None) -> None:
+    """Site-level GSC/GA4 rollup joined to per-page health.
+
+    The join is the point: a crawler alone cannot say which defect costs traffic,
+    and an analytics export alone cannot say what is wrong with the page.
+    """
+    if not performance:
+        return
+
+    pdf.add_page()
+    pdf.chapter_title("Search Performance")
+
+    periods = performance.get("periods") or []
+    period_text = ", ".join(periods) if periods else "unknown period"
+    pdf.set_font('helvetica', '', 10)
+    pdf.set_text_color(*COLOR_GRAY_600)
+    pdf.set_x(25.4)
+    pdf.multi_cell(W, 5, pdf.clean_text(
+        f"First-party data from {performance.get('source', 'Search Console + GA4')}, "
+        f"covering {period_text}, for the {performance.get('pages_with_data', 0)} crawled "
+        f"pages that have records."
+    ))
+
+    # E3.5 (P6): never present stale numbers as current.
+    if performance.get("is_stale"):
+        pdf.ln(2)
+        pdf.set_x(25.4)
+        pdf.set_font('helvetica', 'B', 10)
+        pdf.set_text_color(*COLOR_WARNING)
+        pdf.multi_cell(W, 5, pdf.clean_text(
+            f"Performance data is {performance.get('data_age_days')} days old. "
+            f"Treat the figures below as a historical baseline, not current traffic."
+        ))
+    pdf.ln(4)
+
+    stats = [
+        ("Impressions", f"{performance.get('total_impressions', 0):,}"),
+        ("Clicks", f"{performance.get('total_clicks', 0):,}"),
+        ("Average CTR", _fmt_pct(performance.get('site_ctr', 0.0))),
+        ("GA4 sessions", f"{performance.get('total_sessions', 0):,}"),
+        ("Conversions", f"{performance.get('total_conversions', 0):,}"),
+        ("AI-assistant sessions", f"{performance.get('total_ai_referral_sessions', 0):,}"),
+    ]
+    for label, value in stats:
+        pdf.set_x(25.4)
+        pdf.set_font('helvetica', 'B', 11)
+        pdf.set_text_color(*COLOR_GRAY_500)
+        pdf.cell(70, 8, pdf.clean_text(label + ":"))
+        pdf.set_font('helvetica', 'B', 12)
+        pdf.set_text_color(*COLOR_GRAY_800)
+        pdf.cell(W - 70, 8, value, new_x="LMARGIN", new_y="NEXT")
+
+    # ── Top pages by impressions, with health alongside ──
+    top = performance.get("top_by_impressions") or []
+    if top:
+        pdf.ln(5)
+        pdf.set_x(25.4)
+        pdf.set_font('helvetica', 'B', 12)
+        pdf.set_text_color(*COLOR_GRAY_800)
+        pdf.cell(W, 8, "Top Pages by Impressions", new_x="LMARGIN", new_y="NEXT")
+        pdf.set_x(25.4)
+        pdf.set_font('helvetica', '', 8)
+        pdf.set_text_color(*COLOR_GRAY_500)
+        pdf.cell(W, 5, "Page / Impressions / Clicks / CTR / Avg position / Health",
+                 new_x="LMARGIN", new_y="NEXT")
+        pdf.ln(1)
+        for row in top:
+            if pdf.get_y() > 245:
+                pdf.add_page()
+            pdf.set_x(25.4)
+            pdf.set_font('helvetica', '', 9)
+            pdf.set_text_color(*COLOR_GRAY_800)
+            pdf.multi_cell(W, 5, pdf.clean_text(_short_url(row["url"])))
+            pdf.set_x(30)
+            pdf.set_font('helvetica', '', 9)
+            pdf.set_text_color(*COLOR_GRAY_600)
+            health = row.get("health_score")
+            pdf.cell(W - 5, 5, pdf.clean_text(
+                f"{row['impressions']:,} impr | {row['clicks']:,} clicks | "
+                f"{_fmt_pct(row['ctr'])} CTR | pos {row['position']:.1f} | "
+                f"health {health if health is not None else 'n/a'}"
+            ), new_x="LMARGIN", new_y="NEXT")
+            pdf.ln(1)
+
+    # ── High impressions, low CTR — the snippet-rewrite worklist ──
+    low_ctr = performance.get("low_ctr_high_impression") or []
+    if low_ctr:
+        if pdf.get_y() > 200:
+            pdf.add_page()
+        pdf.ln(4)
+        pdf.set_x(25.4)
+        pdf.set_font('helvetica', 'B', 12)
+        pdf.set_text_color(*COLOR_GRAY_800)
+        pdf.cell(W, 8, "Seen But Not Clicked", new_x="LMARGIN", new_y="NEXT")
+        pdf.set_x(25.4)
+        pdf.set_font('helvetica', '', 9)
+        pdf.set_text_color(*COLOR_GRAY_600)
+        pdf.multi_cell(W, 5, pdf.clean_text(
+            "These pages earn more impressions than most of the site but are clicked "
+            "less often than the site average. The ranking is already there; the title "
+            "and description are what is losing the click."
+        ))
+        pdf.ln(2)
+        for row in low_ctr:
+            if pdf.get_y() > 245:
+                pdf.add_page()
+            pdf.set_x(25.4)
+            pdf.set_font('helvetica', '', 9)
+            pdf.set_text_color(*COLOR_GRAY_800)
+            pdf.multi_cell(W, 5, pdf.clean_text(_short_url(row["url"])))
+            pdf.set_x(30)
+            pdf.set_text_color(*COLOR_WARNING)
+            pdf.cell(W - 5, 5, pdf.clean_text(
+                f"{row['impressions']:,} impressions, {_fmt_pct(row['ctr'])} CTR, "
+                f"average position {row['position']:.1f}"
+            ), new_x="LMARGIN", new_y="NEXT")
+            pdf.ln(1)
+
+
+def _render_priority_pages_section(
+    pdf, priority_pages: list[dict] | None, performance: dict | None, limit: int = 15
+) -> None:
+    """The §6.9 Authority-Matrix work queue, as a client-readable table."""
+    if not priority_pages:
+        return
+
+    pdf.add_page()
+    pdf.chapter_title("Priority Pages")
+    pdf.set_font('helvetica', '', 10)
+    pdf.set_text_color(*COLOR_GRAY_600)
+    pdf.set_x(25.4)
+    if performance:
+        blurb = ("Ranked by the Authority Matrix: pages that earn traffic and have "
+                 "problems come first, then traffic decay and staleness, then worst "
+                 "health. Within a group, pages with more clicks and conversions lead.")
+    else:
+        blurb = ("Ranked by page health. No Search Console or GA4 data was supplied for "
+                 "this site, so traffic and conversions could not be weighed — see "
+                 "Scope, Method and Caveats.")
+    pdf.multi_cell(W, 5, blurb)
+    pdf.ln(4)
+
+    for row in priority_pages[:limit]:
+        if pdf.get_y() > 240:
+            pdf.add_page()
+        gsc = row.get("gsc") or {}
+        flag = row.get("review_flag") or {}
+        reasons = flag.get("reasons") if isinstance(flag, dict) else getattr(flag, "reasons", None)
+
+        pdf.set_x(25.4)
+        pdf.set_font('helvetica', 'B', 9)
+        pdf.set_text_color(*COLOR_GRAY_800)
+        pdf.multi_cell(W, 5, pdf.clean_text(
+            f"{row.get('priority_rank', '?')}. {_short_url(row.get('url', ''))}"
+        ))
+
+        pdf.set_x(30)
+        pdf.set_font('helvetica', '', 9)
+        pdf.set_text_color(*COLOR_GRAY_600)
+        bits = [
+            f"{row.get('bucket', 'Unranked')}",
+            f"health {row.get('health_score', 'n/a')}",
+            f"citability {row.get('citability_grade', 'n/a')}",
+        ]
+        if gsc:
+            bits.append(f"{gsc.get('impressions') or 0:,} impr")
+            bits.append(f"{gsc.get('clicks') or 0:,} clicks")
+            conv = gsc.get("conversions")
+            bits.append(f"{conv if conv is not None else 'n/a'} conv")
+        pdf.multi_cell(W - 5, 5, pdf.clean_text(" | ".join(bits)))
+
+        if reasons:
+            pdf.set_x(30)
+            pdf.set_font('helvetica', 'I', 8)
+            pdf.set_text_color(*COLOR_WARNING)
+            pdf.multi_cell(W - 5, 4, pdf.clean_text("; ".join(reasons)))
+
+        pdf.set_draw_color(229, 231, 235)
+        pdf.set_x(25.4)
+        pdf.line(pdf.get_x(), pdf.get_y(), pdf.get_x() + W, pdf.get_y())
+        pdf.ln(3)
+
+
 async def generate_pdf_report(
     job: CrawlJob,
     issues: list[Issue],
@@ -91,6 +317,8 @@ async def generate_pdf_report(
     image_summary: dict = None,
     top_images: list = None,
     executive_summary: str | None = None,
+    performance: dict | None = None,
+    priority_pages: list[dict] | None = None,
 ) -> bytes:
     pdf = TalkingToadReport()
     pdf.alias_nb_pages()
@@ -179,6 +407,13 @@ async def generate_pdf_report(
         pdf.set_text_color(*COLOR_GRAY_800)
         pdf.cell(W - 60, 8, str(count), new_x="LMARGIN", new_y="NEXT")
 
+    # ── Search Performance + Priority Pages (E3.2) ────────────────────────
+    # Rendered only when the Performance Ledger holds data for this domain. When
+    # it does not, both sections are OMITTED and the omission is recorded in the
+    # Scope & Caveats section — a missing section must never read as a pass (E7.4).
+    _render_performance_section(pdf, performance)
+    _render_priority_pages_section(pdf, priority_pages, performance)
+
     # ── Page 3: Top 10 Pages ──────────────────────────────────────────────
     if top_pages:
         pdf.add_page()
@@ -186,9 +421,18 @@ async def generate_pdf_report(
         pdf.set_font('helvetica', '', 10)
         pdf.set_text_color(*COLOR_GRAY_600)
         pdf.set_x(25.4)
-        pdf.multi_cell(W, 5, "These pages have the highest concentration of issues and should be prioritized.")
+        # E3.3: the subtitle must name the ordering actually applied. With ledger
+        # data the list is re-ordered by the §6.9 work queue (traffic + conversions
+        # + health); without it, ordering and wording are exactly as before.
+        if priority_pages:
+            top_pages = _reorder_by_priority(top_pages, priority_pages)
+            subtitle = ("Ranked by traffic, conversions and page health — the pages where "
+                        "fixing an issue is worth the most. Issue counts are shown for context.")
+        else:
+            subtitle = "These pages have the highest concentration of issues and should be prioritized."
+        pdf.multi_cell(W, 5, pdf.clean_text(subtitle))
         pdf.ln(5)
-        
+
         for p in top_pages:
             if pdf.get_y() > 230:
                 pdf.add_page()

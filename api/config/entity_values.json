@@ -1,0 +1,64 @@
+{
+  "_comment": [
+    "E5 — editorial content for the Organization/LocalBusiness value checks.",
+    "Rule 9: placeholder vocabularies and default-value patterns are editorial",
+    "judgement and belong in config, not in Python source.",
+    "Spec: docs/pending/2026-08-29_E5-entity-value-checks.md"
+  ],
+
+  "placeholder_values": [
+    "site logo",
+    "logo",
+    "your business name",
+    "your company name",
+    "company name",
+    "business name",
+    "example",
+    "lorem ipsum",
+    "description goes here",
+    "add your description here",
+    "site description",
+    "just another wordpress site",
+    "enter your description",
+    "untitled",
+    "n/a",
+    "na",
+    "tbd",
+    "tba",
+    "-",
+    "--",
+    "..."
+  ],
+
+  "placeholder_fields": [
+    "description",
+    "name",
+    "legalName",
+    "alternateName",
+    "slogan"
+  ],
+
+  "min_description_words": 5,
+
+  "default_hours": {
+    "days": 7,
+    "opens": "09:00",
+    "closes": "17:00"
+  },
+
+  "nap_required_fields": {
+    "premises": ["address", "telephone", "email"],
+    "organization": ["url", "logo"]
+  },
+
+  "address_subfields": [
+    "streetAddress",
+    "addressLocality",
+    "addressRegion",
+    "postalCode",
+    "addressCountry"
+  ],
+
+  "premises_types": ["LocalBusiness", "Place"],
+  "organization_types": ["Organization", "NGO", "Corporation"]
+}
