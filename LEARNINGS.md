@@ -257,3 +257,50 @@ Newest first. Format: **Issue → Root cause → What would have caught it → F
   - *Pattern:* P3/P4-adjacent — "reuse before you invent"; always reconcile a spec's catalogue claims
     against the live source of truth (the repo meta-rule: grep the whole catalogue for the class before
     adding a code).
+
+- **2026-08-29 — Two independent "silent join" bugs, found only by running the tool against the live site.**
+  - *Issue:* (a) The Performance Ledger join used `WHERE url = ?`. The ledger stores the trailing-slash
+    form Search Console reports; the crawler normalises it away. **11 of 272** pages joined, the site's
+    highest-impression page was lost entirely, and the report printed 3,717 impressions instead of 27,284.
+    (b) `get_links_by_target` had the same exact-match flaw, so the "Show Source Pages" button on the
+    Broken Links panel opened onto nothing — compounded by the frontend assigning the whole response
+    envelope `{target_url, sources, count}` to its `sources` state, making `.length` undefined.
+  - *Root cause:* Producer and consumer normalise URLs differently, and neither side's tests exercised the
+    other side's real format — both used the same idealised URL string.
+  - *What would have caught it:* Running the feature against real data and looking at the number, which is
+    what did catch it. The unit tests were all green: they seeded and queried with the same URL form.
+  - *Fix:* A shared `ledger_key` both sides go through; tolerant matching in `get_links_by_target`; and —
+    the part that matters — a **loud warning when a join that has rows on both sides matches almost
+    nothing**. "No row for this page" and "the key didn't match" had produced identical output.
+  - *Pattern:* **P19 + P2.** A join is a producer/consumer contract. Test it with the two sides' *real*
+    formats, never one string used twice, and instrument zero-from-non-empty as a warning, not a clean pass.
+
+- **2026-08-29 — Enriching an evidence field silently changed a scoring input.**
+  - *Issue:* E2 set `extra["occurrences"]` to the number of pages linking to a broken target, to report
+    the true remediation scope. But `occurrences` is what `occurrence_multiplier` reads to scale that
+    page's deduction. A footer link broken on 200 pages therefore doubled the deduction on whichever page
+    the crawler happened to reach first — making per-page health crawl-order dependent — and amplified
+    transient `BROKEN_LINK_503` / `EXTERNAL_LINK_TIMEOUT` findings by up to 2x.
+  - *Root cause:* One field carrying two jobs. The name read like "how many of these are there", which is
+    true of both the evidence count and the scoring count, so reusing it looked free.
+  - *What would have caught it:* Asking "what reads this field?" before widening its meaning. The suite
+    stayed green throughout — no test asserted impact for a multi-source target.
+  - *Fix:* `occurrences` is the per-page scoring count again; the evidence lives in `occurrence_urls` /
+    `occurrence_urls_total`. Both are asserted separately, with the reason in the test name.
+  - *Pattern:* **P7/P22.** Before repurposing an existing field, grep for its readers. A field consumed by
+    a scorer is part of the scoring contract however descriptive its name sounds.
+
+- **2026-08-29 — A composite score that clamps to its floor on every real site measures nothing.**
+  - *Issue:* Site Hygiene shipped as `100 − Σ(tier weight × share)`. On the first real site, nine systemic
+    defects produced a penalty of 135 and the score clamped to 0 — indistinguishable from a site with
+    twenty, or two hundred.
+  - *Root cause:* The weights were chosen against a mental model of one or two systemic defects. No real
+    data was run through the formula before it was wired into the report.
+  - *What would have caught it:* Computing the score on the live job *before* building the UI around it.
+    Every unit test passed: they each exercised one or two codes.
+  - *Fix:* Replaced with a coverage measure — the percentage of indexable pages carrying no systemic
+    defect. Bounded by construction, no arbitrary weights, monotonic, and it states itself in one sentence.
+    Reads 34 on livingsystems.ca beside a Health of 89, which is the honest description of that site.
+  - *Pattern:* **P9/P7.** A new composite score must be computed on real, full-scale data before anything
+    is built on top of it. "Passes its unit tests" and "discriminates between real inputs" are different
+    claims, and only the second one makes a score worth printing.
