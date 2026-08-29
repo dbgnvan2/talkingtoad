@@ -61,25 +61,29 @@ def collapse_per_target_occurrences(issues: list[Issue]) -> list[Issue]:
         def _evidence(x):
             return x.get("target_url") or x.get("redirect_to") or x.get("source_url")
 
-        # E2.2 — a member may ALREADY represent many affected links: the engine
-        # now emits one broken-link issue per TARGET carrying every page that
-        # links to it. Summing each member's own `occurrences` preserves §2's
-        # original meaning (n = total affected links) instead of resetting it to
-        # the number of Issue objects, which post-E2 is no longer the same thing.
-        # Pre-E2 every member carried no `occurrences`, so this sums to len(group)
-        # and the behaviour is identical for callers that don't set it.
+        # E2.2 — `occurrences` is the SCORING count: how many offending links
+        # this page carries. Each member contributes its own (1 by default), so
+        # this sums to len(group) exactly as it did pre-E2. It is deliberately
+        # NOT the site-wide linking-page count — see `_broken_link_extra`.
         n = sum(int((g.extra or {}).get("occurrences", 1)) for g in group)
 
         # Source pages the operator must edit. Union across the group, order
         # preserved, deduped. Falls back to the legacy target/redirect evidence
         # for issues that carry no source list (redirect codes, older callers).
+        #
+        # `sources_total` is summed from the members' OWN pre-cap totals, never
+        # recomputed from `source_urls` — that list is already truncated to
+        # _SOURCE_LIST_CAP, so recomputing collapsed "showing 50 of 200" to
+        # "50 of 50" and made the disclosure in every surface unreachable (P9).
         source_urls: list[str] = []
         seen_sources: set[str] = set()
         has_source_lists = False
+        sources_total = 0
         for g in group:
             extra = g.extra or {}
             if "occurrence_urls_total" in extra:
                 has_source_lists = True
+                sources_total += int(extra.get("occurrence_urls_total") or 0)
                 for u in extra.get("occurrence_urls") or []:
                     if u and u not in seen_sources:
                         seen_sources.add(u)
@@ -90,6 +94,11 @@ def collapse_per_target_occurrences(issues: list[Issue]) -> list[Issue]:
                 if u and u not in seen_sources:
                     seen_sources.add(u)
                     source_urls.append(u)
+            sources_total = len(source_urls)
+        else:
+            # A union can only shrink the count (dedupe across members); it can
+            # never legitimately exceed the summed pre-cap totals.
+            sources_total = max(sources_total, len(source_urls))
 
         # The distinct broken destinations in this group — kept alongside the
         # source list so "which links" and "which pages" are both answerable.
@@ -102,7 +111,7 @@ def collapse_per_target_occurrences(issues: list[Issue]) -> list[Issue]:
         merged = {**(first.extra or {})}
         merged["occurrences"] = n
         merged["occurrence_urls"] = source_urls[:_SOURCE_LIST_CAP]
-        merged["occurrence_urls_total"] = len(source_urls)
+        merged["occurrence_urls_total"] = sources_total
         if targets:
             merged["affected_targets"] = targets[:_SOURCE_LIST_CAP]
             merged["affected_targets_total"] = len(targets)

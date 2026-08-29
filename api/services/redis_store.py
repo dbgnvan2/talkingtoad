@@ -480,16 +480,21 @@ class RedisJobStore:
         return []  # Not implemented for Redis MVP
 
     async def get_image_summary(self, job_id: str) -> dict:
+        # Images are not stored in the Redis MVP. `None` scores say "not
+        # measured"; 100 would have claimed a perfect result from no data (P2),
+        # and the key set matches SQLite so the GUI cannot diverge by backend.
         return {
             "total_images": 0,
             "images_analyzed": 0,
             "images_with_metadata": 0,
-            "image_health_score": 100,
+            "image_health_score": None,
             "by_issue": {},
             "by_format": {},
             "total_size_kb": 0,
             "avg_load_time_ms": 0,
-            "avg_score": 100,
+            "avg_score": None,
+            "images_seen_total": None,
+            "images_collected": None,
         }
 
     async def get_image_by_url(self, job_id: str, url: str) -> ImageInfo | None:

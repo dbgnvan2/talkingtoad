@@ -16,6 +16,7 @@ def generate_excel_report(
     performance: dict | None = None,
     priority_pages: list[dict] | None = None,
     prevalence: list | None = None,
+    priority_pages_for_roadmap: list[dict] | None = None,
 ) -> bytes:
     """Generate a multi-sheet Excel workbook from crawl data."""
     wb = Workbook()
@@ -115,6 +116,39 @@ def generate_excel_report(
             ws_ai.cell(row=row, column=4, value=issue.page_url or "")
             ws_ai.cell(row=row, column=5, value=issue.description or "")
 
+    # ── Roadmap Sheet (E7.1) ───────────────────────────────────────────────
+    # Same columns as the PDF roadmap: every surface offers the option, or the
+    # decision not to offer it there is a recorded one (P25).
+    if issues:
+        try:
+            from api.services.remediation import build_roadmap
+
+            # Uncapped: the PDF points the reader here for the full list, so it
+            # has to hold it. A cap here would make that promise false (F2/F6).
+            roadmap_items, _weighted, _totals = build_roadmap(
+                issues, prevalence=prevalence,
+                priority_pages=priority_pages_for_roadmap or priority_pages,
+                limit_per_phase=10**6,
+            )
+        except Exception:
+            roadmap_items = []
+        if roadmap_items:
+            ws_road = wb.create_sheet(title="Roadmap")
+            ws_road["A1"] = "Remediation Roadmap"
+            ws_road["A1"].font = header_font
+            headers = ["Phase", "Issue", "Code", "Category", "Owner", "Impact",
+                       "Effort", "Pages affected", "Done when"]
+            for col, h in enumerate(headers, 1):
+                ws_road.cell(row=3, column=col, value=h).font = label_font
+            row = 4
+            for item in roadmap_items:
+                values = [item.phase_title, item.title, item.code, item.category,
+                          item.owner, item.impact, item.effort_label,
+                          item.pages_affected, item.done_when]
+                for col, v in enumerate(values, 1):
+                    ws_road.cell(row=row, column=col, value=v)
+                row += 1
+
     # ── Prevalence Sheet (E4.3) ────────────────────────────────────────────
     # How much of the indexable estate each defect touches. Scoring is unchanged;
     # this is the breadth lens. Spec: docs/pending/2026-08-29_E4-site-prevalence-escalation.md
@@ -176,14 +210,21 @@ def generate_excel_report(
             row += 1
 
         row += 1
-        ws_perf.cell(row=row, column=1, value="Top pages by impressions").font = label_font
+        shown = len(performance.get("top_by_impressions") or [])
+        with_data = performance.get("pages_with_data", shown)
+        label = (f"Top {shown} pages by impressions (of {with_data} pages with data)"
+                 if with_data > shown else "Pages by impressions")
+        ws_perf.cell(row=row, column=1, value=label).font = label_font
         row += 1
         headers = ["URL", "Impressions", "Clicks", "CTR", "Avg position",
                    "Sessions", "Conversions", "Health", "Period"]
         for col, h in enumerate(headers, 1):
             ws_perf.cell(row=row, column=col, value=h).font = label_font
         row += 1
-        # Uncapped on purpose: the spreadsheet is where the full list belongs.
+        # NOTE: this list arrives already capped at `top_n` by
+        # build_performance_summary. The count below says so rather than letting
+        # the sheet imply completeness (rule 6) — an earlier comment here claimed
+        # "uncapped on purpose", which was simply untrue.
         for r in performance.get("top_by_impressions") or []:
             for col, key in enumerate(
                 ["url", "impressions", "clicks", "ctr", "position",
@@ -244,6 +285,15 @@ def generate_excel_report(
         ws_img["A3"] = "Image Health Score:"
         ws_img["B3"] = f"{image_summary.get('image_health_score', 0)}%"
         ws_img["A3"].font = label_font
+
+        # E1.4 (P25/rule 6): the coverage disclosure must reach every surface,
+        # not just the PDF — a bare "Total Images: 150" over a 1,284-image site
+        # is the exact shape E1 was fixing.
+        seen = getattr(job, "images_seen_total", None)
+        collected = getattr(job, "images_collected", None)
+        if seen and collected is not None and seen > collected:
+            ws_img["D3"] = f"Coverage: analysed {collected} of {seen} images found"
+            ws_img["D3"].font = label_font
 
         ws_img["A4"] = "Total Images:"
         ws_img["B4"] = image_summary.get("total_images", 0)
@@ -349,7 +399,10 @@ def generate_excel_report(
         sheet_name = cat.replace('_', ' ').title()[:30]
         ws = wb.create_sheet(title=sheet_name)
         
-        headers = ["Severity", "URL", "Issue Code", "Description", "Recommendation"]
+        # E2: linking pages travel with broken-link rows so the "full list is in
+        # the spreadsheet export" line in the UI and the PDF is actually true.
+        headers = ["Severity", "URL", "Issue Code", "Description", "Recommendation",
+                   "Linking pages", "Linking pages (total)"]
         ws.append(headers)
         
         # Style headers
@@ -359,12 +412,16 @@ def generate_excel_report(
             cell.alignment = Alignment(horizontal="center")
 
         for issue in by_cat[cat]:
+            extra = getattr(issue, "extra", None) or {}
+            linking = extra.get("occurrence_urls") or []
             ws.append([
                 issue.severity.upper(),
                 issue.page_url or "Site-wide",
                 issue.issue_code,
                 issue.description,
-                issue.recommendation
+                issue.recommendation,
+                "\n".join(linking) if linking else "",
+                extra.get("occurrence_urls_total") if linking else None,
             ])
 
         # Formatting
@@ -373,6 +430,8 @@ def generate_excel_report(
         ws.column_dimensions['C'].width = 25
         ws.column_dimensions['D'].width = 60
         ws.column_dimensions['E'].width = 60
+        ws.column_dimensions['F'].width = 70
+        ws.column_dimensions['G'].width = 20
         
         # Add auto-filter
         ws.auto_filter.ref = ws.dimensions

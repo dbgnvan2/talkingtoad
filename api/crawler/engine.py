@@ -97,7 +97,20 @@ def _broken_link_extra(
     listed = sources[:_BROKEN_LINK_SOURCE_CAP]
     extra = {
         "target_url": target_url,
-        "occurrences": len(sources),
+        # `occurrences` is the SCORING count and keeps its §2 meaning: how many
+        # offending links this issue represents on its own page. It stays 1 here.
+        #
+        # It must not become the site-wide linking-page count. This issue is
+        # anchored to ONE page (the first source found, or the 4xx target), and
+        # `occurrence_multiplier` scales that page's deduction by it — so a
+        # footer link broken on 200 pages would double the deduction on whichever
+        # page the crawler happened to reach first, and per-page health would
+        # become crawl-order dependent. Worse, BROKEN_LINK_503 and
+        # EXTERNAL_LINK_TIMEOUT are per-target codes too, so one flaky outage on
+        # a nav-linked target would be amplified 2x (P1/P7).
+        "occurrences": 1,
+        # Evidence: the pages that link here. Capped for payload size, with the
+        # true total alongside so every surface can disclose the truncation.
         "occurrence_urls": listed,
         "occurrence_urls_total": len(sources),
     }

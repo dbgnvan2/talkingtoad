@@ -318,13 +318,18 @@ class TestRenderedExports:
 
     @pytest.mark.asyncio
     async def test_e3_2_pdf_omits_performance_when_ledger_empty(self, store):
+        """The section is not rendered — and the omission is NAMED in Caveats
+        (E7.4), so a gap in the data cannot read as a clean bill of health."""
         job = await _seed(store, with_ledger=False, pages=[HOME, TOP_PAGE])
         pdf_bytes = await generate_pdf_report(
             job, [], await store.get_summary(JOB_ID),
             performance=None, priority_pages=None,
         )
         text = _pdf_text(pdf_bytes)
-        assert "Search Performance" not in text
+        assert "First-party data from" not in text, "the section body must be absent"
+        assert "Top Pages by Impressions" not in text
+        assert "were omitted" in text, "the omission must be disclosed"
+        assert "not a finding of no traffic" in text
 
     @pytest.mark.asyncio
     async def test_e3_3a_pdf_subtitle_names_the_weighting(self, store):
@@ -443,13 +448,16 @@ class TestPrevalenceSurfaces:
 
     @pytest.mark.asyncio
     async def test_e4_3a_pdf_omits_systemic_section_when_none(self, store):
+        """Section absent, omission disclosed (E7.4)."""
         job = await _seed(store, with_ledger=False, pages=[HOME, TOP_PAGE])
         pdf_bytes = await generate_pdf_report(
             job, [], await store.get_summary(JOB_ID), prevalence=[],
         )
         text = _pdf_text(pdf_bytes)
-        assert "Systemic Defects" not in text
-        assert "Site Hygiene" not in text
+        assert "one template, theme setting or editorial habit" not in text, (
+            "the Systemic Defects section body must be absent"
+        )
+        assert "prevalence could not be computed" in text
 
     @pytest.mark.asyncio
     async def test_e4_3b_checklist_ordered_by_prevalence(self, store):
@@ -512,3 +520,208 @@ class TestPrevalenceSurfaces:
         job = await _seed(store, with_ledger=False, pages=[HOME])
         xlsx = generate_excel_report(job, [], await store.get_summary(JOB_ID), prevalence=None)
         assert "Prevalence" not in load_workbook(io.BytesIO(xlsx)).sheetnames
+
+
+# ── The ledger join key ─────────────────────────────────────────────────────
+
+
+class TestLedgerJoinKey:
+    """The join between crawled URLs and ledger URLs silently under-matched.
+
+    The ledger stores what Search Console reported — for WordPress, the slashed
+    form — while the crawler normalises trailing slashes away. An exact match
+    joined 11 of 272 pages on livingsystems.ca and lost the site's biggest page
+    (15,216 impressions), reporting 3,717 total impressions instead of ~50,000.
+    P19 with a P2 finish: "no row for this page" and "the key didn't match"
+    produced identical output.
+    """
+
+    def test_trailing_slash_is_ignored(self):
+        from api.services.page_priority import ledger_key
+
+        assert ledger_key("https://x.ca/page/") == ledger_key("https://x.ca/page")
+
+    def test_www_is_ignored(self):
+        from api.services.page_priority import ledger_key
+
+        assert ledger_key("https://www.x.ca/page") == ledger_key("https://x.ca/page")
+
+    def test_host_case_is_ignored_but_path_case_is_not(self):
+        from api.services.page_priority import ledger_key
+
+        assert ledger_key("https://X.CA/page") == ledger_key("https://x.ca/page")
+        assert ledger_key("https://x.ca/Page") != ledger_key("https://x.ca/page")
+
+    def test_different_paths_do_not_collide(self):
+        from api.services.page_priority import ledger_key
+
+        assert ledger_key("https://x.ca/a") != ledger_key("https://x.ca/b")
+
+    @pytest.mark.parametrize("value", ["", None])
+    def test_empty_input_is_not_a_crash(self, value):
+        from api.services.page_priority import ledger_key
+
+        assert ledger_key(value) == ""
+
+    @pytest.mark.asyncio
+    async def test_slashed_ledger_joins_unslashed_crawl(self, store):
+        """The real shape: the ledger has the slash, the crawl does not."""
+        await _seed(store, with_ledger=False, pages=[
+            "https://livingsystems.ca/emotional-pain-and-suffering",
+        ])
+        await store.save_performance_records([
+            PerformanceRecord(url="https://livingsystems.ca/emotional-pain-and-suffering/",
+                              period="2026-08", gsc_impressions_mo=15216, gsc_clicks_mo=55)
+        ])
+        ranked = await build_page_priority(store, JOB_ID)
+        assert ranked[0]["gsc"] is not None, "pre-fix this was None and the page ranked as zero-traffic"
+        assert ranked[0]["gsc"]["impressions"] == 15216
+
+    @pytest.mark.asyncio
+    async def test_mixed_scheme_pages_do_not_collapse_the_join(self, store):
+        """One stray http:// page must not lose the whole ledger — the domain
+        candidates come from every crawled host, not from pages[0]."""
+        await _seed(store, with_ledger=False, pages=[
+            "http://livingsystems.ca/",
+            "https://livingsystems.ca/emotional-pain-and-suffering",
+        ])
+        await store.save_performance_records([
+            PerformanceRecord(url="https://livingsystems.ca/emotional-pain-and-suffering/",
+                              period="2026-08", gsc_impressions_mo=15216, gsc_clicks_mo=55)
+        ])
+        perf = await build_performance_summary(store, JOB_ID)
+        assert perf is not None
+        assert perf["total_impressions"] == 15216
+
+    @pytest.mark.asyncio
+    async def test_real_ledger_joins_most_of_the_crawl(self, store):
+        """Real-scale (P9): the 555-row ledger against its own URL set must join
+        essentially everything, not a handful."""
+        await _seed(store)
+        perf = await build_performance_summary(store, JOB_ID)
+        assert perf["pages_with_data"] > 200, (
+            f"only {perf['pages_with_data']} pages joined — the key is drifting again"
+        )
+
+    @pytest.mark.asyncio
+    async def test_current_period_reports_zero_age_not_negative(self, store):
+        """The current month's period-end is in the future. "-3 days old" in a
+        client report reads as a bug."""
+        await _seed(store, with_ledger=False, pages=[TOP_PAGE])
+        await store.save_performance_records([
+            PerformanceRecord(url=TOP_PAGE, period="2026-08", gsc_impressions_mo=10)
+        ])
+        perf = await build_performance_summary(
+            store, JOB_ID, now=datetime(2026, 8, 15, tzinfo=timezone.utc)
+        )
+        assert perf["data_age_days"] == 0
+        assert perf["is_stale"] is False
+
+
+class TestUnknownIsNotZero:
+    """F10 (review) — `ctr or 0.0` turned an unmeasured CTR into 0.0, which then
+    satisfied `ctr < site_ctr` and produced a fabricated underperformer (P2)."""
+
+    def test_f10_gsc_ctr_cannot_currently_be_unknown(self):
+        """Scope note, verified rather than assumed.
+
+        `PerformanceRecord.gsc_ctr_mo` is `float = 0.0`, so an unmeasured GSC CTR
+        is indistinguishable from a measured 0.0 at the MODEL layer — the summary
+        cannot fix what the schema has already flattened. The `is not None` guard
+        in `low_ctr_high_impression` is therefore defensive today and becomes
+        load-bearing if the field is ever widened to `float | None`. The half of
+        F10 that was genuinely live is the GA4 totals, covered below.
+        """
+        from api.models.performance import PerformanceRecord as PR
+
+        assert PR.model_fields["gsc_ctr_mo"].annotation is float
+        assert PR.model_fields["ga4_sessions_mo"].annotation == (int | None)
+
+    @pytest.mark.asyncio
+    async def test_f10_unknown_ctr_would_not_be_a_low_ctr(self, store):
+        """The guard itself, exercised directly — a None CTR must never qualify."""
+        from api.services.page_priority import _ctr  # noqa: F401  (module import check)
+
+        rows = [
+            {"url": "a", "impressions": 9000, "ctr": None},
+            {"url": "b", "impressions": 1000, "ctr": 0.001},
+        ]
+        site_ctr = 0.05
+        qualifying = [
+            r for r in rows
+            if r["impressions"] > 0 and r["ctr"] is not None and r["ctr"] < site_ctr
+        ]
+        assert [r["url"] for r in qualifying] == ["b"]
+
+    @pytest.mark.asyncio
+    async def test_f10_measured_low_ctr_is_still_flagged(self, store):
+        await _seed(store, with_ledger=False, pages=[HOME, TOP_PAGE])
+        await store.save_performance_records([
+            PerformanceRecord(url=TOP_PAGE, period="2026-08",
+                              gsc_impressions_mo=9000, gsc_clicks_mo=9, gsc_ctr_mo=0.001),
+            PerformanceRecord(url=HOME, period="2026-08",
+                              gsc_impressions_mo=1000, gsc_clicks_mo=100, gsc_ctr_mo=0.10),
+        ])
+        perf = await build_performance_summary(store, JOB_ID)
+        assert TOP_PAGE in [r["url"] for r in perf["low_ctr_high_impression"]]
+
+    @pytest.mark.asyncio
+    async def test_f10_ga4_totals_carry_their_own_denominator(self, store):
+        """Summing `or 0` across measured zeros and unknowns publishes a hard
+        number over missing data. Each total now says how many pages it covers."""
+        await _seed(store, with_ledger=False, pages=[HOME, TOP_PAGE])
+        await store.save_performance_records([
+            PerformanceRecord(url=TOP_PAGE, period="2026-08", gsc_impressions_mo=10,
+                              ga4_sessions_mo=40),
+            PerformanceRecord(url=HOME, period="2026-08", gsc_impressions_mo=10),
+        ])
+        perf = await build_performance_summary(store, JOB_ID)
+        assert perf["total_sessions"] == 40
+        assert perf["sessions_pages_with_data"] == 1
+        assert perf["conversions_pages_with_data"] == 0
+
+    @pytest.mark.asyncio
+    async def test_f10_pdf_prints_not_measured_rather_than_zero(self, store):
+        job = await _seed(store, with_ledger=False, pages=[TOP_PAGE])
+        await store.save_performance_records([
+            PerformanceRecord(url=TOP_PAGE, period="2026-08", gsc_impressions_mo=10)
+        ])
+        pdf = await generate_pdf_report(
+            job, [], await store.get_summary(JOB_ID),
+            performance=await build_performance_summary(store, JOB_ID),
+        )
+        text = _pdf_text(pdf)
+        assert "not measured" in text, "no GA4 data must read as unmeasured, not as 0"
+
+
+class TestCapDisclosureOnEveryPerformanceSurface:
+    """F7 (review) — the top-N list arrives already capped; both the PDF heading
+    and the Excel label must say so instead of implying completeness."""
+
+    @pytest.mark.asyncio
+    async def test_f7_pdf_heading_discloses_the_top_n_cap(self, store):
+        job = await _seed(store)
+        perf = await build_performance_summary(store, JOB_ID)
+        assert perf["pages_with_data"] > len(perf["top_by_impressions"])
+        pdf = await generate_pdf_report(
+            job, [], await store.get_summary(JOB_ID), performance=perf
+        )
+        text = _pdf_text(pdf)
+        assert "Pages by Impressions (of" in text and "with data)" in text
+
+    @pytest.mark.asyncio
+    async def test_f7_excel_label_discloses_the_cap(self, store):
+        import io
+
+        from openpyxl import load_workbook
+
+        job = await _seed(store)
+        xlsx = generate_excel_report(
+            job, [], await store.get_summary(JOB_ID),
+            performance=await build_performance_summary(store, JOB_ID),
+        )
+        wb = load_workbook(io.BytesIO(xlsx))
+        text = " ".join(
+            str(c.value) for row in wb["Performance"].iter_rows() for c in row if c.value
+        )
+        assert "pages with data" in text

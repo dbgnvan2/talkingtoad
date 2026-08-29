@@ -362,7 +362,7 @@ High-level inventory. Each row maps to detailed sections later.
 
 ## 4. Audit capabilities
 
-The crawler emits **152 distinct issue codes** organised into 13
+The crawler emits **167 distinct issue codes** organised into 13
 categories. Each code has: impact (0–10), effort (0–5), fixability
 (`wp_fixable` / `content_edit` / `developer_needed`), and a confidence label.
 
@@ -922,6 +922,74 @@ The rest are internal but affect documented invariants:
   genuinely WP-fixable), CLN7 (`/pages` scopes its citability issue-load to the
   shown URLs), CLN8 (internal broken-page `occurrence_urls` populated).
 
+### 4.15 Crawl-fidelity fixes and new checks (E1–E2, E5–E6, 2026-08-29)
+
+Folded from the E-series micro-specs, written after comparing a TalkingToad
+report for livingsystems.ca against an independent Semrush + GSC + GA4 +
+WordPress audit of the same site. Both agreed on the nine internal 4xx targets,
+the multiple-H1 count and the duplicate-description count; the items below are
+where TalkingToad was wrong or silent.
+
+**E1 — lazy-loaded image extraction.** `_extract_image_data`,
+`_extract_image_urls` and `_find_img_missing_alt_srcs` required a literal `src`
+and skipped `data:` placeholders, so on any lazy-loading site (Smush, Elementor,
+WP Rocket) the parser saw **no images at all**: 9 of 9 on one live page, 11 of 11
+on the homepage, 13 images stored across a 272-page crawl behind a "97% Image
+Health" score. All three now resolve through `_resolve_img_src`
+(`src` → `data-src` / `data-lazy-src` / `data-original` / `data-lazy` /
+`data-echo` → `srcset` / `data-srcset`). The empty URL list no longer silences a
+non-zero `img_missing_alt_count` (P2/P13) — the homepage has 10 of 11 images
+without alt text and TalkingToad reported `IMG_ALT_MISSING` on 1 page of 272.
+The per-job image cap is `TT_IMAGE_URL_CAP_PER_JOB` and its effect is disclosed
+via `images_seen_total` / `images_collected` on the job.
+→ `tests/test_parser_lazy_images.py`, `tests/test_image_cap_disclosure.py`,
+real fixtures in `tests/fixtures/lazy_images/`.
+
+**E2 — broken-link source attribution.** `external_targets_seen` and
+`discovered_from.setdefault` retained only the first page linking to each broken
+target, so 120 broken internal links reported as 10. `external_target_sources`
+and `discovered_from_all` now retain every source while the target is still
+fetched once; `discovered_from` keeps its depth/parent semantics untouched (P12).
+Issues carry `occurrences`, `occurrence_urls` and the uncapped
+`occurrence_urls_total`, capped by `TT_BROKEN_LINK_SOURCE_CAP` and disclosed on
+every surface. `collapse_per_target_occurrences` sums members' own occurrence
+counts rather than resetting to `len(group)`. `CrawlResult.broken_link_sources`
+is now `list[BrokenLinkRef]`: `link_type` is derived (a same-host 404 was always
+stored "external") and `status_code` is persisted, so a transient 503 stays
+distinguishable from a permanent 404 (P1). A P22 guard test forbids the legacy
+3-tuple unpack. → `tests/test_broken_link_attribution.py`.
+
+**E5 — entity value checks.** `SCHEMA_ORG_MISSING` only asked whether the node
+exists. Four site-scoped codes now ask whether what it says is true:
+`ENTITY_HOURS_DEFAULT`, `ENTITY_NAP_INCOMPLETE`, `ENTITY_FIELD_EMPTY`,
+`ENTITY_VALUE_PLACEHOLDER`. Verified against the live homepage, which a
+third-party tool rated "100% markup health": `description: "site logo"`,
+`telephone: []`, seven-day 09:00–17:00 default hours, and a node typed `Place`
+with no address. Placeholder vocabularies and default-value patterns live in
+`api/config/entity_values.json`. `_self_entity_nodes` restricts NAP checking to
+nodes whose `url` shares the page host, so a partners or funders page is not
+flagged for third-party gaps (P7). All four are `developer_needed` — they are
+SEO-plugin settings, and the WordPress-safety constraint forbids writing them.
+→ `tests/test_entity_values.py`.
+
+**E6 — stacked overlay links.** `LINK_EMPTY_ANCHOR` correctly excludes any anchor
+with an accessible name from any source, so it cannot see a card emitting an
+overlay link, a title link and an image link to one destination. The new
+`LINK_STACKED_DUPLICATE` (category `metadata`) groups 2+ anchors resolving to the
+same href inside one card container; card-class patterns live in
+`api/config/link_patterns.json`. The container requirement is load-bearing: a
+header logo link plus a "Home" link point at `/` on nearly every site.
+`LINK_STACKED_DUPLICATE` cluster-suppresses `LINK_EMPTY_ANCHOR` so one template
+defect is charged once. `docs/issue-codes.md` records that TalkingToad measures
+accessible **name**, not visible text — a third-party tool reporting a much
+higher "links without anchor text" count is measuring something else.
+→ `tests/test_stacked_links.py`.
+
+**Configuration.** E4–E7 introduced `api/config/*.json` with a loader
+(`api.config.load_config`) that validates required keys and raises at import on
+a malformed file, so editorial content lives outside Python source (rule 9) and a
+broken config fails loudly rather than silently defaulting (P2).
+
 ---
 
 ## 5. Fix capabilities
@@ -1177,23 +1245,137 @@ never reads the user's disk). No file → a normal scan, unchanged. **ONE file d
 
 ### 7.1 PDF audit (`GET /api/crawl/{id}/export/pdf`)
 
-Letter (8.5×11), fpdf2-generated. Sections:
+Letter (8.5×11), fpdf2-generated. Sections, in order:
 - Cover page with domain, health score, summary counts
 - (Optional) AI executive summary
-- Top 10 most-affected pages
-- Category sections with help text and evidence tiers
-- "What to Do Next" checklist
+- Dashboard Summary — Health, Agent Health, and **Site Hygiene** (§7.5) when prevalence was computed, with the distinction between them printed beneath
+- **Search Performance** and **Priority Pages** (§7.4) — only when the Performance Ledger holds data for the domain
+- Top 10 most-affected pages — ordered by the §6.9 work queue when ledger data exists, by issue count otherwise, with a subtitle naming which
+- **Systemic Defects** (§7.5) — only when a defect crosses the systemic tier
+- **Remediation Roadmap** (§7.6) — owner, phase, effort and a countable "done when" per finding
+- "What to Do Next" checklist — prevalence-ordered when available
+- llms.txt status, Image Health (omitted when no images were collected), category sections with help text and evidence tiers
+- **Scope, Method and Caveats** (§7.7) — always rendered
 
 **Acceptance criteria:**
 - AI-readiness issues display a colour-coded evidence-tier pill (Established/Reasonable proxy/Heuristic) below the issue title, powered by the issue's `confidence_label`.
 - Critical issues appear in red, warnings in amber, info in blue.
+- Every section that is omitted for lack of data is **named in Caveats** (§7.7). A missing section must never read as a passed check. → `tests/test_report_roadmap.py::TestOmissionsAreDisclosed`
 
 ### 7.2 Excel export (`GET /api/crawl/{id}/export/excel`)
 
 openpyxl-generated tabbed workbook:
 - Summary tab, Pages tab, Citations tab
+- **Performance**, **Priority Pages**, **Prevalence** and **Roadmap** tabs, mirroring the PDF sections and uncapped where the PDF is capped
 - One tab per issue category
 - The "AI Readiness" sheet features an explicit **Confidence** column mapping to the AI-readiness taxonomy.
+
+### 7.4 Search Performance and Priority Pages (E3, 2026-08-29)
+
+`api/services/page_priority.py` holds **one** assembly used by the
+`/page-priority` endpoint, the PDF and the Excel export, so the ranking cannot
+exist for one surface and be absent from another (P25). Before this, the ranking
+was reachable only from the API and the GUI panel while the client-facing PDF
+sorted "Top 10 Pages to Fix First" by raw issue count.
+
+- `build_page_priority(store, job_id)` — the §6.9 Authority-Matrix queue.
+- `build_performance_summary(store, job_id)` — site totals (impressions, clicks,
+  CTR, GA4 sessions, conversions, AI-referral sessions), the top 15 pages by
+  impressions **joined to each page's health score**, and a "seen but not
+  clicked" list (above-median impressions, below-average CTR). Returns `None`
+  when the ledger holds nothing, so the caller omits the section and records the
+  omission rather than rendering zeros that read as "no traffic".
+- **Freshness (P6):** age is derived from the data's own reporting period, or
+  from the producer's `source_generated_at` when supplied — never from
+  `recorded_at`, which the store stamps at write time, so a three-month-old
+  bundle re-imported today would otherwise read as fresh. Clamped at 0, because
+  the current month's period-end is in the future.
+- **The join key (`ledger_key`).** Crawled URLs and ledger URLs disagree on
+  trailing slashes — the crawler normalises them away, the ledger stores what
+  Search Console reported, which on WordPress carries one. An exact match joined
+  **11 of 272** pages on livingsystems.ca, lost the site's biggest page entirely,
+  and reported 3,717 impressions instead of 27,284. Both sides now go through
+  `ledger_key` (trailing slash, `www.`, and host case ignored; path case
+  preserved), and the domain candidates are collected from **every** crawled
+  host, not from `pages[0]`. A join that matches nothing, or under
+  `TT_PERF_JOIN_WARN_RATIO`, logs a warning — "no ledger row for this page" and
+  "the key didn't match" otherwise produce identical output (P19 + P2).
+- **Unknown is not zero (P2).** GA4 totals sum only pages that reported a value
+  and each carries its own `*_pages_with_data` denominator; the report prints
+  "not measured" rather than 0. A page with no measured CTR is never listed as
+  an underperformer.
+
+→ `tests/test_performance_report.py`, fixture `tests/fixtures/performance/livingsystems_ledger.json` (a real 555-row export).
+
+### 7.5 Site prevalence and Site Hygiene (E4, 2026-08-29)
+
+`api/services/prevalence.py` measures how much of the **indexable** estate each
+code touches, as a second lens beside per-page severity.
+
+**Scoring is not affected.** `_ISSUE_SCORING`, `_CATEGORY_IMPACT_CAP`,
+`compute_page_health`, `compute_impact_health`, the R3/R5 calibration and every
+`_IssueSpec.severity` are unchanged, and `tests/test_prevalence.py::TestScoringUnchanged`
+asserts health is byte-identical.
+
+- Denominator is indexable pages (crawled minus noindex/robots-blocked), so a
+  large noindex'd archive cannot dilute a share.
+- Site-scoped and job-level codes get no entry — a share for a once-per-job code
+  would read as a 0.4% problem.
+- Tiers need **both** a share and a page count (§thresholds).
+- **Site Hygiene** = the percentage of indexable pages carrying **no** systemic
+  defect, reported *alongside* Health with both meanings stated. Health is
+  per-page quality averaged; Hygiene is breadth.
+
+  A weighted penalty sum (`100 − Σ(tier weight × share)`) was tried first and
+  discarded: on livingsystems.ca nine systemic defects produced a penalty of 135
+  and the score clamped to 0, which distinguishes nothing from a site with
+  twenty. The coverage measure is bounded by construction, needs no arbitrary
+  per-tier weight, is monotonic, and states itself in one sentence — on that
+  site it reads 34, i.e. 178 of 271 indexable pages carry at least one systemic
+  defect, alongside a Health score of 89. That pair is the honest description:
+  individually decent pages, all sharing the same template problems.
+- **`always_systemic` bypasses the share gate** (broken links are a template fix
+  however few pages show them), so a systemic code can have a small footprint.
+  No surface quotes a threshold percentage; each states its actual footprint.
+
+Surfaced on `GET /api/crawl/{id}/results` (`summary.prevalence`,
+`summary.systemic_count`, `summary.site_hygiene_score`), in the Results summary
+panel, and as PDF/Excel sections. → `tests/test_prevalence.py`,
+`frontend`: `SystemicDefects.test.jsx`.
+
+### 7.6 Remediation Roadmap (E7, 2026-08-29)
+
+`api/services/remediation.py` groups deduplicated findings into three phases —
+Stabilise (0–30d), Repair priority pages (31–60d), Expand (61–90d) — each row
+carrying **Owner**, **Impact**, **Effort**, **pages affected** and a **"done
+when"**. Phase membership is derived, not decorative: Phase 1 because the defect
+is systemic (§7.5), Phase 2 because it lands on a top-quartile page of the §7.4
+queue. With neither data source available the section says so rather than
+implying a phasing it did not apply.
+
+Every "done when" is written to be **re-crawl assertable** ("a re-crawl reports
+0 indexable pages with a missing description"), with a countable fallback for
+codes carrying no override — being verifiable by re-running the tool is the one
+thing TalkingToad offers that a consultant's PDF cannot.
+Owners and phase labels live in `api/config/remediation_owners.json`.
+
+`build_roadmap` returns `(items, weighted, totals)` — `totals` is the **pre-cap**
+count per phase, so the PDF can print "Showing the top 12 of 40". Returning only
+the capped list made that disclosure impossible (rule 6). The Excel Roadmap sheet
+is called uncapped, because both the PDF and the Results issue card point the
+reader there for the full list.
+→ `tests/test_report_roadmap.py`.
+
+### 7.7 Scope, Method and Caveats (E7, 2026-08-29)
+
+Always rendered, including on a clean site. Records what was covered; **every
+cap that actually bit**, with both numbers; **every section omitted, by name**;
+the data sources and periods behind any performance figures; and what the audit
+did **not** check — off-site authority, Core Web Vitals, server logs, CMS/plugin
+configuration, WCAG conformance, and anything behind a login. Closes with what
+each score means and the statement that none of them forecasts rankings,
+traffic or revenue. A cap that did not bite is not mentioned.
+→ `tests/test_report_roadmap.py::TestOmissionsAreDisclosed`.
 
 ### 7.3 CSV export
 

@@ -1058,14 +1058,30 @@ def _count_img_missing_alt(soup: BeautifulSoup) -> int:
 
     Both missing alt and empty alt="" are flagged — every meaningful image
     should have descriptive alt text for accessibility and SEO.
+
+    Excludes tags whose ONLY source is an inline ``data:`` URI (a base64 spacer
+    or inline SVG icon). Those are decorative by construction and have no URL,
+    so they would land in the E1.3 count-only branch where the user's
+    ``ignored_image_patterns`` escape hatch cannot reach them — flagging an
+    unfixable, unsuppressible finding (P7).
     """
     count = 0
     for tag in soup.find_all("img"):
         alt = tag.get("alt")
-        # Flag if alt is missing (None) or empty/whitespace-only
-        if alt is None or (isinstance(alt, str) and not alt.strip()):
-            count += 1
+        if alt is not None and (not isinstance(alt, str) or alt.strip()):
+            continue
+        if _resolve_img_src(tag) is None and _is_inline_data_image(tag):
+            continue
+        count += 1
     return count
+
+
+def _is_inline_data_image(tag) -> bool:
+    """True when every source this tag carries is an inline ``data:`` URI."""
+    values = [tag.get("src")] + [tag.get(a) for a in _LAZY_SRC_ATTRS]
+    values += [tag.get(a) for a in ("srcset",) + _LAZY_SRCSET_ATTRS]
+    present = [str(v).strip() for v in values if v and str(v).strip()]
+    return bool(present) and all(v.startswith("data:") for v in present)
 
 
 # ── E1: lazy-load aware image URL resolution ─────────────────────────────────
@@ -1252,6 +1268,10 @@ def _find_stacked_links(soup: BeautifulSoup, page_url: str = "") -> list[dict]:
     try:
         cfg = _link_patterns_cfg()
     except Exception:  # noqa: BLE001 — a bad config must not kill a parse
+        # P2: silence here would disable E6 site-wide and be indistinguishable
+        # from "no stacked links found". Matches the sibling handler in
+        # cross_page._check_entity_values.
+        logger.warning("link_patterns_config_unavailable", exc_info=True)
         return []
 
     card_classes = {c.casefold() for c in cfg["card_container_classes"]}

@@ -58,7 +58,20 @@ class TestBrokenLinkExtra:
             "https://example.com/b",
         ]
         assert extra["target_url"] == "https://example.com/gone"
-        assert extra["occurrences"] == 2
+        assert extra["occurrence_urls_total"] == 2
+
+    def test_e2_2a_occurrences_is_the_scoring_count_not_the_evidence_count(self):
+        """`occurrences` drives `occurrence_multiplier`, which scales the
+        deduction on the ONE page this issue is anchored to. Setting it to the
+        site-wide linking-page count doubled that page's deduction for a defect
+        it shares with 199 others, making per-page health crawl-order dependent
+        (P7) and amplifying transient 503s / timeouts (P1)."""
+        extra = _broken_link_extra(
+            target_url="https://example.com/gone",
+            sources=[f"https://example.com/p{i}" for i in range(200)],
+        )
+        assert extra["occurrences"] == 1
+        assert extra["occurrence_urls_total"] == 200
 
     def test_e2_2b_source_cap_announced_at_scale(self, monkeypatch):
         """Real-scale (P9): 120 linking pages, a cap of 50, and the true total
@@ -74,9 +87,9 @@ class TestBrokenLinkExtra:
             extra = engine_mod._broken_link_extra(
                 target_url="https://example.com/dontation_form", sources=sources
             )
-            assert extra["occurrences"] == 120
             assert extra["occurrence_urls_total"] == 120
             assert len(extra["occurrence_urls"]) == 50
+            assert extra["occurrences"] == 1, "scoring count, not the evidence count"
         finally:
             monkeypatch.delenv("TT_BROKEN_LINK_SOURCE_CAP", raising=False)
             importlib.reload(engine_mod)
@@ -99,7 +112,7 @@ class TestBrokenLinkExtra:
 
     def test_e2_2a_no_sources_is_not_a_crash(self):
         extra = _broken_link_extra(target_url="https://example.com/gone", sources=[])
-        assert extra["occurrences"] == 0
+        assert extra["occurrence_urls_total"] == 0
         assert extra["occurrence_urls"] == []
 
 
@@ -134,8 +147,8 @@ class TestEngineAttribution:
         broken = [i for i in result.issues if i.code == "BROKEN_LINK_404"]
         assert broken, "the 404 must be reported at all"
         issue = broken[0]
-        assert issue.extra["occurrences"] == 3, (
-            f"pre-E2 this was 1 (only the first discoverer was kept); got {issue.extra}"
+        assert issue.extra["occurrence_urls_total"] == 3, (
+            f"pre-E2 only the first discoverer was kept; got {issue.extra}"
         )
         assert set(issue.extra["occurrence_urls"]) == {
             "https://example.com/a",
@@ -172,7 +185,7 @@ class TestEngineAttribution:
         )
         broken = [i for i in result.issues if i.code == "BROKEN_LINK_404"]
         assert broken
-        assert broken[0].extra["occurrences"] == 2
+        assert broken[0].extra["occurrence_urls_total"] == 2
         assert set(broken[0].extra["occurrence_urls"]) == {
             "https://example.com/a",
             "https://example.com/b",
@@ -305,8 +318,8 @@ class TestCollapsePreservesAttribution:
         )
         out = collapse_per_target_occurrences([iss])
         assert len(out) == 1
-        assert out[0].extra["occurrences"] == 40
         assert out[0].extra["occurrence_urls_total"] == 40
+        assert out[0].extra["occurrences"] == 1, "one page, one broken link"
 
     def test_e2_2a_group_sums_member_occurrences(self):
         a = self._issue(
@@ -322,8 +335,11 @@ class TestCollapsePreservesAttribution:
         )
         out = collapse_per_target_occurrences([a, b])
         assert len(out) == 1
-        assert out[0].extra["occurrences"] == 3
+        # Two distinct broken targets linked from this page -> §2 count of 2.
+        assert out[0].extra["occurrences"] == 2
         assert out[0].extra["affected_targets_total"] == 2
+        # Evidence unions the linking pages across both.
+        assert out[0].extra["occurrence_urls_total"] == 3
 
     def test_e2_2d_redirect_evidence_unchanged(self):
         """Redirect codes carry no source list and must keep using redirect_to."""
@@ -362,6 +378,9 @@ class TestCollapsePreservesAttribution:
             }
             out = links_mod.collapse_per_target_occurrences([iss])
             assert len(out[0].extra["occurrence_urls"]) == 10
+            # The pre-cap total must survive the merge. Recomputing it from the
+            # already-truncated list collapsed "showing 10 of 75" to "10 of 10"
+            # and made the disclosure unreachable on every surface (P9).
             assert out[0].extra["occurrence_urls_total"] == 75
         finally:
             monkeypatch.delenv("TT_BROKEN_LINK_SOURCE_CAP", raising=False)

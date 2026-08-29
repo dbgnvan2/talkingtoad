@@ -206,6 +206,38 @@ Matrix): 180-day technical-improvement staleness and 20% traffic-decay drop.
 
 ---
 
+## Report and crawl disclosure (E1-E7, 2026-08-29)
+
+| Threshold | Value | Source |
+|---|---|---|
+| Image URLs collected per job | 150 | `TT_IMAGE_URL_CAP_PER_JOB` env, `api/crawler/engine.py` |
+| Broken-link source pages listed per issue | 50 | `TT_BROKEN_LINK_SOURCE_CAP` env, `api/crawler/engine.py`, `api/crawler/checkers/links.py` |
+| Performance-data staleness (report presentation) | 60 days | `TT_PERF_STALE_DAYS` env, `api/services/page_priority.py` |
+| Prevalence tier "systemic" | share >= 0.30 AND >= 20 pages | `api/config/prevalence.json` |
+| Prevalence tier "widespread" | share >= 0.10 AND >= 10 pages | `api/config/prevalence.json` |
+| Roadmap items shown per phase | 12 | `api/services/remediation.py` `build_roadmap(limit_per_phase=...)` |
+| Stacked-link group minimum size | 2 | `api/config/link_patterns.json` `min_group_size` |
+| Performance-ledger join warning floor | 5% of pages | `TT_PERF_JOIN_WARN_RATIO` env, `api/services/page_priority.py` |
+| Top pages by impressions shown | 15 | `build_performance_summary(top_n=...)` |
+| Entity description minimum words | 5 | `api/config/entity_values.json` `min_description_words` |
+
+Below the join-warning floor, a ledger that *has* rows for the domain is almost
+certainly failing to match rather than genuinely covering few pages, so it logs
+loudly instead of reporting a confident wrong total (P19 + P2).
+
+Both image and broken-link caps **announce what they drop** — the report prints
+"analysed 150 of 1,284 images" and "showing 50 of 120 linking pages" whenever the
+cap bites, and says nothing when it does not (rule 6, P9).
+
+The prevalence tiers require **both** a share and a page count. A share alone
+would call 3-of-8 pages on a small site "systemic"; a count alone would say the
+same of 20-of-5,000. Prevalence is a reporting lens only — it does not enter any
+score. The `TT_PERF_STALE_DAYS` window is distinct from the 35-day ingest
+staleness above: that one flags a bundle at ingest, this one governs how the
+report *presents* data whose reporting period has aged.
+
+---
+
 ## Fix Focus checklist
 
 | Threshold | Value | Source |

@@ -89,9 +89,19 @@ class TalkingToadReport(FPDF):
 # ---------------------------------------------------------------------------
 
 
-def _fmt_pct(value: float) -> str:
-    """Format a 0–1 ratio as a percentage. Ledger CTRs are stored as ratios."""
+def _fmt_pct(value: float | None) -> str:
+    """Format a 0-1 ratio as a percentage. Ledger CTRs are stored as ratios.
+
+    ``None`` means the value was never measured and renders as such — printing
+    "0.00%" for an unknown is the P2 shape that turns missing data into a finding.
+    """
+    if value is None:
+        return "not measured"
     return f"{value * 100:.2f}%"
+
+
+def _fmt_pos(value: float | None) -> str:
+    return "n/a" if value is None else f"{value:.1f}"
 
 
 def _short_url(url: str, limit: int = 62) -> str:
@@ -163,10 +173,16 @@ def _render_performance_section(pdf, performance: dict | None) -> None:
         ("Impressions", f"{performance.get('total_impressions', 0):,}"),
         ("Clicks", f"{performance.get('total_clicks', 0):,}"),
         ("Average CTR", _fmt_pct(performance.get('site_ctr', 0.0))),
-        ("GA4 sessions", f"{performance.get('total_sessions', 0):,}"),
-        ("Conversions", f"{performance.get('total_conversions', 0):,}"),
-        ("AI-assistant sessions", f"{performance.get('total_ai_referral_sessions', 0):,}"),
     ]
+    for label, total_key, count_key in (
+        ("GA4 sessions", "total_sessions", "sessions_pages_with_data"),
+        ("Conversions", "total_conversions", "conversions_pages_with_data"),
+        ("AI-assistant sessions", "total_ai_referral_sessions", "ai_referral_pages_with_data"),
+    ):
+        n = performance.get(count_key, 0)
+        # "0 across 0 pages" is not a measurement — say so instead of printing 0.
+        stats.append((label, f"{performance.get(total_key, 0):,} (across {n} page"
+                             f"{'s' if n != 1 else ''} with data)" if n else "not measured"))
     for label, value in stats:
         pdf.set_x(25.4)
         pdf.set_font('helvetica', 'B', 11)
@@ -183,7 +199,10 @@ def _render_performance_section(pdf, performance: dict | None) -> None:
         pdf.set_x(25.4)
         pdf.set_font('helvetica', 'B', 12)
         pdf.set_text_color(*COLOR_GRAY_800)
-        pdf.cell(W, 8, "Top Pages by Impressions", new_x="LMARGIN", new_y="NEXT")
+        with_data = performance.get("pages_with_data", len(top))
+        heading = (f"Top {len(top)} Pages by Impressions (of {with_data} with data)"
+                   if with_data > len(top) else "Pages by Impressions")
+        pdf.cell(W, 8, pdf.clean_text(heading), new_x="LMARGIN", new_y="NEXT")
         pdf.set_x(25.4)
         pdf.set_font('helvetica', '', 8)
         pdf.set_text_color(*COLOR_GRAY_500)
@@ -203,7 +222,7 @@ def _render_performance_section(pdf, performance: dict | None) -> None:
             health = row.get("health_score")
             pdf.cell(W - 5, 5, pdf.clean_text(
                 f"{row['impressions']:,} impr | {row['clicks']:,} clicks | "
-                f"{_fmt_pct(row['ctr'])} CTR | pos {row['position']:.1f} | "
+                f"{_fmt_pct(row['ctr'])} CTR | pos {_fmt_pos(row['position'])} | "
                 f"health {health if health is not None else 'n/a'}"
             ), new_x="LMARGIN", new_y="NEXT")
             pdf.ln(1)
@@ -238,7 +257,7 @@ def _render_performance_section(pdf, performance: dict | None) -> None:
             pdf.set_text_color(*COLOR_WARNING)
             pdf.cell(W - 5, 5, pdf.clean_text(
                 f"{row['impressions']:,} impressions, {_fmt_pct(row['ctr'])} CTR, "
-                f"average position {row['position']:.1f}"
+                f"average position {_fmt_pos(row['position'])}"
             ), new_x="LMARGIN", new_y="NEXT")
             pdf.ln(1)
 
@@ -344,9 +363,11 @@ def _render_systemic_defects_section(pdf, prevalence: list | None) -> None:
     pdf.set_text_color(*COLOR_GRAY_600)
     pdf.set_x(25.4)
     pdf.multi_cell(W, 5, pdf.clean_text(
-        "These defects appear across a large share of the site. That usually means one "
-        "template, theme setting or editorial habit is responsible — so one fix resolves "
-        "many pages at once. Fix these before working through individual pages."
+        "Each of these comes from one cause rather than one page — either because it "
+        "appears across a large share of the site, or because the fix is inherently a "
+        "template or settings change however few pages show it. One fix resolves them "
+        "all, so they come before working through individual pages. The footprint of "
+        "each is stated beneath it."
     ))
     pdf.ln(4)
 
@@ -381,6 +402,210 @@ def _render_systemic_defects_section(pdf, prevalence: list | None) -> None:
         pdf.ln(3)
 
 
+def _render_roadmap_section(pdf, issues, prevalence, priority_pages) -> None:
+    """Owner / phase / effort / done-when per finding (E7.1)."""
+    if not issues:
+        return
+    from api.services.remediation import build_roadmap, phase_blurb, phase_titles
+
+    try:
+        items, weighted, phase_totals = build_roadmap(
+            issues, prevalence=prevalence, priority_pages=priority_pages
+        )
+    except Exception:  # noqa: BLE001 — a config problem must not kill the report
+        logger.warning("roadmap_unavailable", exc_info=True)
+        return
+    if not items:
+        return
+
+    pdf.add_page()
+    pdf.chapter_title("Remediation Roadmap")
+    pdf.set_font('helvetica', '', 10)
+    pdf.set_text_color(*COLOR_GRAY_600)
+    pdf.set_x(25.4)
+    if weighted:
+        intro = ("Work grouped into three phases. An item is in Phase 1 because the defect is "
+                 "systemic - one template or setting is responsible - and in Phase 2 because it "
+                 'sits on a page that already earns traffic. Each "done when" is written so a '
+                 "re-crawl can confirm it.")
+    else:
+        intro = ("Work ordered by impact. No prevalence or traffic data was available for this "
+                 "scan, so the phases below reflect impact alone rather than how widespread a "
+                 "defect is or what a page earns - see Scope, Method and Caveats.")
+    pdf.multi_cell(W, 5, pdf.clean_text(intro))
+    pdf.ln(3)
+
+    for phase_name, phase_title in phase_titles():
+        in_phase = [i for i in items if i.phase == phase_name]
+        if not in_phase:
+            continue
+        if pdf.get_y() > 225:
+            pdf.add_page()
+        pdf.set_x(25.4)
+        pdf.set_font('helvetica', 'B', 13)
+        pdf.set_text_color(*COLOR_GRAY_800)
+        pdf.multi_cell(W, 7, pdf.clean_text(phase_title))
+        pdf.set_x(25.4)
+        pdf.set_font('helvetica', 'I', 9)
+        pdf.set_text_color(*COLOR_GRAY_500)
+        blurb = phase_blurb(phase_name)
+        # Rule 6: a cap must say what it dropped.
+        total = phase_totals.get(phase_name, len(in_phase))
+        if total > len(in_phase):
+            blurb += (f" Showing the top {len(in_phase)} of {total} items in this "
+                      f"phase; the full list is in the Excel Roadmap sheet.")
+        pdf.multi_cell(W, 4.5, pdf.clean_text(blurb))
+        pdf.ln(2)
+
+        for item in in_phase:
+            if pdf.get_y() > 235:
+                pdf.add_page()
+            pdf.set_x(25.4)
+            pdf.set_font('helvetica', 'B', 10)
+            pdf.set_text_color(*COLOR_GRAY_800)
+            pdf.multi_cell(W, 5.5, pdf.clean_text(f"[ ] {item.title}"))
+
+            pdf.set_x(30)
+            pdf.set_font('helvetica', '', 9)
+            pdf.set_text_color(*COLOR_GRAY_600)
+            meta = (f"Owner: {item.owner}  |  Impact: {item.impact}/10  |  "
+                    f"Effort: {item.effort_label}")
+            if item.pages_affected:
+                meta += f"  |  {item.pages_affected} page{'s' if item.pages_affected != 1 else ''}"
+            pdf.multi_cell(W - 5, 4.5, pdf.clean_text(meta))
+
+            pdf.set_x(30)
+            pdf.set_font('helvetica', 'I', 9)
+            pdf.set_text_color(*COLOR_BLUE_TEXT)
+            pdf.multi_cell(W - 5, 4.5, pdf.clean_text(f"Done when: {item.done_when}"))
+            pdf.ln(2)
+        pdf.ln(2)
+
+
+def _render_caveats_section(pdf, job, summary, *, performance, image_summary,
+                            prevalence, performance_failed: bool = False) -> None:
+    """What was covered, what every cap dropped, and what was NOT checked (E7.2).
+
+    Always rendered. An omitted section elsewhere in this report is named here
+    by name, so a gap in the data can never read as a clean bill of health (E7.4).
+    """
+    pdf.add_page()
+    pdf.chapter_title("Scope, Method and Caveats")
+
+    def _para(text, *, bold=False, color=COLOR_GRAY_600, size=10, gap=2):
+        pdf.set_x(25.4)
+        pdf.set_font('helvetica', 'B' if bold else '', size)
+        pdf.set_text_color(*color)
+        pdf.multi_cell(W, 5, pdf.clean_text(text))
+        pdf.ln(gap)
+
+    # ── What was covered ──
+    _para("What this audit covered", bold=True, color=COLOR_GRAY_800, size=12)
+    covered = [
+        f"Pages crawled: {summary.get('pages_crawled', 0)}",
+        f"Findings recorded: {summary.get('total_issues', 0)}",
+        f"Crawl date: {datetime.now().strftime('%B %d, %Y')}",
+    ]
+    if getattr(job, "scoring_model_version", None):
+        covered.append(f"Scoring model: {job.scoring_model_version}")
+    robots = summary.get("robots_txt")
+    if robots is not None:
+        covered.append(f"robots.txt: {'found' if robots else 'not found'}")
+    sitemap = summary.get("sitemap")
+    if sitemap is not None:
+        covered.append(f"XML sitemap: {'found' if sitemap else 'not found'}")
+    for line in covered:
+        _para(f"- {line}", gap=0)
+    pdf.ln(3)
+
+    # ── Limits that actually bit ──
+    limits: list[str] = []
+    seen_imgs = getattr(job, "images_seen_total", None)
+    got_imgs = getattr(job, "images_collected", None)
+    if seen_imgs and got_imgs is not None and seen_imgs > got_imgs:
+        limits.append(f"Images: analysed {got_imgs} of {seen_imgs} distinct images found.")
+    if limits:
+        _para("Limits reached during this crawl", bold=True, color=COLOR_GRAY_800, size=12)
+        for line in limits:
+            _para(f"- {line}", gap=0)
+        pdf.ln(3)
+
+    # ── Sections omitted, by name (E7.4) ──
+    omissions: list[str] = []
+    if not performance:
+        if performance_failed:
+            # Our failure, not their data. Saying "no data was supplied" here would
+            # be a false statement about the client's own inputs (P1/P2).
+            omissions.append(
+                "Search Performance and Priority Pages were omitted: the performance "
+                "data could not be read while building this report. This is a tooling "
+                "failure on our side, not a finding about your data - re-export to "
+                "retry."
+            )
+        else:
+            omissions.append(
+                "Search Performance and Priority Pages were omitted: no Search Console "
+                "or GA4 data was supplied for this site, so pages could not be ranked "
+                "by what they earn. This is missing data, not a finding of no traffic."
+            )
+    if not image_summary or not image_summary.get("total_images"):
+        omissions.append(
+            "Image Health was omitted: no images were collected during this crawl. "
+            "This is not a statement that the site's images are fine."
+        )
+    if not prevalence:
+        omissions.append(
+            "Systemic Defects and Site Hygiene were omitted: prevalence could not be "
+            "computed for this crawl."
+        )
+    if omissions:
+        _para("Sections omitted from this report", bold=True, color=COLOR_GRAY_800, size=12)
+        for line in omissions:
+            _para(f"- {line}", gap=1)
+        pdf.ln(2)
+
+    # ── What was NOT checked ──
+    _para("What this audit did not check", bold=True, color=COLOR_GRAY_800, size=12)
+    for line in [
+        "Off-site authority - backlinks, referring domains and directory listings. These "
+        "need a third-party index TalkingToad does not license.",
+        "Core Web Vitals and real-user performance. Page weight and image size are "
+        "measured; loading behaviour in a real browser is not.",
+        "Server logs, hosting configuration and CDN behaviour.",
+        "CMS and plugin configuration. TalkingToad reads only what the site serves "
+        "publicly; it never signs in to WordPress during a scan.",
+        "WCAG conformance. Several accessibility signals are checked, but this is not "
+        "an accessibility audit and must not be presented as one.",
+        "Anything behind a login, and any page excluded by robots.txt.",
+    ]:
+        _para(f"- {line}", gap=1)
+    pdf.ln(2)
+
+    # ── Data sources ──
+    if performance:
+        _para("Data sources", bold=True, color=COLOR_GRAY_800, size=12)
+        periods = ", ".join(performance.get("periods") or []) or "unknown period"
+        _para(f"- Traffic figures: {performance.get('source', 'Search Console + GA4')}, "
+              f"covering {periods}. These are first-party measurements, not estimates.", gap=1)
+        if performance.get("is_stale"):
+            _para(f"- That data is {performance.get('data_age_days')} days old and describes "
+                  f"a past period, not current traffic.", gap=1)
+        pdf.ln(2)
+
+    # ── What the scores mean ──
+    _para("What the scores mean", bold=True, color=COLOR_GRAY_800, size=12)
+    for line in [
+        "Health Score: per-page quality, averaged across the site.",
+        "Agent Health Score: how readable the site is to AI assistants and answer engines.",
+        "Site Hygiene: breadth - how much of the indexable estate is touched by "
+        "widespread defects. A site can score well on Health and poorly on Hygiene.",
+        "Citability grade: how quotable a page is likely to be to an answer engine.",
+        "All of these are prioritisation aids. None of them forecasts rankings, traffic, "
+        "enquiries or revenue.",
+    ]:
+        _para(f"- {line}", gap=1)
+
+
 async def generate_pdf_report(
     job: CrawlJob,
     issues: list[Issue],
@@ -394,6 +619,7 @@ async def generate_pdf_report(
     performance: dict | None = None,
     priority_pages: list[dict] | None = None,
     prevalence: list | None = None,
+    performance_failed: bool = False,
 ) -> bytes:
     pdf = TalkingToadReport()
     pdf.alias_nb_pages()
@@ -478,9 +704,9 @@ async def generate_pdf_report(
         pdf.set_text_color(*COLOR_GRAY_600)
         note = (
             "Health Score is per-page quality, averaged across the site. Site Hygiene is "
-            "breadth: 100 minus the share of indexable pages touched by each widespread "
-            "defect, weighted by how widespread it is. A site can score well on one and "
-            "poorly on the other."
+            "breadth: the percentage of indexable pages carrying NO systemic defect. A "
+            "site can score well on one and poorly on the other - individually decent "
+            "pages, all sharing the same template problem, is exactly that shape."
         )
         if systemic_n:
             note += (f" {systemic_n} systemic defect{'s' if systemic_n != 1 else ''} "
@@ -573,6 +799,12 @@ async def generate_pdf_report(
 
     # ── Systemic Defects (E4) ─────────────────────────────────────
     _render_systemic_defects_section(pdf, prevalence)
+
+    # ── Remediation Roadmap (E7.1) ───────────────────────────────
+    # Replaces the old flat "What to Do Next" checklist: same findings, but with
+    # an owner, a phase and a countable exit condition, because a list of issue
+    # names leaves "who does this, when, and how do we know it's done" unanswered.
+    _render_roadmap_section(pdf, issues, prevalence, priority_pages)
 
     # ── Action Checklist ─────────────────────────────────────────
     if issues:
@@ -918,10 +1150,21 @@ async def generate_pdf_report(
             pdf.line(pdf.get_x(), pdf.get_y(), pdf.get_x() + W, pdf.get_y())
             pdf.ln(4)
 
+    # ── Scope, Method and Caveats (E7.2) ─────────────────────────
+    # ALWAYS rendered, including on a clean site. A reader who cannot see what
+    # was NOT checked will assume the audit was complete.
+    _render_caveats_section(
+        pdf, job, summary,
+        performance=performance,
+        image_summary=image_summary,
+        prevalence=prevalence,
+        performance_failed=performance_failed,
+    )
+
     pdf.set_x(25.4)
     pdf.ln(10)
     pdf.set_font('helvetica', 'I', 8)
     pdf.set_text_color(156, 163, 175)
     pdf.multi_cell(W, 4, "Disclaimer: TalkingToad is an automated tool. Please verify critical findings manually.")
-    
+
     return pdf.output()

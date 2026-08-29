@@ -484,15 +484,24 @@ class SQLiteJobStore:
         return {r[0] for r in rows}
 
     async def get_links_by_target(self, job_id: str, target_url: str) -> list[dict]:
-        """Return links records where target_url matches, for a given job."""
+        """Return links records where target_url matches, for a given job.
+
+        Matches with and without a trailing slash. The UI passes the issue's
+        `page_url` (crawler-normalised, no trailing slash) while `links.target_url`
+        holds the href as authored, which on WordPress usually has one — so an
+        exact match silently returned [] and "Show Source Pages" opened onto
+        nothing. Same class as the Performance Ledger join key (P5: when one
+        instance of a bug is found, fix its siblings in the same change).
+        """
+        bare = (target_url or "").rstrip("/")
         async with self._db.execute(
             """
             SELECT source_url, target_url, link_text, link_type
               FROM links
-             WHERE job_id = ? AND target_url = ?
+             WHERE job_id = ? AND (target_url = ? OR target_url = ?)
              ORDER BY source_url
             """,
-            (job_id, target_url),
+            (job_id, bare, f"{bare}/"),
         ) as cursor:
             rows = await cursor.fetchall()
         return [dict(r) for r in rows]
@@ -1086,17 +1095,32 @@ class SQLiteJobStore:
             row = await cursor.fetchone()
         total_images = row[0] if row else 0
 
+        # E1.4 (P25) — the coverage disclosure belongs on the summary, so every
+        # surface (GUI card, PDF, Excel) reads it from one place instead of each
+        # plumbing the job through separately.
+        async with db.execute(
+            "SELECT images_seen_total, images_collected FROM crawl_jobs WHERE job_id = ?",
+            (job_id,),
+        ) as cursor:
+            cap_row = await cursor.fetchone()
+        seen_total = cap_row[0] if cap_row else None
+        collected = cap_row[1] if cap_row else None
+
         if total_images == 0:
             return {
                 "total_images": 0,
                 "images_analyzed": 0,
                 "images_with_metadata": 0,
-                "image_health_score": 100,
+                # P2: with nothing measured there is no score to report. 100 here
+                # would read as "your images are perfect" (E7.4b).
+                "image_health_score": None,
                 "by_issue": {},
                 "by_format": {},
                 "total_size_kb": 0,
                 "avg_load_time_ms": 0,
-                "avg_score": 100,
+                "avg_score": None,
+                "images_seen_total": seen_total,
+                "images_collected": collected,
             }
 
         # Analyzed = those with http_status > 0 (full fetch)
@@ -1180,6 +1204,9 @@ class SQLiteJobStore:
             "total_size_kb": round(total_size_bytes / 1024) if total_size_bytes else 0,
             "avg_load_time_ms": round(avg_load_time) if avg_load_time else 0,
             "avg_score": round(avg_score, 1),
+            # E1.4 — coverage disclosure (see the zero-image branch above).
+            "images_seen_total": seen_total,
+            "images_collected": collected,
         }
 
     async def get_image_by_url(self, job_id: str, url: str) -> ImageInfo | None:

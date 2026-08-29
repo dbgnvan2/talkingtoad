@@ -824,10 +824,15 @@ class TestStubMethods:
         assert result == []
 
     async def test_get_image_summary_returns_defaults(self, store):
+        """Images are not stored in the Redis MVP, so the scores are None — "not
+        measured" — rather than 100, which would claim a perfect result from no
+        data (P2). The key set matches SQLite so the GUI cannot diverge by
+        backend."""
         result = await store.get_image_summary("j1")
         assert result["total_images"] == 0
-        assert result["image_health_score"] == 100
-        assert result["avg_score"] == 100
+        assert result["image_health_score"] is None
+        assert result["avg_score"] is None
+        assert "images_seen_total" in result and "images_collected" in result
 
     async def test_get_image_by_url_returns_none(self, store):
         result = await store.get_image_by_url("j1", "https://example.com/img.jpg")

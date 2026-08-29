@@ -189,3 +189,64 @@ class TestAdversarial:
             "lxml",
         )
         assert len(_extract_image_data(soup, HOME_URL)) == 1
+
+
+class TestInlineDataImagesAreNotFlagged:
+    """F9 (review) — an inline `data:` image is decorative, not "unresolvable".
+
+    The E1.3 count-only branch fires when no URL could be resolved. A base64
+    spacer or inline SVG icon has no URL by design, so it landed in that branch —
+    where `ignored_image_patterns` operates on a URL list that is empty and
+    therefore cannot suppress it. That is an unfixable, unsuppressible finding (P7).
+    """
+
+    def test_f9_inline_only_images_do_not_count(self):
+        soup = BeautifulSoup(
+            '<img src="data:image/svg+xml;base64,AAA">'
+            '<img src="data:image/gif;base64,R0lGOD">',
+            "lxml",
+        )
+        assert _count_img_missing_alt(soup) == 0
+
+    def test_f9_lazy_image_with_a_real_data_src_still_counts(self):
+        """The placeholder is inline but the real URL is not — still a finding."""
+        soup = BeautifulSoup(
+            '<img src="data:image/gif;base64,R0" data-src="/real.jpg">', "lxml"
+        )
+        assert _count_img_missing_alt(soup) == 1
+
+    def test_f9_plain_image_without_alt_still_counts(self):
+        soup = BeautifulSoup('<img src="/a.jpg">', "lxml")
+        assert _count_img_missing_alt(soup) == 1
+
+    def test_f9_inline_image_with_alt_is_irrelevant_either_way(self):
+        soup = BeautifulSoup('<img src="data:image/gif;base64,R0" alt="A chart">', "lxml")
+        assert _count_img_missing_alt(soup) == 0
+
+    def test_f9_real_fixture_counts_unchanged(self):
+        """The real pages carry no inline-only images, so this fix must not move
+        their numbers — 10 of 11 and 8 of 9 as recorded in the fixture README."""
+        assert _count_img_missing_alt(_soup("livingsystems_home.html")) == 10
+        assert _count_img_missing_alt(_soup("livingsystems_emotional_pain.html")) == 8
+
+
+class TestConfigFailureIsLogged:
+    def test_f13_stacked_link_config_failure_warns(self, caplog, monkeypatch):
+        """F13 (review) — a silent `except: return []` would disable E6 site-wide
+        and be indistinguishable from "no stacked links found" (P2). Matches the
+        sibling handler in cross_page._check_entity_values."""
+        import logging
+
+        from api.crawler import parser as parser_mod
+
+        monkeypatch.setattr(
+            parser_mod, "_link_patterns_cfg",
+            lambda: (_ for _ in ()).throw(RuntimeError("config gone")),
+        )
+        with caplog.at_level(logging.WARNING):
+            groups = parser_mod._find_stacked_links(
+                BeautifulSoup('<li class="card"><a href="/x">A</a><a href="/x">B</a></li>', "lxml"),
+                "https://x/",
+            )
+        assert groups == []
+        assert "link_patterns_config_unavailable" in caplog.text

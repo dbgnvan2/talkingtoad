@@ -20,6 +20,7 @@ single, greppable, testable fact.
 
 from __future__ import annotations
 
+import logging
 import os
 from datetime import date, datetime, timedelta, timezone
 from typing import Any
@@ -30,6 +31,78 @@ from api.services.refresh_trigger import evaluate_refresh, rank_pages
 # E3.5 (rule 8, P6) — performance data older than this is presented with its age
 # stated, never as current.
 PERF_STALE_DAYS = int(os.getenv("TT_PERF_STALE_DAYS", "60"))
+
+# Below this match rate, a ledger that HAS rows for the domain is almost
+# certainly failing to join rather than genuinely covering few pages.
+_JOIN_WARN_RATIO = float(os.getenv("TT_PERF_JOIN_WARN_RATIO", "0.05"))
+
+logger = logging.getLogger(__name__)
+
+
+def ledger_key(url: str) -> str:
+    """Join key for matching a crawled URL to a Performance Ledger row.
+
+    The two sides disagree on trailing slashes: the crawler normalises
+    ``/emotional-pain-and-suffering/`` to ``/emotional-pain-and-suffering``,
+    while the ledger stores whatever Search Console reported — which for
+    WordPress is the slashed form. An exact string match therefore joined 11 of
+    272 pages on livingsystems.ca and silently lost the site's biggest page
+    (15,216 impressions), reporting 3,717 total impressions instead of ~50,000.
+
+    That is P19 (producer/consumer format drift) with a P2 finish: "no ledger
+    row for this page" and "the key didn't match" looked identical. Both sides
+    now go through this function.
+    """
+    key = (url or "").strip().rstrip("/")
+    scheme, sep, rest = key.partition("://")
+    if not sep:
+        return key.casefold()
+    host, slash, path = rest.partition("/")
+    return f"{scheme}://{host.casefold().removeprefix('www.')}{slash}{path}"
+
+
+async def _ledger_by_key(store: Any, pages: list) -> dict[str, list]:
+    """All ledger rows for the crawled pages' domain, indexed by join key.
+
+    One query instead of one per page — on a 272-page crawl this replaced 272
+    exact-match lookups with a single domain read.
+    """
+    if not pages:
+        return {}
+
+    # Every scheme://host seen in the crawl, plus the www / non-www and
+    # http / https variants of each. Deriving this from pages[0] alone was
+    # fragile: one stray `http://` page sorted first collapsed the whole join,
+    # which is how the ledger came back with 1 URL instead of 555.
+    prefixes: set[str] = set()
+    for page in pages:
+        url = getattr(page, "url", "") or ""
+        scheme, sep, rest = url.partition("://")
+        if not sep:
+            continue
+        host = rest.partition("/")[0]
+        if not host:
+            continue
+        bare = host.casefold().removeprefix("www.")
+        for s in ("http", "https"):
+            prefixes.add(f"{s}://{bare}")
+            prefixes.add(f"{s}://www.{bare}")
+    if not prefixes:
+        return {}
+
+    records: list = []
+    for candidate in sorted(prefixes):
+        records.extend(await store.get_performance_records(domain=candidate))
+
+    by_key: dict[str, list] = {}
+    seen: set[tuple[str, str]] = set()
+    for rec in records:
+        ident = (rec.url, rec.period)
+        if ident in seen:
+            continue
+        seen.add(ident)
+        by_key.setdefault(ledger_key(rec.url), []).append(rec)
+    return by_key
 
 
 async def build_page_priority(
@@ -65,6 +138,25 @@ async def build_page_priority(
             )
 
     today = today or datetime.now(timezone.utc).date()
+    ledger = await _ledger_by_key(store, pages)
+
+    # P19/P2 — a join that matches almost nothing must be loud, not silent.
+    # "no ledger data" and "the keys didn't match" produce identical output.
+    if ledger:
+        matched = sum(1 for p in pages if ledger_key(p.url) in ledger)
+        if matched == 0:
+            logger.warning(
+                "performance_ledger_join_empty",
+                extra={"job_id": job_id, "ledger_urls": len(ledger),
+                       "pages": len(pages)},
+            )
+        elif len(pages) and matched / len(pages) < _JOIN_WARN_RATIO:
+            logger.warning(
+                "performance_ledger_join_sparse",
+                extra={"job_id": job_id, "matched": matched, "pages": len(pages),
+                       "ledger_urls": len(ledger)},
+            )
+
     rows: list[dict] = []
     for page in pages:
         key = page.url.rstrip("/")
@@ -75,7 +167,7 @@ async def build_page_priority(
         health_score = compute_page_health(page_rows)
         # E5: per-page GEO/citability grade (rollup of ai_readiness issues).
         citability_grade = compute_citability_grade(page_rows)
-        records = await store.get_performance_records(url=page.url)
+        records = ledger.get(ledger_key(page.url), [])
         flag = evaluate_refresh(records, health_score, today=today)
         latest = sorted(records, key=lambda r: r.period)[-1] if records else None
         rows.append({
@@ -164,13 +256,15 @@ async def build_performance_summary(
     """
     ranked = await build_page_priority(store, job_id)
     health_by_url = {r["url"]: r["health_score"] for r in ranked}
+    pages = await store.get_pages(job_id)
+    ledger = await _ledger_by_key(store, pages)
 
     rows: list[dict] = []
     periods: set[str] = set()
     newest_recorded: datetime | None = None
 
     for r in ranked:
-        records = await store.get_performance_records(url=r["url"])
+        records = ledger.get(ledger_key(r["url"]), [])
         if not records:
             continue
         latest = sorted(records, key=lambda x: x.period)[-1]
@@ -189,8 +283,11 @@ async def build_performance_summary(
             "url": r["url"],
             "clicks": latest.gsc_clicks_mo or 0,
             "impressions": latest.gsc_impressions_mo or 0,
-            "ctr": latest.gsc_ctr_mo or 0.0,
-            "position": latest.gsc_avg_position_mo or 0.0,
+            # P2: unknown stays None. Coercing an unmeasured CTR to 0.0 made it
+            # satisfy `ctr < site_ctr` and put the page in "Seen but not clicked"
+            # — a fabricated underperformer built out of missing data.
+            "ctr": latest.gsc_ctr_mo,
+            "position": latest.gsc_avg_position_mo,
             "sessions": getattr(latest, "ga4_sessions_mo", None),
             "conversions": getattr(latest, "ga4_conversions_mo", None),
             "ai_referral_sessions": getattr(latest, "ga4_ai_referral_sessions_mo", None),
@@ -221,6 +318,8 @@ async def build_performance_summary(
         r for r in by_impressions
         if r["impressions"] >= median_impressions
         and r["impressions"] > 0
+        # An unknown CTR is not a low CTR. Only a measured value qualifies.
+        and r["ctr"] is not None
         and r["ctr"] < site_ctr
     ]
 
@@ -231,8 +330,11 @@ async def build_performance_summary(
         # Fall back to the end of the newest reporting month. A ledger whose most
         # recent period is 2026-05 describes May, however recently it was loaded.
         newest_recorded = _period_end(max(periods))
+    # Clamped at 0: the current month's period-end is in the future, and
+    # "-3 days old" in a client report reads as a bug, not as freshness.
     age_days = (
-        (reference - newest_recorded).days if newest_recorded is not None else None
+        max(0, (reference - newest_recorded).days)
+        if newest_recorded is not None else None
     )
 
     return {
@@ -241,9 +343,19 @@ async def build_performance_summary(
         "total_clicks": total_clicks,
         "total_impressions": total_impressions,
         "site_ctr": site_ctr,
-        "total_sessions": sum(r["sessions"] or 0 for r in rows),
-        "total_conversions": sum(r["conversions"] or 0 for r in rows),
-        "total_ai_referral_sessions": sum(r["ai_referral_sessions"] or 0 for r in rows),
+        # P2: totals are over the pages that actually reported a value, and each
+        # carries its own denominator. Summing `or 0` across a mix of measured
+        # zeros and unknowns publishes a hard number over missing data.
+        "total_sessions": sum(r["sessions"] for r in rows if r["sessions"] is not None),
+        "sessions_pages_with_data": sum(1 for r in rows if r["sessions"] is not None),
+        "total_conversions": sum(r["conversions"] for r in rows if r["conversions"] is not None),
+        "conversions_pages_with_data": sum(1 for r in rows if r["conversions"] is not None),
+        "total_ai_referral_sessions": sum(
+            r["ai_referral_sessions"] for r in rows if r["ai_referral_sessions"] is not None
+        ),
+        "ai_referral_pages_with_data": sum(
+            1 for r in rows if r["ai_referral_sessions"] is not None
+        ),
         "top_by_impressions": by_impressions[:top_n],
         "low_ctr_high_impression": low_ctr[:top_n],
         "data_age_days": age_days,

@@ -1642,6 +1642,7 @@ async def export_pdf_report(
     # Scope & Caveats section then records (E7.4) rather than passing off as clean.
     performance = None
     priority_pages = None
+    performance_failed = False
     try:
         from api.services.page_priority import (
             build_page_priority,
@@ -1651,6 +1652,11 @@ async def export_pdf_report(
         priority_pages = serialise_review_flags(await build_page_priority(store, job_id))
         performance = await build_performance_summary(store, job_id)
     except Exception as exc:
+        # Distinguish OUR failure from "the client supplied no data" — Caveats
+        # says something different for each, and asserting "no data was supplied
+        # for this site" when our own guard fired is a false statement about
+        # the client's inputs (P1/P2).
+        performance_failed = True
         logger.warning("page_priority_unavailable_for_report",
                        extra={"job_id": job_id, "error": str(exc)})
 
@@ -1696,6 +1702,7 @@ async def export_pdf_report(
             performance=performance,
             priority_pages=priority_pages,
             prevalence=prevalence,
+            performance_failed=performance_failed,
         )
         logger.info("pdf_report_generated", extra={"job_id": job_id, "size_bytes": len(pdf_bytes)})
         pdf_domain = urlparse(job.target_url).netloc.replace("www.", "")

@@ -1336,6 +1336,31 @@ export function IssueCard({ issue: iss, jobId, pageUrl, isOpen, onToggleFix, onF
         </div>
       )}
 
+      {/* E2 — every page that links to a broken target, not just the first.
+          Without the full list the operator cannot see that one reusable block
+          is responsible, so nine findings read as nine unrelated chores.
+          Spec: docs/pending/2026-08-29_E2-broken-link-source-attribution.md */}
+      {Array.isArray(iss.extra?.occurrence_urls) && iss.extra.occurrence_urls.length > 0 && (
+        <div className="mt-3 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+          <p className="text-sm font-bold text-blue-900 mb-2">
+            Linked from {iss.extra.occurrence_urls_total ?? iss.extra.occurrence_urls.length} page
+            {(iss.extra.occurrence_urls_total ?? iss.extra.occurrence_urls.length) !== 1 ? 's' : ''}
+            {iss.extra.occurrence_urls_total > iss.extra.occurrence_urls.length && (
+              <span className="font-normal text-blue-700">
+                {' '}(showing {iss.extra.occurrence_urls.length} of {iss.extra.occurrence_urls_total} — the full list is in the spreadsheet export)
+              </span>
+            )}
+          </p>
+          <ul className="space-y-1 max-h-64 overflow-y-auto">
+            {iss.extra.occurrence_urls.map((url, idx) => (
+              <li key={`${url}-${idx}`} className="p-2 bg-white rounded-lg border border-blue-100 text-sm text-gray-700 font-mono break-all">
+                {url}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       {/* Extra data display (for non-empty-anchor, non-duplicate, non-breakdown issues) */}
       {!isEmptyAnchor && !iss.extra?.duplicate_urls && !iss.extra?.breakdown && iss.extra && (iss.extra.link_url || iss.extra.href || iss.extra.image_url || iss.extra.size_kb || iss.extra.status_code) && (
         <div className="mt-2 p-3 bg-gray-100 rounded-lg">

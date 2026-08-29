@@ -104,15 +104,51 @@ export default function SummaryPanel({ summary, domain, jobId, onCategoryClick, 
         </button>
       </div>
 
-      {/* Headline scores: SEO Health + Agent Health (agent-readiness Phase 1) */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      {/* Headline scores: SEO Health + Agent Health (agent-readiness Phase 1),
+          plus Site Hygiene (E4) when prevalence was computed. Health is per-page
+          quality averaged; Hygiene is how much of the estate one defect touches.
+          Spec: docs/pending/2026-08-29_E4-site-prevalence-escalation.md */}
+      <div className={`grid grid-cols-1 gap-4 ${summary.site_hygiene_score != null ? 'md:grid-cols-3' : 'md:grid-cols-2'}`}>
         <StatCard label="Health Score" value={summary.health_score} color={summary.health_score > 80 ? 'text-green-600' : 'text-amber-500'} />
         <StatCard
           label="Agent Health"
           value={summary.agent_health_score ?? '—'}
           color={(summary.agent_health_score ?? 0) > 80 ? 'text-green-600' : 'text-amber-500'}
         />
+        {summary.site_hygiene_score != null && (
+          <StatCard
+            label="Site Hygiene"
+            value={summary.site_hygiene_score}
+            color={summary.site_hygiene_score > 80 ? 'text-green-600' : 'text-amber-500'}
+          />
+        )}
       </div>
+
+      {/* E4 — systemic defects: one template or setting is responsible, so one
+          fix resolves many pages. Shown only when something actually qualifies. */}
+      {summary.systemic_count > 0 && (
+        <div className="p-4 bg-amber-50 border border-amber-200 rounded-lg">
+          <p className="text-sm font-bold text-amber-900">
+            {summary.systemic_count} systemic defect{summary.systemic_count !== 1 ? 's' : ''} found
+          </p>
+          <p className="text-xs text-amber-800 mt-1">
+            These come from one template, theme setting or editorial habit — fixing the cause once resolves many pages. They are listed first in the PDF and Excel exports. Each row shows its actual footprint below; the threshold lives in the backend config, so no percentage is quoted here.
+          </p>
+          <ul className="mt-2 space-y-1">
+            {(summary.prevalence || [])
+              .filter((p) => p.tier === 'systemic')
+              .slice(0, 5)
+              .map((p) => (
+                <li key={p.code} className="text-sm text-gray-800">
+                  <span className="font-semibold">{p.human_description}</span>
+                  <span className="text-gray-600">
+                    {' '}— {p.pages_affected} of {p.indexable_pages} indexable pages ({Math.round(p.share * 100)}%)
+                  </span>
+                </li>
+              ))}
+          </ul>
+        </div>
+      )}
 
       {/* High-Level Stats */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">

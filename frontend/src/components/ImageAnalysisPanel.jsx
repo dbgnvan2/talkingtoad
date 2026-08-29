@@ -534,6 +534,15 @@ function ImageSummaryStats({ summary }) {
   const healthColor = summary.image_health_score >= 80 ? 'text-green-600' :
                       summary.image_health_score >= 60 ? 'text-amber-500' : 'text-red-600'
 
+  // E1.4 (rule 6) — when the per-job image cap turned images away, the card must
+  // say so. A bare percentage over a fraction of the site is the exact shape E1
+  // was fixing: a 272-page crawl once printed "Image Health 97%" over 13 images.
+  const seen = summary.images_seen_total
+  const collected = summary.images_collected
+  const coverage = seen != null && collected != null && seen > collected
+    ? `analysed ${collected} of ${seen} found`
+    : null
+
   const partialCount = summary.total_images - (summary.images_analyzed || 0)
   const analysisText = summary.images_analyzed
     ? `${summary.images_analyzed} fully analyzed${partialCount > 0 ? `, ${partialCount} partial` : ''}`
@@ -545,8 +554,9 @@ function ImageSummaryStats({ summary }) {
     <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
       <StatCard
         label="Image Health"
-        value={`${summary.image_health_score}%`}
+        value={summary.image_health_score == null ? '—' : `${summary.image_health_score}%`}
         color={healthColor}
+        subtext={coverage}
       />
       <StatCard
         label="Total Images"

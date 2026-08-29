@@ -47,6 +47,10 @@ class Prevalence:
     tier: str
     tier_label: str
     tier_weight: int
+    # The pages this code was found on. Kept off `as_dicts` — it is only needed
+    # to union across codes for the Hygiene coverage measure, and shipping a
+    # per-code URL list in every API response would bloat the payload.
+    affected_urls: frozenset = frozenset()
 
     @property
     def is_systemic(self) -> bool:
@@ -123,6 +127,7 @@ def compute_prevalence(
             tier=tier["name"],
             tier_label=tier["label"],
             tier_weight=int(tier["weight"]),
+            affected_urls=frozenset(urls),
         ))
 
     out.sort(key=lambda p: (-p.tier_weight, -p.pages_affected, p.code))
@@ -144,17 +149,34 @@ def _classify(code, affected, share, tiers, never, always) -> dict:
 
 
 def site_hygiene_score(prevalences: list[Prevalence]) -> int:
-    """0-100: how much of the estate is touched by escalated defects.
+    """0-100: the share of indexable pages carrying NO systemic defect.
 
     Deliberately NOT a replacement for Health. Health is per-page quality
-    averaged; Hygiene is breadth. Two numbers with stated meanings beat one
-    number asked to carry both jobs — and the report prints this formula.
+    averaged; Hygiene is breadth — how much of the estate one or more template
+    defects reach. Two numbers with stated meanings beat one asked to carry both.
 
-    ``100 - Σ(tier weight × share)``, clamped. Monotonic by construction: a code
-    affecting more pages has a larger share and can only lower the result.
+    ``100 × (indexable pages with no systemic defect ÷ indexable pages)``.
+
+    This is a **coverage** measure, not a weighted penalty sum. The weighted
+    version was tried first and was useless on real data: on livingsystems.ca,
+    nine systemic defects produced a penalty of 135 and the score clamped to 0,
+    which distinguishes nothing from a site with twenty. Coverage is bounded by
+    construction, needs no arbitrary per-tier weight, is monotonic (adding an
+    affected page can only shrink the clean set), and states itself in one
+    sentence the report can print: "N% of your indexable pages carry at least
+    one systemic defect."
     """
-    penalty = sum(p.tier_weight * p.share for p in prevalences if p.tier_weight > 0)
-    return max(0, min(100, round(100 - penalty)))
+    systemic_rows = [p for p in prevalences if p.is_systemic]
+    if not systemic_rows:
+        return 100
+    indexable = max(p.indexable_pages for p in systemic_rows)
+    if indexable <= 0:
+        return 100
+    affected: set = set()
+    for p in systemic_rows:
+        affected |= p.affected_urls
+    clean = max(0, indexable - len(affected))
+    return max(0, min(100, round(100 * clean / indexable)))
 
 
 def systemic(prevalences: list[Prevalence]) -> list[Prevalence]:

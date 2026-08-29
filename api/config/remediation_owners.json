@@ -1,0 +1,44 @@
+{
+  "_comment": [
+    "E7 — who owns a fix, by issue category. Rule 9: role names are editorial",
+    "and org-specific; a nonprofit with one web volunteer will want different",
+    "labels from an agency-supported team.",
+    "Spec: docs/pending/2026-08-29_E7-report-roadmap-and-caveats.md"
+  ],
+
+  "by_category": {
+    "broken_link": "Web administrator + content",
+    "metadata": "SEO / content",
+    "heading": "SEO / content",
+    "redirect": "Web administrator",
+    "crawlability": "SEO + web administrator",
+    "sitemap": "SEO",
+    "security": "Web administrator",
+    "url_structure": "Web administrator",
+    "image": "Content + web administrator",
+    "ai_readiness": "SEO / content",
+    "analytics": "Analytics owner",
+    "rendering": "Developer",
+    "semantic_html": "Developer"
+  },
+
+  "default": "Web administrator",
+
+  "phases": [
+    {
+      "name": "phase_1",
+      "title": "Phase 1 - Stabilise (0-30 days)",
+      "blurb": "Defects that come from one template, setting or habit. Fixing the cause once resolves many pages, so these come first regardless of how minor any single instance looks."
+    },
+    {
+      "name": "phase_2",
+      "title": "Phase 2 - Repair priority pages (31-60 days)",
+      "blurb": "Findings on the pages that already earn traffic. The ranking is there; these fixes convert it."
+    },
+    {
+      "name": "phase_3",
+      "title": "Phase 3 - Expand (61-90 days)",
+      "blurb": "Everything else, in impact order."
+    }
+  ]
+}

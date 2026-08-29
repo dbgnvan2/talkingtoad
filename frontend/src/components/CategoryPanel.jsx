@@ -385,7 +385,10 @@ export default function CategoryPanel({ jobId, category, domain, onPageClick, on
   )
 }
 
-function BrokenLinkItem({ jobId, brokenUrl, onMarkedFixed }) {
+// Exported for unit testing — the "Show Source Pages" contract is the kind of
+// thing that breaks silently and can only be caught by asserting the data
+// reaches the list, not that the button renders.
+export function BrokenLinkItem({ jobId, brokenUrl, onMarkedFixed }) {
   const toast = useToast()
   const [expanded, setExpanded] = useState(false)
   const [loading, setLoading] = useState(false)
@@ -422,7 +425,10 @@ function BrokenLinkItem({ jobId, brokenUrl, onMarkedFixed }) {
       const res = await fetch(`/api/fixes/link-sources?${params}`, { headers: authHeaders() })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error?.message || 'Failed to load sources')
-      setSources(data)
+      // The endpoint returns an envelope: {target_url, sources, count}.
+      // Assigning `data` here made `sources.length` undefined and `sources.map`
+      // throw, so the panel expanded to nothing — the button looked broken.
+      setSources(Array.isArray(data) ? data : (data.sources ?? []))
       setExpanded(true)
     } catch (err) {
       setError(err.message)
