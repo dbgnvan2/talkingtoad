@@ -390,3 +390,125 @@ def _pdf_text(pdf_bytes: bytes) -> str:
 
     reader = pypdf.PdfReader(io.BytesIO(pdf_bytes))
     return " ".join((p.extract_text() or "") for p in reader.pages).replace("\n", " ")
+
+
+# ── E4 — prevalence reaches every surface ───────────────────────────────────
+
+
+class TestPrevalenceSurfaces:
+    """E4.3 — the prevalence lens must be present on the API, the PDF and the
+    Excel export. P25: a lens visible in one place and absent from another is
+    the exact failure E3 was fixing."""
+
+    def test_e4_3c_all_surfaces_compute_prevalence(self):
+        root = Path(__file__).resolve().parent.parent
+        router = (root / "api" / "routers" / "crawl.py").read_text()
+        assert router.count("_prevalence_for") >= 4, (
+            "results route, PDF export and Excel export must each compute it"
+        )
+        assert "prevalence=prevalence" in router
+
+        import inspect
+
+        from api.services.excel_generator import generate_excel_report
+        from api.services.report_generator import generate_pdf_report
+
+        assert "prevalence" in inspect.signature(generate_pdf_report).parameters
+        assert "prevalence" in inspect.signature(generate_excel_report).parameters
+
+    @pytest.mark.asyncio
+    async def test_e4_3a_pdf_systemic_section_present(self, store):
+        from api.models.issue import Issue as IssueModel
+        from api.services.prevalence import build_prevalence
+
+        job = await _seed(store, with_ledger=False,
+                          pages=[f"https://livingsystems.ca/p{i}" for i in range(60)])
+        await store.save_issues([
+            IssueModel(job_id=JOB_ID, page_url=f"https://livingsystems.ca/p{i}",
+                       category="analytics", severity="info",
+                       issue_code="CONSENT_MODE_MISSING",
+                       description="d", recommendation="r")
+            for i in range(50)
+        ])
+        prevalence = await build_prevalence(store, JOB_ID)
+        assert any(p.tier == "systemic" for p in prevalence)
+
+        pdf_bytes = await generate_pdf_report(
+            job, [], await store.get_summary(JOB_ID), prevalence=prevalence,
+        )
+        text = _pdf_text(pdf_bytes)
+        assert "Systemic Defects" in text
+        assert "Site Hygiene" in text
+        assert "50 of 60" in text, "the section must state the footprint"
+
+    @pytest.mark.asyncio
+    async def test_e4_3a_pdf_omits_systemic_section_when_none(self, store):
+        job = await _seed(store, with_ledger=False, pages=[HOME, TOP_PAGE])
+        pdf_bytes = await generate_pdf_report(
+            job, [], await store.get_summary(JOB_ID), prevalence=[],
+        )
+        text = _pdf_text(pdf_bytes)
+        assert "Systemic Defects" not in text
+        assert "Site Hygiene" not in text
+
+    @pytest.mark.asyncio
+    async def test_e4_3b_checklist_ordered_by_prevalence(self, store):
+        """A 50-page defect must precede a 3-page one with a higher priority_rank."""
+        from api.services.report_generator import _checklist_sort_key
+        from api.services.prevalence import compute_prevalence
+
+        class _Iss:
+            def __init__(self, code, rank):
+                self.issue_code = code
+                self.priority_rank = rank
+
+        widespread = _Iss("CONSENT_MODE_MISSING", 5)
+        rare_but_urgent = _Iss("H1_MISSING", 40)
+        prevalence = compute_prevalence(
+            [("CONSENT_MODE_MISSING", f"https://x/p{i}") for i in range(50)]
+            + [("H1_MISSING", f"https://x/q{i}") for i in range(3)],
+            60,
+        )
+        ordered = sorted([rare_but_urgent, widespread], key=_checklist_sort_key(prevalence))
+        assert ordered[0].issue_code == "CONSENT_MODE_MISSING"
+
+    def test_e4_3b_checklist_unchanged_without_prevalence(self):
+        """No prevalence data, no claim of prevalence weighting — the ordering
+        collapses to the previous -priority_rank exactly."""
+        from api.services.report_generator import _checklist_sort_key
+
+        class _Iss:
+            def __init__(self, code, rank):
+                self.issue_code = code
+                self.priority_rank = rank
+
+        a, b = _Iss("A", 5), _Iss("B", 40)
+        assert [i.issue_code for i in sorted([a, b], key=_checklist_sort_key(None))] == ["B", "A"]
+
+    @pytest.mark.asyncio
+    async def test_e4_3c_excel_prevalence_tab(self, store):
+        import io
+
+        from openpyxl import load_workbook
+
+        from api.services.prevalence import compute_prevalence
+
+        job = await _seed(store, with_ledger=False, pages=[HOME])
+        prevalence = compute_prevalence(
+            [("CONSENT_MODE_MISSING", f"https://x/p{i}") for i in range(50)], 60
+        )
+        xlsx = generate_excel_report(
+            job, [], await store.get_summary(JOB_ID), prevalence=prevalence,
+        )
+        wb = load_workbook(io.BytesIO(xlsx))
+        assert "Prevalence" in wb.sheetnames
+
+    @pytest.mark.asyncio
+    async def test_e4_3c_excel_omits_tab_without_prevalence(self, store):
+        import io
+
+        from openpyxl import load_workbook
+
+        job = await _seed(store, with_ledger=False, pages=[HOME])
+        xlsx = generate_excel_report(job, [], await store.get_summary(JOB_ID), prevalence=None)
+        assert "Prevalence" not in load_workbook(io.BytesIO(xlsx)).sheetnames

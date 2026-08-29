@@ -132,6 +132,11 @@ _CLUSTER_SUPPRESSION: dict[str, frozenset[str]] = {
     # same source. INTERNAL_REDIRECT_301 stays independent (distinct condition —
     # the link source). This is the ONLY cluster that may touch `redirect`.
     "REDIRECT_CHAIN": frozenset({"REDIRECT_301", "REDIRECT_302"}),
+    # ── E6 (2026-08-29) stacked overlay links are the root cause when a card
+    # emits an unnamed overlay anchor alongside named ones: the fix is "one
+    # descriptive link per card", which also resolves the empty anchor. Charging
+    # both would double-count one template defect.
+    "LINK_STACKED_DUPLICATE": frozenset({"LINK_EMPTY_ANCHOR"}),
 }
 
 # ---------------------------------------------------------------------------

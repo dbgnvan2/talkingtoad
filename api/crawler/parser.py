@@ -90,6 +90,9 @@ class ParsedPage:
     image_urls: list = None              # list[str] of image src URLs (for broken image checks)
     empty_anchor_count: int = 0          # <a> tags with no visible text
     empty_anchor_hrefs: list = None      # list[str] of the offending hrefs
+    # E6: groups of 2+ <a> to one href inside one card container (stacked
+    # overlay links). None when not computed; [] when none found.
+    stacked_link_groups: list = None
     internal_nofollow_count: int = 0     # internal links with rel="nofollow"
 
     # v1.6 new fields
@@ -304,6 +307,7 @@ def parse_page(
             img_missing_alt_count=0,
             image_urls=[],
             empty_anchor_count=0,
+            stacked_link_groups=[],
             internal_nofollow_count=0,
             lang_attr=None,
         )
@@ -462,6 +466,7 @@ def parse_page(
         image_urls=_extract_image_urls(soup, page_url),
         empty_anchor_count=_count_empty_anchors(soup),
         empty_anchor_hrefs=_find_empty_anchors(soup, page_url),
+        stacked_link_groups=_find_stacked_links(soup, page_url),
         internal_nofollow_count=_count_internal_nofollow(soup, page_url, base_url),
         lang_attr=_extract_lang(soup),
         # v1.7 AI-Readiness fields
@@ -1199,6 +1204,98 @@ def _find_empty_anchors(soup: BeautifulSoup, page_url: str = "") -> list[dict]:
             "has_children": len(tag.find_all()) > 0,
         })
     return found
+
+
+# ── E6: stacked overlay links ────────────────────────────────────────────────
+# `LINK_EMPTY_ANCHOR` correctly excludes any anchor with an accessible name from
+# ANY source, so it stays silent on the pattern a third-party audit of
+# livingsystems.ca actually flagged: an Elementor card emitting a full-card
+# overlay <a>, a title <a> and an image <a>, all to the same destination. Each
+# has a name; a screen-reader user hears the destination three times and a
+# crawler sees three links where the editor intended one.
+# Spec: docs/pending/2026-08-29_E6-stacked-duplicate-links.md
+_STACKED_CFG_KEYS = ("card_container_classes", "card_container_tags", "min_group_size")
+
+
+def _link_patterns_cfg() -> dict:
+    from api.config import load_config
+
+    return load_config("link_patterns", required_keys=_STACKED_CFG_KEYS)
+
+
+def _is_card_container(tag, card_classes: set[str], card_tags: set[str]) -> bool:
+    name = getattr(tag, "name", None)
+    if not name:
+        return False
+    if name in card_tags:
+        return True
+    classes = tag.get("class") or []
+    if isinstance(classes, str):
+        classes = classes.split()
+    return any(
+        any(pattern in cls.casefold() for pattern in card_classes) for cls in classes
+    )
+
+
+def _find_stacked_links(soup: BeautifulSoup, page_url: str = "") -> list[dict]:
+    """Groups of 2+ ``<a>`` resolving to the same href inside ONE card container.
+
+    Purpose: catch stacked overlay links, which `LINK_EMPTY_ANCHOR` cannot see
+             because every anchor in them has an accessible name.
+    Spec:    docs/pending/2026-08-29_E6-stacked-duplicate-links.md#E6.1
+    Tests:   tests/test_stacked_links.py
+
+    The container requirement is load-bearing, not decoration: a header logo
+    link plus a "Home" text link both point at "/" on essentially every site on
+    the web. Without it this check would flag all of them.
+    """
+    try:
+        cfg = _link_patterns_cfg()
+    except Exception:  # noqa: BLE001 — a bad config must not kill a parse
+        return []
+
+    card_classes = {c.casefold() for c in cfg["card_container_classes"]}
+    card_tags = {t.casefold() for t in cfg["card_container_tags"]}
+    min_size = int(cfg["min_group_size"])
+
+    groups: list[dict] = []
+    seen_containers: set[int] = set()
+
+    for anchor in soup.find_all("a", href=True):
+        # Walk up to the nearest container that looks like a card.
+        container = None
+        for parent in anchor.parents:
+            if _is_card_container(parent, card_classes, card_tags):
+                container = parent
+                break
+        if container is None or id(container) in seen_containers:
+            continue
+        seen_containers.add(id(container))
+
+        by_href: dict[str, list] = {}
+        for a in container.find_all("a", href=True):
+            href = (a.get("href") or "").strip()
+            if not href or href.startswith(("#", "javascript:", "mailto:", "tel:", "data:")):
+                continue
+            absolute = urljoin(page_url, href) if page_url else href
+            by_href.setdefault(absolute, []).append(a)
+
+        classes = container.get("class") or []
+        if isinstance(classes, str):
+            classes = classes.split()
+        for href, anchors in by_href.items():
+            if len(anchors) < min_size:
+                continue
+            groups.append({
+                "href": href,
+                "count": len(anchors),
+                "accessible_names": [
+                    (_accessible_name(a) or "(no accessible name)") for a in anchors
+                ],
+                "container_tag": container.name,
+                "container_class": " ".join(classes)[:120],
+            })
+    return groups
 
 
 def _extract_lang(soup: BeautifulSoup) -> str | None:

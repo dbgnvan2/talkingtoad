@@ -12,10 +12,10 @@ integrity of this file is enforced by five CI parity invariants — see
 
 Single source of truth for:
     - ``Issue`` dataclass and ``_IssueSpec`` dataclass
-    - ``_ISSUE_SCORING`` (impact, effort) by code — 166 codes
-    - ``_CATALOGUE`` (every issue spec) — 166 codes
+    - ``_ISSUE_SCORING`` (impact, effort) by code — 167 codes
+    - ``_CATALOGUE`` (every issue spec) — 167 codes
     - ``_AI_READINESS_CONFIDENCE`` (confidence labels) — 71 codes
-      (of 166 total; the 91 non-ai_readiness codes carry no confidence label)
+      (of 167 total; the 91 non-ai_readiness codes carry no confidence label)
     - ``_STOP_WORDS`` and ``_GENERIC_ANCHOR_TEXTS`` (shared helpers)
     - Size-limit constants
     - ``make_issue()`` factory, ``_sig_words()``, ``_titles_mismatch()``
@@ -260,6 +260,8 @@ _ISSUE_SCORING: dict[str, tuple[int, int]] = {
     "CONTENT_STALE":              (1, 3),
     # Phase 3 new checks
     "ANCHOR_TEXT_GENERIC":        (2, 2),
+    # E6 (2026-08-29) — stacked overlay links; sibling of ANCHOR_TEXT_GENERIC.
+    "LINK_STACKED_DUPLICATE":     (2, 2),
     "HEADING_EMPTY":              (1, 1),
     "WWW_CANONICALIZATION":       (4, 2),
     # v2.0 AI-Readiness: AI Bot Access
@@ -424,6 +426,7 @@ _CALIBRATION: dict[str, tuple[str, str, bool]] = {
     "AI_TXT_MISSING": ("Heuristic", "small", False),
     "AMPHTML_BROKEN": ("Reasonable proxy", "small", False),
     "ANCHOR_TEXT_GENERIC": ("Established", "small", False),
+    "LINK_STACKED_DUPLICATE": ("Reasonable proxy", "small", False),
     "AUTHOR_BYLINE_MISSING": ("Reasonable proxy", "moderate", False),
     "AUTHOR_IDENTITY_INCONSISTENT": ("Heuristic", "small", False),
     "BLOG_SECTIONS_MISSING": ("Heuristic", "moderate", False),
@@ -1176,6 +1179,26 @@ _CATALOGUE: dict[str, _IssueSpec] = {
         recommendation="Consolidate duplicate images to a single URL. This saves server space "
                        "and improves caching efficiency.",
         human_description="Duplicate Image",
+        fixability="developer_needed",
+    ),
+    "LINK_STACKED_DUPLICATE": _IssueSpec(
+        category="metadata", severity="info",
+        description="Several links inside one card point at the same destination "
+                    "(a full-card overlay link stacked on a title link and an image link)",
+        recommendation="Expose one descriptive link per card. Make the title the link and let "
+                       "the surrounding area be decorative, or keep the overlay and remove the "
+                       "inner links.",
+        human_description="Stacked Duplicate Links",
+        what_it_is="Page builders often emit an invisible full-card overlay link plus separate "
+                   "links on the title and the image, all going to the same page. Visually it "
+                   "looks like one clickable card.",
+        impact_desc="A screen-reader user hears the same destination announced two or three "
+                    "times, and crawlers see several links where the editor intended one, which "
+                    "muddies which anchor text describes the destination.",
+        how_to_fix="In your page-builder's card or listing template, keep a single link with "
+                   "descriptive text and remove the duplicates. If the overlay link is the one "
+                   "you keep, give it a descriptive aria-label and make the inner elements "
+                   "non-interactive.",
         fixability="developer_needed",
     ),
     "LINK_EMPTY_ANCHOR": _IssueSpec(

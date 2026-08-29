@@ -15,6 +15,7 @@ def generate_excel_report(
     images: list = None,
     performance: dict | None = None,
     priority_pages: list[dict] | None = None,
+    prevalence: list | None = None,
 ) -> bytes:
     """Generate a multi-sheet Excel workbook from crawl data."""
     wb = Workbook()
@@ -113,6 +114,34 @@ def generate_excel_report(
             ws_ai.cell(row=row, column=3, value=issue.confidence_label or "")
             ws_ai.cell(row=row, column=4, value=issue.page_url or "")
             ws_ai.cell(row=row, column=5, value=issue.description or "")
+
+    # ── Prevalence Sheet (E4.3) ────────────────────────────────────────────
+    # How much of the indexable estate each defect touches. Scoring is unchanged;
+    # this is the breadth lens. Spec: docs/pending/2026-08-29_E4-site-prevalence-escalation.md
+    if prevalence:
+        from api.services.prevalence import site_hygiene_score
+
+        ws_prev = wb.create_sheet(title="Prevalence")
+        ws_prev["A1"] = "Site Prevalence"
+        ws_prev["A1"].font = header_font
+        ws_prev["A2"] = "Site Hygiene:"
+        ws_prev["B2"] = site_hygiene_score(prevalence)
+        ws_prev["A2"].font = label_font
+        ws_prev["A3"] = "Systemic defects:"
+        ws_prev["B3"] = sum(1 for p in prevalence if p.tier == "systemic")
+        ws_prev["A3"].font = label_font
+
+        headers = ["Issue", "Code", "Category", "Severity", "Pages affected",
+                   "Indexable pages", "Share", "Tier"]
+        for col, h in enumerate(headers, 1):
+            ws_prev.cell(row=5, column=col, value=h).font = label_font
+        row = 6
+        for p in prevalence:
+            values = [p.human_description, p.code, p.category, p.severity,
+                      p.pages_affected, p.indexable_pages, round(p.share, 4), p.tier]
+            for col, v in enumerate(values, 1):
+                ws_prev.cell(row=row, column=col, value=v)
+            row += 1
 
     # ── Performance Sheet (E3.4) ───────────────────────────────────────────
     # Excel parity with the PDF: the same ranking must be reachable from every

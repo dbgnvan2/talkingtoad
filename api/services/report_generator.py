@@ -307,6 +307,80 @@ def _render_priority_pages_section(
         pdf.ln(3)
 
 
+def _checklist_sort_key(prevalence: list | None):
+    """Order the action checklist by (tier weight, pages affected, priority).
+
+    Without prevalence this collapses to the previous `-priority_rank` ordering
+    exactly, so a scan with no prevalence data reads as it always did.
+    Spec: docs/pending/2026-08-29_E4-site-prevalence-escalation.md#E4.3
+    """
+    by_code = {p.code: p for p in (prevalence or [])}
+
+    def key(issue):
+        p = by_code.get(issue.issue_code)
+        weight = p.tier_weight if p else 0
+        affected = p.pages_affected if p else 0
+        return (-weight, -affected, -(issue.priority_rank or 0))
+
+    return key
+
+
+def _render_systemic_defects_section(pdf, prevalence: list | None) -> None:
+    """Defects present on a large share of the indexable estate.
+
+    A defect on 56 of 272 pages is a template or editorial-process problem, and
+    saying so changes what the reader does about it. Omitted entirely when
+    nothing qualifies — and the Caveats section records that (E7.4).
+    """
+    if not prevalence:
+        return
+    systemic = [p for p in prevalence if p.tier == "systemic"]
+    if not systemic:
+        return
+
+    pdf.add_page()
+    pdf.chapter_title("Systemic Defects")
+    pdf.set_font('helvetica', '', 10)
+    pdf.set_text_color(*COLOR_GRAY_600)
+    pdf.set_x(25.4)
+    pdf.multi_cell(W, 5, pdf.clean_text(
+        "These defects appear across a large share of the site. That usually means one "
+        "template, theme setting or editorial habit is responsible — so one fix resolves "
+        "many pages at once. Fix these before working through individual pages."
+    ))
+    pdf.ln(4)
+
+    for p in systemic:
+        if pdf.get_y() > 235:
+            pdf.add_page()
+        pdf.set_x(25.4)
+        pdf.set_font('helvetica', 'B', 11)
+        pdf.set_text_color(*COLOR_GRAY_800)
+        pdf.multi_cell(W, 6, pdf.clean_text(p.human_description))
+
+        pdf.set_x(30)
+        pdf.set_font('helvetica', 'B', 10)
+        pdf.set_text_color(*COLOR_WARNING)
+        pdf.cell(W - 5, 5, pdf.clean_text(
+            f"{p.pages_affected} of {p.indexable_pages} indexable pages "
+            f"({p.share * 100:.0f}%)"
+        ), new_x="LMARGIN", new_y="NEXT")
+
+        spec = ISSUE_HELP.get(p.code) or {}
+        fix = spec.get("fix") or ""
+        if fix:
+            pdf.set_x(30)
+            pdf.set_font('helvetica', '', 9)
+            pdf.set_text_color(*COLOR_GRAY_600)
+            pdf.multi_cell(W - 5, 4.5, pdf.clean_text(fix))
+
+        pdf.ln(2)
+        pdf.set_draw_color(229, 231, 235)
+        pdf.set_x(25.4)
+        pdf.line(pdf.get_x(), pdf.get_y(), pdf.get_x() + W, pdf.get_y())
+        pdf.ln(3)
+
+
 async def generate_pdf_report(
     job: CrawlJob,
     issues: list[Issue],
@@ -319,6 +393,7 @@ async def generate_pdf_report(
     executive_summary: str | None = None,
     performance: dict | None = None,
     priority_pages: list[dict] | None = None,
+    prevalence: list | None = None,
 ) -> bytes:
     pdf = TalkingToadReport()
     pdf.alias_nb_pages()
@@ -376,6 +451,17 @@ async def generate_pdf_report(
         ("Info Notices", summary.get("by_severity", {}).get("info", 0), COLOR_INFO),
     ]
     
+    # E4 — Site Hygiene sits beside Health, with its meaning stated. Health is
+    # per-page quality averaged; Hygiene is how much of the estate one defect
+    # touches. Two numbers with stated meanings beat one asked to carry both.
+    if prevalence:
+        from api.services.prevalence import site_hygiene_score
+        hygiene = site_hygiene_score(prevalence)
+        systemic_n = sum(1 for p in prevalence if p.tier == "systemic")
+        stats.insert(2, ("Site Hygiene", hygiene,
+                         COLOR_TOAD_GREEN if hygiene >= 80 else
+                         COLOR_WARNING if hygiene >= 60 else COLOR_CRITICAL))
+
     for label, val, color in stats:
         pdf.set_x(25.4)
         pdf.set_font('helvetica', 'B', 12)
@@ -384,6 +470,22 @@ async def generate_pdf_report(
         pdf.set_font('helvetica', 'B', 14)
         pdf.set_text_color(*color)
         pdf.cell(W - 60, 10, str(val), new_x="LMARGIN", new_y="NEXT")
+
+    if prevalence:
+        pdf.ln(3)
+        pdf.set_x(25.4)
+        pdf.set_font('helvetica', '', 9)
+        pdf.set_text_color(*COLOR_GRAY_600)
+        note = (
+            "Health Score is per-page quality, averaged across the site. Site Hygiene is "
+            "breadth: 100 minus the share of indexable pages touched by each widespread "
+            "defect, weighted by how widespread it is. A site can score well on one and "
+            "poorly on the other."
+        )
+        if systemic_n:
+            note += (f" {systemic_n} systemic defect{'s' if systemic_n != 1 else ''} "
+                     f"affect 30% or more of indexable pages - see Systemic Defects.")
+        pdf.multi_cell(W, 4.5, pdf.clean_text(note))
 
     pdf.ln(10)
     pdf.set_x(25.4)
@@ -469,6 +571,9 @@ async def generate_pdf_report(
             pdf.line(pdf.get_x(), pdf.get_y(), pdf.get_x() + W, pdf.get_y())
             pdf.ln(3)
 
+    # ── Systemic Defects (E4) ─────────────────────────────────────
+    _render_systemic_defects_section(pdf, prevalence)
+
     # ── Action Checklist ─────────────────────────────────────────
     if issues:
         pdf.add_page()
@@ -476,13 +581,22 @@ async def generate_pdf_report(
         pdf.set_font('helvetica', '', 10)
         pdf.set_text_color(*COLOR_GRAY_600)
         pdf.set_x(25.4)
-        pdf.multi_cell(W, 5, "These are the highest-priority actions to improve your site's SEO. Work through them in order.")
+        # E4: ordering names itself. With prevalence available the list leads
+        # with defects that touch the most pages, because a 56-page template
+        # defect is one edit and a 3-page one is three.
+        if prevalence:
+            checklist_blurb = ("Highest-priority actions, ordered by how much of the site each "
+                               "defect touches and then by impact. Work through them in order.")
+        else:
+            checklist_blurb = ("These are the highest-priority actions to improve your site's SEO. "
+                               "Work through them in order.")
+        pdf.multi_cell(W, 5, pdf.clean_text(checklist_blurb))
         pdf.ln(5)
 
         # Deduplicate by issue_code, take highest-priority first
         from collections import OrderedDict
         seen_codes: OrderedDict[str, Issue] = OrderedDict()
-        sorted_issues = sorted(issues, key=lambda i: -(i.priority_rank or 0))
+        sorted_issues = sorted(issues, key=_checklist_sort_key(prevalence))
         for iss in sorted_issues:
             if iss.issue_code not in seen_codes and len(seen_codes) < 15:
                 seen_codes[iss.issue_code] = iss

@@ -1,0 +1,27 @@
+{
+  "_comment": [
+    "E6 — card-container patterns for stacked-link detection.",
+    "Rule 9: these are page-builder-specific editorial strings, not logic.",
+    "Add a class here when a builder wraps cards in a container TalkingToad",
+    "does not yet recognise. Spec: docs/pending/2026-08-29_E6-stacked-duplicate-links.md"
+  ],
+
+  "card_container_classes": [
+    "card",
+    "entry",
+    "post-item",
+    "grid-item",
+    "elementor-post",
+    "elementor-portfolio-item",
+    "jet-listing-grid__item",
+    "jet-engine-listing-overlay-wrap",
+    "wp-block-post",
+    "wp-block-query-loop",
+    "tile",
+    "teaser"
+  ],
+
+  "card_container_tags": ["li", "article"],
+
+  "min_group_size": 2
+}

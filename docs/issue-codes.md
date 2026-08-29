@@ -8,11 +8,11 @@ generator: scripts/generate_issue_codes_doc.py
 
 > **This file is auto-generated.** Do not edit by hand — your changes will be overwritten the next time the generator runs. To update an issue code, edit `api/crawler/issue_checker.py` (`_CATALOGUE`, `_ISSUE_SCORING`, `_AI_READINESS_CONFIDENCE`) and re-run `python scripts/generate_issue_codes_doc.py`.
 
-**166 issue codes** across 13 categories.
+**167 issue codes** across 13 categories.
 
 ## Table of contents
 
-- [METADATA](#metadata) (17)
+- [METADATA](#metadata) (18)
 - [HEADING](#heading) (4)
 - [BROKEN_LINK](#broken_link) (8)
 - [REDIRECT](#redirect) (8)
@@ -33,7 +33,7 @@ generator: scripts/generate_issue_codes_doc.py
 
 Title, meta description, OG tags, canonical, favicon.
 
-_17 codes in this category._
+_18 codes in this category._
 
 ### ANCHOR_TEXT_GENERIC
 **Severity:** 🔵 info | **Impact:** 2 | **Effort:** 2 | **Fixability:** content_edit
@@ -109,6 +109,22 @@ Link has no visible anchor text — screen readers and search engines cannot des
 **Recommendation:** Add descriptive text inside the link. If it is an icon-only link, add an aria-label attribute (e.g. aria-label="Donate now").
 
 **Plain-English:** Empty Link Text
+
+---
+
+### LINK_STACKED_DUPLICATE
+**Severity:** 🔵 info | **Impact:** 2 | **Effort:** 2
+
+**What it is**
+Page builders often emit an invisible full-card overlay link plus separate links on the title and the image, all going to the same page. Visually it looks like one clickable card.
+
+**Why it matters**
+A screen-reader user hears the same destination announced two or three times, and crawlers see several links where the editor intended one, which muddies which anchor text describes the destination.
+
+**How to fix**
+In your page-builder's card or listing template, keep a single link with descriptive text and remove the duplicates. If the overlay link is the one you keep, give it a descriptive aria-label and make the inner elements non-interactive.
+
+**Plain-English:** Stacked Duplicate Links
 
 ---
 

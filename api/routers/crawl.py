@@ -431,6 +431,39 @@ async def _run_crawl_background(
         _cancel_events.pop(job_id, None)
 
 
+# ── E4: site prevalence ───────────────────────────────────────────────────
+# Spec: docs/pending/2026-08-29_E4-site-prevalence-escalation.md
+
+
+async def _prevalence_for(store, job_id: str) -> list:
+    """Prevalence rows for a job, or [] if it cannot be computed.
+
+    Guarded: a prevalence hiccup degrades the report rather than failing it. The
+    empty case is then recorded in Scope & Caveats (E7.4) instead of reading as
+    "no systemic defects".
+    """
+    try:
+        from api.services.prevalence import build_prevalence
+
+        return await build_prevalence(store, job_id)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("prevalence_unavailable", extra={"job_id": job_id, "error": str(exc)})
+        return []
+
+
+def _with_prevalence(summary: dict, prevalences: list) -> dict:
+    """Attach prevalence rows, the systemic count and Site Hygiene to a summary."""
+    if not summary:
+        return summary
+    from api.services.prevalence import as_dicts, site_hygiene_score, systemic
+
+    enriched = dict(summary)
+    enriched["prevalence"] = as_dicts(prevalences)
+    enriched["systemic_count"] = len(systemic(prevalences))
+    enriched["site_hygiene_score"] = site_hygiene_score(prevalences) if prevalences else None
+    return enriched
+
+
 # ── Exempt anchor URL filtering ───────────────────────────────────────────
 
 def _apply_exempt_anchors(issues: list, exempt_urls: set[str]) -> list:
@@ -795,6 +828,10 @@ async def get_results(
     quick_wins = _apply_exempt_anchors(
         [_issue_dict(i) for i in all_issues if i.quick_win], exempt_urls
     )
+
+    # E4 — the prevalence lens alongside per-page severity. Scoring is untouched;
+    # this only tells the reader how much of the estate one defect touches.
+    summary = _with_prevalence(summary, await _prevalence_for(store, job_id))
 
     return {
         "job_id": job_id,
@@ -1617,6 +1654,9 @@ async def export_pdf_report(
         logger.warning("page_priority_unavailable_for_report",
                        extra={"job_id": job_id, "error": str(exc)})
 
+    prevalence = await _prevalence_for(store, job_id)
+    summary = _with_prevalence(summary, prevalence)
+
     # Try to generate AI executive summary (optional — skipped if no API keys)
     executive_summary = None
     try:
@@ -1655,6 +1695,7 @@ async def export_pdf_report(
             executive_summary=executive_summary,
             performance=performance,
             priority_pages=priority_pages,
+            prevalence=prevalence,
         )
         logger.info("pdf_report_generated", extra={"job_id": job_id, "size_bytes": len(pdf_bytes)})
         pdf_domain = urlparse(job.target_url).netloc.replace("www.", "")
@@ -1702,6 +1743,9 @@ async def export_excel_report(
         logger.warning("page_priority_unavailable_for_excel",
                        extra={"job_id": job_id, "error": str(exc)})
 
+    prevalence = await _prevalence_for(store, job_id)
+    summary = _with_prevalence(summary, prevalence)
+
     try:
         from urllib.parse import urlparse as _urlparse
         excel_domain = _urlparse(job.target_url).netloc.replace("www.", "")
@@ -1711,6 +1755,7 @@ async def export_excel_report(
             images=images_list,
             performance=performance,
             priority_pages=priority_pages,
+            prevalence=prevalence,
         )
         return StreamingResponse(
             io.BytesIO(excel_bytes),

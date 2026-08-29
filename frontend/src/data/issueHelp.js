@@ -2886,6 +2886,33 @@ const issueHelp = {
       "This flags variance for review; it is not proof of an error. Casing- and legal-suffix-only " +
       "differences are already normalised away and never flagged.",
   },
+  // ── E6 (2026-08-29) — stacked overlay links ──────────────────────────────
+  // Spec: docs/pending/2026-08-29_E6-stacked-duplicate-links.md
+  LINK_STACKED_DUPLICATE: {
+    title: "Stacked duplicate links",
+    category: "metadata",
+    severity: "info",
+    confidence: "Reasonable proxy",
+    definition:
+      "Two or more links inside a single card point at the same destination — typically an " +
+      "invisible full-card overlay link stacked on top of a title link and an image link. " +
+      "Visually it reads as one clickable card.",
+    impact:
+      "Evidence tier: Reasonable proxy. A screen-reader user hears the same destination " +
+      "announced two or three times while tabbing through, and crawlers see several links " +
+      "where the editor intended one, muddying which anchor text describes the destination.",
+    fix:
+      "In your page-builder's card or listing template, keep one link with descriptive text " +
+      "and remove the duplicates. If you keep the overlay link, give it a descriptive " +
+      "aria-label and make the inner title and image non-interactive.",
+    good_vs_bad:
+      "Good: one card, one link on the title reading \"How family systems counselling works\". " +
+      "Bad: an overlay link, a title link and an image link, all to /counselling/.",
+    how_it_can_mislead:
+      "This looks for links inside a card container. A header logo link and a \"Home\" text " +
+      "link both pointing at / are not flagged — that pattern is on nearly every site and is " +
+      "not the problem this describes.",
+  },
   ENTITY_SAMEAS_MISSING: {
     title: "No sameAs entity links",
     category: "ai_readiness",

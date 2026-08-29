@@ -561,6 +561,24 @@ def check_page(
             )
             issues.append(issue)
 
+    # ── E6: stacked overlay links ─────────────────────────────────────────
+    # Several <a> to one destination inside one card. LINK_EMPTY_ANCHOR cannot
+    # see this: every anchor in the group has an accessible name.
+    # Spec: docs/pending/2026-08-29_E6-stacked-duplicate-links.md#E6.2
+    groups = getattr(page, "stacked_link_groups", None) or []
+    if groups:
+        listed_groups = groups[:10]
+        issue = make_issue("LINK_STACKED_DUPLICATE", url,
+                           extra={"groups": listed_groups,
+                                  "groups_total": len(groups)})
+        first = groups[0]
+        more = f" (and {len(groups) - 1} more)" if len(groups) > 1 else ""
+        issue.description = (
+            f"{first['count']} links in one card all point to {first['href']}"
+            f"{more} — expose one descriptive link per card"
+        )
+        issues.append(issue)
+
     # ── Generic anchor text ──────────────────────────────────────────────
     if page.is_indexable and page.links:
         generic_links = [

@@ -1,0 +1,63 @@
+{
+  "_comment": [
+    "E4 — site-wide prevalence tiers. Rule 9: what counts as 'systemic' is an",
+    "editorial judgement about how a report reads, not a scoring rule.",
+    "",
+    "This file does NOT affect scoring. _ISSUE_SCORING, _CATEGORY_IMPACT_CAP,",
+    "compute_page_health and every severity stay exactly as they are. Prevalence",
+    "is a second lens over the same findings, used for report ordering and for",
+    "the Site Hygiene figure.",
+    "",
+    "Spec: docs/pending/2026-08-29_E4-site-prevalence-escalation.md"
+  ],
+
+  "tiers": [
+    {
+      "name": "systemic",
+      "min_share": 0.30,
+      "min_pages": 20,
+      "weight": 25,
+      "label": "Systemic - a template or process defect, not a page defect"
+    },
+    {
+      "name": "widespread",
+      "min_share": 0.10,
+      "min_pages": 10,
+      "weight": 10,
+      "label": "Widespread"
+    },
+    {
+      "name": "scattered",
+      "min_share": 0.0,
+      "min_pages": 0,
+      "weight": 0,
+      "label": "Scattered"
+    }
+  ],
+
+  "never_escalate": [
+    "EXTERNAL_LINK_SKIPPED",
+    "PAGINATION_LINKS_PRESENT",
+    "AI_CITED_PAGE"
+  ],
+
+  "always_systemic": [
+    "BROKEN_LINK_404",
+    "BROKEN_LINK_410"
+  ],
+
+  "job_level_codes": [
+    "FAVICON_MISSING",
+    "SITEMAP_MISSING",
+    "LLMS_TXT_MISSING",
+    "LLMS_TXT_INVALID",
+    "AI_TXT_MISSING",
+    "AI_BOT_BLANKET_DISALLOW",
+    "AI_BOT_DEPRECATED_DIRECTIVE",
+    "AI_BOT_NO_AI_DIRECTIVES",
+    "AI_BOT_SEARCH_BLOCKED",
+    "AI_BOT_TABLE_STALE",
+    "AI_BOT_TRAINING_DISALLOWED",
+    "AI_BOT_USER_FETCH_BLOCKED"
+  ]
+}
