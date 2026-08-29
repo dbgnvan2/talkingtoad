@@ -1,0 +1,41 @@
+{
+  "_comment": [
+    "D4 — page blueprint drafting. Rule 9: length bounds mirror the catalogue's",
+    "own thresholds so a draft cannot be generated that the tool would then flag,",
+    "and the vocabulary lists are editorial judgement.",
+    "Spec: docs/pending/2026-08-29_D4-page-blueprints.md"
+  ],
+
+  "title_max": 60,
+  "description_min": 70,
+  "description_max": 160,
+  "lead_min_words": 40,
+  "lead_max_words": 80,
+
+  "stopwords": [
+    "the", "a", "an", "and", "or", "but", "of", "to", "in", "on", "at", "for",
+    "with", "from", "by", "as", "is", "are", "was", "were", "be", "been", "being",
+    "it", "its", "this", "that", "these", "those", "you", "your", "we", "our",
+    "us", "they", "their", "can", "may", "will", "would", "how", "what", "when",
+    "who", "which", "about", "more", "most", "some", "any", "all", "not", "no",
+    "if", "than", "then", "so", "into", "out", "up", "down", "over", "under"
+  ],
+
+  "generic_claim_markers": [
+    "clinically proven",
+    "guaranteed",
+    "cure",
+    "cures",
+    "evidence-based treatment",
+    "medically approved",
+    "the leading",
+    "the best",
+    "award-winning",
+    "accredited by",
+    "certified by",
+    "free of charge",
+    "no waiting list",
+    "immediate appointment",
+    "24/7"
+  ]
+}

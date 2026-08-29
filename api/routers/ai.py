@@ -6,6 +6,7 @@ import logging
 from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from api.routers.crawl import get_store
@@ -15,6 +16,7 @@ from api.services.ai_analyzer import (
     analyze_image_with_geo,
 )
 from api.services.auth import require_auth
+from api.services.error_responses import _err
 from api.services.rate_limiter import AI_ANALYSIS_LIMIT, limiter
 
 logger = logging.getLogger(__name__)
@@ -580,6 +582,102 @@ async def geo_llm_checks(request: Request, body: GeoLlmChecksRequest):
 class FaqSchemaRequest(BaseModel):
     job_id: str
     page_url: str
+
+
+@router.post("/blueprints/{job_id}", response_model=None)
+async def generate_blueprint_endpoint(
+    job_id: str,
+    url: str = Query(..., min_length=1, description="Page to draft for"),
+    store=Depends(get_store),
+) -> dict | JSONResponse:
+    """Draft a page blueprint (D4). Always returns a DRAFT — never approved.
+
+    Spec: docs/pending/2026-08-29_D4-page-blueprints.md
+    """
+    from api.services.blueprints import BlueprintError, generate_blueprint, to_dict
+
+    job = await store.get_job(job_id)
+    if job is None:
+        return _err("JOB_NOT_FOUND", f"No job with id {job_id}", 404)
+
+    pages = await store.get_pages(job_id)
+    match = next((p for p in pages if p.url.rstrip("/") == url.rstrip("/")), None)
+    if match is None:
+        return _err("PAGE_NOT_FOUND",
+                    "Blueprints can only be drafted for a page in this crawl.", 404)
+
+    page_text = getattr(match, "first_1500_words", None) or getattr(
+        match, "first_600_words", None) or ""
+    findings = [
+        i.issue_code for i in await store.get_all_issues(job_id)
+        if i.page_url and i.page_url.rstrip("/") == url.rstrip("/")
+    ]
+
+    try:
+        draft = await generate_blueprint(match.url, page_text, findings=findings[:12])
+    except BlueprintError as exc:
+        # P14: a drafting failure is an error channel, never draft text.
+        return _err("BLUEPRINT_FAILED", str(exc), 502)
+
+    payload = to_dict(draft)
+    existing = [b for b in (job.blueprints or []) if b.get("url") != draft.url]
+    await store.update_job(job_id, blueprints=existing + [payload])
+    return payload
+
+
+@router.post("/blueprints/{job_id}/approve", response_model=None)
+async def approve_blueprint_endpoint(
+    job_id: str,
+    url: str = Query(..., min_length=1),
+    approved_by: str = Query(..., min_length=1, description="Who approved it"),
+    store=Depends(get_store),
+) -> dict | JSONResponse:
+    """Approve one draft. Only an approved draft may be exported (D4.4)."""
+    from datetime import datetime, timezone
+
+    job = await store.get_job(job_id)
+    if job is None:
+        return _err("JOB_NOT_FOUND", f"No job with id {job_id}", 404)
+
+    drafts = list(job.blueprints or [])
+    target = next((b for b in drafts if b.get("url", "").rstrip("/") == url.rstrip("/")), None)
+    if target is None:
+        return _err("BLUEPRINT_NOT_FOUND", "No draft for that URL.", 404)
+
+    if target.get("grounding", {}).get("status") != "grounded":
+        # An unverified draft is not blocked from view — it is blocked from
+        # approval, so a human has to look at what the model asserted first.
+        return _err(
+            "BLUEPRINT_UNVERIFIED",
+            "This draft contains claims that do not appear on the page. Review "
+            "the listed items and correct the draft before approving it.",
+            409,
+        )
+
+    target["status"] = "approved"
+    target["approved_by"] = approved_by
+    target["approved_at"] = datetime.now(timezone.utc).isoformat()
+    await store.update_job(job_id, blueprints=drafts)
+    return target
+
+
+@router.post("/blueprints/{job_id}/reject", response_model=None)
+async def reject_blueprint_endpoint(
+    job_id: str,
+    url: str = Query(..., min_length=1),
+    store=Depends(get_store),
+) -> dict | JSONResponse:
+    """Reject one draft. It stays visible but can never be exported."""
+    job = await store.get_job(job_id)
+    if job is None:
+        return _err("JOB_NOT_FOUND", f"No job with id {job_id}", 404)
+    drafts = list(job.blueprints or [])
+    target = next((b for b in drafts if b.get("url", "").rstrip("/") == url.rstrip("/")), None)
+    if target is None:
+        return _err("BLUEPRINT_NOT_FOUND", "No draft for that URL.", 404)
+    target["status"] = "rejected"
+    await store.update_job(job_id, blueprints=drafts)
+    return target
 
 
 @router.post("/faq-schema")

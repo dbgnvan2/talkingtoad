@@ -105,6 +105,7 @@ class RedisJobStore:
             "images_collected",
             "web_vitals",
             "wp_audit",
+            "blueprints",
         }
         unknown = set(fields) - _ALLOWED
         if unknown:
@@ -632,6 +633,7 @@ class RedisJobStore:
             "images_collected": "" if job.images_collected is None else str(job.images_collected),
             "web_vitals": json.dumps(job.web_vitals) if job.web_vitals else "",
             "wp_audit": json.dumps(job.wp_audit) if job.wp_audit else "",
+            "blueprints": json.dumps(job.blueprints) if job.blueprints else "",
         }
 
     def _mapping_to_job(self, m: dict) -> CrawlJob:
@@ -659,6 +661,7 @@ class RedisJobStore:
             images_collected=int(m["images_collected"]) if m.get("images_collected") else None,
             web_vitals=json.loads(m["web_vitals"]) if m.get("web_vitals") else None,
             wp_audit=json.loads(m["wp_audit"]) if m.get("wp_audit") else None,
+            blueprints=json.loads(m["blueprints"]) if m.get("blueprints") else None,
         )
 
     def _issue_to_dict(self, i: Issue) -> dict:

@@ -1682,6 +1682,11 @@ async def export_pdf_report(
     include_help: bool = Query(True, description="Include detailed help text for each issue category"),
     include_pages: bool = Query(True, description="List affected URLs for each issue type"),
     summary_only: bool = Query(False, description="Generate summary pages only (ignores help and page lists)"),
+    include_blueprints: bool = Query(
+        False,
+        description="Include APPROVED page-copy drafts (D4). Off by default — "
+                    "AI-drafted copy in a client report is an explicit choice.",
+    ),
     store: SQLiteJobStore | RedisJobStore = Depends(get_store),
 ) -> StreamingResponse | JSONResponse:
     """Generate and download a professional PDF audit report."""
@@ -1787,6 +1792,7 @@ async def export_pdf_report(
             priority_pages=priority_pages,
             prevalence=prevalence,
             performance_failed=performance_failed,
+            include_blueprints=include_blueprints,
         )
         logger.info("pdf_report_generated", extra={"job_id": job_id, "size_bytes": len(pdf_bytes)})
         pdf_domain = urlparse(job.target_url).netloc.replace("www.", "")

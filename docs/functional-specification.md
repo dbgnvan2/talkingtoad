@@ -1451,6 +1451,43 @@ is called uncapped, because both the PDF and the Results issue card point the
 reader there for the full list.
 → `tests/test_report_roadmap.py`.
 
+### 7.9 Page blueprints (D4, 2026-08-29)
+
+`api/services/blueprints.py`, surfaced by `POST /api/ai/blueprints/{job_id}`
+(+ `/approve`, `/reject`). Drafts a title, meta description, H1 and answer-first
+lead for one page, grounded in that page's own text.
+
+**Built as a tool with a review gate, not as a report section.** Two independent
+gates guard the export: the draft must be **approved by a person**, and the
+caller must pass `include_blueprints=true` — which defaults to **off**. Reasoning
+recorded because it is the shape of the whole item: the report is otherwise a
+record of observations where every line traces to something measured, and
+generated prose makes it partly a record and partly a draft with no way for the
+reader to tell which. The site this was built against is a counselling charity,
+where invented copy could imply a clinical outcome or soften crisis-resource
+language. The external audit that inspired this required human review of its own
+drafts before publication.
+
+**The grounding check is the feature**, and it has two tiers:
+
+- **Verbatim floor, never relaxed.** Proper nouns, numbers, dates and money in
+  the draft must appear in the source page. A capitalised word in
+  sentence-initial position is dropped from a candidate first — flagging "Explore
+  Bowen family systems…" marks every faithful draft unverified, and a gate that
+  fires on everything is one the operator learns to click through. The trade-off
+  costs the leading word of a sentence-initial name and is asserted not to cost
+  recall on a fabricated one.
+- **Topical overlap** on the paraphrased lead, plus a marker list for fabricated
+  **stances** ("clinically proven", "accredited by") that carry no proper noun and
+  no number — the class P20 says a concrete-specific gold set always misses.
+
+An `unverified` draft is **shown with its unsupported claims listed** and cannot
+be approved until a human clears them; it is never silently discarded, because
+the operator needs to see what the model tried to assert. A provider failure
+raises (P14) — an error message must never become draft copy. Every call routes
+through `AIRouter`, so usage and cost stay centralised, and nothing in the path
+touches WordPress. → `tests/test_blueprints.py` (27 tests).
+
 ### 7.8 WordPress configuration audit (D3, 2026-08-29)
 
 `api/services/wp_audit.py`, surfaced by `POST /api/wp-audit/{job_id}`.

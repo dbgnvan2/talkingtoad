@@ -594,6 +594,70 @@ def _render_roadmap_section(pdf, issues, prevalence, priority_pages) -> None:
         pdf.ln(2)
 
 
+def _render_blueprints_section(pdf, blueprints, *, include: bool) -> None:
+    """Approved page blueprints (D4.4).
+
+    Two gates, both required: the caller opted in, AND the draft was approved by
+    a person. An unapproved draft can never reach a client artifact.
+    """
+    if not include or not blueprints:
+        return
+    from api.services.blueprints import approved_only
+
+    approved = approved_only(blueprints)
+    if not approved:
+        return
+
+    pdf.add_page()
+    pdf.chapter_title("Proposed Page Copy")
+    pdf.set_font('helvetica', '', 10)
+    pdf.set_text_color(*COLOR_GRAY_600)
+    pdf.set_x(25.4)
+    pdf.multi_cell(W, 5, pdf.clean_text(
+        "These are DRAFTS, generated from each page's existing content and "
+        "reviewed by a person before inclusion. They still need checking for "
+        "factual accuracy, professional standards, accessibility, privacy, "
+        "crisis-language requirements and brand voice before anything is "
+        "published."
+    ))
+    pdf.ln(4)
+
+    for draft in approved:
+        if pdf.get_y() > 220:
+            pdf.add_page()
+        pdf.set_x(25.4)
+        pdf.set_font('helvetica', 'B', 10)
+        pdf.set_text_color(*COLOR_GRAY_800)
+        pdf.multi_cell(W, 5.5, pdf.clean_text(_short_url(draft.get("url", ""))))
+
+        for label, key in (("Title", "proposed_title"),
+                           ("Meta description", "proposed_meta_description"),
+                           ("H1", "proposed_h1"),
+                           ("Opening paragraph", "proposed_lead")):
+            value = (draft.get(key) or "").strip()
+            if not value:
+                continue
+            if pdf.get_y() > 245:
+                pdf.add_page()
+            pdf.set_x(30)
+            pdf.set_font('helvetica', 'B', 9)
+            pdf.set_text_color(*COLOR_GRAY_500)
+            pdf.cell(W - 5, 5, pdf.clean_text(label + ":"), new_x="LMARGIN", new_y="NEXT")
+            pdf.set_x(30)
+            pdf.set_font('helvetica', '', 9)
+            pdf.set_text_color(*COLOR_GRAY_800)
+            pdf.multi_cell(W - 5, 4.5, pdf.clean_text(value))
+
+        approver = draft.get("approved_by")
+        if approver:
+            pdf.set_x(30)
+            pdf.set_font('helvetica', 'I', 8)
+            pdf.set_text_color(*COLOR_GRAY_500)
+            pdf.multi_cell(W - 5, 4, pdf.clean_text(
+                f"Reviewed and approved by {approver}"))
+        pdf.ln(3)
+
+
 def _render_wp_audit_section(pdf, audit: dict | None) -> None:
     """WordPress plugin/theme/Site-Health configuration (D3).
 
@@ -839,6 +903,7 @@ async def generate_pdf_report(
     priority_pages: list[dict] | None = None,
     prevalence: list | None = None,
     performance_failed: bool = False,
+    include_blueprints: bool = False,
 ) -> bytes:
     pdf = TalkingToadReport()
     pdf.alias_nb_pages()
@@ -1376,6 +1441,14 @@ async def generate_pdf_report(
             pdf.set_x(25.4)
             pdf.line(pdf.get_x(), pdf.get_y(), pdf.get_x() + W, pdf.get_y())
             pdf.ln(4)
+
+    # ── Page Blueprints (D4) ─────────────────────────────────────
+    # APPROVED drafts only, and only when the caller opted in. The default is
+    # off: AI-drafted copy in a client PDF changes what the document is, and the
+    # external audit that inspired this required human review of its own drafts
+    # before publication.
+    _render_blueprints_section(pdf, getattr(job, "blueprints", None),
+                               include=include_blueprints)
 
     # ── WordPress Configuration (D3) ─────────────────────────────
     _render_wp_audit_section(pdf, getattr(job, "wp_audit", None))

@@ -124,3 +124,7 @@ class CrawlJob(BaseModel):
     # None means "not run", which the report renders as such rather than as a
     # clean WordPress install.
     wp_audit: dict | None = None
+    # D4 (2026-08-29) — page blueprints. Drafts persist here with a status; only
+    # an APPROVED draft may be exported. AI-drafted copy for a counselling
+    # nonprofit needs a human between the model and the client PDF.
+    blueprints: list | None = None
