@@ -120,3 +120,7 @@ class CrawlJob(BaseModel):
     # None means "not collected", which the report must render as such rather
     # than as "this site is fast".
     web_vitals: dict | None = None
+    # D3 (2026-08-29) — WordPress configuration audit, an opt-in read-only step.
+    # None means "not run", which the report renders as such rather than as a
+    # clean WordPress install.
+    wp_audit: dict | None = None

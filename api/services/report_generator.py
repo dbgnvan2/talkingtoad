@@ -594,6 +594,87 @@ def _render_roadmap_section(pdf, issues, prevalence, priority_pages) -> None:
         pdf.ln(2)
 
 
+def _render_wp_audit_section(pdf, audit: dict | None) -> None:
+    """WordPress plugin/theme/Site-Health configuration (D3).
+
+    Rendered only when the audit was actually run; otherwise omitted and named in
+    Caveats, so a missing section never reads as a clean WordPress install.
+    """
+    if not audit or not audit.get("plugins_total"):
+        return
+
+    pdf.add_page()
+    pdf.chapter_title("WordPress Configuration")
+    pdf.set_font('helvetica', '', 10)
+    pdf.set_text_color(*COLOR_GRAY_600)
+    pdf.set_x(25.4)
+    pdf.multi_cell(W, 5, pdf.clean_text(
+        f"{audit['plugins_total']} plugins installed - "
+        f"{audit.get('plugins_active', 0)} active, "
+        f"{audit.get('plugins_inactive', 0)} inactive. This section reads the "
+        f"site's configuration only; nothing was changed."
+    ))
+    pdf.ln(4)
+
+    def _block(title, rows, colour=COLOR_GRAY_800):
+        if not rows:
+            return
+        if pdf.get_y() > 235:
+            pdf.add_page()
+        pdf.set_x(25.4)
+        pdf.set_font('helvetica', 'B', 11)
+        pdf.set_text_color(*COLOR_GRAY_800)
+        pdf.cell(W, 7, pdf.clean_text(title), new_x="LMARGIN", new_y="NEXT")
+        pdf.set_font('helvetica', '', 9)
+        pdf.set_text_color(*colour)
+        for row in rows:
+            if pdf.get_y() > 248:
+                pdf.add_page()
+            pdf.set_x(30)
+            pdf.multi_cell(W - 5, 4.5, pdf.clean_text(row))
+        pdf.ln(3)
+
+    _block("Updates pending", [
+        f"{p['name']} {p['version']} -> {p['new_version']}"
+        for p in audit.get("pending_updates") or []
+    ], COLOR_WARNING)
+
+    _block("Installed but inactive", [
+        f"{p['name']} ({p['slug']})" for p in audit.get("inactive_plugins") or []
+    ] + [f"Theme: {t}" for t in audit.get("inactive_themes") or []])
+
+    overlaps = audit.get("overlaps") or []
+    if overlaps:
+        if pdf.get_y() > 220:
+            pdf.add_page()
+        pdf.set_x(25.4)
+        pdf.set_font('helvetica', 'B', 11)
+        pdf.set_text_color(*COLOR_GRAY_800)
+        pdf.cell(W, 7, "Two plugins doing the same job", new_x="LMARGIN", new_y="NEXT")
+        for overlap in overlaps:
+            if pdf.get_y() > 240:
+                pdf.add_page()
+            pdf.set_x(30)
+            pdf.set_font('helvetica', 'B', 9)
+            pdf.set_text_color(*COLOR_WARNING)
+            pdf.multi_cell(W - 5, 4.5, pdf.clean_text(
+                f"{overlap['label']}: {', '.join(overlap['plugins'])}"))
+            pdf.set_x(30)
+            pdf.set_font('helvetica', '', 9)
+            pdf.set_text_color(*COLOR_GRAY_600)
+            pdf.multi_cell(W - 5, 4.5, pdf.clean_text(overlap["why_one_owner"]))
+            pdf.ln(1)
+        pdf.ln(2)
+
+    _block("WordPress Site Health says", [
+        f"{h['label']}  ({h['source']})" for h in audit.get("site_health") or []
+    ], COLOR_GRAY_600)
+
+    # The boundary, stated. Without it the reader may assume a clean section
+    # means the backup plugin is working — which this cannot know.
+    _block("Not inspected", audit.get("not_inspected") or [], COLOR_GRAY_500)
+
+
 def _render_caveats_section(pdf, job, summary, *, performance, image_summary,
                             prevalence, performance_failed: bool = False) -> None:
     """What was covered, what every cap dropped, and what was NOT checked (E7.2).
@@ -692,14 +773,26 @@ def _render_caveats_section(pdf, job, summary, *, performance, image_summary,
             "Core Web Vitals and real-user performance. Page weight and image size "
             "are measured; loading behaviour in a real browser is not."
         )
+    _wp = getattr(job, "wp_audit", None)
+    if _wp and _wp.get("plugins_total"):
+        _CMS_CAVEAT = (
+            "CMS configuration was read (see WordPress Configuration), but only "
+            "what the plugin, theme and Site Health APIs expose. Plugin-internal "
+            "state - whether a backup has ever run, how a security plugin is "
+            "configured - has no generic API and was not inspected."
+        )
+    else:
+        _CMS_CAVEAT = (
+            "CMS and plugin configuration. TalkingToad reads only what the site "
+            "serves publicly; it never signs in to WordPress during a scan."
+        )
     _para("What this audit did not check", bold=True, color=COLOR_GRAY_800, size=12)
     for line in [
         "Off-site authority - backlinks, referring domains and directory listings. These "
         "need a third-party index TalkingToad does not license.",
         _CWV_CAVEAT,
         "Server logs, hosting configuration and CDN behaviour.",
-        "CMS and plugin configuration. TalkingToad reads only what the site serves "
-        "publicly; it never signs in to WordPress during a scan.",
+        _CMS_CAVEAT,
         "WCAG conformance. Several accessibility signals are checked, but this is not "
         "an accessibility audit and must not be presented as one.",
         "Anything behind a login, and any page excluded by robots.txt.",
@@ -1283,6 +1376,9 @@ async def generate_pdf_report(
             pdf.set_x(25.4)
             pdf.line(pdf.get_x(), pdf.get_y(), pdf.get_x() + W, pdf.get_y())
             pdf.ln(4)
+
+    # ── WordPress Configuration (D3) ─────────────────────────────
+    _render_wp_audit_section(pdf, getattr(job, "wp_audit", None))
 
     # ── Scope, Method and Caveats (E7.2) ─────────────────────────
     # ALWAYS rendered, including on a clean site. A reader who cannot see what

@@ -1,0 +1,60 @@
+{
+  "_comment": [
+    "D3 — plugin overlap map. Rule 9: which plugins claim the same job is",
+    "editorial judgement about the WordPress ecosystem, not logic, and it will",
+    "need updating as plugins come and go. Keyed by the plugin's directory slug",
+    "as WordPress reports it in /wp/v2/plugins.",
+    "",
+    "An overlap is two ACTIVE plugins owning the same responsibility. It is not",
+    "automatically a defect — the report says 'pick one owner', not 'delete this'.",
+    "Spec: docs/pending/2026-08-29_D3-wordpress-configuration-audit.md"
+  ],
+
+  "responsibilities": {
+    "image_compression": {
+      "label": "Image compression",
+      "why_one_owner": "Two compressors re-process each other's output, which degrades image quality with no size benefit and makes the result impossible to reason about.",
+      "slugs": ["wp-smushit", "ewww-image-optimizer", "imagify", "shortpixel-image-optimiser", "sg-cachepress", "wp-optimize", "tiny-compress-images"]
+    },
+    "lazy_loading": {
+      "label": "Lazy loading",
+      "why_one_owner": "Two lazy-loaders fight over the same images and commonly break the largest one in the first screenful, which is exactly the element Core Web Vitals measures.",
+      "slugs": ["wp-smushit", "a3-lazy-load", "sg-cachepress", "wp-rocket", "autoptimize"]
+    },
+    "page_caching": {
+      "label": "Page caching",
+      "why_one_owner": "Two caches serve each other stale pages and make every cache-clear unreliable.",
+      "slugs": ["sg-cachepress", "wp-rocket", "w3-total-cache", "wp-super-cache", "litespeed-cache", "wp-fastest-cache"]
+    },
+    "seo_titles_and_schema": {
+      "label": "SEO titles, meta and schema",
+      "why_one_owner": "Two SEO plugins emit competing title tags and duplicate schema graphs, so search engines see conflicting claims about the same page.",
+      "slugs": ["wordpress-seo", "all-in-one-seo-pack", "seo-by-rank-math", "wp-seopress", "smartcrawl-seo", "autodescription"]
+    },
+    "xml_sitemaps": {
+      "label": "XML sitemaps",
+      "why_one_owner": "Two sitemap generators publish different URL sets, and search engines have no way to know which one you meant.",
+      "slugs": ["wordpress-seo", "google-sitemap-generator", "seo-by-rank-math", "all-in-one-seo-pack", "xml-sitemap-feed"]
+    },
+    "redirects": {
+      "label": "Redirect management",
+      "why_one_owner": "Two redirect engines produce chains and loops that are very hard to trace.",
+      "slugs": ["redirection", "wordpress-seo", "seo-by-rank-math", "safe-redirect-manager"]
+    },
+    "backups": {
+      "label": "Backups",
+      "why_one_owner": "Two backup plugins double storage cost and make the recovery path ambiguous at the moment you most need it to be obvious.",
+      "slugs": ["duplicator", "duplicator-pro", "updraftplus", "backwpup", "all-in-one-wp-migration"]
+    }
+  },
+
+  "families": {
+    "_comment": "Free/premium pairs of the SAME product. Never an overlap — flagging a plugin against its own add-on is noise (P7).",
+    "wordpress-seo": ["wordpress-seo-premium", "wpseo-local", "wpseo-news", "wpseo-video", "wpseo-woocommerce"],
+    "duplicator": ["duplicator-pro"],
+    "elementor": ["elementor-pro"],
+    "seo-by-rank-math": ["seo-by-rank-math-pro"],
+    "all-in-one-seo-pack": ["all-in-one-seo-pack-pro"],
+    "wp-smushit": ["wp-smush-pro"]
+  }
+}

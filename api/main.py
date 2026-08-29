@@ -31,6 +31,7 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 
 from api.routers import crawl as crawl_router
+from api.routers import wp_audit_router
 from api.routers import fixes as fixes_router
 from api.routers import utility as utility_router
 from api.routers import verified as verified_router
@@ -211,3 +212,4 @@ app.include_router(usage_router.router)  # v2.6 M2.6 / Cycle EE
 app.include_router(citations_router.router)  # M5: AI citation ingestion
 app.include_router(gsc_router.router)  # M6.1+M6.4: GSC data ingest + surfacing
 app.include_router(performance_router.router)  # 2026-08-06: PerformanceBundle ingestion (Phase 1)
+app.include_router(wp_audit_router.router)  # D3: WordPress configuration audit (read-only)

@@ -1451,6 +1451,42 @@ is called uncapped, because both the PDF and the Results issue card point the
 reader there for the full list.
 → `tests/test_report_roadmap.py`.
 
+### 7.8 WordPress configuration audit (D3, 2026-08-29)
+
+`api/services/wp_audit.py`, surfaced by `POST /api/wp-audit/{job_id}`.
+**Read-only, opt-in, post-scan.** It reports the operational facts no crawler can
+reach — inactive plugins, pending updates, two plugins claiming the same job,
+and WordPress's own Site Health recommendations.
+
+**It cannot write, and that is enforced.**
+`tests/test_wp_audit.py::TestReadOnly` asserts the module and its router contain
+no `post(` / `patch(` / `put(` / `delete(` call, and a behavioural test confirms
+the client saw nothing but reads. This holds admin credentials to a live client
+site; intent is not a property.
+
+**It is not part of the crawl.** `engine.py`'s constraint — the scan uses HTML
+and HEAD requests only, never the WordPress API — is untouched and still enforced.
+That constraint is what keeps the crawl fast and keeps TalkingToad working on
+non-WordPress sites.
+
+Order of operations: domain validation → capability probe → plugin read. A
+capability failure returns 403 with a named code rather than an empty audit,
+because "we could not look" must never render as "nothing to report" (P2).
+Themes and Site Health are best-effort — absent on some installs, and their
+absence degrades the report rather than failing it.
+
+Plugin-overlap detection collapses free/premium pairs of one product first
+(`families` in `api/config/wp_plugin_advice.json`): flagging Yoast against Yoast
+Premium, or Duplicator against Duplicator Pro, is noise that would make the whole
+section easy to dismiss (P7). Only **active** plugins can overlap.
+
+**The boundary is declared in the output.** "Duplicator is active but has never
+taken a backup" needs Duplicator's own tables; there is no generic REST surface
+for plugin-internal state, and a bespoke probe per plugin is open-ended. The
+report lists what it did **not** inspect, and the E7 "CMS and plugin
+configuration not checked" caveat flips to a precise statement of that boundary
+once the audit has run. → `tests/test_wp_audit.py` (27 tests).
+
 ### 7.7 Scope, Method and Caveats (E7, 2026-08-29)
 
 Always rendered, including on a clean site. Records what was covered; **every

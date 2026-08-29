@@ -100,6 +100,7 @@ class SQLiteJobStore:
             ("images_seen_total", "INTEGER"),
             ("images_collected", "INTEGER"),
             ("web_vitals", "TEXT"),
+            ("wp_audit", "TEXT"),
         ]
         for col, col_type in job_columns:
             try:
@@ -257,6 +258,7 @@ class SQLiteJobStore:
             "images_seen_total",
             "images_collected",
             "web_vitals",
+            "wp_audit",
         }
         unknown = set(fields) - _ALLOWED
         if unknown:
@@ -1692,6 +1694,7 @@ def _row_to_job(row: dict) -> CrawlJob:
         images_seen_total=row.get("images_seen_total"),
         images_collected=row.get("images_collected"),
         web_vitals=json.loads(row["web_vitals"]) if row.get("web_vitals") else None,
+        wp_audit=json.loads(row["wp_audit"]) if row.get("wp_audit") else None,
     )
 
 
