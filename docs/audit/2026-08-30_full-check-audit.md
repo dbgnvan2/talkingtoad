@@ -558,25 +558,56 @@ live re-requests: `BROKEN_LINK_*`, `EXTERNAL_LINK_TIMEOUT`, `REDIRECT_LOOP`,
 
 # Final tally — all 170 codes
 
+> **Correction (2026-08-30).** An earlier version of this table summed to **111**
+> while claiming every code had a verdict. Both could not be true: 59 codes were
+> simply absent from it. The table below is recomputed from the evidence and
+> sums to 170. The error was in the reporting, not the audit.
+
+| Class | Count | Meaning |
+|---|---|---|
+| **Defective** | **20** | see the breakdown below |
+| Verified correct on real artifacts | 53 | finding re-derived from the page's raw HTML by an independent implementation |
+| Proven reachable by construction | 52 | built the triggering input, the real pipeline fired |
+| Network-state | 12 | verified by re-requesting the live target |
+| Gated subsystem | 12 | alive, but the feature (Playwright / PageSpeed / GSC / LLM) does not run in a normal crawl |
+| Alive by production evidence only | 21 | fired on real sites (up to 1,127 times), not individually re-derived |
+| **No evidence either way** | **0** | — |
+| **TOTAL** | **170** | |
+
+**88% of the catalogue is not defective.** The 20 defects break down as:
+
 | Verdict | Count | Codes |
 |---|---|---|
-| **DEAD — cannot fire** | 6 | `AI_BOT_TABLE_STALE` (no caller) · `CONTENT_IMAGE_HEAVY` (arithmetic) · `HIGH_CRAWL_DEPTH` (depth never set) · `DOCUMENT_PROPS_MISSING` (below an early return) · `CODE_BLOCK_MISSING_TECHNICAL` (line-anchored regex, single-line input) · `SCHEMA_DEPRECATED_TYPE` (placeholder type nothing emits) |
-| **STARVED — correct logic, data never collected** | 4 | `IMG_NO_SRCSET` · `IMG_OVERSCALED` · `IMG_DUPLICATE_CONTENT` · `IMG_SLOW_LOAD` (image-download helper has no caller) |
-| **FALSE-POSITIVE** | 4 | `IMG_ALT_MISSING` *(fixed)* · `REDIRECT_TRAILING_SLASH` · `ENTITY_SAMEAS_MISSING` · `HEADING_EMPTY` |
-| **OVERSTATED** | 3 | `UNSAFE_CROSS_ORIGIN_LINK` (name) · `BROKEN_LINK_503` (transient/bot-block) · image `technical_score` rendered as 0 |
-| **NARROW — works, calibrated for another domain** | 3 | `ORPHAN_CLAIM_TECHNICAL` · `LINK_PROFILE_PROMOTIONAL` · `CONTACT_INFO_NOT_IN_HTML` |
-| **CONFIRMED correct** — re-derived from real artifacts | 38 | see F10, F13 |
-| **CONFIRMED alive** — reachability by construction | 30 | see the reachability list |
-| **Gated subsystem** — alive, feature not run | 15 | CWV ×3, Playwright ×7, GSC ×2, geo_llm ×3 |
-| **Network-state** — verified by live re-request | 8 | `BROKEN_LINK_*`, timeouts, redirects, robots, login, amphtml |
-| Fixed earlier this week | 2 | `ORPHAN_PAGE`, `IMG_ALT_MISSING` |
+| **DEAD** — cannot fire | 6 | `AI_BOT_TABLE_STALE` · `CONTENT_IMAGE_HEAVY` · `HIGH_CRAWL_DEPTH` · `DOCUMENT_PROPS_MISSING` · `CODE_BLOCK_MISSING_TECHNICAL` · `SCHEMA_DEPRECATED_TYPE` |
+| **STARVED** — correct logic, data never collected | 4 | `IMG_NO_SRCSET` · `IMG_OVERSCALED` · `IMG_DUPLICATE_CONTENT` · `IMG_SLOW_LOAD` |
+| **FALSE-POSITIVE** | 5 | `IMG_ALT_MISSING` *(fixed)* · `ORPHAN_PAGE` *(fixed)* · `REDIRECT_TRAILING_SLASH` · `ENTITY_SAMEAS_MISSING` · `HEADING_EMPTY` |
+| **OVERSTATED** | 2 | `UNSAFE_CROSS_ORIGIN_LINK` · `BROKEN_LINK_503` |
+| **NARROW** — works, calibrated for another domain | 3 | `ORPHAN_CLAIM_TECHNICAL` · `LINK_PROFILE_PROMOTIONAL` · `CONTACT_INFO_NOT_IN_HTML` |
 
-**Every code now has a verdict derived from evidence — not one is recorded as
-"assumed correct".**
+Plus one non-code defect: image `technical_score` rendered as `0` for "not measured".
 
-## 17 defects, and the single pattern behind most of them
+## What each evidence class does and does not establish
 
-Eleven of the seventeen are the same shape: **a fact the crawler never obtained,
+Not all 150 non-defective codes are equally well established. In descending
+order of strength:
+
+1. **Verified on real artifacts (53)** — the strongest. The finding was
+   re-derived from the page's own HTML by an implementation sharing no code with
+   the crawler. This is the standard the alt-text bug was caught by.
+2. **Proven reachable by construction (52)** — proves the check *can* fire and is
+   not dead. It does **not** prove it fires for the right reasons on real content.
+3. **Network-state (12)** and **gated (12)** — behaviour confirmed, but the
+   condition depends on a live target or a subsystem that a normal crawl skips.
+4. **Alive by production evidence only (21)** — fired on real sites, some
+   thousands of times, so they are demonstrably not dead. Their *correctness* has
+   not been individually re-derived, and they are listed by name in Part 2 so the
+   gap is visible rather than implied.
+
+"Reachable" and "correct" are different claims, and this audit keeps them apart.
+
+## 20 defects, and the single pattern behind most of them
+
+Eleven of the twenty are the same shape: **a fact the crawler never obtained,
 presented to the user as a fact about their site.**
 
 - `HIGH_CRAWL_DEPTH`, `IMG_NO_SRCSET`, `IMG_OVERSCALED`, `IMG_DUPLICATE_CONTENT`,
@@ -590,7 +621,7 @@ presented to the user as a fact about their site.**
   the help text, and in no call site.
 
 That is P31 and P32 in one family: **absence of measurement presented as a
-measurement.** The remaining six are distinct — a self-inflicted redirect, an
+measurement.** The remaining nine are distinct — a self-inflicted redirect, an
 any/all quantifier error, two unreachable-by-arithmetic checks, a placeholder
 list, and a stale browser-security claim.
 
@@ -608,3 +639,79 @@ list, and a stale browser-security claim.
 | 8 | `UNSAFE_CROSS_ORIGIN_LINK`, `BROKEN_LINK_503`, the three narrow checks | Fold into the V1 authority pass |
 
 Each needs its own micro-spec before implementation, per the repo workflow.
+
+---
+
+# Part 3 — differential audit against Screaming Frog
+
+Source: `issues_overview_report.csv` (Screaming Frog Issues Overview, 131 URLs,
+supplied by the site owner 2026-08-30). This is the **V2 differential oracle** —
+an implementation we did not write, checking the same site.
+
+## Independent corroboration of both fixes this week
+
+Two absences in their report matter more than anything present in it.
+
+**1. Screaming Frog reports NO missing-alt-text issue on this site.** Not one
+row. If `alt=""` genuinely meant "missing alt text", a mature commercial crawler
+would have flagged the same ~156 pages we did. It flagged zero — independent
+confirmation that `alt=""` is decorative markup and our 156 findings were wrong.
+
+**2. Screaming Frog reports NO redirect issue of any kind.** No redirect chains,
+no trailing-slash redirects. A tool that requests each URL in the form the site
+publishes never encounters the 301 we generate by stripping the slash first.
+That is F8 confirmed by a second implementation: **our 3,590 lifetime
+`REDIRECT_TRAILING_SLASH` findings are an artifact of our own normalisation.**
+
+## Where two independently-built implementations agree
+
+| Check | Screaming Frog | TalkingToad |
+|---|---|---|
+| Meta description duplicate | 9 | **9** |
+| Meta description below 70 chars | 2 | **2** |
+| Page titles over 60 chars | 28 | **29** |
+| Non-descriptive anchor text | 75 | **78** |
+
+Four checks written by different teams landing within 0–3 of each other. That is
+meaningful corroboration for `META_DESC_DUPLICATE`, `META_DESC_TOO_SHORT`,
+`TITLE_TOO_LONG` and `ANCHOR_TEXT_GENERIC`.
+
+## Differences fully explained by threshold choice — not defects
+
+| Check | Their threshold → count | Ours → count |
+|---|---|---|
+| Meta description too long | 155 chars → 64 | 160 chars → 51 |
+| Image alt too long | 100 chars → 7 | 125 chars → 3 |
+| Image oversized | 100 KB → 1 | 200 KB → 30 |
+| URL too long | 115 chars → 1 | higher → 0 |
+
+Worth a deliberate decision in the V1 authority pass (Google truncates meta
+descriptions nearer 155–160), but each is a calibration choice, not an error.
+
+## Where we are BETTER: lazy-loaded images
+
+Their image findings are percentages of **11 images** (7 = 63.64%, 1 = 9.09%).
+We found **79 distinct images** on the same site. livingsystems.ca serves images
+through Smush with the real URL in `data-src` and a base64 placeholder in `src`;
+Screaming Frog's default configuration does not resolve those, so it audited
+roughly **14% of the site's images**.
+
+This is exactly what the E1 lazy-image work was for. Their image statistics for
+this site are badly undercounted, and ours are not.
+
+## Genuine coverage gaps — checks they have and we do not
+
+Verified against the cached pages, not taken on trust:
+
+| Gap | Their count | Verified independently | Assessment |
+|---|---|---|---|
+| **Readability** (Difficult / Very Difficult) | 17 / 8 | present, magnitude unconfirmed | **Real gap.** We have no readability check at all. For a counselling charity whose readers may be in distress, this is arguably the most relevant missing check. My own Flesch implementation returned implausible values (−85 on bio pages), so their numbers are credible and mine are not — the gap is real, the size is not established. |
+| **H1: Duplicate** (same H1 across pages) | 6 | **10 pages confirmed** sharing an H1 | **Real gap.** We flag duplicate titles and meta descriptions but not duplicate H1s. |
+| **H1: Over 70 Characters** | 5 | **2 confirmed** | Real but minor. |
+| **Title / meta pixel width** | 26 / 64 / 2 | concept confirmed | **Real gap.** SERP truncation is by pixel width, not character count. We only count characters. |
+| **H2: Duplicate** | 78 | **99 of 100 pages** | **Real, but do not copy it.** The duplicated H2s are `contact`, `quick links`, `updates` — template furniture on 99 pages. Adding this as-is would reproduce exactly the defect we just fixed in `IMG_ALT_MISSING`: a template artifact reported as 78 page-level defects. If added, it must exclude site-wide repeated headings. |
+
+The H2 finding is the most instructive: **the competitor has the same
+template-artifact failure mode we do.** Their report is an oracle, not an
+authority — the differential tells us where to look, and the artifact still
+decides.

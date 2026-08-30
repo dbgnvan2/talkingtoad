@@ -411,16 +411,38 @@ def _check_entity_consistency(pages, start_url) -> list[Issue]:
     issues: list[Issue] = []
 
     # ENTITY_SAMEAS_MISSING (page) — runs regardless of site size.
+    #
+    # AF1: emit only when NO entity node carries sameAs. The pre-fix code flagged
+    # when ANY node lacked it, so a page whose Organization is fully linked
+    # (Facebook/LinkedIn/Instagram) was still flagged because WordPress/Yoast
+    # appends an author `Person` node — which is not expected to carry sameAs.
+    # That flagged 74 of 256 pages on livingsystems.ca while the site's own
+    # entity linkage was complete, and the finding's text ("No sameAs Entity
+    # Links") stated the opposite of the truth.
+    # Spec:  docs/pending/2026-08-30_audit-fixes.md#AF1
+    # Tests: tests/test_entity_sameas.py
+    _ENTITY_TYPES = {"Organization", "LocalBusiness", "NGO", "Corporation", "Person"}
     for page in pages:
-        flagged = False
+        examined: list[str] = []
+        with_sameas = 0
         for obj in _iter_schema_objects(getattr(page, "schema_blocks", None)):
-            if _types_of(obj) & {"Organization", "LocalBusiness", "NGO", "Corporation", "Person"}:
-                same = obj.get("sameAs")
-                has = bool(same) and (not isinstance(same, (list, str)) or len(same) > 0)
-                if not has:
-                    flagged = True
-        if flagged:
-            issues.append(make_issue("ENTITY_SAMEAS_MISSING", page.url))
+            types = _types_of(obj) & _ENTITY_TYPES
+            if not types:
+                continue
+            examined.extend(sorted(types))
+            same = obj.get("sameAs")
+            if bool(same) and (not isinstance(same, (list, str)) or len(same) > 0):
+                with_sameas += 1
+        if examined and with_sameas == 0:
+            issues.append(make_issue(
+                "ENTITY_SAMEAS_MISSING", page.url,
+                extra={
+                    # AF1: the pre-fix finding carried an empty extra, so a reader
+                    # had no way to see which node was at fault.
+                    "entity_types_examined": sorted(set(examined)),
+                    "entity_nodes": len(examined),
+                    "nodes_with_sameas": with_sameas,
+                }))
 
     # Site-scoped checks need enough pages to be meaningful.
     if len(pages) < _MIN_PAGES_SITE_CHECKS:

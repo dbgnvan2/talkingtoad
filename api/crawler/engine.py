@@ -68,6 +68,8 @@ def _classify_fetch_error(error: str) -> str | None:
     return "other"
 
 _DEFAULT_MAX_PAGES = int(os.getenv("MAX_PAGES_PER_CRAWL", "500"))
+# AF4: click depth above which HIGH_CRAWL_DEPTH fires (mirrors issue_checker).
+_MAX_CLICK_DEPTH = int(os.getenv("TT_MAX_CLICK_DEPTH", "4"))
 _MIN_CRAWL_DELAY_MS = 200
 _EXTERNAL_LINK_CAP_PER_PAGE = 50
 _EXTERNAL_LINK_CAP_PER_JOB = 500
@@ -798,7 +800,10 @@ async def run_crawl(
                             scope_skipped_urls.add(norm)
                             continue
                         # Only update depth_map if we haven't seen this URL yet
-                        # (first discovery via HTML gives the shallowest depth)
+                        # (first discovery via HTML gives the shallowest depth).
+                        # AF4: this in-crawl value is advisory only — the
+                        # authoritative click depth is recomputed after the crawl
+                        # by _compute_click_depths(), which is order-independent.
                         if norm not in depth_map:
                             depth_map[norm] = child_depth
                         discovered_from.setdefault(norm, url)
@@ -1132,6 +1137,28 @@ async def run_crawl(
         amp_issues = check_amphtml_links(all_pages, amp_statuses)
         all_issues.extend(amp_issues)
 
+        # ── 6b. Click depth (AF4) ────────────────────────────────────────
+        # Recompute depth over the link graph the crawl actually observed.
+        # The in-crawl depth_map is order-dependent: sitemap seeding enqueues
+        # every URL with depth None before any link is followed, so on a site
+        # with a sitemap most pages kept `None` and HIGH_CRAWL_DEPTH could not
+        # fire (0 hits in 156 jobs; 255 of 256 pages NULL on livingsystems.ca).
+        # A BFS over the finished graph is deterministic and gives the true
+        # shortest click distance from the homepage.
+        # Spec:  docs/pending/2026-08-30_audit-fixes.md#AF4
+        # Tests: tests/test_crawl_depth.py
+        _compute_click_depths(all_pages, normalised_start)
+        # The per-page check ran during the crawl, when most depths were still
+        # unknown, so emit for pages the post-crawl pass has now placed. Guarded
+        # against duplicates for pages whose depth WAS known at check time.
+        _already = {i.page_url for i in all_issues if i.code == "HIGH_CRAWL_DEPTH"}
+        for _p in all_pages:
+            if (_p.crawl_depth is not None and _p.crawl_depth > _MAX_CLICK_DEPTH
+                    and _p.url not in _already):
+                all_issues.append(make_issue("HIGH_CRAWL_DEPTH", _p.url,
+                                             extra={"crawl_depth": _p.crawl_depth}))
+                _already.add(_p.url)
+
         # ── 7. Cross-page duplicate checks (HTML pages only) ─────────────
         # O1 — ORPHAN_PAGE reasons about the ABSENCE of an inbound link, which
         # is only decidable over the whole site. Three things narrow the crawl
@@ -1285,6 +1312,56 @@ async def run_crawl(
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+def _compute_click_depths(pages: list[ParsedPage], start_url: str | None) -> None:
+    """Assign ``crawl_depth`` = shortest click distance from the start URL.
+
+    Purpose: give every crawled page a real click depth, independent of the
+             order the crawler happened to visit them in.
+    Spec:    docs/pending/2026-08-30_audit-fixes.md#AF4
+    Tests:   tests/test_crawl_depth.py
+
+    A page not reachable by any observed internal link keeps ``crawl_depth =
+    None`` — "unknown", not "deep". Callers must keep treating None as unknown
+    (``HIGH_CRAWL_DEPTH`` already does).
+    """
+    if not pages or not start_url:
+        return
+
+    by_norm: dict[str, ParsedPage] = {}
+    edges: dict[str, set[str]] = {}
+    for page in pages:
+        try:
+            norm = normalise_url(page.url)
+        except Exception:
+            continue
+        by_norm.setdefault(norm, page)
+        targets = edges.setdefault(norm, set())
+        for link in page.links or []:
+            if not link.is_internal:
+                continue
+            try:
+                targets.add(normalise_url(link.url))
+            except Exception:
+                continue
+
+    if start_url not in by_norm:
+        return
+
+    depths: dict[str, int] = {start_url: 0}
+    frontier = [start_url]
+    while frontier:
+        nxt: list[str] = []
+        for node in frontier:
+            for target in edges.get(node, ()):  # unvisited neighbours only
+                if target not in depths and target in by_norm:
+                    depths[target] = depths[node] + 1
+                    nxt.append(target)
+        frontier = nxt
+
+    for norm, page in by_norm.items():
+        page.crawl_depth = depths.get(norm)
+
 
 def _is_bot_blocking_domain(url: str) -> bool:
     """Return True if *url* belongs to a domain known to block automated requests."""

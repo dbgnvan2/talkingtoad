@@ -282,7 +282,20 @@ def parse_page(
         is_homepage: True if *result.url* is the crawl's start URL.
     """
     page_url = result.final_url or result.url
-    size_bytes = len(result.html.encode("utf-8")) if result.html else 0
+    # AF5: a PDF has bytes in `.content`, not `.html`, so sizing off `html`
+    # reported 0 for all 552 crawled PDFs.
+    size_bytes = (len(result.html.encode("utf-8")) if result.html
+                  else (len(result.content) if result.content else 0))
+
+    # AF5: compute PDF metadata BEFORE the non-HTML early return. It used to sit
+    # ~60 lines below, which is unreachable for exactly the content type it
+    # handles — 552 PDFs crawled, pdf_metadata None every time, and
+    # DOCUMENT_PROPS_MISSING could never fire (P13, guard-scope).
+    # Spec:  docs/pending/2026-08-30_audit-fixes.md#AF5
+    # Tests: tests/test_pdf_metadata.py
+    pdf_metadata = None
+    if "pdf" in (result.content_type or "") and result.content:
+        pdf_metadata = _extract_pdf_metadata(result.content)
 
     if not result.html:
         # Non-HTML response or failed fetch — return a minimal record
@@ -291,6 +304,7 @@ def parse_page(
             final_url=result.final_url,
             status_code=result.status_code,
             response_size_bytes=size_bytes,
+            pdf_metadata=pdf_metadata,
             title=None,
             meta_description=None,
             og_title=None,
@@ -347,10 +361,7 @@ def parse_page(
                 "markup_kb": round(max(0, markup_bytes) / 1024, 1),
             }
 
-    # PDF metadata
-    pdf_metadata = None
-    if "pdf" in result.content_type and result.content:
-        pdf_metadata = _extract_pdf_metadata(result.content)
+    # PDF metadata is computed before the non-HTML early return (AF5).
 
     # Cycle GG / GA1 fix: pre-compute the "answer buried under H2/H3"
     # signal here, where soup is still in scope. Avoids storing raw HTML on
