@@ -1119,10 +1119,28 @@ def _check_hsts(headers: dict[str, str], page_url: str) -> bool | None:
 
 
 def _count_img_missing_alt(soup: BeautifulSoup) -> int:
-    """Count <img> tags that are missing or have empty/blank alt attributes.
+    """Count <img> tags with no usable alt text.
 
-    Both missing alt and empty alt="" are flagged — every meaningful image
-    should have descriptive alt text for accessibility and SEO.
+    WCAG 2.2 §1.1.1 — ``alt=""`` is the PRESCRIBED markup for a decorative
+    image, not a defect: it tells assistive technology to skip the image, which
+    is the intended behaviour. It is therefore NOT counted here. Flagged:
+
+      * ``alt`` attribute absent entirely           -> no alt text at all
+      * ``alt=" "`` (whitespace-only, non-empty)    -> neither descriptive text
+        nor the empty-string decorative signal; announced inconsistently by
+        screen readers and flagged by accessibility tooling.
+
+    ``<img alt>`` parses to the empty string per the HTML Living Standard, so it
+    is decorative and is not counted.
+
+    Before 2026-08-30 this counted ``alt=""`` as missing, which produced 156
+    findings on a customer site whose alt text was complete — while the image
+    path (``_detect_decorative`` -> ``image_analyzer._check_alt_text``) returned
+    0 for the same 15 images in the same crawl. The two are now bound together
+    by tests/test_checker_agreement.py (V5).
+
+    Spec:  docs/pending/2026-08-30_alt-empty-vs-missing.md#A1
+    Tests: tests/test_checker_agreement.py::TestAltPredicateAgreement
 
     Excludes tags whose ONLY source is an inline ``data:`` URI (a base64 spacer
     or inline SVG icon). Those are decorative by construction and have no URL,
@@ -1132,8 +1150,7 @@ def _count_img_missing_alt(soup: BeautifulSoup) -> int:
     """
     count = 0
     for tag in soup.find_all("img"):
-        alt = tag.get("alt")
-        if alt is not None and (not isinstance(alt, str) or alt.strip()):
+        if not _alt_is_unusable(tag.get("alt")):
             continue
         if _resolve_img_src(tag) is None and _is_inline_data_image(tag):
             continue
@@ -1213,8 +1230,31 @@ def _img_srcset_candidates(tag, page_url: str = "") -> list[str]:
     return []
 
 
+def _alt_is_unusable(alt) -> bool:
+    """Return True when an ``alt`` value provides no accessible name AND is not
+    the valid decorative signal.
+
+    Single source of truth for the alt predicate — ``_count_img_missing_alt``
+    and ``_find_img_missing_alt_srcs`` must never diverge, since one produces a
+    count and the other the evidence list shown beside it.
+
+    Spec:  docs/pending/2026-08-30_alt-empty-vs-missing.md#A1
+    Tests: tests/test_checker_agreement.py::TestAltPredicateAgreement
+    """
+    if alt is None:
+        return True                      # attribute absent — no alt text at all
+    if not isinstance(alt, str):
+        return True                      # malformed markup
+    if alt == "":
+        return False                     # WCAG-prescribed decorative image
+    return not alt.strip()               # whitespace-only: neither text nor signal
+
+
 def _find_img_missing_alt_srcs(soup: BeautifulSoup, page_url: str = "") -> list[str]:
-    """Return absolute URLs of <img> tags that are missing or have empty alt attributes.
+    """Return absolute URLs of <img> tags with no usable alt text.
+
+    Uses the same ``_alt_is_unusable`` predicate as ``_count_img_missing_alt``
+    so the count and the evidence list cannot disagree.
 
     E1.2: iterates every ``<img>`` (no ``src=True`` filter) and resolves the URL
     through ``_resolve_img_src``, so lazy-loaded images are included. A tag whose
@@ -1224,9 +1264,7 @@ def _find_img_missing_alt_srcs(soup: BeautifulSoup, page_url: str = "") -> list[
     """
     srcs = []
     for tag in soup.find_all("img"):
-        alt = tag.get("alt")
-        # Flag if alt is missing (None) or empty/whitespace-only
-        if alt is None or (isinstance(alt, str) and not alt.strip()):
+        if _alt_is_unusable(tag.get("alt")):
             resolved = _resolve_img_src(tag, page_url)
             if resolved:
                 srcs.append(resolved)
@@ -1507,9 +1545,15 @@ def _detect_decorative(tag) -> bool:
     if tag.get("aria-hidden") == "true":
         return True
 
-    # Empty alt (intentionally decorative) - but NOT missing alt (None)
+    # Empty alt (intentionally decorative) — but NOT missing alt (None), and
+    # NOT whitespace-only. `alt=" "` is a non-empty string: it is neither an
+    # accessible name nor the empty-string decorative signal, so treating it as
+    # decorative would silently excuse it. Found by the V5 agreement test, which
+    # showed this path and the page path disagreeing about `alt=" "` in the
+    # opposite direction to the alt="" defect.
+    # Tests: tests/test_checker_agreement.py::TestAltPredicateAgreement
     alt = tag.get("alt")
-    if alt is not None and isinstance(alt, str) and alt.strip() == "":
+    if isinstance(alt, str) and alt == "":
         return True
 
     # Tiny images (icons/spacers)

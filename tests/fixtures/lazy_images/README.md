@@ -4,10 +4,16 @@ These are **real saved HTTP responses**, not synthetic markup. Recorded 2026-08-
 livingsystems.ca, a WordPress site running Smush lazy-loading — the exact configuration the
 E1 bug was invisible under.
 
-| File | Source URL | `<img>` | missing/empty alt | `data-src` lazy |
-|---|---|---|---|---|
-| `livingsystems_emotional_pain.html` | `https://livingsystems.ca/emotional-pain-and-suffering/` | 9 | 8 | 9 |
-| `livingsystems_home.html` | `https://livingsystems.ca/` | 11 | 10 | 11 |
+| File | Source URL | `<img>` | `alt=""` (decorative) | **no usable alt** | `data-src` lazy |
+|---|---|---|---|---|---|
+| `livingsystems_emotional_pain.html` | `https://livingsystems.ca/emotional-pain-and-suffering/` | 9 | 8 | **0** | 9 |
+| `livingsystems_home.html` | `https://livingsystems.ca/` | 11 | 10 | **0** | 11 |
+
+> The old table had a single "missing/empty alt" column reading 8 and 10. That
+> conflated two different facts and encoded the 2026-08-30 defect: `alt=""` is
+> the WCAG 2.2 §1.1.1 decorative signal, **not** missing alt text. Neither page
+> has a single image without usable alt — counts re-derived independently of the
+> parser (regex over the raw fixture), not from crawler output (P32).
 
 `tests/fixtures/entity/livingsystems_home.html` is a copy of the homepage fixture, used by the
 E5 entity-value checks for its `application/ld+json` graph.

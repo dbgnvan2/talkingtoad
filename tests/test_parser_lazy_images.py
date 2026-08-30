@@ -67,19 +67,41 @@ class TestRealSmushArtifacts:
         soup = _soup("livingsystems_emotional_pain.html")
         assert len(_extract_image_urls(soup, PAGE_URL)) == 9
 
-    def test_e1_3b_real_homepage_alt_missing_is_resolvable(self):
-        """10 of 11 homepage images lack alt, and post-E1 their URLs resolve —
-        so IMG_ALT_MISSING can fire with evidence instead of being silenced."""
-        soup = _soup("livingsystems_home.html")
-        assert _count_img_missing_alt(soup) == 10
-        srcs = _find_img_missing_alt_srcs(soup, HOME_URL)
-        assert len(srcs) == 10, "pre-E1 this was [] and the finding was dropped"
-        assert all(s.startswith("http") for s in srcs)
+    def test_e1_3b_real_pages_have_no_unusable_alt(self):
+        """Neither real page has an image without usable alt text.
 
-    def test_e1_3b_real_article_alt_missing_is_resolvable(self):
-        soup = _soup("livingsystems_emotional_pain.html")
-        assert _count_img_missing_alt(soup) == 8
-        assert len(_find_img_missing_alt_srcs(soup, PAGE_URL)) == 8
+        These assertions read 10 and 8 until 2026-08-30, counting every
+        ``alt=""`` as missing. WCAG 2.2 §1.1.1 makes ``alt=""`` the PRESCRIBED
+        decorative signal, so those pages were correct and the crawler reported
+        156 findings against a site whose alt text was complete.
+
+        Expected values were re-derived independently of the parser — a regex
+        over the raw fixture — never from crawler output (P32). Homepage: 11
+        images, 10 ``alt=""``, 1 with text, 0 absent, 0 whitespace-only.
+        Article: 9 images, 8 ``alt=""``, 1 with text.
+        """
+        assert _count_img_missing_alt(_soup("livingsystems_home.html")) == 0
+        assert _count_img_missing_alt(_soup("livingsystems_emotional_pain.html")) == 0
+
+    def test_e1_3b_lazy_image_without_alt_still_resolves_its_url(self):
+        """The E1 regression this class exists for, kept alive.
+
+        Pre-E1, ``_find_img_missing_alt_srcs`` read only ``src`` — a data: URI on
+        a lazy-loaded image — so it returned [] and the finding was silenced with
+        no evidence. The real fixtures can no longer exercise that path (they
+        have no unusable-alt images), so the guard uses the same Smush shape with
+        the alt attribute genuinely absent.
+        """
+        soup = BeautifulSoup(
+            '<img src="data:image/svg+xml;base64,PHN2Zz48L3N2Zz4=" '
+            'data-src="/wp-content/uploads/2026/04/real.jpg" class="lazyload">',
+            "lxml",
+        )
+        assert _count_img_missing_alt(soup) == 1
+        srcs = _find_img_missing_alt_srcs(soup, HOME_URL)
+        assert srcs == ["https://livingsystems.ca/wp-content/uploads/2026/04/real.jpg"], (
+            "pre-E1 this was [] and the finding was dropped"
+        )
 
     def test_e1_2b_real_lazy_images_marked_lazy(self):
         soup = _soup("livingsystems_emotional_pain.html")
@@ -157,20 +179,32 @@ class TestSrcsetDetection:
 
 class TestAdversarial:
     def test_e1_3c_decorative_images_do_not_inflate_missing_alt(self):
-        """A genuinely decorative image carries alt="" by design. It still counts
-        toward img_missing_alt_count (unchanged, deliberate — the checker's
-        ignored_image_patterns is the suppression lever), but this test pins the
-        behaviour so a future change to _count_img_missing_alt is a decision, not
-        an accident."""
+        """A decorative image carries alt="" by design and must NOT be counted.
+
+        This test asserted ``== 1`` until 2026-08-30 — under an "adversarial"
+        heading, on the hardest possible input, with a docstring saying the
+        behaviour was deliberate. It was wrong, and pinning it made the defect a
+        defended invariant (P32). ``role="presentation"`` is the W3C's explicit
+        "ignore this image"; ``alt=""`` is WCAG 2.2 §1.1.1's decorative signal.
+        Both say: not a finding.
+
+        The oracle here is the standard, not this codebase.
+        """
         soup = BeautifulSoup(
             '<img src="data:image/gif;base64,R0" data-src="/spacer.gif" alt="" '
             'role="presentation">',
             "lxml",
         )
+        assert _count_img_missing_alt(soup) == 0
+        assert _find_img_missing_alt_srcs(soup, HOME_URL) == []
+
+    def test_e1_3c_whitespace_only_alt_is_still_a_finding(self):
+        """Adversarial in the other direction: ``alt=" "`` is a non-empty string,
+        so it is neither an accessible name nor the empty-string decorative
+        signal. Screen readers announce it inconsistently and accessibility
+        tooling flags it. The fix for alt="" must not sweep this in with it."""
+        soup = BeautifulSoup('<img src="/a.jpg" alt=" ">', "lxml")
         assert _count_img_missing_alt(soup) == 1
-        assert _find_img_missing_alt_srcs(soup, HOME_URL) == [
-            "https://livingsystems.ca/spacer.gif"
-        ]
 
     def test_e1_3c_image_with_alt_never_reported(self):
         soup = BeautifulSoup(
@@ -224,10 +258,11 @@ class TestInlineDataImagesAreNotFlagged:
         assert _count_img_missing_alt(soup) == 0
 
     def test_f9_real_fixture_counts_unchanged(self):
-        """The real pages carry no inline-only images, so this fix must not move
-        their numbers — 10 of 11 and 8 of 9 as recorded in the fixture README."""
-        assert _count_img_missing_alt(_soup("livingsystems_home.html")) == 10
-        assert _count_img_missing_alt(_soup("livingsystems_emotional_pain.html")) == 8
+        """The real pages carry no inline-only images, so the F9 inline-data fix
+        must not move their numbers. Both are 0 unusable-alt images — see the
+        fixture README table and test_e1_3b_real_pages_have_no_unusable_alt."""
+        assert _count_img_missing_alt(_soup("livingsystems_home.html")) == 0
+        assert _count_img_missing_alt(_soup("livingsystems_emotional_pain.html")) == 0
 
 
 class TestConfigFailureIsLogged:
