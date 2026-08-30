@@ -221,7 +221,7 @@ Matrix): 180-day technical-improvement staleness and 20% traffic-decay drop.
 | Evidence rows rendered in the PDF | 10 | `TT_EVIDENCE_ROW_CAP` env, `api/services/issue_evidence.py` |
 | CWV pages measured (default / max) | 10 / 25 | `api/config/web_vitals.json` |
 | CWV poor band — LCP / INP / CLS | 4000ms / 500ms / 0.25 | `api/config/web_vitals.json` (Google's own boundaries) |
-| CWV minimum request interval | 1.1s | `api/config/web_vitals.json` (published limit: 100 queries / 100s) |
+| CWV minimum request interval | 1.1s | `api/config/web_vitals.json` — 0.91 req/s, under both published limits: PSI 100 queries/100s (the binding one) and CrUX 150/min |
 | Blueprint title / description / lead bounds | 60 chars / 70-160 chars / 40-80 words | `api/config/blueprints.json` (mirrors the catalogue's own thresholds) |
 | Blueprint lead grounding overlap floor | 50% of meaningful words | `api/services/blueprints.py` |
 | Off-site linking sites shown | 20 | `TT_OFFSITE_SITE_CAP` env, `api/services/offsite.py` |

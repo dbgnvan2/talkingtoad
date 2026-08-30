@@ -1,31 +1,81 @@
 {
- "id": "https://livingsystems.ca/what-kind-of-help-is-helpful/",
+ "captchaResult": "CAPTCHA_NOT_NEEDED",
+ "id": "https://livingsystems.ca/emotional-pain-and-suffering/",
+ "analysisUTCTimestamp": "2026-08-30T00:27:05.087Z",
  "lighthouseResult": {
-  "requestedUrl": "https://livingsystems.ca/what-kind-of-help-is-helpful/",
+  "requestedUrl": "https://livingsystems.ca/emotional-pain-and-suffering/",
+  "finalUrl": "https://livingsystems.ca/emotional-pain-and-suffering/",
+  "lighthouseVersion": "13.4.1",
   "categories": {
    "performance": {
     "id": "performance",
-    "score": 0.42
+    "title": "Performance",
+    "score": 0.61
    }
   },
   "audits": {
    "largest-contentful-paint": {
     "id": "largest-contentful-paint",
-    "numericValue": 5820.4,
-    "numericUnit": "millisecond",
-    "displayValue": "5.8 s"
+    "title": "Largest Contentful Paint",
+    "description": "Largest Contentful Paint marks the time at which the largest text or image is painted. [Learn more about the Largest Contentful Paint metric](https://developer.chrome.com/docs/lighthouse/performance/lighthouse-largest-contentful-paint/)",
+    "score": 0.22,
+    "scoreDisplayMode": "numeric",
+    "displayValue": "5.3\u00a0s",
+    "numericValue": 5258.572101699941,
+    "numericUnit": "millisecond"
    },
-   "cumulative-layout-shift": {
-    "id": "cumulative-layout-shift",
-    "numericValue": 0.036,
-    "numericUnit": "unitless",
-    "displayValue": "0.036"
+   "speed-index": {
+    "id": "speed-index",
+    "title": "Speed Index",
+    "description": "Speed Index shows how quickly the contents of a page are visibly populated. [Learn more about the Speed Index metric](https://developer.chrome.com/docs/lighthouse/performance/speed-index/).",
+    "score": 0.7,
+    "scoreDisplayMode": "numeric",
+    "displayValue": "4.6\u00a0s",
+    "numericValue": 4623.589625660965,
+    "numericUnit": "millisecond"
    },
    "total-blocking-time": {
     "id": "total-blocking-time",
-    "numericValue": 890,
-    "numericUnit": "millisecond",
-    "displayValue": "890 ms"
+    "title": "Total Blocking Time",
+    "description": "Sum of all time periods between FCP and Time to Interactive, when task length exceeded 50ms, expressed in milliseconds. [Learn more about the Total Blocking Time metric](https://developer.chrome.com/docs/lighthouse/performance/lighthouse-total-blocking-time/).",
+    "score": 0.65,
+    "scoreDisplayMode": "numeric",
+    "displayValue": "430\u00a0ms",
+    "numericValue": 425.0037152697937,
+    "numericUnit": "millisecond"
+   },
+   "first-contentful-paint": {
+    "id": "first-contentful-paint",
+    "title": "First Contentful Paint",
+    "description": "First Contentful Paint marks the time at which the first text or image is painted. [Learn more about the First Contentful Paint metric](https://developer.chrome.com/docs/lighthouse/performance/first-contentful-paint/).",
+    "score": 0.4,
+    "scoreDisplayMode": "numeric",
+    "displayValue": "3.3\u00a0s",
+    "numericValue": 3312.539982730171,
+    "numericUnit": "millisecond"
+   },
+   "cumulative-layout-shift": {
+    "id": "cumulative-layout-shift",
+    "title": "Cumulative Layout Shift",
+    "description": "Cumulative Layout Shift measures the movement of visible elements within the viewport. [Learn more about the Cumulative Layout Shift metric](https://web.dev/articles/cls).",
+    "score": 1,
+    "scoreDisplayMode": "numeric",
+    "displayValue": "0.012",
+    "details": {
+     "items": [
+      {
+       "newEngineResult": {
+        "cumulativeLayoutShift": 0.01209136194831076,
+        "cumulativeLayoutShiftMainFrame": 0.01209136194831076
+       },
+       "cumulativeLayoutShiftMainFrame": 0.01209136194831076,
+       "newEngineResultDiffered": false
+      }
+     ],
+     "type": "debugdata"
+    },
+    "numericValue": 0.01209136194831076,
+    "numericUnit": "unitless"
    }
   }
  }

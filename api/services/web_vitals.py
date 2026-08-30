@@ -117,20 +117,22 @@ class WebVitalsReport:
 
 
 # ---------------------------------------------------------------------------
-# Parsing — tolerant, because the fixtures are constructed, not recorded
+# Parsing — verified against PSI, still unverified against CrUX
 # ---------------------------------------------------------------------------
 #
-# P19/P20 honesty note: no live CrUX or PSI response could be recorded while
-# writing this (no API key, and the shared keyless PSI pool returned 429). The
-# checked-in fixtures are therefore built from the documented response contract,
-# NOT captured from the live API — which is precisely the situation those
-# patterns warn about. Two mitigations:
-#   1. The parsers below read defensively and return None rather than raising on
-#      a shape they do not recognise, so a contract drift degrades to
-#      "not measured" instead of a crash or a wrong number.
-#   2. tests/test_web_vitals.py carries a live contract test that runs only when
-#      TT_PSI_API_KEY is set. The moment a key exists, real verification runs.
-# Re-record the fixtures at that point and delete this note.
+# P19/P20 status (2026-08-29). `parse_psi` is verified: its fixture is a real
+# recorded PageSpeed Insights response, and tests/test_web_vitals.py's
+# TestLiveApiContract checks the live API whenever TT_PSI_API_KEY is set.
+#
+# `parse_crux` is NOT yet verified. The Chrome UX Report API is not enabled on
+# the key's Google Cloud project (HTTP 403), so no real CrUX response could be
+# recorded; its two fixtures are built from the documented contract — exactly the
+# under-exercised-eval situation P19/P20 warn about. Two things hold the line:
+#   1. parse_crux returns None on any shape it does not recognise, so a contract
+#      drift degrades to "not measured" rather than a wrong number.
+#   2. Field data is the only source allowed to raise a finding, so a CrUX
+#      parsing gap can cost a finding but can never invent one.
+# Enable that API, re-record both CrUX fixtures, and delete this paragraph.
 
 
 def _crux_percentile(metrics: dict, name: str) -> float | None:

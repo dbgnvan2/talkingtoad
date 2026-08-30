@@ -10,10 +10,11 @@ Tests:   this file
 synthetic Lighthouse run with real user experience is the one mistake that would
 make this section actively misleading rather than merely incomplete.
 
-FIXTURE WARNING: the checked-in payloads are CONSTRUCTED from the documented API
-contracts, not recorded from the live APIs — see
-tests/fixtures/web_vitals/README.md. `TestLiveApiContract` closes that gap and is
-skipped unless TT_PSI_API_KEY is set.
+FIXTURE STATUS (2026-08-29): the PSI payload is now a REAL recorded response
+(trimmed — see tests/fixtures/web_vitals/README.md), and `TestLiveApiContract`
+passes against the live API. The CrUX payloads are still CONSTRUCTED, because the
+Chrome UX Report API is not yet enabled on the key's Google Cloud project — one
+click in the console closes that half too.
 """
 
 from __future__ import annotations
@@ -129,10 +130,15 @@ class TestParsing:
         assert parse_crux(_fixture("crux_no_record.json"), URL) is None
 
     def test_d2_2a_psi_parsed_as_lab(self):
+        """Values are from the RECORDED response for
+        livingsystems.ca/emotional-pain-and-suffering/ (mobile, 2026-08-29):
+        LCP 5.3s, CLS 0.012, Lighthouse 61/100. Re-record and update these if the
+        page changes — they are an artifact, not a target."""
         row = parse_psi(_fixture("psi_lab_slow.json"), URL)
         assert row is not None and row.source == "lab"
-        assert row.lcp_ms == pytest.approx(5820.4)
-        assert row.performance_score == 42
+        assert row.lcp_ms == pytest.approx(5258.57, abs=0.01)
+        assert row.cls == pytest.approx(0.0121, abs=0.0001)
+        assert row.performance_score == 61
 
     def test_d2_2a_psi_never_populates_inp(self):
         """Lighthouse has no INP audit. Mapping Total Blocking Time onto INP

@@ -1,29 +1,57 @@
-# Core Web Vitals fixtures — CONSTRUCTED, not recorded
+# Core Web Vitals fixtures — mixed provenance, read before trusting a test
 
-**Read this before trusting a parser test in `tests/test_web_vitals.py`.**
+| File | Provenance | Verified against the live API |
+|---|---|---|
+| `psi_lab_slow.json` | **RECORDED** from PageSpeed Insights, 2026-08-29 | **Yes** — `TestLiveApiContract` |
+| `crux_record_poor.json` | **CONSTRUCTED** from the documented contract | No — see below |
+| `crux_no_record.json` | **CONSTRUCTED** from the documented contract | No — see below |
 
-These payloads are built from the documented CrUX and PSI response contracts.
-They were **not** captured from the live APIs: no `TT_PSI_API_KEY` was available
-when D2 was written, and the shared keyless PSI pool returned HTTP 429
-("Quota exceeded for quota metric 'Queries'") on the attempt to record one.
+## The PSI fixture is real
 
-That is exactly the situation P19/P20 warn about — a parser calibrated against an
-idealised payload rather than what the producer actually emits. Two mitigations
-are in place, and neither is a substitute for real capture:
+Recorded 2026-08-29 from:
 
-1. `api/services/web_vitals.py` parses defensively. An unrecognised shape yields
-   `None` ("not measured") rather than a crash or a confident wrong number.
-2. `tests/test_web_vitals.py::TestLiveApiContract` runs against the real API and
-   is **skipped unless `TT_PSI_API_KEY` is set**. The moment a key exists, real
-   verification runs in CI and locally.
+```
+https://www.googleapis.com/pagespeedonline/v5/runPagespeed
+  ?url=https://livingsystems.ca/emotional-pain-and-suffering/&strategy=mobile
+```
 
-## When a key becomes available
+Values as recorded: **LCP 5.3s · CLS 0.012 · TBT 430ms · Lighthouse 61/100**.
+Those are asserted in `test_d2_2a_psi_parsed_as_lab`. They are an artifact, not a
+target — if the page changes, re-record and update the assertions.
+
+**Trim applied.** The raw response was 645,853 bytes; almost all of it is
+Lighthouse detail the parser never reads. Kept: `id`, `analysisUTCTimestamp`,
+`captchaResult`, `lighthouseResult.requestedUrl` / `finalUrl` /
+`lighthouseVersion`, the `performance` category, and five audits
+(`largest-contentful-paint`, `cumulative-layout-shift`, `total-blocking-time`,
+`first-contentful-paint`, `speed-index`). No value was altered. A megabyte
+fixture nobody opens is not a better artifact than a 3 KB one somebody reads.
+
+## The CrUX fixtures are still constructed
+
+The Chrome UX Report API is **not enabled** on the key's Google Cloud project, so
+no live CrUX response could be recorded:
+
+```
+HTTP 403 — Chrome UX Report API has not been used in project 117002993725
+           before or it is disabled.
+```
+
+That is one click to fix — enable **Chrome UX Report API** on that project. Until
+then these two payloads are built from the documented response contract, which is
+exactly the setup P19/P20 warn about: a parser calibrated against an idealised
+payload rather than what the producer emits.
+
+Two things hold the line meanwhile. `parse_crux` returns `None` on any shape it
+does not recognise, so a contract drift degrades to "not measured" rather than a
+wrong number. And field data is the **only** source allowed to raise a finding —
+so a CrUX parsing gap can cost a finding, but can never invent one.
+
+## When CrUX is enabled
 
 ```bash
-export TT_PSI_API_KEY=...
 python -m pytest tests/test_web_vitals.py::TestLiveApiContract -v
 ```
 
-If it passes, re-record these fixtures from the live responses, update this file
-to say they are recorded, and delete this warning. If it fails, the parser has
-drifted from the real contract and that is the bug the live test exists to catch.
+Then record a real CrUX record and a real 404 ("no record" — use a URL with too
+little traffic to report), replace both files, and update the table above.
