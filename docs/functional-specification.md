@@ -406,7 +406,7 @@ The `checkers/` package contains the following modules:
 | `crawlability.py` | `NOINDEX_*`, long-paragraph signal, post-crawl AMP HEAD result mapping. |
 | `url_structure.py` | URL hygiene — length, casing, embedded spaces, underscores. |
 | `ai_readiness.py` | `_run_geo_checks` + every GEO regex/counter helper (statistics, citations, quotations, orphan claims, answer signal, numbered steps). |
-| `cross_page.py` | Post-crawl `TITLE_DUPLICATE`, `META_DESC_DUPLICATE`, `CANONICAL_MISSING`, `ORPHAN_PAGE`. |
+| `cross_page.py` | Post-crawl `TITLE_DUPLICATE`, `META_DESC_DUPLICATE`, `CANONICAL_MISSING`, `ORPHAN_PAGE` (gated on `link_graph_complete` — see §4.4). |
 | `semantic_html.py` | Agent-readiness WP3 — `NON_SEMANTIC_BUTTON`, `INTERACTIVE_NO_ACCESSIBLE_NAME`, `LANDMARK_MAIN_MISSING`, `LANDMARK_NAV_MISSING`. |
 | `__init__.py` | Package docstring. |
 
@@ -528,7 +528,27 @@ External link checking, redirect chain detection, login redirects.
 - `ROBOTS_BLOCKED` (critical) — page blocked by robots.txt but still reachable
 - `NOINDEX_META`, `NOINDEX_HEADER` — distinguishes meta-set noindex from header-set
 - `THIN_CONTENT` — fewer than 300 words; suppressed for noindex pages
-- `ORPHAN_PAGE` — no internal link points to this page
+- `ORPHAN_PAGE` — no internal link points to this page. Emitted **only when the
+  crawl covered the whole site**: it is an absence-proof, and an inbound link
+  living on a page the crawl never fetched is indistinguishable from no link at
+  all. A content-type partial scan, a `max_pages` truncation, or a cancellation
+  suppresses the check entirely rather than reporting every scoped-out linking
+  page's targets as orphans. The reason is recorded on the job as
+  `orphan_detection` — `{status, pages_analysed, pages_out_of_scope,
+  archives_skipped, pages_links_unread}`, with `status` one of `complete`,
+  `skipped_partial_scan`, `skipped_truncated`, `skipped_cancelled`,
+  `skipped_single_page`, `skipped_failed`, `not_run`. It is returned in the
+  crawl summary and rendered as its own state by the Orphaned Pages panel, the
+  Results tile, the PDF caveats section and the Excel summary. A suppressed
+  check yields zero orphans, so no surface may read zero as "none found", and
+  any unrecognised status must be treated as "did not run". Even a `complete`
+  crawl discloses two residual gaps: `archives_skipped` (WordPress archives are
+  skipped before their outbound links are read) and `pages_links_unread` (pages
+  that timed out, hit a login wall, or failed to parse). Link discovery reads
+  every crawled page, not only those passing the HTML filter. The same gate and
+  the same coverage record govern `GET /api/fixes/orphaned-media/{job_id}`,
+  which is the identical absence-proof over the same page set.
+  `orphan_detection` is `None` on audits crawled before this field existed.
 - `HIGH_CRAWL_DEPTH` — page is >4 clicks from the homepage
 
 ### 4.5 Security and URL structure

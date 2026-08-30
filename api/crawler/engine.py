@@ -242,6 +242,16 @@ class BrokenLinkRef:
     link_type: str = "external"   # "internal" | "external", derived, never assumed
 
 
+# O2 — orphan-detection coverage vocabulary. `complete` is the ONLY value that
+# licenses a caller to read "zero orphans" as "no orphans found"; every other
+# value means the check did not run over a whole-site link graph and a zero is
+# "not checked" (P31).
+ORPHAN_STATUS_COMPLETE = "complete"
+ORPHAN_NOT_RUN: dict = {
+    "status": "not_run", "pages_analysed": 0, "pages_out_of_scope": 0,
+}
+
+
 @dataclass
 class CrawlResult:
     job_id: str
@@ -267,6 +277,19 @@ class CrawlResult:
     # Number of distinct URLs skipped because they fell outside the selected
     # content-type scope (partial scan). 0 when no scoping is active.
     scope_skipped: int = 0
+    # O2 — whether ORPHAN_PAGE actually ran, and over how much of the site.
+    # ORPHAN_PAGE is an absence-proof and is only sound over a complete link
+    # graph (P31), so a partial scan / budget truncation / cancellation
+    # suppresses it. Zero orphans then means "not checked", NOT "none found" —
+    # every surface must render the two differently, so the reason travels with
+    # the result rather than being inferred from a count.
+    # Spec: docs/functional-specification.md §4.4 (ORPHAN_PAGE)
+    # Defaults to "not_run", NOT "complete": any construction that forgets this
+    # field would otherwise make an affirmative whole-site claim on behalf of a
+    # crawl that may have fetched nothing. Only the one code path that has
+    # actually established completeness may set "complete" (P31 — make the
+    # wrong state unrepresentable rather than fixing each caller).
+    orphan_detection: dict = field(default_factory=lambda: dict(ORPHAN_NOT_RUN))
     # E1.4 (P9, rule 6): distinct image URLs SEEN across the crawl vs the number
     # that survived the per-job cap and were analysed. When these differ, every
     # surface must say "analysed N of M" rather than implying full coverage.
@@ -469,6 +492,15 @@ async def run_crawl(
         # The start URL is always allowed so the homepage/summary still resolves.
         scope_urls = settings.scope_urls
         scope_skipped_urls: set[str] = set()
+        # O1: set when the BFS stops at the page budget with URLs still queued.
+        truncated_by_max_pages = False
+        unfetched_at_truncation = 0
+        # O2: pages the crawl reached but could not read the links of — a
+        # timeout, an SSRF block, a login wall, a parse failure. Each one is a
+        # hole in the link graph: if a hub page times out, every page it links
+        # to looks orphaned. Counted and disclosed rather than gated, since a
+        # single 429 must not disable the check for the whole site (P1/P2).
+        pages_links_unread = 0
 
         def _in_scope(u: str) -> bool:
             return scope_urls is None or u == normalised_start or u in scope_urls
@@ -538,6 +570,13 @@ async def run_crawl(
                     pages_crawled=len(all_pages),
                     external_links_checked=0,
                     cancelled=True,
+                    # Cancelled mid-crawl: the link graph stops wherever the
+                    # frontier was, so ORPHAN_PAGE never ran (P31) and zero
+                    # orphans must not read as "none found".
+                    orphan_detection={"status": "skipped_cancelled",
+                                      "pages_analysed": len(all_pages),
+                                      "pages_out_of_scope": len(scope_skipped_urls) + len(queue),
+                                      "archives_skipped": bool(settings.skip_wp_archives)},
                     robots_txt_found=_robots_found,
                     robots_txt_rules=_robots_rules,
                     sitemap_found=_sitemap_found,
@@ -580,6 +619,12 @@ async def run_crawl(
 
             if len(all_pages) >= settings.max_pages:
                 log.info("max_pages_reached", extra={"max": settings.max_pages})
+                # The frontier still holds unvisited URLs, so the link graph is
+                # partial from here on — ORPHAN_PAGE must not run (P31). Record
+                # how many were left so the disclosure quantifies the shortfall
+                # rather than printing a bare 0.
+                truncated_by_max_pages = True
+                unfetched_at_truncation = len(queue) + 1  # +1: this URL, popped but unfetched
                 break
 
             # URL structure checks run before fetching (pure string operations)
@@ -632,17 +677,20 @@ async def run_crawl(
                 error_type = _classify_fetch_error(err)
                 if error_type is None:  # SSRF block — security decision, not page health
                     log.warning("fetch_ssrf_blocked", extra={"url": url, "error": err})
+                    pages_links_unread += 1
                     continue
                 log.warning("fetch_failed", extra={"url": url, "error": err, "error_type": error_type})
                 timeout_issue = make_issue("PAGE_TIMEOUT", url,
                                            extra={"error": err, "error_type": error_type})
                 all_issues.append(timeout_issue)
+                pages_links_unread += 1
                 continue
 
             # Login redirect
             if result.is_login_redirect:
                 all_issues.append(make_issue("LOGIN_REDIRECT", url,
                                            extra={"redirect_to": result.final_url}))
+                pages_links_unread += 1
                 continue
 
             # Redirect issues
@@ -664,6 +712,7 @@ async def run_crawl(
                 page = parse_page(result, normalised_start, is_homepage=is_homepage)
             except Exception as exc:
                 log.warning("parse_exception", extra={"url": url, "error": str(exc)})
+                pages_links_unread += 1
                 continue
 
             page.crawl_depth = current_depth
@@ -1084,8 +1133,53 @@ async def run_crawl(
         all_issues.extend(amp_issues)
 
         # ── 7. Cross-page duplicate checks (HTML pages only) ─────────────
+        # O1 — ORPHAN_PAGE reasons about the ABSENCE of an inbound link, which
+        # is only decidable over the whole site. Three things narrow the crawl
+        # legitimately and would otherwise turn "not fetched" into "not linked"
+        # (P31): single-page mode, a content-type partial scan, and the
+        # max_pages budget. Cancellation returns earlier and never reaches this
+        # line; a crawl that raised is recorded by the router's failure path.
         html_pages = [p for p in all_pages if p.title is not None or p.meta_description is not None or p.h1_tags]
-        cross_issues = check_cross_page(html_pages, start_url=normalised_start)
+        if settings.single_page:
+            # No sitemap seeding and no link following: one page, no graph.
+            orphan_status = "skipped_single_page"
+        elif scope_urls is not None:
+            orphan_status = "skipped_partial_scan"
+        elif truncated_by_max_pages:
+            orphan_status = "skipped_truncated"
+        else:
+            orphan_status = ORPHAN_STATUS_COMPLETE
+        orphan_detection = {
+            "status": orphan_status,
+            # The population the check actually reasons over — html_pages below,
+            # not every fetched byte. Reporting len(all_pages) would overstate
+            # coverage by counting PDFs and images as analysed pages.
+            "pages_analysed": len(html_pages),
+            # Out-of-scope URLs on a partial scan; on a truncation, what was
+            # still queued when the budget ran out. Either way a real shortfall,
+            # never a silent 0 (P9 — announce what was dropped).
+            "pages_out_of_scope": len(scope_skipped_urls) + unfetched_at_truncation,
+            # skip_wp_archives (default ON) drops WordPress archives before their
+            # outbound links are read, so even a "complete" crawl has not seen
+            # every anchor on the site. Disclosed rather than gated: gating on a
+            # default-on setting would disable the check on every crawl.
+            "archives_skipped": bool(settings.skip_wp_archives),
+            # Pages reached but unreadable (timeout, SSRF block, login wall,
+            # parse failure). Measured on livingsystems.ca: 5 of 256 on a real
+            # full crawl. Each is a hole in the graph, so a "complete" status
+            # with a non-zero count here still carries a caveat.
+            "pages_links_unread": pages_links_unread,
+        }
+        if orphan_status != ORPHAN_STATUS_COMPLETE:
+            log.info("orphan_detection_skipped", extra=orphan_detection)
+
+        cross_issues = check_cross_page(
+            html_pages, start_url=normalised_start,
+            link_graph_complete=(orphan_status == ORPHAN_STATUS_COMPLETE),
+            # Links come from EVERY crawled page. A page with no title/meta/h1
+            # fails the html_pages filter but still carries real anchors, and
+            # dropping it from the graph invents orphans on a complete crawl.
+            link_source_pages=all_pages)
         all_issues.extend(cross_issues)
 
         # ── 7b. Citation source accessibility (R6) ───────────────────────
@@ -1182,6 +1276,7 @@ async def run_crawl(
             sitemap_url_found=_sitemap_url_found,
             sitemap_url_count=_sitemap_url_count,
             scope_skipped=len(scope_skipped_urls),
+            orphan_detection=orphan_detection,
             images_seen_total=len(image_targets_seen),
             images_collected=len(all_images),
         )

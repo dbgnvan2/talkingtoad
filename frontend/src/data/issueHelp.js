@@ -1046,6 +1046,13 @@ const issueHelp = {
     fix:
       "Add at least one internal link to this page from a relevant hub page, navigation menu, " +
       "or related content page. If the page is no longer needed, consider removing it or redirecting it.",
+    how_it_can_mislead:
+      "Detection only runs on a full scan. This check concludes that nothing links to a page, " +
+      "which is only knowable after crawling the whole site — so a partial scan, a crawl that hit " +
+      "its page limit, or a cancelled crawl skips it entirely rather than flagging every page " +
+      "whose only inbound link lies outside the scan. Links are also read from raw HTML, so a page " +
+      "linked only via JavaScript, a query-driven listing, or a skipped WordPress archive can " +
+      "still appear here.",
   },
 
   CONTENT_STALE: {

@@ -122,6 +122,26 @@ describe('API module', () => {
       expect(result.pages).toHaveLength(2)
       expect(result.pages[0].issue_code).toBe('ORPHAN_PAGE')
     })
+
+    // O2: without the coverage record the panel cannot tell "none found" from
+    // "not checked", and renders a green all-clear for a scan that never
+    // looked (P31 corollary).
+    it('passes summary.orphan_detection through to the caller', async () => {
+      const detection = {
+        status: 'skipped_partial_scan', pages_analysed: 37, pages_out_of_scope: 235,
+      }
+      global.fetch.mockImplementation(() => mockFetchResponse({
+        issues: [], summary: { orphan_detection: detection },
+      }))
+      const result = await getOrphanedPages('job-1')
+      expect(result.detection).toEqual(detection)
+    })
+
+    it('reports detection as null when the API omits it (legacy audits)', async () => {
+      global.fetch.mockImplementation(() => mockFetchResponse({ issues: [] }))
+      const result = await getOrphanedPages('job-1')
+      expect(result.detection).toBeNull()
+    })
   })
 
   describe('verifyBrokenLinks', () => {

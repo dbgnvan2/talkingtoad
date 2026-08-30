@@ -596,6 +596,13 @@ The `security` category always runs regardless of toggles.
       "found": true,
       "url": "https://example.com/sitemap.xml",
       "url_count": 38
+    },
+    "orphan_detection": {
+      "status": "complete",
+      "pages_analysed": 42,
+      "pages_out_of_scope": 0,
+      "archives_skipped": true,
+      "pages_links_unread": 0
     }
   },
   "issues": [
@@ -617,6 +624,8 @@ The `security` category always runs regardless of toggles.
 ```
 
 `health_score` is 0–100. Formula: `max(0, 100 − Σ issue impacts)` across all issues. The health score calculation normalises trailing slashes on page URLs so that issues and pages always match correctly.
+
+`orphan_detection` reports whether `ORPHAN_PAGE` ran, and over how much of the site. `status` is one of `complete`, `skipped_partial_scan`, `skipped_truncated`, `skipped_cancelled`, `skipped_single_page`, `skipped_failed`, `not_run` — **treat any unrecognised value as "did not run"**, never as complete. `pages_analysed` counts the pages the check reasoned over (HTML pages), not every fetched file. `pages_out_of_scope` is the shortfall: out-of-scope URLs on a partial scan, still-queued URLs on a truncation. Even on `complete`, `archives_skipped` (WordPress archives are skipped before their links are read) and `pages_links_unread` (pages that timed out, hit a login wall, or failed to parse) mean the graph was not exhaustive — surface both as caveats beside the result. `ORPHAN_PAGE` concludes that *nothing* links to a page, which is only decidable after crawling the whole site — so a partial scan, a `max_pages` truncation, or a cancellation suppresses the check rather than flagging every page whose only inbound link lives outside the crawl. **A suppressed check returns zero orphans**: clients must branch on `status` and never read an empty result as "no orphans found". The field is `null` on audits crawled before it existed.
 
 `agent_health_score` (agent-readiness Phase 1) is a separate 0–100 score using the same per-page model, but the impact sum is restricted to **agent-relevant** issues: categories `ai_readiness` / `rendering` / `semantic_html` plus codes `PLACEHOLDER_LINK` and `WRONG_PLACEHOLDER_LINK`. `agent_readiness.breakdown[]` lists per-category issue counts and summed impact. More failing agent checks never raise the score (monotonic non-increasing).
 

@@ -103,6 +103,7 @@ class RedisJobStore:
             "scoring_model_version",
             "images_seen_total",
             "images_collected",
+            "orphan_detection",
             "web_vitals",
             "wp_audit",
             "blueprints",
@@ -304,6 +305,11 @@ class RedisJobStore:
                 "score": agent_health_score,
                 "breakdown": agent_breakdown,
             },
+            # O2: whether ORPHAN_PAGE ran and over how much of the site.
+            # Suppressed (partial scan / truncated / cancelled) yields zero
+            # orphans, which must never render as "no orphans found" (P31).
+            # None on audits crawled before this field existed.
+            "orphan_detection": job.orphan_detection,
         }
 
     async def get_pages_with_issue_counts(
@@ -632,6 +638,7 @@ class RedisJobStore:
             # E1.4 — image-cap disclosure; "" sentinel for None.
             "images_seen_total": "" if job.images_seen_total is None else str(job.images_seen_total),
             "images_collected": "" if job.images_collected is None else str(job.images_collected),
+            "orphan_detection": json.dumps(job.orphan_detection) if job.orphan_detection else "",
             "web_vitals": json.dumps(job.web_vitals) if job.web_vitals else "",
             "wp_audit": json.dumps(job.wp_audit) if job.wp_audit else "",
             "blueprints": json.dumps(job.blueprints) if job.blueprints else "",
@@ -661,6 +668,7 @@ class RedisJobStore:
             # E1.4 — legacy hashes lack these keys; "" and missing both → None.
             images_seen_total=int(m["images_seen_total"]) if m.get("images_seen_total") else None,
             images_collected=int(m["images_collected"]) if m.get("images_collected") else None,
+            orphan_detection=json.loads(m["orphan_detection"]) if m.get("orphan_detection") else None,
             web_vitals=json.loads(m["web_vitals"]) if m.get("web_vitals") else None,
             wp_audit=json.loads(m["wp_audit"]) if m.get("wp_audit") else None,
             blueprints=json.loads(m["blueprints"]) if m.get("blueprints") else None,

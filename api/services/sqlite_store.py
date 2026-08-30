@@ -99,6 +99,8 @@ class SQLiteJobStore:
             # E1.4 — image-cap disclosure (analysed N of M)
             ("images_seen_total", "INTEGER"),
             ("images_collected", "INTEGER"),
+            # O2 — orphan-detection coverage (complete / skipped_*)
+            ("orphan_detection", "TEXT"),
             ("web_vitals", "TEXT"),
             ("wp_audit", "TEXT"),
             ("blueprints", "TEXT"),
@@ -259,6 +261,7 @@ class SQLiteJobStore:
             "scoring_model_version",
             "images_seen_total",
             "images_collected",
+            "orphan_detection",
             "web_vitals",
             "wp_audit",
             "blueprints",
@@ -601,6 +604,11 @@ class SQLiteJobStore:
                 "score": agent_health_score,
                 "breakdown": agent_breakdown,
             },
+            # O2: whether ORPHAN_PAGE ran and over how much of the site.
+            # Suppressed (partial scan / truncated / cancelled) yields zero
+            # orphans, which must never render as "no orphans found" (P31).
+            # None on audits crawled before this field existed.
+            "orphan_detection": job.orphan_detection,
             "robots_txt": robots_info,
             "sitemap": sitemap_info,
         }
@@ -1697,6 +1705,7 @@ def _row_to_job(row: dict) -> CrawlJob:
         # which surfaces must render as such rather than as full coverage.
         images_seen_total=row.get("images_seen_total"),
         images_collected=row.get("images_collected"),
+        orphan_detection=json.loads(row["orphan_detection"]) if row.get("orphan_detection") else None,
         web_vitals=json.loads(row["web_vitals"]) if row.get("web_vitals") else None,
         wp_audit=json.loads(row["wp_audit"]) if row.get("wp_audit") else None,
         blueprints=json.loads(row["blueprints"]) if row.get("blueprints") else None,

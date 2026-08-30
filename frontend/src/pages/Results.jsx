@@ -2031,12 +2031,18 @@ function Spinner() { return <div className="animate-spin rounded-full h-8 w-8 bo
 // Orphaned Content Components
 // ---------------------------------------------------------------------------
 
-function OrphanedSummaryCards({ jobId, onOrphanImagesClick, onOrphanPagesClick }) {
+// Exported for test: the tile must not print a bare 0 for a check that was
+// suppressed — the second surface needs its own assertion (P25).
+export function OrphanedSummaryCards({ jobId, onOrphanImagesClick, onOrphanPagesClick }) {
   const { getFontClass } = useTheme()
   const [orphanPages, setOrphanPages] = useState(null)
 
   useEffect(() => {
-    getOrphanedPages(jobId).then(setOrphanPages).catch(() => {})
+    getOrphanedPages(jobId)
+      .then(setOrphanPages)
+      // A swallowed error left the tile showing '...' forever, indistinguishable
+      // from a slow request. Record the failure so it renders as unknown.
+      .catch(() => setOrphanPages({ count: 0, pages: [], detection: { status: 'skipped_error' } }))
   }, [jobId])
 
   return (
@@ -2057,11 +2063,21 @@ function OrphanedSummaryCards({ jobId, onOrphanImagesClick, onOrphanPagesClick }
           onClick={onOrphanPagesClick}
           className="bg-white border border-gray-200 rounded-2xl p-5 hover:border-amber-400 hover:shadow-md transition-all text-left group"
         >
-          <p className="text-3xl font-black text-amber-600 group-hover:text-amber-700">{orphanPages?.count ?? '...'}</p>
+          {/* O2: a suppressed check returns zero — showing "0" would report
+              "no orphans" for a scan that never looked (P31). */}
+          <p className="text-3xl font-black text-amber-600 group-hover:text-amber-700">
+            {orphanPages?.detection && orphanPages.detection.status !== 'complete'
+              ? '—'
+              : (orphanPages?.count ?? '...')}
+          </p>
           <p className="font-black text-gray-800 uppercase tracking-wider mt-1 group-hover:text-amber-600" style={getFontClass('headingSize')}>
             Orphaned Pages
           </p>
-          <p className="text-xs text-gray-400 mt-1">Pages with no internal links pointing to them.</p>
+          <p className="text-xs text-gray-400 mt-1">
+            {orphanPages?.detection && orphanPages.detection.status !== 'complete'
+              ? 'Not checked — this scan did not cover the whole site. Click for details.'
+              : 'Pages with no internal links pointing to them.'}
+          </p>
         </button>
       </div>
     </section>

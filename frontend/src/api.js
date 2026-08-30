@@ -439,7 +439,15 @@ export async function getOrphanedPages(jobId) {
   const data = await checkResponse(res)
   // Filter to just ORPHAN_PAGE issues
   const orphans = (data.issues || []).filter(i => i.issue_code === 'ORPHAN_PAGE')
-  return { count: orphans.length, pages: orphans }
+  // O2: orphan detection is suppressed when the crawl did not cover the whole
+  // site (partial scan, page-budget truncation, cancellation) — an absent
+  // inbound link is then unknowable, not absent (P31). Carry the reason so the
+  // UI can say "not checked" instead of showing zero as an all-clear.
+  return {
+    count: orphans.length,
+    pages: orphans,
+    detection: data.summary?.orphan_detection ?? null,
+  }
 }
 
 /**

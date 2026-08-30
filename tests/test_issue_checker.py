@@ -1324,6 +1324,120 @@ class TestOrphanPage:
         assert not any(i.code == "ORPHAN_PAGE" and i.page_url == "https://example.com/about"
                        for i in issues)
 
+    # ── O1: absence is only decidable over a complete link graph (P31) ──────
+    # Fixture mirrors the real livingsystems.ca case: /training-2/ is a
+    # WordPress Page carrying every inbound link to the /training/… items, and
+    # a partial scan of five custom post types never fetched it. The full crawl
+    # flagged 0 of 8 items; the partial scan flagged 8 of 8.
+    # Spec: docs/functional-specification.md §4.4 (ORPHAN_PAGE)
+
+    @staticmethod
+    def _training_site(include_hub: bool):
+        """The item pages, with or without the hub page that links to them."""
+        home = _page(url="https://example.com/", links=[
+            ParsedLink(url="https://example.com/training-2",
+                       text="Training", is_internal=True),
+        ])
+        hub = _page(url="https://example.com/training-2", links=[
+            ParsedLink(url="https://example.com/training/seminar",
+                       text="Application Seminar", is_internal=True),
+            ParsedLink(url="https://example.com/training/intro",
+                       text="Intro Lunch & Learn", is_internal=True),
+        ])
+        items = [
+            _page(url="https://example.com/training/seminar", links=[]),
+            _page(url="https://example.com/training/intro", links=[]),
+        ]
+        return [home] + ([hub] if include_hub else []) + items
+
+    def test_o1_1_no_orphans_when_link_graph_incomplete(self):
+        """A page linked only from an out-of-scope page is not flagged."""
+        # The hub is out of scope, so its two links are unobservable.
+        pages = self._training_site(include_hub=False)
+        issues = check_cross_page(pages, start_url="https://example.com/",
+                                  link_graph_complete=False)
+        assert not any(i.code == "ORPHAN_PAGE" for i in issues)
+
+    def test_o1_1_same_pages_are_flagged_when_graph_claimed_complete(self):
+        """Control: without the gate these very pages DO get flagged, so the
+        test above is proving the gate and not an inert fixture."""
+        pages = self._training_site(include_hub=False)
+        issues = check_cross_page(pages, start_url="https://example.com/",
+                                  link_graph_complete=True)
+        orphans = {i.page_url for i in issues if i.code == "ORPHAN_PAGE"}
+        assert orphans == {"https://example.com/training/seminar",
+                           "https://example.com/training/intro"}
+
+    def test_o1_2_genuine_orphan_still_flagged_when_graph_complete(self):
+        """Adversarial: the gate must not amount to disabling the check. With
+        the hub present, the linked items clear and a truly unlinked page does
+        not."""
+        pages = self._training_site(include_hub=True)
+        pages.append(_page(url="https://example.com/hidden", links=[]))
+        issues = check_cross_page(pages, start_url="https://example.com/",
+                                  link_graph_complete=True)
+        orphans = {i.page_url for i in issues if i.code == "ORPHAN_PAGE"}
+        assert orphans == {"https://example.com/hidden"}
+
+    def test_o1_2_default_is_complete_so_existing_callers_are_unchanged(self):
+        """The parameter defaults to True — omitting it keeps the old behaviour."""
+        pages = self._training_site(include_hub=True)
+        pages.append(_page(url="https://example.com/hidden", links=[]))
+        with_default = {i.page_url for i in check_cross_page(
+            pages, start_url="https://example.com/") if i.code == "ORPHAN_PAGE"}
+        assert with_default == {"https://example.com/hidden"}
+
+    def test_o1_1_gate_suppresses_only_orphan_page(self):
+        """The gate is scoped to ORPHAN_PAGE — other cross-page checks still run
+        on a partial crawl, where they remain sound (P13: a guard must cover
+        exactly the steps it means to).
+
+        Asserts on a code emitted AFTER the gate. TITLE_DUPLICATE would prove
+        nothing: it is emitted well before the gate, so no widening of that `if`
+        could ever suppress it, and the test would pass against the very defect
+        it names. ANALYTICS_ID_INCONSISTENT comes from
+        `_check_analytics_consistency`, which runs after the orphan block.
+        """
+        tagged = _page(url="https://example.com/a", links=[])
+        tagged.analytics_tags = [{"type": "ga4", "id": "G-AAA111BBB"}]
+        untagged = _page(url="https://example.com/b", links=[])
+        untagged.analytics_tags = []
+        codes = {i.code for i in check_cross_page(
+            [tagged, untagged], start_url="https://example.com/",
+            link_graph_complete=False)}
+        assert "ORPHAN_PAGE" not in codes
+        assert "ANALYTICS_ID_INCONSISTENT" in codes, (
+            "post-gate cross-page checks must still run on a partial crawl")
+
+    def test_o1_1_links_are_read_from_every_page_not_just_html_pages(self):
+        """A page failing the html_pages filter (no title/meta/h1) still carries
+        real anchors. If its links are dropped from the graph, the pages it
+        links to are invented as orphans on an otherwise complete crawl — the
+        exact inference the gate exists to prevent, arriving by another door."""
+        home = _page(url="https://example.com/", links=[])
+        # Bare page: no title, no meta, no h1 — excluded from `pages`, but its
+        # anchor is real and the crawler fetched it.
+        bare = _page(url="https://example.com/bare", title=None,
+                     meta_description=None, h1_tags=[], links=[
+                         ParsedLink(url="https://example.com/target",
+                                    text="Target", is_internal=True),
+                     ])
+        target = _page(url="https://example.com/target", links=[])
+        issues = check_cross_page([home, target], start_url="https://example.com/",
+                                  link_source_pages=[home, bare, target])
+        orphans = {i.page_url for i in issues if i.code == "ORPHAN_PAGE"}
+        assert "https://example.com/target" not in orphans
+
+    def test_o1_1_link_sources_default_to_the_candidate_pages(self):
+        """Control: omitting link_source_pages keeps the old single-set
+        behaviour, so the wider set is opt-in and existing callers are safe."""
+        home = _page(url="https://example.com/", links=[])
+        target = _page(url="https://example.com/target", links=[])
+        orphans = {i.page_url for i in check_cross_page(
+            [home, target], start_url="https://example.com/")
+            if i.code == "ORPHAN_PAGE"}
+        assert orphans == {"https://example.com/target"}
+
 
 # ---------------------------------------------------------------------------
 # Bug fix: INTERNAL_REDIRECT_301 (was emitting REDIRECT_301 for all 301s)

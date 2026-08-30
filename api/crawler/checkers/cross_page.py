@@ -52,7 +52,9 @@ _WORD_RE = re.compile(r"[a-z0-9]+")
 _MERSENNE_PRIME = (1 << 61) - 1
 
 
-def check_cross_page(pages: list[ParsedPage], start_url: str | None = None) -> list[Issue]:
+def check_cross_page(pages: list[ParsedPage], start_url: str | None = None,
+                     link_graph_complete: bool = True,
+                     link_source_pages: list[ParsedPage] | None = None) -> list[Issue]:
     """Run duplicate-detection checks across all crawled pages.
 
     Detects:
@@ -64,6 +66,22 @@ def check_cross_page(pages: list[ParsedPage], start_url: str | None = None) -> l
     Args:
         pages: All crawled HTML pages.
         start_url: Normalised start URL of the crawl (homepage — excluded from orphan check).
+        link_graph_complete: True when the crawl visited the whole site, so an
+            absent inbound link really means "nothing links here". False when a
+            partial scan, a page-budget truncation, or a cancellation left part
+            of the site unfetched — then ORPHAN_PAGE is not emitted at all,
+            because a link living on an unfetched page is indistinguishable
+            from no link (P31). Defaults to True so existing callers are
+            unchanged; only the engine, which knows what it narrowed, sets it
+            False. The caller must report the suppression — a suppressed check
+            renders as "0 orphans", which reads as a clean bill of health.
+        link_source_pages: every page whose outbound links should count towards
+            discoverability. Defaults to *pages*. The caller passes a WIDER set
+            when *pages* has been filtered: `pages` is normally `html_pages`
+            (title/meta/h1 present), but a page failing that filter still
+            carries real anchors, and dropping it from the link graph
+            manufactures orphans on an otherwise complete crawl. Candidates are
+            still drawn from *pages* — only the links come from here.
 
     Returns a flat list of issues (one per affected URL, not per pair).
     """
@@ -168,13 +186,52 @@ def check_cross_page(pages: list[ParsedPage], start_url: str | None = None) -> l
             issues.append(make_issue("CANONICAL_MISSING", url))
 
     # ORPHAN_PAGE — pages with no internal links pointing to them.
-    # A page linking to itself does NOT make it discoverable; only links
-    # from OTHER pages do. The pre-fix code added every internal link to
-    # the discovered bucket, so a genuinely orphan page with a self-link
-    # (a "Back to top" anchor, a logo link to the current URL, etc.)
-    # silently evaded detection.
+    # Sound only over a COMPLETE link graph: the inbound link that would clear a
+    # page may live on a page this crawl never fetched, and "not observed" is
+    # not "does not exist" (P31). A partial scan is the worst case — it flags
+    # MORE pages, not fewer, because every out-of-scope linking page is
+    # invisible. The caller owns reporting the suppression: a skipped check
+    # yields zero orphans, which every surface renders as a clean bill of
+    # health unless it is told otherwise.
+    if link_graph_complete:
+        issues.extend(_check_orphan_pages(
+            pages, start_url,
+            link_source_pages if link_source_pages is not None else pages))
+
+    # ── "Search Everywhere" GEO — brand-entity + body-uniqueness (P1) ────────
+    # Only non-redirect pages participate (same filter as duplicate detection).
+    live_pages = [p for p in pages
+                  if not (p.redirect_url or (300 <= p.status_code < 400))]
+    issues.extend(_check_entity_consistency(live_pages, start_url))
+    issues.extend(_check_body_uniqueness(live_pages))
+
+    # ── Analytics & Measurement — inconsistent tag ID across the site (MI3) ──
+    issues.extend(_check_analytics_consistency(live_pages))
+
+    return issues
+
+
+def _check_orphan_pages(pages: list[ParsedPage], start_url: str | None,
+                        link_source_pages: list[ParsedPage]) -> list[Issue]:
+    """Flag crawled pages that no OTHER crawled page links to.
+
+    Purpose: surface pages reachable only by sitemap or direct URL.
+    Spec:    docs/functional-specification.md §4.4 (ORPHAN_PAGE)
+    Tests:   tests/test_issue_checker.py::TestOrphanPage
+
+    Callers must only run this over a complete link graph — see
+    ``check_cross_page``'s ``link_graph_complete``.
+
+    A page linking to itself does NOT make it discoverable; only links from
+    OTHER pages do. The pre-fix code added every internal link to the
+    discovered bucket, so a genuinely orphan page with a self-link (a "Back to
+    top" anchor, a logo link to the current URL, etc.) silently evaded
+    detection.
+    """
+    issues: list[Issue] = []
+
     linked_urls: set[str] = set()
-    for page in pages:
+    for page in link_source_pages:
         try:
             page_norm = normalise_url(page.url)
         except Exception:
@@ -201,20 +258,13 @@ def check_cross_page(pages: list[ParsedPage], start_url: str | None = None) -> l
         if norm not in linked_urls:
             issues.append(make_issue("ORPHAN_PAGE", page.url,
                                      extra={"title": page.title,
-                                            # R2.x #4: link discovery is raw-HTML only.
+                                            # R2.x #4: link discovery is raw-HTML only,
+                                            # and WP archive pages are skipped before
+                                            # their outbound links are ever read.
                                             "caveat": "Internal links are discovered from raw HTML; "
-                                            "pages linked only via JavaScript or query-driven "
-                                            "listings (e.g. loop grids) may be false positives."}))
-
-    # ── "Search Everywhere" GEO — brand-entity + body-uniqueness (P1) ────────
-    # Only non-redirect pages participate (same filter as duplicate detection).
-    live_pages = [p for p in pages
-                  if not (p.redirect_url or (300 <= p.status_code < 400))]
-    issues.extend(_check_entity_consistency(live_pages, start_url))
-    issues.extend(_check_body_uniqueness(live_pages))
-
-    # ── Analytics & Measurement — inconsistent tag ID across the site (MI3) ──
-    issues.extend(_check_analytics_consistency(live_pages))
+                                            "pages linked only via JavaScript, query-driven "
+                                            "listings (e.g. loop grids), or a skipped WordPress "
+                                            "archive may be false positives."}))
 
     return issues
 

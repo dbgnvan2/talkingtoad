@@ -416,6 +416,9 @@ async def _run_crawl_background(
             # every export can state coverage honestly.
             images_seen_total=result.images_seen_total,
             images_collected=result.images_collected,
+            # O2: persist WHY orphan detection did or did not run, so no surface
+            # has to infer "clean" from an empty result set (P31 corollary).
+            orphan_detection=result.orphan_detection,
         )
         logger.info("crawl_persisted", extra={"job_id": job_id, "status": final_status})
 
@@ -426,6 +429,12 @@ async def _run_crawl_background(
             status="failed",
             error_message=str(exc),
             completed_at=datetime.now(timezone.utc),
+            # O2: the crawl died before the cross-page phase, so orphan
+            # detection did not run. Without this the job reads back as
+            # "not recorded" and the panel shows the all-clear (P31).
+            orphan_detection={"status": "skipped_failed",
+                              "pages_analysed": 0, "pages_out_of_scope": 0,
+                              "archives_skipped": False},
         )
     finally:
         _cancel_events.pop(job_id, None)
@@ -1186,6 +1195,14 @@ async def scan_single_page(
     )
     await store.create_job(job)
     job_id = job.job_id
+    # O2: a single-page scan never builds a link graph, so orphan detection
+    # cannot have run — record that, or the panel treats this job like a legacy
+    # full crawl and prints the green all-clear (P31). Written via update_job,
+    # not on the model: create_job's INSERT is a fixed column list and would
+    # drop the field silently (same reason priority_seed is written this way).
+    await store.update_job(job_id, orphan_detection={
+        "status": "skipped_single_page", "pages_analysed": 1,
+        "pages_out_of_scope": 0, "archives_skipped": False})
 
     # Inherit suppress_h1_strings and suppress_banner_h1 from the most recent
     # completed job for this origin so that theme-injected headings stay suppressed

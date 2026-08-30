@@ -409,6 +409,10 @@ class TestCancellation:
             result = await run_crawl("job-14", BASE_URL, settings, cancel_event=cancel)
 
         assert result.cancelled is True
+        # O2: a cancelled crawl never reached the cross-page phase, so it must
+        # not claim it checked for orphans. Without this the result falls back
+        # to the dataclass default and a cancelled crawl shows the all-clear.
+        assert result.orphan_detection["status"] == "skipped_cancelled"
 
 
 class TestMaxPagesCap:
@@ -797,3 +801,263 @@ class TestLlmsTxtValidation:
         invalid = [i for i in result.issues if i.code == "LLMS_TXT_INVALID"]
         assert len(missing) >= 1, "404 llms.txt should flag LLMS_TXT_MISSING"
         assert invalid == [], "404 llms.txt should not flag LLMS_TXT_INVALID"
+
+
+# ---------------------------------------------------------------------------
+# O1/O2 — ORPHAN_PAGE is an absence-proof and must not run over a partial
+# link graph (P31). These tests sit at the ENGINE, not the checker: a checker
+# test proves the gate works, only an engine test proves the engine sets it
+# (P25).
+# Spec: docs/functional-specification.md §4.4 (ORPHAN_PAGE)
+# ---------------------------------------------------------------------------
+
+_HUB_HTML = """<!DOCTYPE html>
+<html><head><title>Training Hub Page With A Good Long Title</title>
+<meta name="description" content="A hub description long enough to pass the checks here.">
+</head><body><h1>Training</h1>
+<a href="/training/seminar">Application Seminar</a>
+</body></html>"""
+
+_ITEM_HTML = """<!DOCTYPE html>
+<html><head><title>Application Seminar Page With A Long Title</title>
+<meta name="description" content="An item description long enough to pass the checks here.">
+</head><body><h1>Seminar</h1></body></html>"""
+
+_HOME_LINKS_HUB = """<!DOCTYPE html>
+<html><head><title>Home Page With A Good Long Title Here</title>
+<meta name="description" content="A good description that is long enough to pass validation here.">
+</head><body><h1>Home</h1>
+<a href="/training-2">Training</a>
+</body></html>"""
+
+
+_TRAINING_SITEMAP = """<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url><loc>https://example.com/</loc></url>
+  <url><loc>https://example.com/training-2</loc></url>
+  <url><loc>https://example.com/training/seminar</loc></url>
+</urlset>"""
+
+
+def _mock_training_site(mock: respx.MockRouter) -> None:
+    """Home → /training-2 → /training/seminar, mirroring livingsystems.ca.
+
+    The sitemap lists all three, which is how a scoped scan reaches an item
+    whose only inbound link lives on an out-of-scope page.
+    """
+    _mock_standard_setup(mock, home_html=_HOME_LINKS_HUB)
+    mock.get(SITEMAP_URL).mock(
+        return_value=httpx.Response(200, text=_TRAINING_SITEMAP,
+                                    headers={"content-type": "application/xml"}))
+    mock.get("https://example.com/training-2").mock(
+        return_value=httpx.Response(200, text=_HUB_HTML, headers={"content-type": "text/html"}))
+    mock.get("https://example.com/training/seminar").mock(
+        return_value=httpx.Response(200, text=_ITEM_HTML, headers={"content-type": "text/html"}))
+
+
+class TestOrphanDetectionCoverage:
+    @pytest.mark.asyncio
+    async def test_o1_4_scoped_crawl_suppresses_orphan_detection(self):
+        """A partial scan that excludes the page carrying the inbound links must
+        not report the item it links to as an orphan.
+
+        This is the reported livingsystems.ca defect in miniature: the hub page
+        `/training-2` is not in the selected content types, so the crawl never
+        sees its link to `/training/seminar`.
+        """
+        with respx.mock:
+            _mock_training_site(respx.mock)
+            settings = CrawlSettings(
+                crawl_delay_ms=0, max_pages=10,
+                scope_urls={"https://example.com/training/seminar"},
+            )
+            result = await run_crawl("job-orphan-scope", BASE_URL, settings)
+
+        assert result.orphan_detection["status"] == "skipped_partial_scan"
+        assert not any(i.code == "ORPHAN_PAGE" for i in result.issues)
+        # The item WAS crawled — the fixture is not vacuously empty.
+        assert any(p.url == "https://example.com/training/seminar" for p in result.pages)
+
+    @pytest.mark.asyncio
+    async def test_o1_4_full_crawl_runs_orphan_detection(self):
+        """Control: the same site crawled whole reports complete coverage, and
+        the item clears because the hub's link is visible."""
+        with respx.mock:
+            _mock_training_site(respx.mock)
+            settings = CrawlSettings(crawl_delay_ms=0, max_pages=10)
+            result = await run_crawl("job-orphan-full", BASE_URL, settings)
+
+        assert result.orphan_detection["status"] == "complete"
+        # pages_analysed is the population the CHECK saw (html_pages), not every
+        # fetched byte. Asserting == pages_crawled was a tautology here: both
+        # spell len(all_pages) when every page is HTML. Assert the real count.
+        assert result.orphan_detection["pages_analysed"] == 3
+        orphans = {i.page_url for i in result.issues if i.code == "ORPHAN_PAGE"}
+        assert orphans == set(), f"nothing should be orphaned on a fully-linked site, got {orphans}"
+
+    @pytest.mark.asyncio
+    async def test_o1_3_max_pages_truncation_suppresses_orphan_detection(self):
+        """Stopping at the page budget leaves URLs queued, so the graph is
+        partial for the same reason a scoped scan's is."""
+        home_html = """<!DOCTYPE html>
+<html><head><title>Home Page With A Good Long Title Here</title>
+<meta name="description" content="A good description that is long enough to pass validation here.">
+</head><body><h1>Home</h1>
+<a href="/page1">P1</a><a href="/page2">P2</a><a href="/page3">P3</a>
+</body></html>"""
+        with respx.mock:
+            _mock_standard_setup(respx.mock, home_html=home_html)
+            for i in range(1, 4):
+                respx.get(f"https://example.com/page{i}").mock(
+                    return_value=httpx.Response(200, text=_ITEM_HTML,
+                                                headers={"content-type": "text/html"}))
+            settings = CrawlSettings(crawl_delay_ms=0, max_pages=2)
+            result = await run_crawl("job-orphan-trunc", BASE_URL, settings)
+
+        assert result.orphan_detection["status"] == "skipped_truncated"
+        assert not any(i.code == "ORPHAN_PAGE" for i in result.issues)
+
+    @pytest.mark.asyncio
+    async def test_o1_3_crawl_that_fits_the_budget_is_not_truncated(self):
+        """Adversarial: reaching max_pages exactly, with an empty frontier, is
+        not a truncation — the gate must not fire on every crawl."""
+        with respx.mock:
+            _mock_training_site(respx.mock)
+            settings = CrawlSettings(crawl_delay_ms=0, max_pages=3)
+            result = await run_crawl("job-orphan-exact", BASE_URL, settings)
+
+        assert result.pages_crawled == 3
+        assert result.orphan_detection["status"] == "complete"
+
+    @pytest.mark.asyncio
+    async def test_o1_4_single_page_scan_does_not_claim_completeness(self):
+        """A single-page scan seeds no sitemap and follows no links, so it never
+        builds a link graph. It trivially yields zero orphans (the start URL is
+        exempt), which without a status reads as a clean bill of health."""
+        with respx.mock:
+            _mock_training_site(respx.mock)
+            settings = CrawlSettings(crawl_delay_ms=0, max_pages=10, single_page=True)
+            result = await run_crawl("job-orphan-single", BASE_URL, settings)
+
+        assert result.pages_crawled == 1
+        assert result.orphan_detection["status"] == "skipped_single_page"
+
+    @pytest.mark.asyncio
+    async def test_o2_truncation_discloses_what_was_left_unfetched(self):
+        """`pages_out_of_scope` was 0 on the truncated path — the disclosure
+        named a shortfall and then quantified it as nothing."""
+        home_html = """<!DOCTYPE html>
+<html><head><title>Home Page With A Good Long Title Here</title>
+<meta name="description" content="A good description that is long enough to pass validation here.">
+</head><body><h1>Home</h1>
+<a href="/page1">P1</a><a href="/page2">P2</a><a href="/page3">P3</a>
+</body></html>"""
+        with respx.mock:
+            _mock_standard_setup(respx.mock, home_html=home_html)
+            for i in range(1, 4):
+                respx.get(f"https://example.com/page{i}").mock(
+                    return_value=httpx.Response(200, text=_ITEM_HTML,
+                                                headers={"content-type": "text/html"}))
+            settings = CrawlSettings(crawl_delay_ms=0, max_pages=2)
+            result = await run_crawl("job-orphan-trunc-count", BASE_URL, settings)
+
+        assert result.orphan_detection["status"] == "skipped_truncated"
+        assert result.orphan_detection["pages_out_of_scope"] > 0, \
+            "a truncated crawl left pages unfetched — say how many"
+
+    @pytest.mark.asyncio
+    async def test_o2_complete_crawl_discloses_that_archives_were_skipped(self):
+        """`skip_wp_archives` is ON by default and drops archive pages before
+        their outbound links are read, so even a complete crawl has not seen
+        every anchor. The claim travels with the result rather than being
+        silently folded into "complete"."""
+        with respx.mock:
+            _mock_training_site(respx.mock)
+            settings = CrawlSettings(crawl_delay_ms=0, max_pages=10)
+            result = await run_crawl("job-orphan-archives", BASE_URL, settings)
+
+        assert result.orphan_detection["status"] == "complete"
+        assert result.orphan_detection["archives_skipped"] is True
+
+    @pytest.mark.asyncio
+    async def test_o2_internal_fetch_failure_is_counted_as_links_unread(self):
+        """A page the crawl reached but could not read is a hole in the graph:
+        if a hub times out, everything it links to looks orphaned. The count
+        must come from INTERNAL pages only — external-link checks share the
+        same fetcher and log the same `fetch_error`, but an unreachable
+        external site tells us nothing about internal discoverability."""
+        sitemap = """<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url><loc>https://example.com/</loc></url>
+  <url><loc>https://example.com/dead</loc></url>
+</urlset>"""
+        with respx.mock:
+            _mock_standard_setup(respx.mock, home_html=_HTML_WITH_EXTERNAL_LINK)
+            respx.get(SITEMAP_URL).mock(
+                return_value=httpx.Response(200, text=sitemap,
+                                            headers={"content-type": "application/xml"}))
+            respx.get("https://example.com/dead").mock(
+                side_effect=httpx.ConnectTimeout("timed out"))
+            # An external link that also fails — must NOT inflate the count.
+            respx.get("https://external-site.org/").mock(
+                side_effect=httpx.ConnectTimeout("timed out"))
+            respx.head("https://external-site.org/").mock(
+                side_effect=httpx.ConnectTimeout("timed out"))
+
+            settings = CrawlSettings(crawl_delay_ms=0, max_pages=10)
+            result = await run_crawl("job-orphan-unread", BASE_URL, settings)
+
+        assert result.orphan_detection["pages_links_unread"] == 1, (
+            "exactly the one unreadable INTERNAL page should be counted")
+
+    @pytest.mark.asyncio
+    async def test_o2_clean_crawl_counts_no_unread_pages(self):
+        """Adversarial: the counter must not drift upward on a healthy crawl."""
+        with respx.mock:
+            _mock_training_site(respx.mock)
+            settings = CrawlSettings(crawl_delay_ms=0, max_pages=10)
+            result = await run_crawl("job-orphan-unread-clean", BASE_URL, settings)
+
+        assert result.orphan_detection["pages_links_unread"] == 0
+
+    @pytest.mark.asyncio
+    async def test_unreadable_internal_page_still_reports_page_timeout(self):
+        """Guard for an emission nothing else covered.
+
+        While adding the unread-pages counter, a bad edit de-indented the
+        `continue` above this branch and made the PAGE_TIMEOUT emission dead
+        code. Every crawl would have silently stopped reporting unreachable
+        pages, and the full suite stayed green — no test asserted the ENGINE
+        emits this code, only that the registry and scoring know about it.
+        """
+        sitemap = """<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url><loc>https://example.com/</loc></url>
+  <url><loc>https://example.com/dead</loc></url>
+</urlset>"""
+        with respx.mock:
+            _mock_standard_setup(respx.mock)
+            respx.get(SITEMAP_URL).mock(
+                return_value=httpx.Response(200, text=sitemap,
+                                            headers={"content-type": "application/xml"}))
+            respx.get("https://example.com/dead").mock(
+                side_effect=httpx.ConnectTimeout("timed out"))
+
+            settings = CrawlSettings(crawl_delay_ms=0, max_pages=10)
+            result = await run_crawl("job-page-timeout", BASE_URL, settings)
+
+        timeouts = [i for i in result.issues if i.code == "PAGE_TIMEOUT"]
+        assert len(timeouts) == 1
+        assert timeouts[0].page_url == "https://example.com/dead"
+
+    @pytest.mark.asyncio
+    async def test_o2_default_result_does_not_claim_completeness(self):
+        """Any CrawlResult built without an explicit orphan_detection must read
+        as "not run". A "complete" default lets a path that never ran the check
+        — the invalid-URL early return, a future branch — assert a whole-site
+        scan on its behalf."""
+        from api.crawler.engine import CrawlResult
+
+        bare = CrawlResult(job_id="x", pages=[], issues=[], pages_crawled=0,
+                           external_links_checked=0)
+        assert bare.orphan_detection["status"] != "complete"

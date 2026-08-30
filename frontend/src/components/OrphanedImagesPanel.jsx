@@ -55,7 +55,27 @@ export default function OrphanedImagesPanel({ jobId, domain }) {
         </div>
       )}
 
-      {data && (
+      {/* O2/P31 — this is an absence-proof over the crawled page set. On a
+          partial or truncated crawl an image used only on an unfetched page
+          looks orphaned, and every row deep-links into the WordPress editor,
+          so a false positive here costs the user a real deletion decision. */}
+      {data && data.coverage && data.coverage.status !== 'complete' && (
+        <div className="py-8 px-6 bg-white rounded-2xl border border-blue-200">
+          <p className="text-blue-700 font-medium">Orphaned-media detection was not run for this scan.</p>
+          <p className="text-sm text-gray-600 mt-2">
+            {`An image counts as orphaned only if it appears on no page of your site, which is
+            only knowable after crawling all of it. This scan analysed
+            ${data.coverage.pages_analysed ?? 0} page${(data.coverage.pages_analysed ?? 0) === 1 ? '' : 's'}`}
+            {(data.coverage.pages_out_of_scope ?? 0) > 0
+              ? ` and did not fetch ${data.coverage.pages_out_of_scope}`
+              : ''}
+            {`. An image used only on an unfetched page cannot be told apart from an unused one,
+            so no result is shown rather than a misleading one. Run a full scan to check.`}
+          </p>
+        </div>
+      )}
+
+      {data && !(data.coverage && data.coverage.status !== 'complete') && (
         <div className="space-y-4">
           {/* Stats bar */}
           <div className="grid grid-cols-3 gap-4">

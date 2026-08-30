@@ -49,6 +49,20 @@ async def get_orphaned_media_endpoint(
     if job is None:
         return _err("JOB_NOT_FOUND", f"No job with id {job_id}", 404)
 
+    # O2/P31 — this is the SAME absence-proof as ORPHAN_PAGE, over the same
+    # population: "this media item appears on no crawled page". It is only
+    # sound if the crawl covered the whole site. On a partial scan every image
+    # used only on an unfetched page is reported as orphaned — and each row
+    # deep-links the user into the WordPress editor to act on it. Reuse the
+    # crawl's own coverage record rather than inventing a second one, and skip
+    # the WP call entirely instead of computing an answer we would discard.
+    # Placed BEFORE the credentials/domain checks deliberately: this path
+    # never contacts WordPress, and a user on a partial scan with no WP
+    # configured should be told the scan's coverage, not handed a 400.
+    coverage = job.orphan_detection if isinstance(job.orphan_detection, dict) else None
+    if coverage is not None and coverage.get("status") != "complete":
+        return {"orphaned": [], "count": 0, "coverage": coverage}
+
     if not _CREDS_PATH.exists():
         return _err("NO_CREDENTIALS", "wp-credentials.json not found.", 400)
 
@@ -65,4 +79,4 @@ async def get_orphaned_media_endpoint(
         logger.exception("orphaned_media_failed", extra={"job_id": job_id})
         return _err("ORPHANED_MEDIA_FAILED", str(exc), 500)
 
-    return {"orphaned": orphans, "count": len(orphans)}
+    return {"orphaned": orphans, "count": len(orphans), "coverage": coverage}

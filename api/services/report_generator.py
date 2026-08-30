@@ -892,6 +892,13 @@ def _render_caveats_section(pdf, job, summary, *, performance, image_summary,
     got_imgs = getattr(job, "images_collected", None)
     if seen_imgs and got_imgs is not None and seen_imgs > got_imgs:
         limits.append(f"Images: analysed {got_imgs} of {seen_imgs} distinct images found.")
+    # O2: a suppressed orphan check produces zero rows in the crawlability
+    # section. Without this line the report reads as "no orphaned pages" for a
+    # scan that never looked — the same false all-clear the panel fixes (P31).
+    from api.services.coverage_notes import orphan_coverage_note
+    _orphan_note = orphan_coverage_note(job)
+    if _orphan_note:
+        limits.append(_orphan_note)
     if limits:
         _para("Limits reached during this crawl", bold=True, color=COLOR_GRAY_800, size=12)
         for line in limits:

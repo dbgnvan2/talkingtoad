@@ -116,6 +116,14 @@ class CrawlJob(BaseModel):
     # audits read back as None, which surfaces render as "not recorded".
     images_seen_total: int | None = None
     images_collected: int | None = None
+    # O2 (2026-08-29) — whether ORPHAN_PAGE ran, and over how much of the site.
+    # `status` is one of complete / skipped_partial_scan / skipped_truncated /
+    # skipped_cancelled. ORPHAN_PAGE is an absence-proof, unsound over a partial
+    # link graph (P31), so a narrowed crawl suppresses it — and "0 orphans" then
+    # means "not checked", not "none found". Every surface must render the two
+    # differently. Legacy audits read back as None ("not recorded").
+    # Spec: docs/functional-specification.md §4.4 (ORPHAN_PAGE)
+    orphan_detection: dict | None = None
     # D2 (2026-08-29) — Core Web Vitals, collected by an opt-in post-scan step.
     # None means "not collected", which the report must render as such rather
     # than as "this site is fast".

@@ -45,6 +45,12 @@
 11. **Architecture constraints:** a scan must never call the WP API; catalogue ↔ `issueHelp.js` ↔
     scoring ↔ confidence-label parity holds for every new code; serialization includes every field
     the frontend reads.
+12. **Absence over a narrowed population (P31):** does the check conclude *nothing* links to /
+    mentions / references this? That is only decidable over the whole site. Can `scope_urls` (partial
+    scan), `max_pages`, a cancellation, `skip_wp_archives`, or a fetch failure shrink the page set it
+    reasons over — and is it told? **Does narrowing the scan raise the finding count?** Thread
+    completeness in as data, and report the suppressed state as "skipped, covered N of M" — never as
+    zero, which every surface renders as a clean bill of health.
 
 > Pattern definitions (P1–P10) and the reasoning behind each item: `~/.claude/standards/learnings.md`.
 
@@ -57,6 +63,26 @@
 - **Silent display/computation caps.** Several caps protect the crawler but can starve a check or hide
   rows on large sites. Audit each against real-scale data and announce "N of M" rather than truncating
   silently (P9). The GEO 1500-word window and any AI excerpt budget are the highest-risk.
+- **`skip_wp_archives` narrows the link graph orphan detection reasons over.** Default-on, it skips
+  WordPress author/category/tag/date/paginated archives *before* their outbound links are read — so
+  a post linked only from a category archive still reads as `ORPHAN_PAGE`. Not gated (gating on a
+  default-on setting would disable the check on every crawl); stated in the issue's caveat instead.
+  Revisit if it produces real false positives (P31).
+- **CPT / custom-taxonomy archive roots are flagged as orphans on complete crawls.** `is_wp_noise_path()`
+  knows only built-in author/category/tag archives, so `/training`, `/team_members`,
+  `/training_categories/*`, `/team-member-role/*` are crawled and flagged. Technically true, not
+  actionable. An authoritative fix exists — `/wp-json/wp/v2/types` and `/taxonomies` expose archive
+  slugs, and `resolve_scope_urls` already talks to WP REST — so no URL would be classified by pattern.
+- **Suppressing ORPHAN_PAGE RAISES the health score.** `ORPHAN_PAGE` carries impact `(4, 2)`, so a
+  partial scan that previously lost points to 20 false orphans now loses none and scores *higher* —
+  coverage fell and the grade improved. The score was wrong before too (deflated by false positives),
+  but the direction is the wrong way round and checklist item 7 requires the score never to rise as
+  coverage falls. Not fixed here: changing what the score counts is a scoring-model change and needs
+  its own spec + `scoring_model_version` bump. Partially mitigated — the PDF and Excel now carry the
+  coverage note, so a reader sees the caveat beside the number.
+- **`how_it_can_mislead` is data no component reads.** Added to `ORPHAN_PAGE` alongside ~30
+  pre-existing entries that carry the field; no help surface renders it yet. Wiring it is v4
+  content-pass work, tracked in `PLAN-V4.0.md`.
 - **Transient external failures.** 429/timeout on external-link or image checks must not persist as
   permanent "broken"; keep them retryable / "unverified" (P1).
 - **Schema parsing robustness.** `@graph` flattening, multiple JSON-LD blocks, and malformed JSON must
@@ -81,6 +107,16 @@
 ## Fix log
 
 Newest first. Format: **Issue → Root cause → What would have caught it → Fix → Pattern.**
+
+- **2026-08-29 — ORPHAN_PAGE flagged 20 of 37 pages on a partial scan, including every page the user's own hub page links to (reported by the user, from the report).**
+  - *Issue:* `ORPHAN_PAGE` ("no internal links point here") fired on pages that are linked. On livingsystems.ca the same checker gave opposite verdicts on the same site: the full 272-page crawl (`3c205407`) flagged **0 of 8** `/training/*` items; a 37-page partial scan of five custom post types (`bcf3351c`, `type_keys = team_members, conference, banner-message, presentation, training`) flagged **8 of 8**, plus 9 team-member pages — 20 of its 37 crawled pages. `/training-2/` is a WordPress **Page**, not one of the selected types, so the crawl never fetched it; its raw HTML carries 7 links to `/training/<slug>/` and 10 to `/team_members/<slug>/`.
+  - *Root cause:* `check_cross_page` built `linked_urls` from `page.links` over **the pages that were crawled** and flagged any crawled page absent from that set. The inference is only valid over the whole site. The narrowing itself was correct — the user asked for a partial scan — but the downstream absence-proof kept treating the subset as the population, so "not fetched" was recorded as "not linked". `max_pages` truncation and cancellation are the same shape.
+  - *What would have caught it:* a test crawling a site where the only inbound link lives on an out-of-scope page — i.e. exercising the *scoped* path, not just the full one. Every existing orphan test used a complete two- or three-page graph. The signature is backwards from the usual: narrowing the scan makes the check find **more**, so the report looks richer rather than broken. The neighbouring `HIGH_CRAWL_DEPTH` already degraded correctly (fires only when `crawl_depth is not None`) — one checker in the pipeline knew the principle and its sibling guessed.
+  - *Fix:* `check_cross_page(..., link_graph_complete: bool = True)`; the orphan pass moved into `_check_orphan_pages()` and runs only when the flag is true. The engine derives it and records `orphan_detection = {status, pages_analysed, pages_out_of_scope, archives_skipped, pages_links_unread}` on the job — persisted in both stores, returned in the crawl summary, rendered by the Orphaned Pages panel, the Results tile, the PDF caveats section and the Excel summary. **Suppressing the check turns the false positives into a false all-clear**, so the gate and the disclosure shipped together: `count === 0` previously rendered "✓ All crawled pages have at least one internal link", a fabricated pass for a scan that never looked. Verified live on livingsystems.ca: the same partial scan went 20 → 0 false orphans, and a full crawl still found 11 real ones (all WP archive roots) with 0 of 8 `/training/*` items flagged — the gate did not disable the feature.
+  - *Widened after review (two independent passes, warm + cold, converged on the same three defects — P26):* the `CrawlResult` default was `"complete"`, so any path that forgot the field asserted a whole-site scan → now defaults to `not_run`, making the wrong state unrepresentable rather than patching each caller. `single_page` claimed `"complete"` (one page, no graph, zero orphans, green ✓) → new `skipped_single_page`, also written by `/api/crawl/scan-page` and the failed-crawl path. The panel's `.catch` returned a bare `{count: 0}`, so **any** API failure rendered the all-clear. The link graph was built from `html_pages` only, so a page with no title/meta/h1 — 93 of 256 on livingsystems.ca, mostly image uploads — had its real anchors dropped, inventing orphans on *complete* crawls; links now come from every crawled page while candidates still come from `html_pages`. `pages_analysed` reported `len(all_pages)` (256) instead of the population the check reasons over (163). And `find_orphaned_media` is the **same absence-proof over the same page set** behind the adjacent card, ungated, with every row deep-linking into the WordPress editor — now gated on the same coverage record (P31's "fix the class").
+  - *Two bugs found while fixing:* (a) `create_job`'s INSERT is a fixed column list, so setting `orphan_detection` on the model in `/scan-page` would have been **silently dropped** — the same claim-doesn't-reach-the-artifact shape as the bug being fixed (P6); written via `update_job` instead. (b) A scripted `str.replace` in my own fix batch matched a 16-space `continue` as a substring of a 20-space one, de-indenting it and turning the `PAGE_TIMEOUT` emission into dead code. **All 2724 tests stayed green** — nothing asserted that the engine emits `PAGE_TIMEOUT`, only that the registry and scoring know the code. Caught by a new test written for the unread-pages counter, then guarded by `test_unreadable_internal_page_still_reports_page_timeout` and mutation-proved with the exact corruption. P26's corollary in the flesh: the fix commit is the least-reviewed code in the change, and an emission with no test can be deleted without a single red light.
+  - *Pattern:* **P31** — an absence-proof computed over a deliberately narrowed population (new generic pattern in `standards/learnings.md`). Distinct from P3 (an *accidental* narrow scope) and P9 (a magic cap to justify): here the upstream narrowing is correct and only the inference over it is unsound. Plus the P2/P24 corollary that a suppressed check must never render as a clean result.
+  - *Not fixed (recorded as open risks):* `skip_wp_archives` (default on) drops WordPress archive pages before their outbound links are read — disclosed via `archives_skipped` and a footnote under the all-clear rather than gated, since gating a default-on setting would disable the check on every crawl. Pages the crawl reached but could not read (timeout, login wall, parse failure) are counted in `pages_links_unread` and disclosed for the same reason. On a *complete* crawl the check still flags WP CPT/taxonomy archive roots (`/training`, `/team_members`, `/training_categories/*`) that nothing is meant to link to — true, but not actionable. And **suppressing the check raises the health score** (see Open risks) — a scoring-model change needing its own spec.
 
 - **2026-08-14 — GSC priority-upload shipped with a None-vs-0 ranking corruption + a silent order→restrict scope change (caught by the /csdp learning-qa sweep before push).**
   - *Issue:* (a) The upload parser coerced an **absent** `inquiries` to `0` (`_int(row.get("inquiries"))`), and that flowed to `PerformanceRecord.ga4_conversions_mo` — a field explicitly documented as `int | None = None` so "no data" stays distinct from "measured zero" (P2). A page with *unknown* conversions would rank as *proven-zero*. (b) The GSC seed is fronted in the crawl frontier before discovered links; a seed with **more in-scope URLs than `max_pages`** silently consumes the whole page budget, turning the approved "**order** the frontier" (D-N1) into "**restrict** the crawl to seed pages" — with no warning. (c) The `generated_for == "talkingtoad"` sanity gate the contract (§3) mandated wasn't implemented, so any same-domain JSON with a `pages[]` shape was accepted.
