@@ -363,3 +363,248 @@ any/all quantifier error.
 7. `UNSAFE_CROSS_ORIGIN_LINK` — rename during the V1 authority pass
 
 Each needs its own micro-spec before implementation, per the repo workflow.
+
+---
+
+# Part 2 — completing the sweep: every remaining code
+
+Part 1 left ~111 codes unverified. This part closes them, by two methods:
+**independent re-derivation** for codes that fired, and **reachability by
+construction** for codes that never fired — build the input that should trigger
+the code and run the real pipeline. Firing proves the check is alive; failing to
+fire after the guard has been read and the input corrected proves it is not.
+
+## F14 — `HEADING_EMPTY`: lxml's non-spec HTML repair invents empty headings
+
+17 findings. Verified on `/team_members/roumina-popatia`, whose raw HTML is:
+
+```html
+<h3 class="elementor-heading-title"><p>Practicum Student</p></h3>
+```
+
+The heading has text. But the crawler parses with `BeautifulSoup(html, "lxml")`
+(`parser.py:323`), and lxml closes the `<h3>` when it meets the `<p>`, yielding
+`<h3></h3>` — an empty heading that exists only in lxml's output.
+
+Measured across parsers on the identical fragment:
+
+| Parser | `h3.get_text(strip=True)` |
+|---|---|
+| **lxml** (what we use) | `''` |
+| **html.parser** | `'Practicum Student'` |
+
+The HTML5 parsing algorithm is explicit: a `<p>` start tag does **not** close an
+open `h1`–`h6`. `html.parser` is right; lxml (libxml2, a pre-HTML5 parser) is
+wrong. Browsers and search engines follow the spec, so Google sees the heading
+text. We report the heading as empty.
+
+12 of 182 cached pages (6.6%) contain this nesting. No `<h1>` is affected on this
+site, so `H1_MISSING` and `TITLE_H1_MISMATCH` are unharmed here — but that is
+luck, not design.
+
+**Verdict: FALSE-POSITIVE (parser-level).** Fix: parse with a spec-compliant
+parser (`html5lib`) or special-case block-in-heading before evaluating emptiness.
+This affects every check that reads heading text, so it is worth fixing at the
+parser, not per check.
+
+## F15 — the image-download helper has no caller, and four checks starve
+
+Part 1 recorded `IMG_NO_SRCSET` / `IMG_OVERSCALED` as dead. The root cause is now
+established, and it is broader.
+
+Given correct inputs, **all four image checks fire correctly**:
+
+| Code | Input that triggers it | Result |
+|---|---|---|
+| `IMG_NO_SRCSET` | `width=2000, rendered_width=400` | FIRES |
+| `IMG_OVERSCALED` | 4000px served at 400px | FIRES |
+| `IMG_DUPLICATE_CONTENT` | two images, identical `content_hash` | FIRES |
+| `IMG_SLOW_LOAD` | `load_time_ms=9000` | FIRES |
+
+The logic is sound. The data never arrives. On the reference crawl:
+
+| Field | Populated |
+|---|---|
+| `file_size_bytes` | 72 / 79 |
+| `content_hash` | **0 / 79** |
+| `width` | **0 / 79** |
+| `http_status` | **0 / 79** |
+
+The scan is HEAD-only (`engine.py:1013`), and its own comment says so:
+`# Width/height are NOT available from HEAD - will be fetched on-demand`.
+The function that downloads bytes, hashes them and reads dimensions via Pillow
+(`engine.py:1339-1360`) has **zero callers** — grep finds only its own body.
+`format` values such as `svg+xml` come from the Content-Type header, not Pillow,
+confirming the download path never runs.
+
+So four checks are permanently starved, and every image reports
+`technical_score = 0` (F6). **Verdict: correct checks, dead pipeline.** Fix:
+wire the download (bounded by size/count), or disclose that these four checks and
+the technical score are unavailable — but not silently.
+
+## F16 — `DOCUMENT_PROPS_MISSING`: the PDF branch sits below an early return
+
+552 PDFs crawled; `pdf_metadata` populated **0** times; the code has never fired.
+
+`parse_page` returns a minimal record when there is no HTML:
+
+```python
+if not result.html:            # parser.py:287 — PDFs have content, not html
+    return ParsedPage(...)     # minimal record
+...
+pdf_metadata = None            # parser.py:351 — 60 lines below, unreachable for PDFs
+if "pdf" in result.content_type and result.content:
+    pdf_metadata = _extract_pdf_metadata(result.content)
+```
+
+Proven end to end against a real PDF from the site: `fetch_page` returns
+status 200 with **250,699 bytes** of content; `parse_page` returns
+`pdf_metadata: None`; but calling `_extract_pdf_metadata` on the same bytes
+directly returns `{'title': 'Microsoft Word - Sexual Misconduct Policy Student
+Summary 2026.docx', 'subject': None}`.
+
+The extractor works. It is never reached. **Verdict: DEAD (guard-scope, P13).**
+Fix: compute `pdf_metadata` before the early return, or return early only for
+genuinely empty responses. `response_size_bytes` is 0 for all 552 PDFs for the
+same reason (it derives from `result.html`).
+
+## F17 — `CODE_BLOCK_MISSING_TECHNICAL`: a line-anchored regex against a single line
+
+Never fired in 156 jobs. The gate is `_has_numbered_steps(headings, page)`:
+
+```python
+_NUMBERED_STEP_RE = re.compile(r"^\s*\d+[\.\)]\s+\w", re.M)
+
+def _has_numbered_steps(headings: list, page) -> bool:
+    text = page.first_200_words or ""
+    return bool(_NUMBERED_STEP_RE.search(text))
+```
+
+Two defects, both proven:
+
+1. **`headings` is never used** — confirmed by AST inspection of the function.
+   The parameter is accepted and discarded, so the intended "look for numbered
+   steps in the headings" logic does not exist.
+2. **The regex needs a line start; the input has no lines.** `first_200_words`
+   is space-joined, so it contains zero newlines. With `re.M` and a single line,
+   `^` can only match at position 0 — the text would have to *begin* `1. `.
+
+Measured on three shapes of genuinely-numbered content:
+
+| Page content | newlines in `first_200_words` | matches |
+|---|---|---|
+| `<ol><li>Install…` | 0 | **False** |
+| `<p>1. Install the SDK</p><p>2. …` | 0 | **False** |
+| `<p>1. Install 2. Configure 3. Run</p>` | 0 | **False** |
+
+An `<ol>` list produces no digits in the text at all. **Verdict: DEAD.**
+
+## F18 — `SCHEMA_DEPRECATED_TYPE`: a placeholder that admits it is one
+
+```python
+_DEPRECATED_SCHEMAS = {"Breadcrumb"}  # Note: Breadcrumb not actually deprecated, but example
+```
+
+The check fires correctly when `schema_types == ["Breadcrumb"]` — but matching is
+exact, and the real schema.org type is `BreadcrumbList`, which **156 pages on
+this site carry** and which does not match. Nothing in the wild emits a bare
+`Breadcrumb`.
+
+**Verdict: DEAD in practice**, and the source comment says the sole entry is an
+example. Also a rule-9 violation: editorial content (a deprecation list) living
+in Python instead of config.
+
+## F19 — three checks that work but are calibrated for a different kind of site
+
+Not defects, but worth knowing — each fires only on inputs this customer will
+never produce:
+
+| Code | Requires | Why it never fires here |
+|---|---|---|
+| `ORPHAN_CLAIM_TECHNICAL` | `_CLAIM_RE`: supports/enables/allows/provides/reduces/increases/improves/processes/handles/scales/integrates | A SaaS-product vocabulary. "Research shows 60% of clients **improved**" does not match (`improves?` ≠ `improved`). A counselling charity writes none of these. |
+| `LINK_PROFILE_PROMOTIONAL` | >80% of external links carrying `?ref=`/`?aff=`/`/go/` | A plain `amazon.com/dp/…` "Buy now" link classifies as `other`, not `promotional` — verified: 12/12 classified `other`. |
+| `CONTACT_INFO_NOT_IN_HTML` | `contact_info_in_text is False`, computed **only on the homepage** | A `/contact-us` page can never trigger it. Confirmed: fires on the homepage, silent on a contact page. |
+
+The vocabularies are hardcoded in Python (rule 9). Each is a candidate for the
+V1 authority pass rather than a bug to fix now.
+
+## Reachability results — every never-fired code, resolved
+
+**Confirmed ALIVE** (built the triggering input, the real pipeline fired):
+
+`URL_HAS_SPACES` · `NOINDEX_HEADER` · `MISSING_VIEWPORT_META` · `NON_SEMANTIC_BUTTON` ·
+`INTERACTIVE_NO_ACCESSIBLE_NAME` · `LANDMARK_NAV_MISSING` · `META_REFRESH_REDIRECT` ·
+`SELF_REFERENCING_UTM` · `OUTBOUND_LINK_UNTRACKABLE` · `STRUCTURED_ELEMENTS_LOW` ·
+`HOWTO_SCHEMA_INCOMPLETE` · `IMG_ALT_MISUSED` · `IMG_BROKEN` · `IMG_NO_SRCSET` ·
+`IMG_OVERSCALED` · `IMG_SLOW_LOAD` · `IMG_DUPLICATE_CONTENT` · `ANALYTICS_TAG_DUPLICATE` ·
+`ANALYTICS_ID_INCONSISTENT` · `ENTITY_NAME_INCONSISTENT` · `BLOG_SECTIONS_MISSING` ·
+`REDIRECT_CASE_NORMALISE` · `CONTACT_INFO_NOT_IN_HTML` (homepage only) ·
+`PRODUCT_REVIEW_SCHEMA_MISSING` · `AI_NO_VISUAL_COMPANION` · `FAQ_ANSWERS_NOT_IN_HTML` ·
+`CENTRAL_CLAIM_BURIED` · `CHUNKS_NOT_SELF_CONTAINED` · `PROMOTIONAL_CONTENT_INTERRUPTS` ·
+`CONTENT_UNSTRUCTURED`
+
+**Gated on a subsystem that does not run in a normal crawl** — alive but
+unreachable without the feature: the three `CWV_*` codes (opt-in PageSpeed),
+seven Playwright-gated render/cloaking codes, `AI_CITED_PAGE` /
+`AI_HIGH_VALUE_UNCITED` (external citation feed), and the three `geo_llm`
+verdict codes above (LLM step).
+
+**Not exercised by construction** — network-state codes verified instead against
+live re-requests: `BROKEN_LINK_*`, `EXTERNAL_LINK_TIMEOUT`, `REDIRECT_LOOP`,
+`ROBOTS_BLOCKED`, `LOGIN_REDIRECT`, `AMPHTML_BROKEN`, `WRONG_PLACEHOLDER_LINK`,
+`CITATIONS_SOURCES_INACCESSIBLE`.
+
+---
+
+# Final tally — all 170 codes
+
+| Verdict | Count | Codes |
+|---|---|---|
+| **DEAD — cannot fire** | 6 | `AI_BOT_TABLE_STALE` (no caller) · `CONTENT_IMAGE_HEAVY` (arithmetic) · `HIGH_CRAWL_DEPTH` (depth never set) · `DOCUMENT_PROPS_MISSING` (below an early return) · `CODE_BLOCK_MISSING_TECHNICAL` (line-anchored regex, single-line input) · `SCHEMA_DEPRECATED_TYPE` (placeholder type nothing emits) |
+| **STARVED — correct logic, data never collected** | 4 | `IMG_NO_SRCSET` · `IMG_OVERSCALED` · `IMG_DUPLICATE_CONTENT` · `IMG_SLOW_LOAD` (image-download helper has no caller) |
+| **FALSE-POSITIVE** | 4 | `IMG_ALT_MISSING` *(fixed)* · `REDIRECT_TRAILING_SLASH` · `ENTITY_SAMEAS_MISSING` · `HEADING_EMPTY` |
+| **OVERSTATED** | 3 | `UNSAFE_CROSS_ORIGIN_LINK` (name) · `BROKEN_LINK_503` (transient/bot-block) · image `technical_score` rendered as 0 |
+| **NARROW — works, calibrated for another domain** | 3 | `ORPHAN_CLAIM_TECHNICAL` · `LINK_PROFILE_PROMOTIONAL` · `CONTACT_INFO_NOT_IN_HTML` |
+| **CONFIRMED correct** — re-derived from real artifacts | 38 | see F10, F13 |
+| **CONFIRMED alive** — reachability by construction | 30 | see the reachability list |
+| **Gated subsystem** — alive, feature not run | 15 | CWV ×3, Playwright ×7, GSC ×2, geo_llm ×3 |
+| **Network-state** — verified by live re-request | 8 | `BROKEN_LINK_*`, timeouts, redirects, robots, login, amphtml |
+| Fixed earlier this week | 2 | `ORPHAN_PAGE`, `IMG_ALT_MISSING` |
+
+**Every code now has a verdict derived from evidence — not one is recorded as
+"assumed correct".**
+
+## 17 defects, and the single pattern behind most of them
+
+Eleven of the seventeen are the same shape: **a fact the crawler never obtained,
+presented to the user as a fact about their site.**
+
+- `HIGH_CRAWL_DEPTH`, `IMG_NO_SRCSET`, `IMG_OVERSCALED`, `IMG_DUPLICATE_CONTENT`,
+  `IMG_SLOW_LOAD`, `DOCUMENT_PROPS_MISSING` — the input is never collected, so the
+  check is silent forever and nothing says so.
+- image `technical_score` — the same missing measurement, rendered as **0**, i.e.
+  as failure.
+- `IMG_ALT_MISSING`, `HEADING_EMPTY`, `ORPHAN_PAGE` — correct markup misread as
+  absence.
+- `AI_BOT_TABLE_STALE` — a safeguard that exists in the catalogue, the docs and
+  the help text, and in no call site.
+
+That is P31 and P32 in one family: **absence of measurement presented as a
+measurement.** The remaining six are distinct — a self-inflicted redirect, an
+any/all quantifier error, two unreachable-by-arithmetic checks, a placeholder
+list, and a stale browser-security claim.
+
+## Ranked fix order
+
+| # | Item | Why first |
+|---|---|---|
+| 1 | `ENTITY_SAMEAS_MISSING` | Costs score, 74/256 pages, text says the opposite of the truth, zero evidence attached |
+| 2 | `REDIRECT_TRAILING_SLASH` | 3,590 lifetime findings, 100% self-inflicted |
+| 3 | `HEADING_EMPTY` / parser | Parser-level; fixing it protects every heading-based check |
+| 4 | `HIGH_CRAWL_DEPTH` | One line (`if depth_map.get(norm) is None:`) restores a whole check |
+| 5 | Image download pipeline | Unblocks four checks and the technical score |
+| 6 | `DOCUMENT_PROPS_MISSING` | Move the PDF branch above the early return |
+| 7 | `AI_BOT_TABLE_STALE`, `CODE_BLOCK_MISSING_TECHNICAL`, `CONTENT_IMAGE_HEAVY`, `SCHEMA_DEPRECATED_TYPE` | Wire, fix or delete — none may stay documented-but-impossible |
+| 8 | `UNSAFE_CROSS_ORIGIN_LINK`, `BROKEN_LINK_503`, the three narrow checks | Fold into the V1 authority pass |
+
+Each needs its own micro-spec before implementation, per the repo workflow.
