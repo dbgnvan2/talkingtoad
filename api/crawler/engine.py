@@ -1137,6 +1137,33 @@ async def run_crawl(
         amp_issues = check_amphtml_links(all_pages, amp_statuses)
         all_issues.extend(amp_issues)
 
+        # ── 6a. Self-inflicted trailing-slash redirects (AF2) ────────────
+        # `normalise_url` strips a trailing slash, so we FETCH `/x` on a site
+        # whose canonical form is `/x/`. The server 301s back, and we reported
+        # that redirect as a defect: 147 of 147 findings on livingsystems.ca
+        # differed only by the slash, 3,590 lifetime — every one an artifact of
+        # our own request, invisible to a visitor because the site's sitemap and
+        # every internal link already use the destination form.
+        #
+        # A genuine finding still exists: if some page really does link to the
+        # pre-redirect form, the inconsistency is the site's. `ParsedLink.url`
+        # keeps the ORIGINAL href, so that is decidable.
+        # Spec:  docs/pending/2026-08-30_audit-fixes.md#AF2
+        # Tests: tests/test_redirect_trailing_slash.py
+        _raw_internal_hrefs = {
+            (l.url or "").split("#")[0].split("?")[0]
+            for pg in all_pages for l in (pg.links or []) if l.is_internal
+        }
+        _before = len(all_issues)
+        all_issues = [
+            i for i in all_issues
+            if not (i.code == "REDIRECT_TRAILING_SLASH"
+                    and _is_self_inflicted_slash_redirect(i, _raw_internal_hrefs))
+        ]
+        if len(all_issues) != _before:
+            log.info("self_inflicted_slash_redirects_suppressed",
+                     extra={"suppressed": _before - len(all_issues)})
+
         # ── 6b. Click depth (AF4) ────────────────────────────────────────
         # Recompute depth over the link graph the crawl actually observed.
         # The in-crawl depth_map is order-dependent: sitemap seeding enqueues
@@ -1312,6 +1339,28 @@ async def run_crawl(
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+def _is_self_inflicted_slash_redirect(issue, raw_internal_hrefs: set[str]) -> bool:
+    """True when a trailing-slash redirect exists only because WE stripped the slash.
+
+    Purpose: stop reporting a redirect no visitor can reach.
+    Spec:    docs/pending/2026-08-30_audit-fixes.md#AF2
+    Tests:   tests/test_redirect_trailing_slash.py
+
+    The redirect is the site's problem only if some page actually links to the
+    pre-redirect form. Compared against the ORIGINAL hrefs, not normalised ones —
+    normalising both sides would make every case look identical, which is the
+    bug itself.
+    """
+    extra = issue.extra or {}
+    src, dst = extra.get("from") or issue.page_url or "", extra.get("to") or ""
+    if not src or not dst:
+        return False
+    if src.rstrip("/") != dst.rstrip("/") or src == dst:
+        return False  # not a slash-only difference
+    # Did any page link to the exact pre-redirect form?
+    return src not in raw_internal_hrefs and src.rstrip("/") not in raw_internal_hrefs
+
 
 def _compute_click_depths(pages: list[ParsedPage], start_url: str | None) -> None:
     """Assign ``crawl_depth`` = shortest click distance from the start URL.

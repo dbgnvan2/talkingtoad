@@ -1,0 +1,14 @@
+{
+  "_comment": [
+    "AF7c: schema.org types that are genuinely deprecated or superseded.",
+    "Was hardcoded in schema_typing.py as {'Breadcrumb'} with a source comment",
+    "admitting it was 'not actually deprecated, but example'. Matching is exact,",
+    "so the real BreadcrumbList (on 156 pages of one customer site) never",
+    "triggered it and nothing in the wild emits a bare 'Breadcrumb' \u2014 the check",
+    "was a placeholder that could only fire on a type that does not exist.",
+    "Empty is honest: an empty list means the check reports nothing, rather",
+    "than reporting something false. Add entries only with a citation.",
+    "Spec: docs/pending/2026-08-30_audit-fixes.md#AF7"
+  ],
+  "deprecated_types": {}
+}

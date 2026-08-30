@@ -132,7 +132,10 @@ class ParsedPage:
     author_detected: bool = False        # rel=author / itemprop=author / byline class found
     date_published: str | None = None    # datePublished from JSON-LD or <meta>
     date_modified: str | None = None     # dateModified from JSON-LD
-    code_block_count: int = 0            # <pre> + <code> elements
+    code_block_count: int = 0
+    # AF7b: `<ol><li>` items — a numbered procedure produces no digits in the
+    # extracted text, so the steps signal needs the markup, not the prose.
+    ordered_list_item_count: int = 0            # <pre> + <code> elements
     table_count: int = 0                 # <table> elements
     structured_element_count: int = 0    # <ul>+<ol>+<table>+<dl>+<pre>+<code>
     first_200_words: str | None = None   # first 200 words of visible body text (excludes nav/header/footer/aside)
@@ -510,6 +513,7 @@ def parse_page(
         date_published=_extract_date_published(soup),
         date_modified=_extract_date_modified(soup),
         code_block_count=_count_code_blocks(soup),
+        ordered_list_item_count=len(soup.select("ol > li")),
         table_count=len(soup.find_all("table")),
         structured_element_count=_count_structured_elements(soup),
         first_200_words=_extract_first_n_words(soup, 200),

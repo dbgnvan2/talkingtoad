@@ -84,6 +84,20 @@ def check_ai_bot_access(robots_data: RobotsData, start_url: str) -> list[Issue]:
     if not _has_ai_directives(all_agents_mentioned):
         issues.append(make_issue("AI_BOT_NO_AI_DIRECTIVES", start_url))
 
+    # AF7a: the AI-bot roster goes stale as vendors add crawlers. The freshness
+    # check existed with a full implementation, a catalogue entry, help text and
+    # a spec line describing it as shipped — and ZERO callers, so the warning
+    # could never appear (0 firings in 156 jobs). Wired here, on the site-level
+    # AI-readiness path where the roster is actually used.
+    # Spec:  docs/pending/2026-08-30_audit-fixes.md#AF7
+    # Tests: tests/test_ai_bot_table_stale.py
+    from api.services.ai_bots import validate_table_freshness
+
+    is_current, staleness_warning = validate_table_freshness()
+    if not is_current:
+        issues.append(make_issue("AI_BOT_TABLE_STALE", start_url,
+                                 extra={"warning": staleness_warning}))
+
     return issues
 
 

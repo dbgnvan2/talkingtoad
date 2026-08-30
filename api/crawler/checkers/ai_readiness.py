@@ -431,12 +431,45 @@ def _has_answer_signal(text: str) -> bool:
     return bool(_ANSWER_SIGNAL_RE.search(text))
 
 
-_NUMBERED_STEP_RE = re.compile(r"^\s*\d+[\.\)]\s+\w", re.M)
+# AF7b: the old pattern was line-anchored (`^` with re.M) and matched against
+# `first_200_words`, which is space-joined and contains ZERO newlines — so `^`
+# could only match at position 0 and the check was unreachable in practice.
+# Verified against `<ol><li>`, "1. " in paragraphs and inline "1. 2. 3.": none
+# matched. It also ignored its `headings` argument entirely (AST-proven), so the
+# intended "numbered steps in the headings" logic never existed.
+# Spec:  docs/pending/2026-08-30_audit-fixes.md#AF7
+# Tests: tests/test_numbered_steps.py
+_NUMBERED_STEP_RE = re.compile(r"(?:^|\s)\d+\s*[\.\)]\s+\w", re.M)
+_STEP_WORD_RE = re.compile(r"\bstep\s+\d+\b", re.I)
+#: How many numbered items make a sequence (one "1." is a footnote, not steps).
+_MIN_NUMBERED_STEPS = 2
 
 
 def _has_numbered_steps(headings: list, page: "ParsedPage") -> bool:
+    """True when the page presents a numbered procedure.
+
+    Looks at the HEADINGS (an `<h2>Step 1: Install</h2>` sequence, and headings
+    that begin "1." / "1)") as well as the body text. An `<ol><li>` list also
+    counts: the parser records it as ordered-list items.
+    """
+    heading_texts = [
+        (h.get("text") or "") for h in (headings or []) if isinstance(h, dict)
+    ]
+    step_headings = sum(
+        1 for txt in heading_texts
+        if _STEP_WORD_RE.search(txt) or re.match(r"^\s*\d+\s*[\.\)]\s+\w", txt)
+    )
+    if step_headings >= _MIN_NUMBERED_STEPS:
+        return True
+
+    # Direct attribute access, not getattr-with-default: the field is on
+    # ParsedPage, and a silent 0 on rename would quietly kill this branch
+    # the way the old line-anchored regex did.
+    if (page.ordered_list_item_count or 0) >= _MIN_NUMBERED_STEPS:
+        return True
+
     text = page.first_200_words or ""
-    return bool(_NUMBERED_STEP_RE.search(text))
+    return len(_NUMBERED_STEP_RE.findall(text)) >= _MIN_NUMBERED_STEPS
 
 
 # ---------------------------------------------------------------------------

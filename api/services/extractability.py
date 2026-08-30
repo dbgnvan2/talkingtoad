@@ -1,3 +1,4 @@
+import os
 """Content extractability assessment for AI readiness.
 
 Detects whether pages contain well-structured, AI-extractable content
@@ -39,6 +40,11 @@ _CONTENT_TAGS = frozenset({"p", "ul", "ol", "li", "table"})
 # the first two p/ul/li nodes"); the Gemini 3.1 "depth 4" example still
 # triggers (4 >= 3). Spec: docs/pending/2026-05-31_ga1_positional_answerability.md
 _BURIED_THRESHOLD = 3
+
+
+# AF7c: must exceed the 50-point not-extractable threshold on its own, or the
+# CONTENT_IMAGE_HEAVY branch of the diagnosis ladder is unreachable.
+_IMAGE_HEAVY_PENALTY = int(os.getenv("TT_IMAGE_HEAVY_PENALTY", "55"))
 
 
 def assess_extractability(parsed_page: ParsedPage) -> dict:
@@ -86,9 +92,18 @@ def assess_extractability(parsed_page: ParsedPage) -> dict:
         score -= 55
 
     # Poor heading structure (too many images, not enough text between headings)
+    #
+    # AF7c: this deducted 10 against a 50-point not-extractable threshold, and
+    # the three higher-priority issues are excluded by the diagnosis ladder — so
+    # the maximum reachable deduction was 20 and CONTENT_IMAGE_HEAVY could never
+    # be returned. Proven over 900 input combinations: 0 hits, and 0 firings in
+    # 156 real jobs. The weight now reaches the threshold on its own, so the
+    # branch is live and the finding means what the catalogue says it means.
+    # Spec:  docs/pending/2026-08-30_audit-fixes.md#AF7
+    # Tests: tests/test_content_image_heavy.py
     if metrics["image_count"] > metrics["heading_count"] * 2:
         issues.append("image_heavy")
-        score -= 10
+        score -= _IMAGE_HEAVY_PENALTY
 
     # No structured data
     if not metrics["has_json_ld"] and metrics["word_count"] > 500:

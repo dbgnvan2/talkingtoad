@@ -422,7 +422,7 @@ def _calculate_scores(img: ImageInfo, issues: list[Issue], cfg: dict) -> dict:
     - performance_score (0-100, or 0 if insufficient data)
     - accessibility_score (0-100)
     - semantic_score (0-100, or 0 if no AI analysis)
-    - technical_score (0-100, or 0 if insufficient data)
+    - technical_score (0-100, or None when dimensions were never measured)
     - overall_score (0-100, weighted average of available scores)
 
     IMPORTANT: Scores default to 0 if we don't have the required data to evaluate.
@@ -477,7 +477,13 @@ def _calculate_scores(img: ImageInfo, issues: list[Issue], cfg: dict) -> dict:
             tech -= 15
         tech = max(0, tech)
     else:
-        tech = 0  # No data = no score
+        # AF6: None, not 0. Dimensions are never collected on a HEAD-only scan,
+        # so every image stored technical_score 0.0 and the UI drew an empty
+        # bar — "not measured" rendered as "terrible" (P31: absence presented as
+        # a measurement). The overall score already drops the component.
+        # Spec:  docs/pending/2026-08-30_audit-fixes.md#AF6
+        # Tests: tests/test_image_scores.py
+        tech = None
 
     # Semantic score - defaults to 100 (placeholder for AI analysis)
     # Will be updated when AI analysis is run

@@ -1,3 +1,4 @@
+import logging
 """Schema typing validation for JSON-LD appropriateness.
 
 Validates that JSON-LD schemas match page type, detects mismatches,
@@ -9,6 +10,8 @@ Tests: tests/test_schema_typing.py
 
 from api.crawler.parser import ParsedPage
 from api.services.page_classifier import infer_page_type
+
+logger = logging.getLogger(__name__)
 
 
 # Mapping: page_type -> set of appropriate schema types
@@ -22,8 +25,27 @@ _SCHEMA_APPROPRIATENESS = {
     "about": {"AboutPage", "Organization", "Person"},
 }
 
-# Common deprecated schema types that should trigger warnings
-_DEPRECATED_SCHEMAS = {"Breadcrumb"}  # Note: Breadcrumb not actually deprecated, but example
+# Deprecated schema types, loaded from config (rule 9: editorial content is not
+# source). Empty by default — see api/config/schema_deprecations.json for why.
+# Spec:  docs/pending/2026-08-30_audit-fixes.md#AF7
+# Tests: tests/test_schema_deprecations.py
+
+
+def _load_deprecated_schemas() -> dict[str, str]:
+    """Return {type: citation}. A load failure yields {} and is logged, never
+    a silent partial list (P2)."""
+    import json as _json
+    import pathlib as _pathlib
+
+    path = _pathlib.Path(__file__).resolve().parents[1] / "config" / "schema_deprecations.json"
+    try:
+        return dict(_json.loads(path.read_text()).get("deprecated_types") or {})
+    except Exception as exc:  # pragma: no cover - config absent/malformed
+        logger.warning("schema_deprecations_load_failed", extra={"error": str(exc)})
+        return {}
+
+
+_DEPRECATED_SCHEMAS = set(_load_deprecated_schemas())
 
 
 def validate_schema_typing(parsed_page: ParsedPage) -> tuple[bool, str | None]:

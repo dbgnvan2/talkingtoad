@@ -2,18 +2,23 @@
 
 This module maintains a versioned table of AI user agents by category
 (training, search, user-fetch, training-optout) and honor-robots behavior.
-The table requires review every 6 months to stay current with vendor changes.
+The table requires review on the cadence in REVIEW_CADENCE_DAYS (below).
 
 Spec: docs/specs/ai-readiness/v2-extended-module.md § 3.2
 Tests: tests/test_ai_bots.py
 """
 
+import os
 from datetime import datetime
 
-# Last reviewed: May 3, 2026
-# Next review due: November 3, 2026
+# AF7a: the docstring promised 6 months while the constant enforced 365 days,
+# so the "next review due" date advertised in this file (Nov 3) was not the date
+# the code checked (May 3 the following year). One source of truth now, and
+# overridable so the cadence is config rather than a literal (rule 8).
+# Spec:  docs/pending/2026-08-30_audit-fixes.md#AF7
+# Tests: tests/test_ai_bot_table_stale.py
 LAST_REVIEWED = datetime(2026, 5, 3)
-REVIEW_CADENCE_DAYS = 365  # Must review annually
+REVIEW_CADENCE_DAYS = int(os.getenv("TT_AI_BOT_REVIEW_CADENCE_DAYS", "180"))
 
 AI_BOTS = {
     # OpenAI bots (3-bot architecture: training, search, user-fetch)

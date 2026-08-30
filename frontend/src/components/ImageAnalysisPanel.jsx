@@ -994,7 +994,16 @@ function ImageCard({ image, jobId, isExpanded, onToggle, onPageClick, isSelected
             <div className="grid grid-cols-2 gap-2">
               <ScoreBar label="Performance" score={image.performance_score} />
               <ScoreBar label="Accessibility" score={image.accessibility_score} />
-              <ScoreBar label="Technical" score={image.technical_score} />
+              {/* AF6: null means the dimensions were never measured (the scan is
+                  HEAD-only). Drawing a 0 bar reads as "terrible" for something
+                  we never looked at. */}
+              {image.technical_score === null || image.technical_score === undefined ? (
+                <div className="flex items-center justify-between text-xs text-gray-400 py-1">
+                  <span>Technical</span><span>not measured</span>
+                </div>
+              ) : (
+                <ScoreBar label="Technical" score={image.technical_score} />
+              )}
               <ScoreBar label="Semantic" score={image.semantic_score} />
             </div>
           </div>
