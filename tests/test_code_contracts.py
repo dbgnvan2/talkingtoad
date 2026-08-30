@@ -31,7 +31,11 @@ _FILLER = " ".join(["word"] * 400)
 
 def page(body: str = "", head: str = "", url: str = BASE, **kw):
     title = kw.pop("title", "A Reasonably Long Page Title Here")
-    desc = kw.pop("desc", "A description long enough to pass the minimum length checks here.")
+    # Baseline must be CLEAN: long enough to clear META_DESC_TOO_SHORT (<70)
+    # and short enough to clear META_DESC_TOO_LONG (>160). A fixture that
+    # trips an unrelated check makes every other contract noisier.
+    desc = kw.pop("desc", "A description that is comfortably long enough to pass the "
+                          "minimum length check without exceeding the maximum.")
     lang = kw.pop("lang", "en")
     t = f"<title>{title}</title>" if title is not None else ""
     d = f"<meta name='description' content='{desc}'>" if desc is not None else ""
@@ -47,6 +51,45 @@ def page(body: str = "", head: str = "", url: str = BASE, **kw):
 
 def fires(code: str, p) -> bool:
     return any(i.code == code for i in check_page(p))
+
+
+# ── Runners ────────────────────────────────────────────────────────────────
+# A contract's fixture is a callable returning the INPUT; the runner turns that
+# input into issues. Several codes are emitted outside check_page, and the
+# reachability audit showed that 18 of 28 first-pass "dead" verdicts were really
+# the wrong entry point — so the runner is part of the contract, not an
+# assumption.
+
+def _run_page(inp):
+    return check_page(inp)
+
+
+def _run_url(inp):
+    from api.crawler.checkers.url_structure import check_url_structure
+    return check_url_structure(inp)
+
+
+def _run_image(inp):
+    from api.crawler import image_analyzer as IA
+    return IA.analyze_image(inp, job_id="j")[0]
+
+
+def _run_cross(inp):
+    from api.crawler.issue_checker import check_cross_page
+    return check_cross_page(inp, start_url=BASE)
+
+
+RUNNERS = {"page": _run_page, "url": _run_url, "image": _run_image, "cross": _run_cross}
+
+
+def img(**kw):
+    """An ImageInfo with sane defaults — only the field under test varies."""
+    from api.models.image import ImageInfo
+    base = dict(url="https://example.com/sunset-beach.jpg", page_url=BASE, job_id="j",
+                filename="sunset-beach.jpg", alt="A described sunset over the beach",
+                http_status=200)
+    base.update(kw)
+    return ImageInfo(**base)
 
 
 # ── The contracts ───────────────────────────────────────────────────────────
@@ -123,22 +166,258 @@ CONTRACTS = [
      lambda: page(body=f"<h1>X vs Y</h1><table><tr><td>a</td></tr></table><p>{_FILLER}</p>")),
 ]
 
-CONTRACT_CODES = {c for c, _, _ in CONTRACTS}
+# ── URL-structure codes (runner="url") ─────────────────────────────────────
+CONTRACTS += [
+    ("URL_UPPERCASE",
+     lambda: "https://example.com/Some/Path", lambda: "https://example.com/some/path", "url"),
+    ("URL_HAS_UNDERSCORES",
+     lambda: "https://example.com/some_path", lambda: "https://example.com/some-path", "url"),
+    ("URL_HAS_SPACES",
+     lambda: "https://example.com/a b", lambda: "https://example.com/a-b", "url"),
+    ("URL_TOO_LONG",
+     lambda: "https://example.com/" + "segment-" * 40, lambda: "https://example.com/short", "url"),
+]
+
+# ── Image codes (runner="image") ───────────────────────────────────────────
+CONTRACTS += [
+    ("IMG_ALT_GENERIC",
+     lambda: img(alt="image"), lambda: img(alt="A sunset over Ambleside beach"), "image"),
+    ("IMG_ALT_TOO_SHORT",
+     lambda: img(alt="ab"), lambda: img(alt="A sunset over Ambleside beach"), "image"),
+    ("IMG_ALT_TOO_LONG",
+     lambda: img(alt="A " + "very " * 60 + "long description"),
+     lambda: img(alt="A sunset over Ambleside beach"), "image"),
+    ("IMG_ALT_DUP_FILENAME",
+     lambda: img(alt="sunset beach"), lambda: img(alt="Volunteers planting trees at dawn"), "image"),
+    ("IMG_ALT_MISUSED",
+     # A decorative image must NOT carry meaningful alt text...
+     lambda: img(alt="A meaningful description", is_decorative=True),
+     # ...but alt="" on a decorative image is exactly right (WCAG 1.1.1).
+     lambda: img(alt="", is_decorative=True), "image"),
+    ("IMG_BROKEN",
+     lambda: img(http_status=404), lambda: img(http_status=200), "image"),
+    ("IMG_OVERSIZED",
+     lambda: img(file_size_bytes=3_000_000), lambda: img(file_size_bytes=40_000), "image"),
+    ("IMG_NO_SRCSET",
+     lambda: img(has_srcset=False, width=2000, rendered_width=400),
+     lambda: img(has_srcset=True, width=2000, rendered_width=400), "image"),
+    ("IMG_OVERSCALED",
+     lambda: img(width=4000, height=3000, rendered_width=400, rendered_height=300,
+                 file_size_bytes=90_000),
+     lambda: img(width=800, height=600, rendered_width=800, rendered_height=600,
+                 file_size_bytes=90_000), "image"),
+]
+
+# ── Page codes, second tranche ─────────────────────────────────────────────
+CONTRACTS += [
+    ("META_DESC_TOO_SHORT",
+     lambda: page(desc="Too short."), lambda: page()),
+    ("HEADING_SKIP",
+     lambda: page(body=f"<h1>H</h1><h4>Skipped two levels</h4><p>{_FILLER}</p>"),
+     lambda: page(body=f"<h1>H</h1><h2>Next level</h2><p>{_FILLER}</p>")),
+    ("HTTP_PAGE",
+     lambda: page(url="http://example.com/p"), lambda: page(url="https://example.com/p")),
+    ("CANONICAL_MISSING",
+     lambda: page(url="https://example.com/p?x=1"),
+     lambda: page(url="https://example.com/p?x=1",
+                  head="<link rel='canonical' href='https://example.com/p'>")),
+    ("CANONICAL_SELF_MISSING",
+     lambda: page(url="https://example.com/plain"),
+     lambda: page(url="https://example.com/plain",
+                  head="<link rel='canonical' href='https://example.com/plain'>")),
+    ("SCHEMA_ORG_MISSING",
+     lambda: page(url=BASE),
+     lambda: page(url=BASE, head="<script type='application/ld+json'>"
+                                 '{"@context":"https://schema.org","@type":"Organization",'
+                                 '"name":"Living Systems"}</script>')),
+    ("SCHEMA_TYPE_CONFLICT",
+     lambda: page(head="<script type='application/ld+json'>"
+                       '{"@context":"https://schema.org","@graph":'
+                       '[{"@type":"Article"},{"@type":"Product"}]}</script>'),
+     lambda: page(head="<script type='application/ld+json'>"
+                       '{"@context":"https://schema.org","@type":"Article"}</script>')),
+    ("LINK_EMPTY_ANCHOR",
+     lambda: page(body=f"<h1>H</h1><a href='{BASE}x'></a><p>{_FILLER}</p>"),
+     # An icon link with an accessible name is CORRECT, not an empty anchor.
+     lambda: page(body=f"<h1>H</h1><a href='{BASE}x' aria-label='Our Facebook page'>"
+                       f"<svg></svg></a><p>{_FILLER}</p>")),
+    ("PLACEHOLDER_LINK",
+     lambda: page(body=f"<h1>H</h1><a href='#'>Learn More</a>"
+                       f"<a href='{BASE}x'>Real</a><p>{_FILLER}</p>"),
+     lambda: page(body=f"<h1>H</h1><a href='{BASE}x'>Learn More</a><p>{_FILLER}</p>")),
+    ("PARA_TOO_LONG",
+     lambda: page(body="<h1>H</h1><p>" + " ".join(["word"] * 400) + "</p>"),
+     lambda: page(body="<h1>H</h1>" + "".join(f"<p>{' '.join(['word'] * 40)}</p>" for _ in range(6)))),
+    ("LANDMARK_MAIN_MISSING",
+     lambda: page(body=f"<h1>H</h1><p>{_FILLER}</p>"),
+     lambda: page(body=f"<main><h1>H</h1><p>{_FILLER}</p></main>")),
+    ("LANDMARK_NAV_MISSING",
+     lambda: page(body=f"<main><h1>H</h1><p>{_FILLER}</p></main>"),
+     lambda: page(body=f"<nav><a href='{BASE}a'>A</a></nav><main><h1>H</h1><p>{_FILLER}</p></main>")),
+    ("NON_SEMANTIC_BUTTON",
+     lambda: page(body=f"<h1>H</h1><div class='btn' onclick='go()'>Donate</div><p>{_FILLER}</p>"),
+     lambda: page(body=f"<h1>H</h1><button>Donate</button><p>{_FILLER}</p>")),
+    ("INTERACTIVE_NO_ACCESSIBLE_NAME",
+     lambda: page(body=f"<h1>H</h1><button></button><p>{_FILLER}</p>"),
+     lambda: page(body=f"<h1>H</h1><button aria-label='Donate now'></button><p>{_FILLER}</p>")),
+    ("SELF_REFERENCING_UTM",
+     lambda: page(body=f"<h1>H</h1><a href='{BASE}x?utm_source=site'>x</a><p>{_FILLER}</p>"),
+     lambda: page(body=f"<h1>H</h1><a href='{BASE}x'>x</a><p>{_FILLER}</p>")),
+    ("FAQ_SCHEMA_MISSING",
+     lambda: page(body=f"<h1>FAQ</h1><h2>What is Bowen theory?</h2><p>{_FILLER}</p>",
+                  url="https://example.com/faq"),
+     lambda: page(body=f"<h1>FAQ</h1><h2>What is Bowen theory?</h2><p>{_FILLER}</p>",
+                  url="https://example.com/faq",
+                  head="<script type='application/ld+json'>"
+                       '{"@context":"https://schema.org","@type":"FAQPage","mainEntity":'
+                       '[{"@type":"Question","name":"What is Bowen theory?","acceptedAnswer":'
+                       '{"@type":"Answer","text":"A theory of family systems."}}]}</script>')),
+    ("CONTENT_NOT_EXTRACTABLE_NO_TEXT",
+     lambda: page(body="<h1></h1>"), lambda: page()),
+]
+
+# ── Cross-page codes (runner="cross"): the fixture is a LIST of pages ──────
+def _pages(*bodies_and_urls):
+    return [page(body=b, url=u, **kw) for b, u, kw in bodies_and_urls]
 
 
-@pytest.mark.parametrize("code,positive,_negative", CONTRACTS, ids=[c[0] for c in CONTRACTS])
-def test_af11_positive_fixture_fires(code, positive, _negative):
+_LD_ORG_LINKED = ("<script type='application/ld+json'>"
+                  '{"@context":"https://schema.org","@type":"Organization","name":"LS",'
+                  '"sameAs":["https://facebook.com/ls"]}</script>')
+_LD_ORG_BARE = ("<script type='application/ld+json'>"
+                '{"@context":"https://schema.org","@type":"Organization","name":"LS"}</script>')
+_LD_AUTHOR = ("<script type='application/ld+json'>"
+              '{"@context":"https://schema.org","@type":"Person","name":"Dave"}</script>')
+
+CONTRACTS += [
+    ("TITLE_DUPLICATE",
+     lambda: [page(title="Exactly The Same Title", url=BASE),
+              page(title="Exactly The Same Title", url=BASE + "b")],
+     lambda: [page(title="A Distinct Title For Page One", url=BASE),
+              page(title="A Different Title For Page Two", url=BASE + "b")], "cross"),
+    ("META_DESC_DUPLICATE",
+     lambda: [page(desc="D" * 100, url=BASE), page(desc="D" * 100, url=BASE + "b")],
+     lambda: [page(desc="A" * 100, url=BASE), page(desc="B" * 100, url=BASE + "b")], "cross"),
+    ("ENTITY_SAMEAS_MISSING",
+     lambda: [page(head=_LD_ORG_BARE, url=BASE)],
+     # The real 2026-08-30 case: the Organization IS linked; the Yoast author
+     # Person node is not, and that is not a defect.
+     lambda: [page(head=_LD_ORG_LINKED + _LD_AUTHOR, url=BASE)], "cross"),
+    ("ORPHAN_PAGE",
+     lambda: [page(url=BASE), page(url=BASE + "hidden")],
+     lambda: [page(body=f"<h1>H</h1><a href='{BASE}linked'>Linked</a><p>{_FILLER}</p>", url=BASE),
+              page(url=BASE + "linked")], "cross"),
+]
+
+# ── Page codes, third tranche ──────────────────────────────────────────────
+_ARTICLE = ("<script type='application/ld+json'>"
+            '{"@context":"https://schema.org","@type":"Article","headline":"X",'
+            '"datePublished":"2026-01-01","dateModified":"2026-06-01",'
+            '"author":{"@type":"Person","name":"Dave Galloway"}}</script>')
+_ARTICLE_NO_DATES = ("<script type='application/ld+json'>"
+                     '{"@context":"https://schema.org","@type":"Article","headline":"X",'
+                     '"author":{"@type":"Person","name":"Dave Galloway"}}</script>')
+_ARTICLE_NO_AUTHOR = ("<script type='application/ld+json'>"
+                      '{"@context":"https://schema.org","@type":"Article","headline":"X",'
+                      '"datePublished":"2026-01-01","dateModified":"2026-06-01"}</script>')
+_BLOG = "https://example.com/blog/post"
+
+CONTRACTS += [
+    ("DATE_MODIFIED_MISSING",
+     lambda: page(head=_ARTICLE_NO_DATES, url=_BLOG),
+     lambda: page(head=_ARTICLE, url=_BLOG)),
+    ("DATE_PUBLISHED_MISSING",
+     lambda: page(head=_ARTICLE_NO_DATES, url=_BLOG),
+     lambda: page(head=_ARTICLE, url=_BLOG)),
+    ("AUTHOR_BYLINE_MISSING",
+     lambda: page(head=_ARTICLE_NO_AUTHOR, url=_BLOG),
+     lambda: page(head=_ARTICLE, url=_BLOG)),
+    ("FAVICON_MISSING",
+     lambda: page(url=BASE),
+     lambda: page(url=BASE, head="<link rel='icon' href='/favicon.ico'>")),
+    ("NOINDEX_HEADER",
+     lambda: page(headers={"x-robots-tag": "noindex"}),
+     lambda: page(headers={"x-robots-tag": "index, follow"})),
+    ("META_REFRESH_REDIRECT",
+     lambda: page(head="<meta http-equiv='refresh' content='0;url=/x'>"),
+     lambda: page()),
+    # Emitted by the image analyzer, not check_page — the wrong runner made
+    # this look dead, which is exactly the 18-of-28 trap from the audit.
+    # Emitted by the image analyzer, not check_page — the wrong runner made this
+    # look dead, exactly the 18-of-28 trap from the audit. It also needs a size
+    # over the legacy-format threshold: a small JPEG is not worth converting.
+    ("IMG_FORMAT_LEGACY",
+     lambda: img(url="https://example.com/a.jpg", filename="a.jpg",
+                 format="jpeg", file_size_bytes=900_000),
+     lambda: img(url="https://example.com/a.webp", filename="a.webp",
+                 format="webp", file_size_bytes=900_000), "image"),
+    ("UNSAFE_CROSS_ORIGIN_LINK",
+     lambda: page(body=f"<h1>H</h1><a href='https://other.org/' target='_blank'>Ext</a><p>{_FILLER}</p>"),
+     lambda: page(body="<h1>H</h1><a href='https://other.org/' target='_blank' "
+                       f"rel='noopener noreferrer'>Ext</a><p>{_FILLER}</p>")),
+    ("OUTBOUND_LINK_UNTRACKABLE",
+     lambda: page(body=f"<h1>H</h1><a href='https://other.org/'><img src='https://other.org/i.png'>"
+                       f"</a><p>{_FILLER}</p>"),
+     lambda: page(body=f"<h1>H</h1><a href='https://other.org/'>A named destination</a><p>{_FILLER}</p>")),
+    ("STATISTICS_COUNT_LOW",
+     lambda: page(body="<h1>H</h1><p>" + " ".join(["word"] * 600) + "</p>"),
+     lambda: page(body="<h1>H</h1><p>Research found 62% of clients improved, with 3 in 4 "
+                       "reporting change and 48 per cent sustaining it. "
+                       + " ".join(["word"] * 600) + "</p>")),
+    ("EXTERNAL_CITATIONS_LOW",
+     lambda: page(body="<h1>H</h1><p>" + " ".join(["word"] * 600) + "</p>"),
+     lambda: page(body="<h1>H</h1><p><a href='https://who.int/report'>WHO report</a> "
+                       + " ".join(["word"] * 600) + "</p>")),
+    ("CONVERSATIONAL_H2_MISSING",
+     lambda: page(body=f"<h1>H</h1><h2>Our Services</h2><p>{_FILLER}</p>"),
+     lambda: page(body=f"<h1>H</h1><h2>What is Bowen theory?</h2><p>{_FILLER}</p>")),
+    ("HOWTO_SCHEMA_INCOMPLETE",
+     lambda: page(head="<script type='application/ld+json'>"
+                       '{"@context":"https://schema.org","@type":"HowTo","name":"X"}</script>'),
+     lambda: page(head="<script type='application/ld+json'>"
+                       '{"@context":"https://schema.org","@type":"HowTo","name":"X","step":'
+                       '[{"@type":"HowToStep","text":"First"},{"@type":"HowToStep","text":"Then"}]}'
+                       "</script>")),
+    ("PRODUCT_REVIEW_SCHEMA_MISSING",
+     lambda: page(head="<script type='application/ld+json'>"
+                       '{"@context":"https://schema.org","@type":"Product","name":"W"}</script>'),
+     lambda: page(head="<script type='application/ld+json'>"
+                       '{"@context":"https://schema.org","@type":"Product","name":"W",'
+                       '"aggregateRating":{"@type":"AggregateRating","ratingValue":"4.5",'
+                       '"reviewCount":"12"}}</script>')),
+]
+
+CONTRACT_CODES = {c[0] for c in CONTRACTS}
+
+
+def _norm(contract):
+    """(code, positive, negative[, runner]) -> 4-tuple."""
+    code, pos, neg = contract[0], contract[1], contract[2]
+    runner = contract[3] if len(contract) > 3 else "page"
+    return code, pos, neg, runner
+
+
+ALL_CONTRACTS = [_norm(c) for c in CONTRACTS]
+_IDS = [c[0] for c in ALL_CONTRACTS]
+
+
+@pytest.mark.parametrize("code,positive,_negative,runner", ALL_CONTRACTS, ids=_IDS)
+def test_af11_positive_fixture_fires(code, positive, _negative, runner):
     """The check is not DEAD: an input that should trigger it, does."""
-    assert fires(code, positive()), f"{code} did not fire on its positive fixture"
+    issues = RUNNERS[runner](positive())
+    assert any(i.code == code for i in issues), (
+        f"{code} did not fire on its positive fixture (runner={runner})")
 
 
-@pytest.mark.parametrize("code,_positive,negative", CONTRACTS, ids=[c[0] for c in CONTRACTS])
-def test_af11_negative_fixture_stays_clean(code, _positive, negative):
+@pytest.mark.parametrize("code,_positive,negative,runner", ALL_CONTRACTS, ids=_IDS)
+def test_af11_negative_fixture_stays_clean(code, _positive, negative, runner):
     """The check is not a FALSE POSITIVE: correct-looking input stays clean.
 
     This is the assertion that did not exist for IMG_ALT_MISSING.
     """
-    assert not fires(code, negative()), f"{code} fired on correct input"
+    issues = RUNNERS[runner](negative())
+    assert not any(i.code == code for i in issues), (
+        f"{code} fired on correct input (runner={runner})")
 
 
 class TestGuardFieldIntegrity:
