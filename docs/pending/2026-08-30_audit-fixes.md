@@ -129,3 +129,50 @@ component; the raw 0 still reaches the UI.
 - **`UNSAFE_CROSS_ORIGIN_LINK` rename, `BROKEN_LINK_503` shortener handling, and
   the three narrow checks** — fold into the V1 authority pass, where each code
   must cite the standard it enforces.
+
+
+---
+
+## AF8 — `<image:loc>` parsed as a page URL (found after the audit "completed")
+
+**Defect.** `soup.find_all("loc")` matches on **local name**, so it also returns
+the `<image:loc>` entries the sitemap-image extension nests inside every
+`<url>`. Yoast emits one per featured image. On livingsystems.ca the parser
+returned **236 URLs for a 139-page site**: 97 image files entered the page set,
+were reported to the user as sitemap size, were seeded into the crawl queue and
+fetched as pages, and polluted every sitemap-membership comparison. It also
+explains the audit's own unresolved figure — 256 crawled "pages" of which only
+163 were HTML.
+
+**Fix.** Accept a `<loc>` only when its direct parent is `<url>` (urlset) or
+`<sitemap>` (index). Three extraction sites needed it; patching one and
+re-checking live is what revealed the other two.
+
+Verified live: **236 → 140 URLs**, image entries **97 → 1**, matching an
+independent count of the raw sitemap exactly.
+
+**Tests** — `tests/test_sitemap_image_loc.py` (5, mutation-proved)
+
+## AF9 — reconciliation invariants (the method fix, not a code fix)
+
+The 170-code audit could not have found AF8: it enumerated issue **codes**, and
+the sitemap parser owns none. See P33 in the global catalogue.
+
+`tests/test_crawl_reconciliation.py` asserts quantities that must agree:
+
+- image URLs never enter the page set
+- the reported sitemap size equals the pages the sitemap declares
+- `pages == html + assets + other`
+- every crawled URL was declared in the sitemap or discovered via a link
+
+All four **fail against the pre-AF8 parser** — verified by mutation. This is the
+class of check that catches defects living between the units.
+
+## AF10 — sitemap coverage is not disclosed (deferred, spec'd)
+
+Nothing compares the sitemap URL set against what was actually crawled. A URL
+declared in the sitemap but skipped (robots, `skip_wp_archives`, admin path,
+query-variant cap) or failed is silently absent from the report. On
+livingsystems.ca that count is currently **0**, so no harm today — but it is the
+same P31 shape as the orphan defect: the sitemap declares N, we crawl N−k, and
+nobody is told which k or why. Fix alongside the analysis-coverage disclosure.

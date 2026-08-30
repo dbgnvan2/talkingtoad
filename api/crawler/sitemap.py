@@ -231,13 +231,30 @@ def _parse_sitemap_content(
     """
     soup = BeautifulSoup(content, "lxml-xml")
 
+    # AF8: `find_all("loc")` matches on LOCAL name, so it also picks up
+    # `<image:loc>` from the sitemap-image extension that Yoast nests inside each
+    # `<url>` entry. On livingsystems.ca that pulled 97 image files into the page
+    # set (236 "pages" for a 139-page site): the count shown to the user was
+    # inflated by 70%, the image URLs were seeded into the crawl queue and
+    # fetched as pages, and every sitemap-membership comparison ran against a
+    # polluted set. Only a `<loc>` whose direct parent is `<url>` (urlset) or
+    # `<sitemap>` (index) is a page URL.
+    # Spec:  docs/pending/2026-08-30_audit-fixes.md#AF8
+    # Tests: tests/test_sitemap_image_loc.py
+    def _page_locs(parent_name: str) -> list[str]:
+        return [
+            loc.get_text(strip=True)
+            for loc in soup.find_all("loc")
+            if loc.parent is not None and loc.parent.name == parent_name
+        ]
+
     if soup.find("sitemapindex"):
         # Index sitemap — collect child sitemap <loc> values.
         # Actual fetching of children is handled by the async caller.
-        return [loc.get_text(strip=True) for loc in soup.find_all("loc")]
+        return _page_locs("sitemap")
 
     # Standard urlset sitemap
-    return [loc.get_text(strip=True) for loc in soup.find_all("loc")]
+    return _page_locs("url")
 
 
 async def fetch_sitemap_recursive(
@@ -316,7 +333,9 @@ async def _fetch_and_resolve(
         # Fetch each child sitemap and aggregate. We keep both the flat URL list
         # (unchanged behaviour for existing callers) and a per-content-type
         # grouping keyed off each child sitemap's filename (for scan-scoping).
-        child_urls_raw = [loc.get_text(strip=True) for loc in soup.find_all("loc")]
+        # AF8: only <loc> directly under <sitemap>; never <image:loc>.
+        child_urls_raw = [loc.get_text(strip=True) for loc in soup.find_all("loc")
+                          if loc.parent is not None and loc.parent.name == "sitemap"]
         all_page_urls: list[str] = []
         grouped: dict[str, list[str]] = {}
         for child_url in child_urls_raw:
@@ -336,7 +355,11 @@ async def _fetch_and_resolve(
             grouped=grouped or None,
         ), True
 
-    page_urls = [loc.get_text(strip=True) for loc in soup.find_all("loc")]
+    # AF8: only <loc> directly under <url>. `find_all("loc")` matches on local
+    # name, so it otherwise swallows the <image:loc> entries Yoast nests inside
+    # each <url> — 97 image files entered the page set on livingsystems.ca.
+    page_urls = [loc.get_text(strip=True) for loc in soup.find_all("loc")
+                 if loc.parent is not None and loc.parent.name == "url"]
     if not page_urls and not soup.find("urlset"):
         return None, True  # reached (200), but not a sitemap document
 

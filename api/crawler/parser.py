@@ -6,6 +6,7 @@ Extracts all Phase 1 and Phase 2 fields from a fetched page (spec §5.2, §3.1.2
 
 import json
 import logging
+import re
 from dataclasses import dataclass, field
 from urllib.parse import urlparse, urljoin
 
@@ -459,7 +460,7 @@ def parse_page(
         twitter_card=_extract_meta(soup, "twitter:card"),
         canonical_url=_extract_canonical(soup, page_url),
         h1_tags=_extract_h1s(soup),
-        headings_outline=_extract_headings_outline(soup),
+        headings_outline=_extract_headings_outline(soup, result.html),
         is_indexable=is_indexable,
         robots_directive=robots_directive,
         robots_source=robots_source,
@@ -589,16 +590,68 @@ def _extract_h1s(soup: BeautifulSoup) -> list[str]:
     return [h.get_text(strip=True) for h in soup.find_all("h1")]
 
 
-def _extract_headings_outline(soup: BeautifulSoup) -> list[dict]:
+def _extract_headings_outline(soup: BeautifulSoup, raw_html: str | None = None) -> list[dict]:
+    """Return the heading outline, repairing lxml's non-spec block-in-heading split.
+
+    AF3: we parse with lxml (libxml2, a pre-HTML5 parser), which closes an open
+    ``<hN>`` when it meets a block element. Page builders emit
+    ``<h3><p>Practicum Student</p></h3>`` routinely, and lxml turns that into an
+    EMPTY ``<h3>`` followed by a stray paragraph. The HTML5 parsing algorithm
+    does not close a heading on a ``<p>`` start tag, so browsers and search
+    engines see the text — we were reporting 17 headings as empty that Google
+    reads normally.
+
+    When a heading looks empty, we recover its text from the raw HTML before
+    concluding anything. A heading that is genuinely empty in the source stays
+    empty.
+
+    Spec:  docs/pending/2026-08-30_audit-fixes.md#AF3
+    Tests: tests/test_heading_empty.py
+    """
+    recovered = _recover_block_wrapped_headings(raw_html) if raw_html else {}
+    used: set[int] = set()
     outline = []
     for tag in soup.find_all(["h1", "h2", "h3", "h4", "h5", "h6"]):
         level = int(tag.name[1])
         classes = " ".join(tag.get("class", []))
-        entry: dict = {"level": level, "text": tag.get_text(strip=True)}
+        text = tag.get_text(strip=True)
+        if not text:
+            # Take the next unused recovered text for this level, in document
+            # order — lxml preserves heading order, so positional matching is
+            # sound and avoids depending on class attributes.
+            for idx, (lvl, rec) in enumerate(recovered.get("items", [])):
+                if idx not in used and lvl == level:
+                    text = rec
+                    used.add(idx)
+                    break
+        entry: dict = {"level": level, "text": text}
         if classes:
             entry["classes"] = classes
         outline.append(entry)
     return outline
+
+
+_BLOCK_IN_HEADING_RE = re.compile(
+    r"<h([1-6])\b[^>]*>\s*(<(?:p|div|ul|ol|span)\b.*?)</h\1\s*>",
+    re.I | re.S,
+)
+
+
+def _recover_block_wrapped_headings(raw_html: str) -> dict:
+    """Find ``<hN><p>text</p></hN>`` in the RAW html and return the text lxml drops.
+
+    Returns ``{"items": [(level, text), ...]}`` in document order.
+    """
+    items: list[tuple[int, str]] = []
+    try:
+        for m in _BLOCK_IN_HEADING_RE.finditer(raw_html):
+            inner = re.sub(r"(?is)<[^>]+>", " ", m.group(2))
+            text = " ".join(inner.split())
+            if text:
+                items.append((int(m.group(1)), text))
+    except Exception:  # never let a regex quirk break parsing
+        return {"items": []}
+    return {"items": items}
 
 
 def _parse_robots_signals(
