@@ -55,11 +55,21 @@ def generate_excel_report(
     # O2 (P25 — every export surface, not just the PDF): a suppressed orphan
     # check contributes zero crawlability rows, so a workbook with no note reads
     # as "no orphaned pages" for a scan that never looked (P31).
-    from api.services.coverage_notes import orphan_coverage_note
+    from api.services.coverage_notes import (analysis_coverage_note,
+                                              orphan_coverage_note,
+                                              sitemap_coverage_note)
     _orphan_note = orphan_coverage_note(job)
     if _orphan_note:
         ws_summary["D3"] = _orphan_note
         ws_summary["D3"].font = label_font
+    _sitemap_note = sitemap_coverage_note(job)   # AF10
+    if _sitemap_note:
+        ws_summary["D4"] = _sitemap_note
+        ws_summary["D4"].font = label_font
+    _analysis_note = analysis_coverage_note(job)   # C2
+    if _analysis_note:
+        ws_summary["D5"] = _analysis_note
+        ws_summary["D5"].font = label_font
 
     # Category totals table
     ws_summary["A9"] = "Issues by Category"

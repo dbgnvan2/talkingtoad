@@ -101,6 +101,10 @@ class SQLiteJobStore:
             ("images_collected", "INTEGER"),
             # O2 — orphan-detection coverage (complete / skipped_*)
             ("orphan_detection", "TEXT"),
+            # AF10 — sitemap fetch coverage
+            ("sitemap_coverage", "TEXT"),
+            # C1 — which analysis groups ran
+            ("analysis_coverage", "TEXT"),
             ("web_vitals", "TEXT"),
             ("wp_audit", "TEXT"),
             ("blueprints", "TEXT"),
@@ -262,6 +266,8 @@ class SQLiteJobStore:
             "images_seen_total",
             "images_collected",
             "orphan_detection",
+            "sitemap_coverage",
+            "analysis_coverage",
             "web_vitals",
             "wp_audit",
             "blueprints",
@@ -609,6 +615,11 @@ class SQLiteJobStore:
             # orphans, which must never render as "no orphans found" (P31).
             # None on audits crawled before this field existed.
             "orphan_detection": job.orphan_detection,
+            # AF10: the sitemap declares N URLs; if we fetched N-k the reader
+            # must be able to see which k and why.
+            "sitemap_coverage": job.sitemap_coverage,
+            # C1: an unchecked category is "not checked", not a clean zero.
+            "analysis_coverage": job.analysis_coverage,
             "robots_txt": robots_info,
             "sitemap": sitemap_info,
         }
@@ -1706,6 +1717,8 @@ def _row_to_job(row: dict) -> CrawlJob:
         images_seen_total=row.get("images_seen_total"),
         images_collected=row.get("images_collected"),
         orphan_detection=json.loads(row["orphan_detection"]) if row.get("orphan_detection") else None,
+        sitemap_coverage=json.loads(row["sitemap_coverage"]) if row.get("sitemap_coverage") else None,
+        analysis_coverage=json.loads(row["analysis_coverage"]) if row.get("analysis_coverage") else None,
         web_vitals=json.loads(row["web_vitals"]) if row.get("web_vitals") else None,
         wp_audit=json.loads(row["wp_audit"]) if row.get("wp_audit") else None,
         blueprints=json.loads(row["blueprints"]) if row.get("blueprints") else None,

@@ -48,3 +48,61 @@ def orphan_coverage_note(job) -> str | None:
     return ("Orphaned pages: NOT CHECKED — " + why + tail +
             ". A page linked only from an unfetched page cannot be told apart "
             "from an orphan, so no result is reported rather than a misleading one.")
+
+
+_SITEMAP_SKIP_WHY = {
+    "wordpress_archive": "WordPress archive pages are skipped by default",
+    "admin_path": "admin paths are never crawled",
+    "robots_blocked": "robots.txt disallows them",
+    "robots_expected_disallow": "robots.txt disallows them (cart/search/account)",
+    "query_variant_cap": "the per-path query-variant cap was reached",
+    "not_reached": "the crawl did not reach them",
+}
+
+
+def sitemap_coverage_note(job) -> str | None:
+    """Return a disclosure line when the sitemap declares URLs we did not fetch.
+
+    Purpose: a URL the site itself declares, silently absent from the audit, is
+             indistinguishable from one that was checked and clean (P31).
+    Spec:    docs/pending/2026-08-30_audit-fixes.md#AF10
+    Tests:   tests/test_sitemap_coverage.py::TestExportSurfaces
+    """
+    cov = getattr(job, "sitemap_coverage", None)
+    if not isinstance(cov, dict):
+        return None                      # legacy audit — no claim either way
+    declared = cov.get("declared") or 0
+    missed = cov.get("not_crawled") or 0
+    if not declared or not missed:
+        return None
+    reasons = cov.get("reasons") or {}
+    counts: dict[str, int] = {}
+    for why in reasons.values():
+        counts[why] = counts.get(why, 0) + 1
+    detail = "; ".join(
+        f"{n} because {_SITEMAP_SKIP_WHY.get(why, why)}"
+        for why, n in sorted(counts.items(), key=lambda kv: -kv[1]))
+    return (f"Sitemap: {cov.get('crawled', 0)} of {declared} declared URLs were fetched. "
+            f"{missed} were not"
+            + (f" — {detail}." if detail else ".")
+            + " Findings say nothing about the pages that were not fetched.")
+
+
+def analysis_coverage_note(job) -> str | None:
+    """Return a disclosure line when analysis groups were switched off.
+
+    Purpose: a category that never ran contributes zero findings, and zero
+             findings render exactly like a clean category (P31).
+    Spec:    docs/pending/2026-08-30_analysis-coverage-disclosure.md#C2
+    Tests:   tests/test_analysis_coverage.py
+    """
+    cov = getattr(job, "analysis_coverage", None)
+    if not isinstance(cov, dict) or cov.get("mode") != "partial":
+        return None
+    unchecked = cov.get("categories_unchecked") or []
+    if not unchecked:
+        return None
+    pretty = ", ".join(c.replace("_", " ") for c in unchecked)
+    return ("Analyses: this was a PARTIAL scan. These categories were not checked and "
+            f"report nothing: {pretty}. A category that did not run shows no findings, "
+            "which is not the same as having none.")

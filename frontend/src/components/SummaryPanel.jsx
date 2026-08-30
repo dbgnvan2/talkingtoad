@@ -20,6 +20,14 @@ const TAB_ORPHAN_IMAGES = CATEGORIES.length + 2
 const TAB_ORPHAN_PAGES = CATEGORIES.length + 3
 
 export default function SummaryPanel({ summary, domain, jobId, onCategoryClick, onSeverityClick, onPageClick, onShowPdfModal, onShowCategoryHelp, onShowGeoSettings }) {
+  // C2: which analysis groups ran. Absent on legacy audits, which were full
+  // scans — so an absent record must never mark a category "not checked".
+  // Spec: docs/pending/2026-08-30_analysis-coverage-disclosure.md#C2
+  const analysisCoverage = summary?.analysis_coverage ?? null
+  const uncheckedCategories = new Set(
+    analysisCoverage?.mode === 'partial' ? (analysisCoverage.categories_unchecked || []) : []
+  )
+  const isUnchecked = (key) => uncheckedCategories.has(key)
   const toast = useToast()
   const { getFontClass } = useTheme()
   const [aiTesting, setAiTesting] = useState(false)
@@ -210,6 +218,18 @@ export default function SummaryPanel({ summary, domain, jobId, onCategoryClick, 
         />
       </div>
 
+      {/* C2: the banner qualifies every number on this page, so it is not a
+          footnote. Two crawls of one site read 1 warning and 118 purely because
+          the first ran a single analysis group, and nothing said so. */}
+      {analysisCoverage?.mode === 'partial' && (
+        <div className="mb-4 px-5 py-4 bg-white border border-blue-200 rounded-2xl">
+          <p className="text-blue-700 font-medium">This was a partial scan.</p>
+          <p className="text-sm text-gray-600 mt-1">
+            {`These categories were not checked and report nothing: ${(analysisCoverage.categories_unchecked || []).map(c => c.replace(/_/g, ' ')).join(', ')}. A category that did not run shows no findings, which is not the same as having none.`}
+          </p>
+        </div>
+      )}
+
       {/* Category Drill-down Boxes */}
       <section>
         <h2 className="font-black text-gray-400 uppercase tracking-widest mb-4" style={getFontClass('headingSize')}>{domain ? `Issues by Category - ${domain}` : 'Issues by Category'}</h2>
@@ -220,8 +240,18 @@ export default function SummaryPanel({ summary, domain, jobId, onCategoryClick, 
                 onClick={(e) => { e.stopPropagation(); onCategoryClick(i) }}
                 className="w-full text-left"
               >
-                <p className="font-black text-gray-800 group-hover:text-green-600" style={{ ...getFontClass('badgeSize'), fontSize: `${getFontClass('badgeSize').fontSize.replace('px', '') * 2}px` }}>{summary.by_category?.[cat.key] || 0}</p>
+                {/* C2: a category that never ran contributes zero findings, and a
+                    "0" tile is indistinguishable from a clean category. Show
+                    "not checked" instead (P31: absence rendered as a pass). */}
+                {isUnchecked(cat.key) ? (
+                  <p className="font-black text-gray-400 group-hover:text-green-600" style={{ ...getFontClass('badgeSize'), fontSize: `${getFontClass('badgeSize').fontSize.replace('px', '') * 2}px` }}>&mdash;</p>
+                ) : (
+                  <p className="font-black text-gray-800 group-hover:text-green-600" style={{ ...getFontClass('badgeSize'), fontSize: `${getFontClass('badgeSize').fontSize.replace('px', '') * 2}px` }}>{summary.by_category?.[cat.key] || 0}</p>
+                )}
                 <p className="font-black text-gray-800 uppercase tracking-wider mt-1 group-hover:text-green-600" style={getFontClass('headingSize')}>{cat.label}</p>
+                {isUnchecked(cat.key) && (
+                  <p className="text-xs text-gray-400 mt-1">not checked</p>
+                )}
               </button>
               <button
                 onClick={(e) => { e.stopPropagation(); onShowCategoryHelp?.(cat.key) }}

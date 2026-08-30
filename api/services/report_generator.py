@@ -895,10 +895,20 @@ def _render_caveats_section(pdf, job, summary, *, performance, image_summary,
     # O2: a suppressed orphan check produces zero rows in the crawlability
     # section. Without this line the report reads as "no orphaned pages" for a
     # scan that never looked — the same false all-clear the panel fixes (P31).
-    from api.services.coverage_notes import orphan_coverage_note
+    from api.services.coverage_notes import (analysis_coverage_note,
+                                              orphan_coverage_note,
+                                              sitemap_coverage_note)
     _orphan_note = orphan_coverage_note(job)
     if _orphan_note:
         limits.append(_orphan_note)
+    # AF10: a URL the site declares but we never fetched must not be silently
+    # absent from the audit.
+    _sitemap_note = sitemap_coverage_note(job)
+    if _sitemap_note:
+        limits.append(_sitemap_note)
+    _analysis_note = analysis_coverage_note(job)   # C2
+    if _analysis_note:
+        limits.append(_analysis_note)
     if limits:
         _para("Limits reached during this crawl", bold=True, color=COLOR_GRAY_800, size=12)
         for line in limits:

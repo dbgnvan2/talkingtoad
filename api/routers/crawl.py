@@ -419,6 +419,10 @@ async def _run_crawl_background(
             # O2: persist WHY orphan detection did or did not run, so no surface
             # has to infer "clean" from an empty result set (P31 corollary).
             orphan_detection=result.orphan_detection,
+            # AF10: persist sitemap fetch coverage alongside it.
+            sitemap_coverage=result.sitemap_coverage,
+            # C1: which analyses ran, so an off category is not read as clean.
+            analysis_coverage=result.analysis_coverage,
         )
         logger.info("crawl_persisted", extra={"job_id": job_id, "status": final_status})
 

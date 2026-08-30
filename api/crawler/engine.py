@@ -292,6 +292,13 @@ class CrawlResult:
     # actually established completeness may set "complete" (P31 — make the
     # wrong state unrepresentable rather than fixing each caller).
     orphan_detection: dict = field(default_factory=lambda: dict(ORPHAN_NOT_RUN))
+    # AF10 — how much of what the sitemap declares was actually fetched.
+    # {declared, crawled, not_crawled, reasons}. declared == 0 means no sitemap.
+    sitemap_coverage: dict = field(default_factory=lambda: {
+        "declared": 0, "crawled": 0, "not_crawled": 0, "reasons": {}})
+    # C1 — which analysis groups ran. A category that was switched off must
+    # render as "not checked", never as a clean 0.
+    analysis_coverage: dict = field(default_factory=dict)
     # E1.4 (P9, rule 6): distinct image URLs SEEN across the crawl vs the number
     # that survived the per-job cap and were analysed. When these differ, every
     # surface must say "analysed N of M" rather than implying full coverage.
@@ -496,6 +503,12 @@ async def run_crawl(
         scope_skipped_urls: set[str] = set()
         # O1: set when the BFS stops at the page budget with URLs still queued.
         truncated_by_max_pages = False
+        # AF10: why each dequeued URL was never fetched. The sitemap declares
+        # N URLs; if we fetch N-k, the report must say which k and why —
+        # nothing compared the two sets before (P31).
+        # Spec:  docs/pending/2026-08-30_audit-fixes.md#AF10
+        # Tests: tests/test_sitemap_coverage.py
+        skip_reasons: dict[str, str] = {}
         unfetched_at_truncation = 0
         # O2: pages the crawl reached but could not read the links of — a
         # timeout, an SSRF block, a login wall, a parse failure. Each one is a
@@ -594,14 +607,17 @@ async def run_crawl(
 
             if not variant_tracker.record(url):
                 log.warning("query_variant_cap_reached", extra={"url": url})
+                skip_reasons[url] = "query_variant_cap"
                 continue
 
             if is_admin_path(url):
                 log.debug("admin_path_skipped", extra={"url": url})
+                skip_reasons[url] = "admin_path"
                 continue
 
             if settings.skip_wp_archives and is_wp_noise_path(url):
                 log.debug("wp_noise_skipped", extra={"url": url})
+                skip_reasons[url] = "wordpress_archive"
                 continue
 
             if robots_data and not robots_data.is_allowed(url):
@@ -609,6 +625,7 @@ async def run_crawl(
                 # search/faceted-filter URLs) — those are correctly disallowed.
                 if is_expected_disallow(url):
                     log.debug("robots_expected_disallow_skipped", extra={"url": url})
+                    skip_reasons[url] = "robots_expected_disallow"
                     continue
                 log.info("robots_blocked", extra={"url": url})
                 all_issues.append(make_issue("ROBOTS_BLOCKED", url,
@@ -617,6 +634,7 @@ async def run_crawl(
                                                   "note": "robots.txt blocks CRAWLING of this URL; "
                                                   "it does not remove an already-indexed URL. Use a "
                                                   "noindex directive to remove a page from search."}))
+                skip_reasons[url] = "robots_blocked"
                 continue
 
             if len(all_pages) >= settings.max_pages:
@@ -1137,6 +1155,29 @@ async def run_crawl(
         amp_issues = check_amphtml_links(all_pages, amp_statuses)
         all_issues.extend(amp_issues)
 
+        # ── 6-0. Sitemap coverage (AF10) ─────────────────────────────────
+        # The sitemap is the site's own declaration of what exists. Comparing it
+        # against what we actually fetched is the only way a reader can tell
+        # "checked and clean" from "never looked" for a declared URL.
+        _crawled_norm = set()
+        for _pg in all_pages:
+            try:
+                _crawled_norm.add(normalise_url(_pg.url))
+            except Exception:
+                continue
+        _missed = sorted(sitemap_url_set - _crawled_norm)
+        sitemap_coverage = {
+            "declared": len(sitemap_url_set),
+            "crawled": len(sitemap_url_set & _crawled_norm),
+            "not_crawled": len(_missed),
+            # Why each declared URL went unfetched, so the gap is actionable
+            # rather than a bare number.
+            "reasons": {u: skip_reasons.get(u, "not_reached") for u in _missed[:50]},
+        }
+        if _missed:
+            log.info("sitemap_urls_not_crawled",
+                     extra={"count": len(_missed), "declared": len(sitemap_url_set)})
+
         # ── 6a. Self-inflicted trailing-slash redirects (AF2) ────────────
         # `normalise_url` strips a trailing slash, so we FETCH `/x` on a site
         # whose canonical form is `/x/`. The server 301s back, and we reported
@@ -1331,6 +1372,8 @@ async def run_crawl(
             sitemap_url_count=_sitemap_url_count,
             scope_skipped=len(scope_skipped_urls),
             orphan_detection=orphan_detection,
+            sitemap_coverage=sitemap_coverage,
+            analysis_coverage=_build_analysis_coverage(settings),
             images_seen_total=len(image_targets_seen),
             images_collected=len(all_images),
         )
@@ -1360,6 +1403,42 @@ def _is_self_inflicted_slash_redirect(issue, raw_internal_hrefs: set[str]) -> bo
         return False  # not a slash-only difference
     # Did any page link to the exact pre-redirect form?
     return src not in raw_internal_hrefs and src.rstrip("/") not in raw_internal_hrefs
+
+
+def _build_analysis_coverage(settings: "CrawlSettings") -> dict:
+    """Record which analysis groups ran, and which categories they cover.
+
+    Purpose: a scan with categories switched off renders exactly like a thorough
+             scan of a healthy site — same layout, fewer findings. Two full
+             crawls of one site 49 minutes apart read 1 warning and 118 because
+             the first ran only `link_integrity`, and nothing on any surface said
+             so (P31: an absent finding read as a passing one).
+    Spec:    docs/pending/2026-08-30_analysis-coverage-disclosure.md#C1
+    Tests:   tests/test_analysis_coverage.py
+    """
+    all_groups = sorted(_ANALYSIS_CATEGORY_MAP)
+    enabled = settings.enabled_analyses
+    if enabled is None:
+        groups_enabled, groups_disabled = all_groups, []
+    else:
+        chosen = {g for g in enabled if g in _ANALYSIS_CATEGORY_MAP}
+        groups_enabled = sorted(chosen)
+        groups_disabled = sorted(set(all_groups) - chosen)
+
+    checked: set[str] = set(_UNGROUPED_CATEGORIES)  # security always runs
+    for g in groups_enabled:
+        checked |= _ANALYSIS_CATEGORY_MAP[g]
+    every: set[str] = set(_UNGROUPED_CATEGORIES)
+    for cats in _ANALYSIS_CATEGORY_MAP.values():
+        every |= cats
+
+    return {
+        "mode": "all" if enabled is None else "partial",
+        "groups_enabled": groups_enabled,
+        "groups_disabled": groups_disabled,
+        "categories_checked": sorted(checked),
+        "categories_unchecked": sorted(every - checked),
+    }
 
 
 def _compute_click_depths(pages: list[ParsedPage], start_url: str | None) -> None:

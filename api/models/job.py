@@ -124,6 +124,16 @@ class CrawlJob(BaseModel):
     # differently. Legacy audits read back as None ("not recorded").
     # Spec: docs/functional-specification.md §4.4 (ORPHAN_PAGE)
     orphan_detection: dict | None = None
+    # AF10 (2026-08-30) — how much of what the sitemap declares was fetched:
+    # {declared, crawled, not_crawled, reasons}. None on audits crawled before
+    # this field existed. A shortfall must be shown, never silently absent.
+    # Spec: docs/pending/2026-08-30_audit-fixes.md#AF10
+    sitemap_coverage: dict | None = None
+    # C1 (2026-08-30) — which analysis groups ran:
+    # {mode, groups_enabled, groups_disabled, categories_checked, categories_unchecked}.
+    # An unchecked category must render as "not checked", never as a clean 0.
+    # Spec: docs/pending/2026-08-30_analysis-coverage-disclosure.md#C1
+    analysis_coverage: dict | None = None
     # D2 (2026-08-29) — Core Web Vitals, collected by an opt-in post-scan step.
     # None means "not collected", which the report must render as such rather
     # than as "this site is fast".
