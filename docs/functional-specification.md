@@ -965,6 +965,28 @@ via `images_seen_total` / `images_collected` on the job.
 → `tests/test_parser_lazy_images.py`, `tests/test_image_cap_disclosure.py`,
 real fixtures in `tests/fixtures/lazy_images/`.
 
+**IM1 — pixel dimensions are measured, not inferred.** The scan was HEAD-only,
+so no image had a width, a height or a content hash, and four checks —
+`IMG_OVERSCALED`, `IMG_NO_SRCSET`, `IMG_DUPLICATE_CONTENT`, `IMG_SLOW_LOAD` —
+had no data and did not fire in 156 jobs, while every image stored a technical
+score of 0. A dimension pass now downloads images after the HEAD pass and reads
+width/height/format with Pillow plus an MD5 content hash. Any failure measures
+**nothing** rather than guessing: an unmeasured image is *not checked*, never
+*clean* (P31), and `images_measured` / `images_measurable` carry the shortfall
+the way `images_collected` / `images_seen_total` carry the image cap.
+
+The pass is bounded by a **total byte budget** (`TT_IMAGE_DIMENSION_TOTAL_BYTES`,
+48 MB) with a per-image skip (`TT_IMAGE_DIMENSION_MAX_BYTES`, 12 MB), a count
+cap (250) and time budgets (45 s overall, 8 s per image) — **not** by a minimum
+image size. A 100 KB floor was the first design and was wrong: the only two
+overscaled images on the reference site are 30 KB and 9 KB, so the floor skipped
+both and left `IMG_OVERSCALED` dead on exactly the cases it exists to catch
+(P9). Overscaling is a ratio of intrinsic to display width and has no lower
+bound in bytes. On the reference site the pass measures 32 of 34 images for
+1.7 MB and `IMG_OVERSCALED` and `IMG_NO_SRCSET` now fire on the two images an
+independent probe identified.
+→ `tests/test_image_dimensions.py`, § IM1 above.
+
 **E2 — broken-link source attribution.** `external_targets_seen` and
 `discovered_from.setdefault` retained only the first page linking to each broken
 target, so 120 broken internal links reported as 10. `external_target_sources`

@@ -70,6 +70,27 @@ def _classify_fetch_error(error: str) -> str | None:
 _DEFAULT_MAX_PAGES = int(os.getenv("MAX_PAGES_PER_CRAWL", "500"))
 # AF4: click depth above which HIGH_CRAWL_DEPTH fires (mirrors issue_checker).
 _MAX_CLICK_DEPTH = int(os.getenv("TT_MAX_CLICK_DEPTH", "4"))
+# IM1: only images at or above this size are downloaded for dimensions. The
+# small ones cannot be "oversized for their display size" in any way worth
+# reporting, and skipping them keeps the pass cheap (4 of 72 on a real site).
+# IM1 — the dimension pass is bounded by a TOTAL byte budget, never by a
+# per-image minimum size. A minimum-size gate was the first design and it was
+# wrong: measured on livingsystems.ca, the only two genuinely overscaled images
+# on the site are 30 KB and 9 KB, so a 100 KB gate skipped both and left
+# IMG_OVERSCALED dead on exactly the cases it exists to catch (P9 — a magic
+# limit that silently caps the input, justified by a narrative the data does
+# not support). Overscaling is a ratio between intrinsic and display width; it
+# has no lower bound in bytes.
+_IMAGE_DIMENSION_TOTAL_BYTES = int(os.getenv("TT_IMAGE_DIMENSION_TOTAL_BYTES", str(48 * 1024 * 1024)))
+# Skip a single pathologically large file rather than spending the whole budget
+# on it. Its dimensions stay unmeasured and are reported as such.
+_IMAGE_DIMENSION_MAX_BYTES = int(os.getenv("TT_IMAGE_DIMENSION_MAX_BYTES", str(12 * 1024 * 1024)))
+_IMAGE_DIMENSION_MAX_COUNT = int(os.getenv("TT_IMAGE_DIMENSION_MAX_COUNT", "250"))
+_IMAGE_DIMENSION_BUDGET_S = float(os.getenv("TT_IMAGE_DIMENSION_BUDGET_S", "45"))
+_IMAGE_DIMENSION_TIMEOUT_S = float(os.getenv("TT_IMAGE_DIMENSION_TIMEOUT_S", "8"))
+# Budgeting happens before the download, so an image whose HEAD gave no
+# content-length is charged this nominal amount against the budget.
+_IMAGE_DIMENSION_UNKNOWN_SIZE = 150 * 1024
 _MIN_CRAWL_DELAY_MS = 200
 _EXTERNAL_LINK_CAP_PER_PAGE = 50
 _EXTERNAL_LINK_CAP_PER_JOB = 500
@@ -305,6 +326,13 @@ class CrawlResult:
     # Spec: docs/pending/2026-08-29_E1-lazy-loaded-image-extraction.md#E1.4
     images_seen_total: int = 0
     images_collected: int = 0
+    # IM1 — how many collected images had their pixel dimensions actually
+    # measured. IMG_OVERSCALED / IMG_NO_SRCSET / IMG_DUPLICATE_CONTENT /
+    # IMG_SLOW_LOAD are only sound over measured images: an unmeasured image
+    # is "not checked", never "clean" (P31). When these differ, every surface
+    # must say "measured N of M".
+    images_measured: int = 0
+    images_measurable: int = 0
 
 
 # ---------------------------------------------------------------------------
@@ -997,6 +1025,12 @@ async def run_crawl(
         print(f"[IMG] image_data_queue has {len(image_data_queue)} entries "
               f"(of {len(image_targets_seen)} distinct image URLs seen)")
 
+        # IM1 — bound at function scope, not inside the image block: an empty
+        # queue or a raised exception must still leave an honest zero rather
+        # than a NameError at result construction (P13).
+        images_measured = 0
+        images_measurable = 0
+
         try:
             image_config = {
                 "max_image_size_kb": settings.img_size_limit_kb,
@@ -1059,14 +1093,74 @@ async def run_crawl(
                     except Exception as head_exc:
                         print(f"[IMG] HEAD metadata fetch failed: {head_exc}")
 
+                # ── Dimension pass (IM1) ─────────────────────────────────
+                # HEAD gives size and content-type but never pixel dimensions,
+                # so four checks — IMG_NO_SRCSET, IMG_OVERSCALED,
+                # IMG_DUPLICATE_CONTENT, IMG_SLOW_LOAD — had NO data and could
+                # not fire in 156 jobs, and every image scored technical 0/None.
+                #
+                # Downloading everything is unnecessary: on livingsystems.ca 72
+                # images total 6.0 MB, but only 4 exceed 200 KB. Only images at
+                # or above the threshold are fetched, so the cost tracks the
+                # images actually worth measuring.
+                # Spec:  docs/functional-specification.md (IM1)#IM1
+                # Tests: tests/test_image_dimensions.py
+                dimension_cache: dict[str, dict] = {}
+                measurable_total = len(valid_img_data)
+                skipped_oversize = 0
+                if valid_img_data:
+                    # Walk in document order, charging each image's HEAD size
+                    # against a total budget, and stop when it is spent. What
+                    # falls off the end is counted and disclosed, never silent.
+                    candidates: list[str] = []
+                    budget_left = _IMAGE_DIMENSION_TOTAL_BYTES
+                    for d in valid_img_data:
+                        if len(candidates) >= _IMAGE_DIMENSION_MAX_COUNT:
+                            break
+                        size = head_metadata_cache.get(d["url"], {}).get("file_size")
+                        cost = size if size else _IMAGE_DIMENSION_UNKNOWN_SIZE
+                        if size and size > _IMAGE_DIMENSION_MAX_BYTES:
+                            skipped_oversize += 1
+                            continue
+                        if cost > budget_left:
+                            break
+                        budget_left -= cost
+                        candidates.append(d["url"])
+                    if candidates:
+                        try:
+                            dim_results = await asyncio.wait_for(
+                                asyncio.gather(
+                                    *[_fetch_image_dimensions(u, client) for u in candidates],
+                                    return_exceptions=True),
+                                timeout=_IMAGE_DIMENSION_BUDGET_S)
+                            for item in dim_results:
+                                if isinstance(item, tuple) and item[1]:
+                                    dimension_cache[item[0]] = item[1]
+                        except Exception as dim_exc:
+                            # A slow or hostile image host must never fail a crawl;
+                            # the checks simply stay unavailable for that run.
+                            log.warning("image_dimension_pass_failed",
+                                        extra={"error": str(dim_exc)})
+                    log.info("image_dimensions_measured", extra={
+                        "measured": len(dimension_cache),
+                        "attempted": len(candidates),
+                        "measurable_total": measurable_total,
+                        "skipped_oversize": skipped_oversize,
+                    })
+                images_measured = len(dimension_cache)
+                images_measurable = measurable_total
+
                 for img_data in valid_img_data:
                     img_url = img_data["url"]
                     head_meta = head_metadata_cache.get(img_url, {})
+                    dim_meta = dimension_cache.get(img_url, {})
 
-                    # Get file size and content-type from HEAD request
-                    # Width/height are NOT available from HEAD - will be fetched on-demand via "Fetch" button
-                    width = None
-                    height = None
+                    # Size and content-type from HEAD; pixel dimensions and the
+                    # content hash from the dimension pass above, when the image
+                    # was large enough to be measured (IM1). None stays None —
+                    # "not measured" must never render as a value.
+                    width = dim_meta.get("width")
+                    height = dim_meta.get("height")
                     file_size = head_meta.get("file_size")
                     mime_type = head_meta.get("content_type")
                     fmt = _guess_format_from_url(img_url)
@@ -1091,15 +1185,18 @@ async def run_crawl(
                         height=height,
                         rendered_width=img_data.get("rendered_width"),
                         rendered_height=img_data.get("rendered_height"),
-                        file_size_bytes=file_size,
-                        load_time_ms=None,
-                        http_status=0,  # Only set when image is actually fetched via "Get Details"
+                        # IM1: prefer the measured byte count when the image was
+                        # downloaded — HEAD's content-length can be absent or wrong.
+                        file_size_bytes=dim_meta.get("file_size_bytes", file_size),
+                        load_time_ms=dim_meta.get("load_time_ms"),
+                        http_status=dim_meta.get("http_status", 0),
                         is_lazy_loaded=img_data.get("is_lazy_loaded", False),
                         has_srcset=img_data.get("has_srcset", False),
                         srcset_candidates=img_data.get("srcset_candidates", []),
                         is_decorative=img_data.get("is_decorative", False),
+                        # IM1: enables IMG_DUPLICATE_CONTENT; None when unmeasured.
+                        content_hash=dim_meta.get("content_hash"),
                         surrounding_text=img_data.get("surrounding_text", ""),
-                        content_hash=None,
                         data_source=data_source,
                     )
                     all_images.append(image_info)
@@ -1376,12 +1473,57 @@ async def run_crawl(
             analysis_coverage=_build_analysis_coverage(settings),
             images_seen_total=len(image_targets_seen),
             images_collected=len(all_images),
+            images_measured=images_measured,
+            images_measurable=images_measurable,
         )
 
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+async def _fetch_image_dimensions(url: str, client) -> tuple[str, dict]:
+    """Download one image and return ``(url, {width, height, format, content_hash,
+    file_size_bytes, load_time_ms})``.
+
+    Purpose: HEAD cannot report pixel dimensions, and four image checks plus the
+             technical score depend on them (IM1).
+    Spec:    docs/functional-specification.md (IM1)#IM1
+    Tests:   tests/test_image_dimensions.py
+
+    Returns an EMPTY dict on any failure — a download error must leave the
+    fields unmeasured, never guessed, and never fail the crawl (P2/P31).
+    """
+    import hashlib
+    import io
+    import time
+
+    started = time.time()
+    try:
+        response = await client.get(url, timeout=_IMAGE_DIMENSION_TIMEOUT_S)
+        if response.status_code >= 400:
+            return url, {}
+        content = response.content
+        out: dict = {
+            "file_size_bytes": len(content),
+            "content_hash": hashlib.md5(content).hexdigest(),
+            "load_time_ms": int((time.time() - started) * 1000),
+            "http_status": response.status_code,
+        }
+        try:
+            from PIL import Image
+            with Image.open(io.BytesIO(content)) as im:
+                out["width"], out["height"] = im.size
+                if im.format:
+                    out["format"] = im.format.lower()
+        except Exception:
+            # SVGs and anything Pillow cannot decode keep size and hash but no
+            # dimensions — a partial measurement, honestly partial.
+            pass
+        return url, out
+    except Exception:
+        return url, {}
+
 
 def _is_self_inflicted_slash_redirect(issue, raw_internal_hrefs: set[str]) -> bool:
     """True when a trailing-slash redirect exists only because WE stripped the slash.

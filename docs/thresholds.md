@@ -211,6 +211,12 @@ Matrix): 180-day technical-improvement staleness and 20% traffic-decay drop.
 | Threshold | Value | Source |
 |---|---|---|
 | Image URLs collected per job | 150 | `TT_IMAGE_URL_CAP_PER_JOB` env, `api/crawler/engine.py` |
+| Image dimension pass — total download budget | 48 MB | `TT_IMAGE_DIMENSION_TOTAL_BYTES` env, `api/crawler/engine.py` |
+| Image dimension pass — skip a single file over | 12 MB | `TT_IMAGE_DIMENSION_MAX_BYTES` env, `api/crawler/engine.py` |
+| Image dimension pass — max images measured | 250 | `TT_IMAGE_DIMENSION_MAX_COUNT` env, `api/crawler/engine.py` |
+| Image dimension pass — overall time budget | 45 s | `TT_IMAGE_DIMENSION_BUDGET_S` env, `api/crawler/engine.py` |
+| Image dimension pass — per-image timeout | 8 s | `TT_IMAGE_DIMENSION_TIMEOUT_S` env, `api/crawler/engine.py` |
+| Image dimension pass — assumed size when HEAD gives none | 150 KB | `api/crawler/engine.py` |
 | Broken-link source pages listed per issue | 50 | `TT_BROKEN_LINK_SOURCE_CAP` env, `api/crawler/engine.py`, `api/crawler/checkers/links.py` |
 | Performance-data staleness (report presentation) | 60 days | `TT_PERF_STALE_DAYS` env, `api/services/page_priority.py` |
 | Prevalence tier "systemic" | share >= 0.30 AND >= 20 pages | `api/config/prevalence.json` |
