@@ -159,14 +159,15 @@ class _IssueSpec:
     impact_desc: str = ""
     how_to_fix: str = ""
     fixability: str = "developer_needed"  # wp_fixable | content_edit | developer_needed
-    # v2.3 (M0.2) — confidence label per v2.0 AI-readiness spec §2.
-    # - Established: vendor-confirmed effect on AI crawling/citation
-    # - Reasonable proxy: industry consensus, partial vendor confirmation
-    # - Heuristic: industry consensus only, no vendor confirmation
-    # - None: not an AI-readiness check (the field doesn't apply)
-    # An architecture test enforces that every ai_readiness-category code
-    # has a non-None confidence_label.
-    confidence_label: str | None = None
+    # v2.3 (M0.2) — the confidence label per the v2.0 AI-readiness spec §2 is
+    # NOT a field here. It lives in _AI_READINESS_CONFIDENCE below, which is
+    # its single source of truth. A per-spec override field existed until
+    # 2026-08-30 and had drifted: make_issue read `spec.confidence_label or
+    # dict`, so AI_HIGH_VALUE_UNCITED reached the API as "Reasonable proxy"
+    # while docs/issue-codes.md — generated from the dict — published
+    # "Heuristic", and CONTACT_INFO_NOT_IN_HTML disagreed the other way. Two
+    # places holding one fact, disagreeing about how far to trust a finding.
+    # test_confidence_label_has_a_single_source guards the removal.
 
 # ---------------------------------------------------------------------------
 # v1.5 Priority scoring table (impact, effort) per issue code
@@ -1774,7 +1775,6 @@ _CATALOGUE: dict[str, _IssueSpec] = {
                        "directly to the source, so AI systems and search engines can read every answer.",
         human_description="FAQ Answers Hidden From AI",
         fixability="developer_needed",
-        confidence_label="Reasonable proxy",
     ),
     "PROMOTIONAL_CONTENT_INTERRUPTS": _IssueSpec(
         category="ai_readiness", severity="info",
@@ -1842,7 +1842,6 @@ _CATALOGUE: dict[str, _IssueSpec] = {
                        "or adding a note that it has been reviewed.",
         human_description="Stale Visible Date",
         fixability="content_edit",
-        confidence_label="Reasonable proxy",
     ),
     # M4.2: Content Freshness — outdated statistic or year reference
     "CONTENT_STAT_OUTDATED": _IssueSpec(
@@ -1852,7 +1851,6 @@ _CATALOGUE: dict[str, _IssueSpec] = {
                        "acknowledges the original year while explaining continued relevance.",
         human_description="Outdated Year Reference",
         fixability="content_edit",
-        confidence_label="Heuristic",
     ),
     # M5: AI Citation Ingestion
     "AI_CITED_PAGE": _IssueSpec(
@@ -1861,7 +1859,6 @@ _CATALOGUE: dict[str, _IssueSpec] = {
         recommendation="Maintain content quality and freshness to sustain AI citation status.",
         human_description="AI-Cited Page",
         fixability="content_edit",
-        confidence_label="Established",
     ),
     "AI_HIGH_VALUE_UNCITED": _IssueSpec(
         category="ai_readiness", severity="info",
@@ -1869,7 +1866,6 @@ _CATALOGUE: dict[str, _IssueSpec] = {
         recommendation="Improve content structure, add schema markup, and build backlinks to increase AI discoverability.",
         human_description="High-Value Page Not AI-Cited",
         fixability="content_edit",
-        confidence_label="Reasonable proxy",
     ),
     # ── Agent-readiness Phase 1 (WP2–WP5) — task-side checks ────────────────
     # WP2: rendering — navigation absent from server HTML
@@ -2017,7 +2013,6 @@ _CATALOGUE: dict[str, _IssueSpec] = {
                    "(TalkingToad's Entity Schema Factory can generate one), or enable Organization "
                    "schema in your SEO plugin.",
         fixability="wp_fixable",
-        confidence_label="Reasonable proxy",
     ),
     "CONTACT_INFO_NOT_IN_HTML": _IssueSpec(
         category="ai_readiness", severity="warning",
@@ -2036,11 +2031,9 @@ _CATALOGUE: dict[str, _IssueSpec] = {
         how_to_fix="Render contact details as plain HTML text in the footer or a contact block. "
                    "Optionally add ContactPoint / PostalAddress schema to reinforce them.",
         fixability="content_edit",
-        confidence_label="Heuristic",
     ),
     # ── "Search Everywhere" GEO — brand-entity + body-uniqueness (P1) ────────
     # Spec: docs/pending/2026-07-22_p1-entity-consistency-near-duplicate.md
-    # confidence_label falls back to _AI_READINESS_CONFIDENCE.
     "ENTITY_NAME_INCONSISTENT": _IssueSpec(
         category="ai_readiness", severity="warning", scope="site",
         description="The organisation is named differently in structured data across pages "
@@ -2510,9 +2503,8 @@ def make_issue(
     # tier (surfacing volunteer "quick wins") but never across two tiers.
     priority_rank = (impact * 10) - (effort * 6)
     quick_win = impact >= 4 and effort <= 1
-    # Prefer the spec-attached confidence_label if set (lets individual
-    # codes override the lookup); otherwise read from the centralised map.
-    confidence_label = spec.confidence_label or _AI_READINESS_CONFIDENCE.get(code)
+    # Single source: _AI_READINESS_CONFIDENCE. Non-ai_readiness codes get None.
+    confidence_label = _AI_READINESS_CONFIDENCE.get(code)
     # R5.5 — severity is DERIVED from impact at runtime, not copied from the
     # stored _IssueSpec.severity literal. severity_from_impact is the single
     # source of truth (R3); a parity test keeps the stored literals equal to the

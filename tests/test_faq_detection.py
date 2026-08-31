@@ -8,7 +8,8 @@ Origin: page-by-page accuracy audit of livingsystems.ca (Elementor nested-accord
 from bs4 import BeautifulSoup
 
 from api.crawler.parser import _extract_faq_blocks
-from api.crawler.checkers.registry import derive_impact, severity_from_impact, _CATALOGUE
+from api.crawler.checkers.registry import (derive_impact, severity_from_impact,
+                                           _CATALOGUE, _AI_READINESS_CONFIDENCE)
 from tests.test_issue_checker import _page
 from api.crawler.issue_checker import check_page
 
@@ -146,4 +147,8 @@ def test_new_code_registered_and_consistent():
     impact = derive_impact("FAQ_ANSWERS_NOT_IN_HTML")
     assert impact == 4  # Reasonable proxy x moderate
     assert _CATALOGUE["FAQ_ANSWERS_NOT_IN_HTML"].severity == severity_from_impact(impact)
-    assert _CATALOGUE["FAQ_ANSWERS_NOT_IN_HTML"].confidence_label is not None
+    # The label's single source is _AI_READINESS_CONFIDENCE. This read used to
+    # go through a _IssueSpec.confidence_label override field, and only passed
+    # because this code happened to be one of seven carrying a redundant copy
+    # of it — the assertion was coupled to the duplicate, not to the fact.
+    assert _AI_READINESS_CONFIDENCE.get("FAQ_ANSWERS_NOT_IN_HTML") is not None
