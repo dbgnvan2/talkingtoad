@@ -150,9 +150,53 @@ def _run_engine(inp):
     return asyncio.run(_go())
 
 
+def _run_geo_llm(inp):
+    """inp = the LLM verdict dict."""
+    from api.services.geo_llm import geo_llm_issues
+    return geo_llm_issues(BASE, inp)
+
+
+def _run_vitals(inp):
+    """inp = a WebVitalsReport."""
+    from api.services.web_vitals import vitals_issues
+    return vitals_issues(inp)
+
+
+def _run_render(inp):
+    """inp = a JSRenderResult-shaped object (the Playwright comparison)."""
+    from api.crawler.issue_checker import js_render_issues
+    return js_render_issues(inp)
+
+
 RUNNERS = {"page": _run_page, "url": _run_url, "image": _run_image, "cross": _run_cross,
            "redirect": _run_redirect, "status": _run_status, "robots": _run_robots,
-           "asset": _run_asset, "engine": _run_engine}
+           "asset": _run_asset, "engine": _run_engine, "geo_llm": _run_geo_llm,
+           "vitals": _run_vitals, "render": _run_render}
+
+
+def _vitals(**kw):
+    """A WebVitalsReport with one FIELD row. Lab rows never raise a finding, so
+    the source must be "field" — that distinction is the feature's whole point."""
+    from api.services.web_vitals import VitalsRow, WebVitalsReport
+    row = VitalsRow(url=BASE, source=kw.pop("source", "field"),
+                    lcp_ms=kw.pop("lcp_ms", 1200), inp_ms=kw.pop("inp_ms", 120),
+                    cls=kw.pop("cls", 0.02), performance_score=kw.pop("score", 95),
+                    unavailable_reason=None, retryable=False)
+    return WebVitalsReport(rows=[row], requested=1, field_count=1, lab_count=0,
+                           unavailable_count=0, retryable_failures=0,
+                           strategy="mobile", had_api_key=True)
+
+
+def _render(**kw):
+    """A JSRenderResult-shaped stand-in for the Playwright comparison."""
+    from types import SimpleNamespace
+    base = dict(url=BASE, error=None, js_rendered_content_differs=False,
+                content_cloaking_detected=False, ua_content_differs=False,
+                raw_token_count=500, rendered_token_count=520,
+                added_token_ratio=0.04, topic_jaccard=0.9,
+                gptbot_token_count=500, claudebot_token_count=500)
+    base.update(kw)
+    return SimpleNamespace(**base)
 
 
 # ── Engine-runner helpers ──────────────────────────────────────────────────
@@ -979,6 +1023,35 @@ CONTRACTS += [
      lambda: page(body=f"<h1>H</h1>{_CITED}<p>{_W(400)}</p>")),
 ]
 
+# ── Gated-subsystem codes ──────────────────────────────────────────────────
+# These never fire in a normal crawl because the subsystem does not run. The
+# contract exercises the subsystem's own entry point, so "not run" and "broken"
+# stay distinguishable (P31).
+CONTRACTS += [
+    ("CWV_LCP_POOR",
+     lambda: _vitals(lcp_ms=6000), lambda: _vitals(lcp_ms=1200), "vitals"),
+    ("CWV_INP_POOR",
+     lambda: _vitals(inp_ms=900), lambda: _vitals(inp_ms=120), "vitals"),
+    ("CWV_CLS_POOR",
+     lambda: _vitals(cls=0.6), lambda: _vitals(cls=0.02), "vitals"),
+    ("JS_RENDERED_CONTENT_DIFFERS",
+     lambda: _render(js_rendered_content_differs=True, added_token_ratio=0.6),
+     lambda: _render(), "render"),
+    ("CONTENT_CLOAKING_DETECTED",
+     lambda: _render(js_rendered_content_differs=True, content_cloaking_detected=True,
+                     topic_jaccard=0.1),
+     lambda: _render(), "render"),
+    ("UA_CONTENT_DIFFERS",
+     lambda: _render(ua_content_differs=True, gptbot_token_count=50),
+     lambda: _render(), "render"),
+    ("CENTRAL_CLAIM_BURIED",
+     lambda: {"central_claim_buried": True}, lambda: {}, "geo_llm"),
+    ("CHUNKS_NOT_SELF_CONTAINED",
+     lambda: {"chunks_not_self_contained": True}, lambda: {}, "geo_llm"),
+    ("PROMOTIONAL_CONTENT_INTERRUPTS",
+     lambda: {"promotional_content_interrupts": True}, lambda: {}, "geo_llm"),
+]
+
 CONTRACT_CODES = {c[0] for c in CONTRACTS}
 
 
@@ -1010,6 +1083,36 @@ def test_af11_negative_fixture_stays_clean(code, _positive, negative, runner):
     issues = RUNNERS[runner](negative())
     assert not any(i.code == code for i in issues), (
         f"{code} fired on correct input (runner={runner})")
+
+
+class TestSubsystemInvariants:
+    """Invariants a single positive/negative pair cannot express."""
+
+    def test_af11_lab_vitals_never_raise_a_finding(self):
+        """Core Web Vitals findings come from FIELD data only. A synthetic lab
+        run in a Google datacentre is not evidence about real users, and
+        presenting it as such is the one way this feature becomes actively
+        misleading rather than merely incomplete. My CWV contracts all use field
+        rows, so none of them would notice the guard being removed.
+        """
+        from api.services.web_vitals import VitalsRow, WebVitalsReport, vitals_issues
+
+        lab = VitalsRow(url=BASE, source="lab", lcp_ms=6000, inp_ms=900, cls=0.6,
+                        performance_score=10, unavailable_reason=None, retryable=False)
+        report = WebVitalsReport(rows=[lab], requested=1, field_count=0, lab_count=1,
+                                 unavailable_count=0, retryable_failures=0,
+                                 strategy="mobile", had_api_key=True)
+        assert vitals_issues(report) == [], "lab data must never raise a CWV finding"
+
+    def test_af11_failed_render_never_raises_a_finding(self):
+        """Same shape one subsystem over: a render that ERRORED must produce
+        nothing, or a Playwright failure reads as a site defect."""
+        from api.crawler.issue_checker import js_render_issues
+
+        assert js_render_issues(_render(error="playwright not installed",
+                                        js_rendered_content_differs=True,
+                                        content_cloaking_detected=True,
+                                        ua_content_differs=True)) == []
 
 
 class TestGuardFieldIntegrity:
