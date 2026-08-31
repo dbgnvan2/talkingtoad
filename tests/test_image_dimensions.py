@@ -299,3 +299,35 @@ class TestNewlyLiveChecksDoNotMisfire:
             "the crawl observed the 404 and did not record it, so IMG_BROKEN "
             "cannot fire from the scan path")
         assert "IMG_BROKEN" in {i.code for i in result.issues}
+
+
+class TestDataSourceReflectsWhatWasActuallyDone:
+    """data_source was hardcoded "html_only" on every scan row.
+
+    get_image_summary counts images_analyzed as data_source='full_fetch', so
+    the panel reported 0 analyzed for a crawl that had downloaded, hashed and
+    measured every image. The field claimed less than the code had done.
+    """
+
+    @pytest.mark.asyncio
+    async def test_im1_a_measured_image_is_recorded_as_fully_fetched(self):
+        with respx.mock:
+            _mock_site(respx.mock)
+            result = await run_crawl("ds1", BASE,
+                                     CrawlSettings(crawl_delay_ms=0, max_pages=5))
+        big = next(i for i in result.images if i.url.endswith("big.png"))
+        assert big.width, "precondition: this image must have been measured"
+        assert big.data_source == "full_fetch", (
+            f"an image that was downloaded, hashed and measured is recorded as "
+            f"{big.data_source!r}, so the summary counts it as not analysed")
+
+    @pytest.mark.asyncio
+    async def test_im1_an_unmeasured_image_is_not_claimed_as_fetched(self):
+        """The converse: the field must not over-claim either."""
+        from api.crawler import engine as eng
+        with respx.mock, mock.patch.object(eng, "_IMAGE_DIMENSION_TOTAL_BYTES", 1):
+            _mock_site(respx.mock)
+            result = await run_crawl("ds2", BASE,
+                                     CrawlSettings(crawl_delay_ms=0, max_pages=5))
+        assert all(i.data_source != "full_fetch" for i in result.images), (
+            "an image the budget never reached is recorded as fully fetched")

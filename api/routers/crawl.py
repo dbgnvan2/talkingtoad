@@ -1275,10 +1275,49 @@ async def scan_single_page(
 
     all_images: list[ImageInfo] = []
     if page.image_data:
+        # IM1 — measure pixel dimensions here too. Without this pass
+        # IMG_OVERSCALED / IMG_NO_SRCSET / IMG_DUPLICATE_CONTENT /
+        # IMG_SLOW_LOAD / IMG_POOR_COMPRESSION are silently dead on the
+        # single-page scan while working on a full crawl: the capability was
+        # added at one front end only (P25). Same bounds as the crawl pass,
+        # and the same rule — an image that could not be measured keeps None,
+        # never a guessed value.
+        from api.crawler.engine import (_IMAGE_DIMENSION_BUDGET_S,
+                                        _IMAGE_DIMENSION_CONCURRENCY,
+                                        _IMAGE_DIMENSION_MAX_COUNT,
+                                        _fetch_image_dimensions)
+
+        dim_cache: dict[str, dict] = {}
+        candidates = [d["url"] for d in page.image_data
+                      if d.get("url")][:_IMAGE_DIMENSION_MAX_COUNT]
+        if candidates:
+            sem = asyncio.Semaphore(_IMAGE_DIMENSION_CONCURRENCY)
+
+            async def _measure_one(u: str):
+                async with sem:
+                    return await _fetch_image_dimensions(u, img_client)
+
+            async with make_ssrf_guarded_client() as img_client:
+                tasks = [asyncio.create_task(_measure_one(u)) for u in candidates]
+                done, pending = await asyncio.wait(
+                    tasks, timeout=_IMAGE_DIMENSION_BUDGET_S)
+                for task in done:
+                    try:
+                        item = task.result()
+                    except Exception:
+                        continue
+                    if isinstance(item, tuple) and item[1]:
+                        dim_cache[item[0]] = item[1]
+                for task in pending:
+                    task.cancel()
+                if pending:
+                    await asyncio.gather(*pending, return_exceptions=True)
+
         for img_data in page.image_data:
             img_url = img_data.get("url")
             if not img_url:
                 continue
+            dim = dim_cache.get(img_url, {})
             image_info = ImageInfo(
                 url=img_url,
                 page_url=url,
@@ -1287,20 +1326,20 @@ async def scan_single_page(
                 title=img_data.get("title"),
                 filename=_extract_filename(img_url),
                 format=_guess_format_from_url(img_url),
-                width=None,
-                height=None,
+                width=dim.get("width"),
+                height=dim.get("height"),
                 rendered_width=img_data.get("rendered_width"),
                 rendered_height=img_data.get("rendered_height"),
-                file_size_bytes=None,
-                load_time_ms=None,
-                http_status=0,
+                file_size_bytes=dim.get("file_size_bytes"),
+                load_time_ms=dim.get("load_time_ms"),
+                http_status=dim.get("http_status", 0),
                 is_lazy_loaded=img_data.get("is_lazy_loaded", False),
                 has_srcset=img_data.get("has_srcset", False),
                 srcset_candidates=img_data.get("srcset_candidates", []),
                 is_decorative=img_data.get("is_decorative", False),
                 surrounding_text=img_data.get("surrounding_text", ""),
-                content_hash=None,
-                data_source="html_only",
+                content_hash=dim.get("content_hash"),
+                data_source="full_fetch" if dim.get("width") else "html_only",
             )
             all_images.append(image_info)
 

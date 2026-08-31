@@ -60,7 +60,7 @@ high and medium ones were fixed in the same cycle (see LEARNINGS.md). Deferred:
   `CONTENT_CLOAKING_DETECTED` and `UA_CONTENT_DIFFERS`. **Not measurable here — Playwright
   is not installed on this machine.** Fix when it can be measured: memoise resolution per
   hostname, and re-measure the budget with the guard installed.
-- [ ] **`scan_single_page` gets no dimension pass** (`api/routers/crawl.py:1278-1299` still
+- [x] **`scan_single_page` gets no dimension pass** — done 2026-08-31. Same bounds and guarded client as the crawl pass. Tests: `tests/test_scan_page_dimensions.py`. Was: (`api/routers/crawl.py:1278-1299` still
   hardcodes `width=None … content_hash=None`). The five image checks stay dead on that
   entry point, with no disclosure. P25: the capability was added at one front end only.
   Decide: wire it, or record deliberately that single-page scan does not measure images.
@@ -86,10 +86,10 @@ high and medium ones were fixed in the same cycle (see LEARNINGS.md). Deferred:
   (150) and `_IMAGE_DIMENSION_BUDGET_S` (45) have no test at all; the byte caps are tested
   at 1 byte and 200 KB, not at 48 MB / 12 MB. Also `skipped_oversize` / `skipped_budget`
   are logged but not folded into `images_measured` / `images_measurable`.
-- [ ] **`IMG_DUPLICATE_CONTENT` vs query-string variants.** Images are deduped by exact URL,
+- [x] **`IMG_DUPLICATE_CONTENT` vs query-string variants** — done 2026-08-31. `_image_identity` strips cache-busting and CDN-sizing params before the comparison. Tests: `tests/test_image_duplicate_identity.py`. Was: Images are deduped by exact URL,
   so `logo.png` and `logo.png?ver=6.4` are two entries that now hash identically. Real
   `?fit=` Photon URLs exist in the local DB. Normalise before the duplicate check.
-- [ ] **Measured images still carry `data_source="html_only"`** (`engine.py`), while
+- [x] **Measured images still carry `data_source="html_only"`** — done 2026-08-31. Now `full_fetch` when the body was measured, `crawl_meta` when only HEAD answered. Live: 32 full_fetch / 5 crawl_meta where the panel previously said 0 analysed. Was: (`engine.py`), while
   `sqlite_store` counts `images_analyzed` as `data_source='full_fetch'` — so the image
   summary reports 0 analyzed for a run in which every image was downloaded and hashed.
 - [ ] **Dimension-pass concurrency caps worst-case coverage.** With `CONCURRENCY=6`,
@@ -105,7 +105,7 @@ high and medium ones were fixed in the same cycle (see LEARNINGS.md). Deferred:
   the hand-written list it replaced (which missed two codes) but still not the class it
   names. Nothing validates that a `threshold_published_by_source: true` is justified; it
   is a self-certification that suppresses the guard.
-- [ ] **`health_score_basis` has no Redis contract test.** `redis_store.py` carries its
+- [x] **`health_score_basis` has no Redis contract test** — done 2026-08-31. Added, and the key-set parity assertion it enabled found that Redis omitted `robots_txt` and `sitemap` entirely, which `CategoryPanel.jsx` reads — those panels rendered blank in production and correct in development. Both keys added. Was: `redis_store.py` carries its
   own copy of the summary payload; only the SQLite path is asserted, and production runs
   Redis. The image-summary key set IS compared across both.
 - [ ] **`_render_authority`'s final branch is an unguarded `else`**

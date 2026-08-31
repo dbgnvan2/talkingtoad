@@ -398,6 +398,42 @@ def _check_broken(img: ImageInfo, job_id: str) -> list[Issue]:
 # ---------------------------------------------------------------------------
 
 
+# Query parameters that vary the URL without varying the file: cache busters
+# and CDN resize/format directives. Two URLs differing only in these are the
+# same asset requested twice, not a duplicate upload to clean up.
+_IMAGE_URL_NOISE_PARAMS = frozenset({
+    "ver", "v", "version", "cache", "cachebust", "rev", "t", "ts", "time",
+    "fit", "resize", "w", "h", "width", "height", "quality", "q", "ssl",
+    "format", "fm", "auto", "crop", "dpr", "s", "sig",
+})
+
+
+def _image_identity(url: str) -> str:
+    """The URL with cache-busting and CDN-sizing parameters removed.
+
+    IMG_DUPLICATE_CONTENT asks "is this file uploaded more than once", which is
+    a question about the asset, not the request. Images are queued by exact URL
+    string, so `logo.png` and `logo.png?ver=6.4` are two entries; once the
+    dimension pass started hashing bodies they hash identically and the check
+    reported a duplicate the user cannot act on. The reference site's own
+    library serves Photon URLs (`?fit=300%2C300`) of exactly this shape.
+
+    Purpose: give the duplicate check a stable identity per asset.
+    Spec:    docs/functional-specification.md (IM1)#IM1
+    Tests:   tests/test_image_duplicate_identity.py
+    """
+    from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+
+    try:
+        parts = urlsplit(url)
+    except ValueError:
+        return url
+    kept = [(k, v) for k, v in parse_qsl(parts.query, keep_blank_values=True)
+            if k.lower() not in _IMAGE_URL_NOISE_PARAMS]
+    return urlunsplit((parts.scheme, parts.netloc, parts.path,
+                       urlencode(kept), ""))
+
+
 def _check_duplicates(images: list[ImageInfo], job_id: str) -> list[Issue]:
     """Check for duplicate images across the site (same content hash)."""
     issues = []
@@ -411,18 +447,21 @@ def _check_duplicates(images: list[ImageInfo], job_id: str) -> list[Issue]:
 
     for hash_val, imgs in hash_to_images.items():
         if len(imgs) > 1:
-            # Check if URLs are different (same hash but different URLs = true duplicate)
-            unique_urls = set(img.url for img in imgs)
-            if len(unique_urls) > 1:
-                # Skip the first occurrence, flag the rest
-                for img in imgs[1:]:
+            # Same bytes under genuinely different assets, not the same
+            # asset fetched under a cache-busted or resized URL.
+            by_identity: dict[str, ImageInfo] = {}
+            for img in imgs:
+                by_identity.setdefault(_image_identity(img.url), img)
+            if len(by_identity) > 1:
+                distinct = list(by_identity.values())
+                for img in distinct[1:]:
                     issues.append(make_issue(
                         "IMG_DUPLICATE_CONTENT", img.page_url,
                         job_id=job_id,
                         extra={
                             "image_url": img.url,
-                            "duplicate_of": imgs[0].url,
-                            "total_occurrences": len(imgs),
+                            "duplicate_of": distinct[0].url,
+                            "total_occurrences": len(distinct),
                         }
                     ))
 

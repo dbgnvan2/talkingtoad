@@ -321,6 +321,20 @@ class RedisJobStore:
             # scores 100 for categories it never ran, so the number must
             # carry its basis or it invites a false comparison.
             "health_score_basis": health_score_basis(job.analysis_coverage, job.settings),
+            # CategoryPanel.jsx reads summary.sitemap and summary.robots_txt.
+            # SQLite supplied both and Redis did not, so the sitemap and
+            # robots panels rendered blank in production and were correct in
+            # development — the divergence nobody would see locally. Built
+            # from the job model, which already carries these fields.
+            "robots_txt": {
+                "found": job.robots_txt_found,
+                "rules": job.robots_txt_rules or [],
+            },
+            "sitemap": {
+                "found": job.sitemap_found,
+                "url": job.sitemap_url_found,
+                "url_count": job.sitemap_url_count or 0,
+            },
         }
 
     async def get_pages_with_issue_counts(

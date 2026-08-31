@@ -1237,10 +1237,10 @@ async def run_crawl(
                     head_meta = head_metadata_cache.get(img_url, {})
                     dim_meta = dimension_cache.get(img_url, {})
 
-                    # Size and content-type from HEAD; pixel dimensions and the
-                    # content hash from the dimension pass above, when the image
-                    # was large enough to be measured (IM1). None stays None —
-                    # "not measured" must never render as a value.
+                    # Size and content-type from HEAD; pixel dimensions and
+                    # the content hash from the dimension pass above, when the
+                    # image was reached (IM1). None stays None — "not measured"
+                    # must never render as a value.
                     width = dim_meta.get("width")
                     height = dim_meta.get("height")
                     file_size = head_meta.get("file_size")
@@ -1250,10 +1250,23 @@ async def run_crawl(
                         # Extract format from mime_type like "image/jpeg"
                         fmt = mime_type.split("/")[-1] if "/" in mime_type else fmt
 
-                    # Data source is always "html_only" during scan
-                    # Scan gets: alt/title from HTML + file size from HEAD request
-                    # Full metadata (caption, description, WP fields) requires manual "Fetch"
-                    data_source = "html_only"
+                    # What this row actually rests on, so the summary can
+                    # count it honestly:
+                    #   html_only  — alt/title from markup, nothing fetched
+                    #   crawl_meta — HEAD gave size and content type
+                    #   full_fetch — the body was downloaded and measured
+                    # This was hardcoded "html_only", so get_image_summary
+                    # (which counts images_analyzed as data_source='full_fetch')
+                    # reported 0 analyzed for a crawl that had downloaded,
+                    # hashed and measured every image. WordPress fields still
+                    # require the manual Fetch; this describes the crawl's own
+                    # work, not WP's.
+                    if dim_meta.get("width"):
+                        data_source = "full_fetch"
+                    elif head_meta:
+                        data_source = "crawl_meta"
+                    else:
+                        data_source = "html_only"
 
                     image_info = ImageInfo(
                         url=img_url,
