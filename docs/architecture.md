@@ -22,7 +22,7 @@ note: |
 ```
 [Browser Frontend]  →  [API Layer]  →  [Crawler Engine]  →  [Results Store]
      React/Vite          FastAPI           Python/             SQLite (dev) /
-     Vercel              Vercel Edge       httpx +             Upstash Redis (prod)
+     Vercel              Vercel Edge       httpx +             SQLite
                          Functions         BeautifulSoup4
                                            + lxml
 ```
@@ -42,17 +42,21 @@ All job/result persistence uses a pluggable architecture with a Protocol-based i
 **Architecture (v1.9.4+):**
 - **`api/services/job_store_base.py`** (~430 lines): Defines `JobStore` Protocol with 50+ method signatures, database `SCHEMA` constant, and helper functions for health scoring
 - **`api/services/sqlite_store.py`** (~1,466 lines): `SQLiteJobStore` implementation for local development (async lifecycle, full CRUD, health scoring, fix management, verified links, image analysis, GEO configuration)
-- **`api/services/redis_store.py`** (~566 lines): `RedisJobStore` implementation for Upstash Redis in production (serverless-compatible via REST API)
 - **`api/services/job_store.py`** (~50 lines): Factory function `get_job_store()` that selects backend based on environment:
-  1. Upstash Redis if `UPSTASH_REDIS_REST_URL` + `UPSTASH_REDIS_REST_TOKEN` are set
+  1. Raises if `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN` are set — the Redis
+     store was removed 2026-08-31 and falling back to SQLite silently would relocate the
+     deployment's data without saying so
   2. SQLite at `DATABASE_URL` path if set (format: `sqlite:///path/to/db`)
   3. Default SQLite at `talkingtoad.db`
 
 **Why this architecture:**
 - **Backend-agnostic:** New implementations (e.g., PostgreSQL) can be added by implementing `JobStore` Protocol
 - **Independent testing:** Each implementation can be tested in isolation
-- **Production scaling:** Redis for serverless; SQLite for local development
-- **Backward compatibility:** Existing code imports `SQLiteJobStore`, `RedisJobStore`, `SCHEMA`, etc. from `job_store.py` via re-exports
+- **Persistence:** SQLite everywhere. A second, Upstash-Redis store existed until
+  2026-08-31; it was never executed and had drifted in ten known ways, so it was deleted
+  rather than repaired. Multi-instance deployment would need a fresh implementation
+  written against real round-trip parity tests.
+- **Backward compatibility:** Existing code imports `SQLiteJobStore`, `SCHEMA`, etc. from `job_store.py` via re-exports
 
 The `fixes` table is stored in the same abstraction.
 

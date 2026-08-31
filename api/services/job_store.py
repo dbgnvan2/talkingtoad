@@ -1,13 +1,19 @@
-"""Job store protocol, implementations, and factory.
+"""Job store implementation and factory.
 
 This module provides:
-- JobStore Protocol: interface that all implementations must follow
-- SQLiteJobStore: local SQLite implementation
-- RedisJobStore: Upstash Redis implementation for production
-- get_job_store(): factory function that selects appropriate backend
+- SQLiteJobStore: the job store
+- get_job_store(): factory function
 - Schema and helper functions for health scoring
 
 Backward compatibility: public API is re-exported for existing code.
+
+History: a second, Upstash-Redis implementation lived here until 2026-08-31. It
+was never executed -- the factory selected it only when both UPSTASH_REDIS_REST_*
+vars were set, and they never were -- and it had drifted from SQLite in ten known
+ways while its AsyncMock-backed tests stayed green. Deleted rather than repaired;
+see docs/functional-specification.md and LEARNINGS.md. If multi-instance
+deployment is ever needed, write a fresh implementation against real round-trip
+parity tests. Do not resurrect that one.
 """
 
 from __future__ import annotations
@@ -16,7 +22,6 @@ import os
 import logging
 
 from api.services.job_store_base import (
-    JobStore,
     SCHEMA,
     _DEFAULT_TTL_DAYS,
     _DEFAULT_SQLITE_PATH,
@@ -26,34 +31,42 @@ from api.services.job_store_base import (
     PRIORITY_ORDER,
 )
 from api.services.sqlite_store import SQLiteJobStore
-from api.services.redis_store import RedisJobStore
 
 logger = logging.getLogger(__name__)
 
 __all__ = [
-    "JobStore",
     "SQLiteJobStore",
-    "RedisJobStore",
     "get_job_store",
     "SCHEMA",
     "SEVERITY_ORDER",
     "PRIORITY_ORDER",
 ]
 
+_REMOVED_REDIS_VARS = ("UPSTASH_REDIS_REST_URL", "UPSTASH_REDIS_REST_TOKEN")
 
-def get_job_store() -> "SQLiteJobStore | RedisJobStore":
-    """Return the appropriate job store for the current environment.
+
+def get_job_store() -> SQLiteJobStore:
+    """Return the job store for the current environment.
 
     Selection order:
-      1. UPSTASH_REDIS_REST_URL + UPSTASH_REDIS_REST_TOKEN set → RedisJobStore
-      2. DATABASE_URL set (sqlite:///... or path) → SQLiteJobStore at that path
-      3. Neither set → SQLiteJobStore at SQLITE_PATH (default: talkingtoad.db)
+      1. DATABASE_URL set (sqlite:///... or path) → SQLiteJobStore at that path
+      2. Unset → SQLiteJobStore at SQLITE_PATH (default: talkingtoad.db)
+
+    Raises if the environment still configures the removed Redis backend. Falling
+    back to SQLite silently would start cleanly and serve 200s while writing the
+    deployment's data somewhere other than where it was configured to go — the
+    failure has to be loud. A half-configured deployment (one var set) raises too:
+    the old factory required both and silently ignored that case, which is the
+    likelier operator mistake.
     """
-    redis_url = os.getenv("UPSTASH_REDIS_REST_URL", "")
-    redis_token = os.getenv("UPSTASH_REDIS_REST_TOKEN", "")
-    if redis_url and redis_token:
-        logger.info("using_redis_store")
-        return RedisJobStore(url=redis_url, token=redis_token)
+    configured = [v for v in _REMOVED_REDIS_VARS if os.getenv(v, "")]
+    if configured:
+        raise RuntimeError(
+            f"{', '.join(configured)} is set, but the Redis job store was removed "
+            "(2026-08-31). Unset it, or restore api/services/redis_store.py from git "
+            "history. Refusing to fall back to SQLite silently: that would write your "
+            "data somewhere other than where this deployment was configured to put it."
+        )
 
     url = os.getenv("DATABASE_URL", "")
     if url.startswith("sqlite:///"):

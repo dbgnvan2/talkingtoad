@@ -58,24 +58,11 @@
 
 ## Open risks (found by review, not yet bitten)
 
-- **`RedisJobStore` is unexercised code, and several docs assert it is production.** The owner
-  has never configured Upstash; `get_job_store()` returns Redis only when
-  `UPSTASH_REDIS_REST_URL` **and** `UPSTASH_REDIS_REST_TOKEN` are both set, so it has always
-  returned SQLite (startup log: `sqlite_store: job_store_init`). Verified divergences, all
-  currently dormant: **10 public methods exist on SQLite and not on Redis** (including
-  `get_exempt_anchor_url_set`, called unconditionally at `crawl.py:443` in `run_crawl_task` —
-  every crawl would raise `AttributeError` on Redis); **10 `CrawlJob` fields are write-only** —
-  `update_job` persists them and `_mapping_to_job` never reads them back, so `phase` returns
-  `'queued'` and the whole `robots_txt_*` / `sitemap_*` family returns `None` after a real
-  round-trip (proven against an in-memory hash); **14 of 40 `CrawledPage` fields** and
-  `Issue.fixability` are not serialised; `list_recent_jobs` / `list_jobs_by_domain` are `[]`
-  stubs. The Redis tests cannot see any of this — they drive an `AsyncMock`, which returns a
-  Mock for any attribute, so a missing method is indistinguishable from a working one (P6).
-  `CLAUDE.md` and `docs/deployment-railway.md` both present Redis as the production store, and
-  the deployment doc's `DATABASE_URL=redis://…` instruction does not match `get_job_store()`,
-  which would treat that value as a **SQLite file path**. Decision pending: delete the backend
-  (removes five contract pairs outright) or bind it with real round-trip parity tests. Until
-  then, treat every "production runs Redis" claim in this file as unverified.
+- **The "blank robots/sitemap panels in production" symptom has no confirmed cause.** It was
+  attributed to Redis divergence on 2026-08-31 and that diagnosis was wrong — Upstash was never
+  configured, so the Redis store never ran. Deleting the Redis store (2026-08-31, Cycle 3) does
+  **not** resolve it. If the symptom recurs, start from the SQLite path and the panel's own
+  `.catch`, not from a store-divergence hypothesis.
 
 - **New fetches must route through `is_ssrf_safe()`.** Any Phase-2/3 outbound call (PageSpeed
   Insights, render-comparison, competitor crawl, GA4) is a fresh chance to bypass SSRF — wire it in.
@@ -126,6 +113,15 @@
 ## Fix log
 
 Newest first. Format: **Issue → Root cause → What would have caught it → Fix → Pattern.**
+
+- **2026-08-31 — deleted the Redis job store: a second implementation of the persistence contract that had never once executed, and had drifted in ten known ways while its tests stayed green.**
+  - *Issue:* `redis_store.py` was 36 KB of code selected only when `UPSTASH_REDIS_REST_URL` **and** `UPSTASH_REDIS_REST_TOKEN` were both set. The owner had never heard of Upstash, so `get_job_store()` had always returned SQLite (startup log: `sqlite_store: job_store_init`). In that unexecuted state it had diverged from SQLite everywhere it could: **10 public methods missing**, including `get_exempt_anchor_url_set`, called unconditionally at `crawl.py:443` inside `run_crawl_task` — on Redis every crawl would have raised `AttributeError` before the first page; **10 `CrawlJob` fields write-only**, persisted by `update_job` and never read back by `_mapping_to_job`, so a round trip returned `phase='queued'` after writing `'done'` and `None` for the entire `robots_txt_*` / `sitemap_*` family; **14 of 40 `CrawledPage` fields** and `Issue.fixability` never serialised; `list_recent_jobs` / `list_jobs_by_domain` stubbed to `[]`. A third description of the same contract, the `JobStore` **Protocol**, was imported once (unused) and annotated nothing, and had drifted too — 46 methods against SQLite's 60, missing 14 that routers call.
+  - *Root cause:* two hand-maintained implementations of one contract, where **one of them is never run**. Every change had to be made twice, verified once. The tests could not see the divergence because they drove an `AsyncMock`, which returns a Mock for any attribute — a missing method and a working one are indistinguishable to it (P6). 86 of the 89 deleted tests were of that shape: they asserted the mock's behaviour.
+  - *What would have caught it:* nothing in the suite could, by construction. The one test that ever found a real Redis bug — the SQLite↔Redis summary key-set parity check — worked precisely because it compared two implementations instead of testing either alone. It has been deleted with the store, which is the correct trade and worth stating rather than hiding: **this cycle removed a bug class and the test that policed it, together.**
+  - *Fix:* `redis_store.py` deleted; the unused `JobStore` Protocol and its dead import deleted; 33 `SQLiteJobStore | RedisJobStore` annotations collapsed across six modules; `upstash-redis` unpinned; docs corrected in `CLAUDE.md`, `docs/architecture.md`, `docs/deployment-railway.md` (whose `DATABASE_URL=redis://…` instruction never matched the factory anyway — that value is read as a **SQLite file path**). Suite 3506 → 3419, exit 0.
+  - *The load-bearing part is the failure mode, not the deletion.* `get_job_store()` now **raises** if either `UPSTASH_REDIS_REST_*` var is set. A silent fallback would let a deployment configured for Redis start cleanly, serve 200s, and write customer data to a local SQLite file nobody backs up — green, working, and wrong. The guard deliberately fires on **either** variable, not both: the old factory required both and silently ignored a half-configured deployment, which is the quieter and likelier operator mistake. Tested in both directions, plus a `test_clean_env_still_returns_the_sqlite_store` so an unconditional raise — which would satisfy both guard tests while breaking the entire app — cannot pass.
+  - *A correction that outlives this cycle:* the 2026-08-31 entry below ("four backlog fixes…") attributes blank robots/sitemap panels **in production** to Redis divergence, and asserts "production runs Redis". Both are false. Upstash was never configured. **That symptom is still unexplained and is not resolved by this deletion.** The lesson is narrow and sharp: I inferred the deployment topology from a config file that merely *permitted* Redis, wrote it into the fix log as fact, and it was then cited as established for weeks. **Check which branch actually runs before naming it as a root cause** — one line of startup log settled what three documents had asserted wrongly.
+  - *Pattern:* consolidation over parity — where one implementation is dead, deleting it removes the drift class outright and is strictly better than binding it with tests. Plus the general rule that **an implementation no test can distinguish from a working one is not covered, however many tests name it.**
 
 - **2026-08-31 — the documented way to start the backend could not start the backend, and the app answered HTTP 500 on every page (reported by the owner).**
   - *Issue:* the owner reported 500s across the running app. Nothing in the app was broken. `frontend/vite.config.js` proxies `/api` → `localhost:8000`, and Vite's proxy returns **500** — not a connection error — when nothing is listening there, so a backend that never started is indistinguishable from a backend that crashed. The backend never started because the command in `CLAUDE.md` **cannot work**: `cd api && uvicorn main:app`. `api/main.py:33` imports absolutely (`from api.routers import crawl as crawl_router`), so run from inside `api/` the repo root is not on `sys.path` and the import raises `ModuleNotFoundError: No module named 'api'` before uvicorn binds.

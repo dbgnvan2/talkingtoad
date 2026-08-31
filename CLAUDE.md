@@ -16,7 +16,7 @@ Lightweight web-based SEO crawler for nonprofit organisations — Screaming-Frog
 - **GitHub:** https://github.com/dbgnvan2/talkingtoad
 - **Specs index:** `docs/specs/README.md`
 - **Current version:** 3.0.0 (shipped — git tag `v3.0`). Milestone ledger: `PLAN-V3.0-UNIFIED.md`. Shipped-feature history lives in `docs/legacy_changelog.md` — not here.
-- **Issue catalogue:** 152 codes — source of truth `api/crawler/checkers/registry.py` (`_CATALOGUE` / `_ISSUE_SCORING` / `_AI_READINESS_CONFIDENCE`), surfaced in `docs/issue-codes.md`.
+- **Issue catalogue:** 170 codes — source of truth `api/crawler/checkers/registry.py` (`_CATALOGUE` / `_ISSUE_SCORING` / `_AI_READINESS_CONFIDENCE`), surfaced in `docs/issue-codes.md`.
 - **Parked / not shipped:** multi-tenant / per-customer AI keys / Identity Model (`docs/TODO-MULTITENANT.md`); SERP-Discovery (separate repo).
 
 ---
@@ -34,7 +34,7 @@ Lightweight web-based SEO crawler for nonprofit organisations — Screaming-Frog
 | Excel Generator | openpyxl (tabbed workbooks) |
 | Image Processing | Pillow (WebP optimization) |
 | AI Analysis | Google Gemini / OpenAI |
-| Data Store | SQLite (dev) / Upstash Redis (prod) |
+| Data Store | SQLite (dev and prod) |
 | Hosting | Vercel SPA frontend + Railway container backend (see `docs/deployment-railway.md`) |
 
 ---
@@ -97,7 +97,7 @@ TalkingToad/
 │       ├── rewriter.py          # Content rewriter (v2.2)
 │       ├── report_generator.py  # PDF audit generation (fpdf2)
 │       ├── excel_generator.py   # Excel export (openpyxl)
-│       ├── job_store.py         # SQLite/Redis abstraction
+│       ├── job_store.py         # Store factory (SQLite)
 │       ├── image_processor.py   # WebP optimization + SEO renaming
 │       ├── exif_injector.py     # GPS EXIF coordinate injection
 │       ├── upload_validator.py  # Pre-upload validation

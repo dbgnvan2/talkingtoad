@@ -42,7 +42,7 @@ from api.routers import usage as usage_router
 from api.routers import citations as citations_router
 from api.routers import gsc as gsc_router
 from api.routers import performance as performance_router
-from api.services.job_store import SQLiteJobStore, RedisJobStore, get_job_store
+from api.services.job_store import SQLiteJobStore, get_job_store
 from api.services.rate_limiter import limiter
 
 # ── Logging setup ──────────────────────────────────────────────────────────
@@ -129,7 +129,7 @@ _assert_production_safe()
 
 # ── Job store singleton ────────────────────────────────────────────────────
 
-_store: SQLiteJobStore | RedisJobStore | None = None
+_store: SQLiteJobStore | None = None
 
 
 # ── App lifecycle ──────────────────────────────────────────────────────────

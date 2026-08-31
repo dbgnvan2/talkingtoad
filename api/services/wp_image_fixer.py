@@ -11,7 +11,7 @@ from urllib.parse import urlparse, unquote
 
 from api.crawler.fetcher import is_ssrf_safe
 from api.services.wp_client import WPClient
-from api.services.job_store import SQLiteJobStore, RedisJobStore
+from api.services.job_store import SQLiteJobStore
 
 logger = logging.getLogger(__name__)
 

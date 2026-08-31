@@ -22,9 +22,6 @@ slowapi~=0.1.9
 # Async SQLite (dev)
 aiosqlite~=0.20.0
 
-# Upstash Redis REST client (prod — Vercel)
-upstash-redis~=1.1.0
-
 # Environment variables
 python-dotenv~=1.0.0
 

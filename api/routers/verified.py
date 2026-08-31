@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
 from api.services.auth import require_auth
-from api.services.job_store import SQLiteJobStore, RedisJobStore
+from api.services.job_store import SQLiteJobStore
 
 router = APIRouter(
     prefix="/api/verified-links",
@@ -18,7 +18,7 @@ router = APIRouter(
 )
 
 
-def get_store() -> SQLiteJobStore | RedisJobStore:
+def get_store() -> SQLiteJobStore:
     from api.main import _store
     return _store  # type: ignore[return-value]
 
@@ -30,7 +30,7 @@ class AddVerifiedLinkRequest(BaseModel):
 
 @router.get("")
 async def list_verified_links(
-    store: SQLiteJobStore | RedisJobStore = Depends(get_store),
+    store: SQLiteJobStore = Depends(get_store),
 ) -> list[dict]:
     """Return all verified links with their date verified."""
     return await store.get_verified_links()
@@ -39,7 +39,7 @@ async def list_verified_links(
 @router.post("")
 async def add_verified_link(
     body: AddVerifiedLinkRequest,
-    store: SQLiteJobStore | RedisJobStore = Depends(get_store),
+    store: SQLiteJobStore = Depends(get_store),
 ) -> dict:
     """Mark a URL as verified. Idempotent — re-verifying resets the date.
 
@@ -64,7 +64,7 @@ async def add_verified_link(
 @router.delete("")
 async def remove_verified_link(
     url: str = Query(..., description="The URL to unverify"),
-    store: SQLiteJobStore | RedisJobStore = Depends(get_store),
+    store: SQLiteJobStore = Depends(get_store),
 ) -> dict:
     """Remove a URL from the verified list."""
     existed = await store.remove_verified_link(url)

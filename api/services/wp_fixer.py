@@ -22,7 +22,7 @@ from urllib.parse import urlparse
 from uuid import uuid4
 
 from api.services.wp_client import WPClient
-from api.services.job_store import SQLiteJobStore, RedisJobStore
+from api.services.job_store import SQLiteJobStore
 
 # Import shared constants and utilities
 from api.services.wp_shared import (
@@ -89,7 +89,7 @@ async def detect_seo_plugin(wp: WPClient) -> str | None:
 async def find_orphaned_media(
     wp: WPClient,
     job_id: str,
-    store: SQLiteJobStore | RedisJobStore
+    store: SQLiteJobStore
 ) -> list[dict]:
     """Return a list of media items from WordPress not found in the crawl.
 

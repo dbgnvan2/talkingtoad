@@ -262,7 +262,7 @@ class LegacyGeoReportResponse(BaseModel):
 @router.get("/geo-report/pages")
 async def list_geo_report_pages(
     job_id: str,
-    store: SQLiteJobStore | RedisJobStore = Depends(get_store),
+    store: SQLiteJobStore = Depends(get_store),
 ):
     """
     List crawled pages for a job so the user can select which ones to analyze.
@@ -306,7 +306,7 @@ def _wrap_page_section(url: str, markdown: str) -> str:
 @router.post("/geo-report")
 async def generate_geo_report_legacy(
     payload: LegacyGeoReportRequest,
-    store: SQLiteJobStore | RedisJobStore = Depends(get_store),
+    store: SQLiteJobStore = Depends(get_store),
 ):
     """
     Run the Advisor against either the job's target URL (legacy) or a list of

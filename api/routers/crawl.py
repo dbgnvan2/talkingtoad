@@ -45,7 +45,7 @@ from api.models.link import Link
 from api.models.page import CrawledPage
 from api.services.auth import require_auth
 from api.services.error_responses import _err
-from api.services.job_store import SQLiteJobStore, RedisJobStore
+from api.services.job_store import SQLiteJobStore
 from api.services.rate_limiter import CRAWL_START_LIMIT, EXPORT_LIMIT, AI_ANALYSIS_LIMIT, limiter
 from api.services.report_generator import generate_pdf_report
 from api.services.excel_generator import generate_excel_report
@@ -88,7 +88,7 @@ _CSV_FIELDS = ["url", "issue_code", "severity", "category", "phase", "descriptio
 
 # ── Dependency injection ───────────────────────────────────────────────────
 
-def get_store() -> SQLiteJobStore | RedisJobStore:
+def get_store() -> SQLiteJobStore:
     """Return the app-level job store. Overridden in tests via dependency_overrides."""
     from api.main import _store
     return _store  # type: ignore[return-value]
@@ -178,7 +178,7 @@ async def _fetch_and_check_page(
     url: str,
     job_id: str,
     base_url: str,
-    store: SQLiteJobStore | RedisJobStore,
+    store: SQLiteJobStore,
     suppress_h1_strings: list[str] | None = None,
     suppress_banner_h1: bool = True,
     bypass_cache: bool = False,
@@ -430,7 +430,7 @@ async def _run_crawl_background(
     job_id: str,
     target_url: str,
     engine_settings: EngineCrawlSettings,
-    store: SQLiteJobStore | RedisJobStore,
+    store: SQLiteJobStore,
     cancel_event: asyncio.Event,
 ) -> None:
     """Background task: run the crawl, persist results, update job status."""
@@ -676,7 +676,7 @@ def _apply_exempt_anchors(issues: list, exempt_urls: set[str]) -> list:
 @router.get("/recent", response_model=None)
 async def list_recent_jobs(
     limit: int = 10,
-    store: SQLiteJobStore | RedisJobStore = Depends(get_store),
+    store: SQLiteJobStore = Depends(get_store),
 ) -> list[dict]:
     """Return the most recent crawl jobs (newest first) for the home page."""
     jobs = await store.list_recent_jobs(limit=min(limit, 20))
@@ -758,7 +758,7 @@ async def start_crawl(
     request: Request,
     body: dict,
     background_tasks: BackgroundTasks,
-    store: SQLiteJobStore | RedisJobStore = Depends(get_store),
+    store: SQLiteJobStore = Depends(get_store),
 ) -> dict:
     """Submit a new crawl job (spec §6.4 POST /api/crawl/start)."""
     target_url, err = _normalise_and_validate_target(body.get("target_url", ""))
@@ -878,7 +878,7 @@ async def start_crawl(
 @router.get("/{job_id}", response_model=None)
 async def get_job(
     job_id: str,
-    store: SQLiteJobStore | RedisJobStore = Depends(get_store),
+    store: SQLiteJobStore = Depends(get_store),
 ) -> dict | JSONResponse:
     """Get job details by ID (returns target_url and other metadata)."""
     job = await store.get_job(job_id)
@@ -897,7 +897,7 @@ async def get_job(
 @router.get("/{job_id}/status", response_model=None)
 async def job_status(
     job_id: str,
-    store: SQLiteJobStore | RedisJobStore = Depends(get_store),
+    store: SQLiteJobStore = Depends(get_store),
 ) -> dict | JSONResponse:
     """Return job progress and status (spec §6.4 GET /status)."""
     job = await store.get_job(job_id)
@@ -932,7 +932,7 @@ async def job_status(
 @router.post("/{job_id}/cancel", response_model=None)
 async def cancel_job(
     job_id: str,
-    store: SQLiteJobStore | RedisJobStore = Depends(get_store),
+    store: SQLiteJobStore = Depends(get_store),
 ) -> dict | JSONResponse:
     """Cancel a running crawl (spec §6.4 POST /cancel)."""
     job = await store.get_job(job_id)
@@ -964,7 +964,7 @@ async def get_results(
     page: int = Query(1, ge=1),
     limit: int = Query(50, ge=1, le=100),
     severity: str | None = Query(None),
-    store: SQLiteJobStore | RedisJobStore = Depends(get_store),
+    store: SQLiteJobStore = Depends(get_store),
 ) -> dict | JSONResponse:
     """Paginated results for a completed job (spec §6.4 GET /results)."""
     job = await store.get_job(job_id)
@@ -1009,7 +1009,7 @@ async def get_results_by_category(
     page: int = Query(1, ge=1),
     limit: int = Query(50, ge=1, le=5000),
     severity: str | None = Query(None),
-    store: SQLiteJobStore | RedisJobStore = Depends(get_store),
+    store: SQLiteJobStore = Depends(get_store),
 ) -> dict | JSONResponse:
     """Paginated results filtered by category (spec §6.4 GET /results/{category})."""
     if category not in _VALID_CATEGORIES:
@@ -1043,7 +1043,7 @@ async def get_pages(
     page: int = Query(1, ge=1),
     limit: int = Query(50, ge=1, le=100),
     min_severity: str | None = Query(None),
-    store: SQLiteJobStore | RedisJobStore = Depends(get_store),
+    store: SQLiteJobStore = Depends(get_store),
 ) -> dict | JSONResponse:
     """All crawled pages with per-page issue counts (spec §6.1, By Page view)."""
     job = await store.get_job(job_id)
@@ -1098,7 +1098,7 @@ async def get_pages(
 async def get_page_issues(
     job_id: str,
     url: str = Query(..., description="Exact URL of the crawled page"),
-    store: SQLiteJobStore | RedisJobStore = Depends(get_store),
+    store: SQLiteJobStore = Depends(get_store),
 ) -> dict | JSONResponse:
     """All issues for one specific page, grouped by category (spec §6.1, By Page view)."""
     job = await store.get_job(job_id)
@@ -1685,7 +1685,7 @@ async def verify_fix_focus_page(
 @router.get("/{job_id}/comparison", response_model=None)
 async def get_crawl_comparison(
     job_id: str,
-    store: SQLiteJobStore | RedisJobStore = Depends(get_store),
+    store: SQLiteJobStore = Depends(get_store),
 ) -> dict | JSONResponse:
     """Compare this crawl to the previous crawl for the same domain."""
     from urllib.parse import urlparse
@@ -1738,7 +1738,7 @@ async def get_crawl_comparison(
 @router.get("/{job_id}/executive-summary", response_model=None)
 async def get_executive_summary(
     job_id: str,
-    store: SQLiteJobStore | RedisJobStore = Depends(get_store),
+    store: SQLiteJobStore = Depends(get_store),
 ) -> dict | JSONResponse:
     """Generate or retrieve an AI executive summary for this crawl."""
     job = await store.get_job(job_id)
@@ -1782,7 +1782,7 @@ async def get_executive_summary(
 @router.get("/{job_id}/page-priority", response_model=None)
 async def get_page_priority(
     job_id: str,
-    store: SQLiteJobStore | RedisJobStore = Depends(get_store),
+    store: SQLiteJobStore = Depends(get_store),
 ) -> dict | JSONResponse:
     """Page Priority Work Queue.
 
@@ -1810,7 +1810,7 @@ async def collect_web_vitals_endpoint(
     job_id: str,
     top_n: int | None = Query(None, ge=1, le=25,
                               description="Pages to measure (default from config, max 25)"),
-    store: SQLiteJobStore | RedisJobStore = Depends(get_store),
+    store: SQLiteJobStore = Depends(get_store),
 ) -> dict | JSONResponse:
     """Core Web Vitals for the top pages of the §6.9 priority queue (D2).
 
@@ -1892,7 +1892,7 @@ async def collect_web_vitals_endpoint(
 @router.get("/{job_id}/export/csv", response_model=None)
 async def export_csv_full(
     job_id: str,
-    store: SQLiteJobStore | RedisJobStore = Depends(get_store),
+    store: SQLiteJobStore = Depends(get_store),
 ) -> StreamingResponse | JSONResponse:
     """Download all issues as CSV (spec §6.2)."""
     job = await store.get_job(job_id)
@@ -1918,7 +1918,7 @@ async def export_pdf_report(
         description="Include APPROVED page-copy drafts (D4). Off by default — "
                     "AI-drafted copy in a client report is an explicit choice.",
     ),
-    store: SQLiteJobStore | RedisJobStore = Depends(get_store),
+    store: SQLiteJobStore = Depends(get_store),
 ) -> StreamingResponse | JSONResponse:
     """Generate and download a professional PDF audit report."""
     job = await store.get_job(job_id)
@@ -2065,7 +2065,7 @@ async def export_pdf_report(
 async def export_excel_report(
     request: Request,
     job_id: str,
-    store: SQLiteJobStore | RedisJobStore = Depends(get_store),
+    store: SQLiteJobStore = Depends(get_store),
 ) -> StreamingResponse | JSONResponse:
     """Generate and download a multi-sheet Excel audit report."""
     job = await store.get_job(job_id)
@@ -2122,7 +2122,7 @@ async def export_excel_report(
 async def export_csv_category(
     job_id: str,
     category: str,
-    store: SQLiteJobStore | RedisJobStore = Depends(get_store),
+    store: SQLiteJobStore = Depends(get_store),
 ) -> StreamingResponse | JSONResponse:
     """Download one category's issues as CSV (spec §6.2)."""
     if category not in _VALID_CATEGORIES:
@@ -2198,7 +2198,7 @@ async def get_images(
     page: int = Query(1, ge=1),
     limit: int = Query(50, ge=1, le=1000),  # Increased from 100 to 1000 for bulk operations
     sort_by: str = Query("score", regex="^(score|size|load_time)$"),
-    store: SQLiteJobStore | RedisJobStore = Depends(get_store),
+    store: SQLiteJobStore = Depends(get_store),
 ) -> dict | JSONResponse:
     """Return paginated list of images for a job with scores and issues."""
     job = await store.get_job(job_id)
@@ -2226,7 +2226,7 @@ async def get_images(
 @router.get("/{job_id}/images/summary", response_model=None)
 async def get_images_summary(
     job_id: str,
-    store: SQLiteJobStore | RedisJobStore = Depends(get_store),
+    store: SQLiteJobStore = Depends(get_store),
 ) -> dict | JSONResponse:
     """Return image analysis summary stats for a job."""
     job = await store.get_job(job_id)
@@ -2244,7 +2244,7 @@ async def get_images_summary(
 async def get_image_detail(
     job_id: str,
     image_url: str,
-    store: SQLiteJobStore | RedisJobStore = Depends(get_store),
+    store: SQLiteJobStore = Depends(get_store),
 ) -> dict | JSONResponse:
     """Return detailed info for a specific image by URL."""
     job = await store.get_job(job_id)
@@ -2266,7 +2266,7 @@ async def fetch_image_details(
     job_id: str,
     image_url: str = Query(..., description="URL of the image to fetch"),
     fetch_wp_metadata: bool = Query(True, description="Also fetch WordPress metadata (alt text, title)"),
-    store: SQLiteJobStore | RedisJobStore = Depends(get_store),
+    store: SQLiteJobStore = Depends(get_store),
 ) -> dict | JSONResponse:
     """Fetch full image details: image file (dimensions, size, format) + WordPress metadata (alt text, title).
 

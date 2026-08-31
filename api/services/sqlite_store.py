@@ -17,7 +17,6 @@ from api.models.page import CrawledPage
 from api.models.performance import PerformanceRecord
 
 from api.services.job_store_base import (
-    JobStore,
     SCHEMA,
     _SEVERITY_ORDER,
     _PRIORITY_ORDER,

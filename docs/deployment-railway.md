@@ -23,7 +23,7 @@ last_reviewed: 2026-05-27
                                     | Railway (backend)   |
                                     | - FastAPI/uvicorn   |
                                     | - Long-lived process|
-                                    | - SQLite or Upstash |
+                                    | - SQLite (volume)   |
                                     | - Crawler tasks live|
                                     |   here, persistently|
                                     +---------------------+
@@ -31,7 +31,7 @@ last_reviewed: 2026-05-27
                                                | optional
                                                v
                                     +---------------------+
-                                    | Upstash Redis or    |
+                                    | SQLite on a         |
                                     | Railway Postgres    |
                                     +---------------------+
 ```
@@ -54,10 +54,12 @@ work normally.
    |---|---|---|---|
    | `AUTH_TOKEN` | **yes** | `<long random string>` | Production fails to start without this (M0.8 P2 fail-closed). |
    | `ALLOWED_ORIGINS` | **yes** | `https://talkingtoad.vercel.app` | Comma-separated. **Must not be `*`** in production (M0.8 P3 fail-closed). |
-   | `DATABASE_URL` | optional | `redis://...` | When set, uses Upstash; otherwise falls back to SQLite at `SQLITE_PATH`. |
+   | `DATABASE_URL` | optional | `sqlite:///data/talkingtoad.db` | SQLite path (a bare path also works). Unset → `SQLITE_PATH`. |
    | `SQLITE_PATH` | optional | `/data/talkingtoad.db` | For SQLite mode; needs a Railway volume mounted at the parent path. |
-   | `UPSTASH_REDIS_REST_URL` | optional | `https://...upstash.io` | If using Upstash directly instead of DATABASE_URL. |
-   | `UPSTASH_REDIS_REST_TOKEN` | optional | `...` | Pair with above. |
+
+   > The Redis job store was removed on 2026-08-31. Setting `UPSTASH_REDIS_REST_URL`
+   > or `UPSTASH_REDIS_REST_TOKEN` now raises at startup rather than silently starting
+   > on SQLite and writing your data somewhere you did not configure.
    | `GEMINI_API_KEY` | optional | `AIza...` | For AI features. Either Gemini or OpenAI is required for AI features to work. |
    | `OPENAI_API_KEY` | optional | `sk-...` | OpenAI is preferred when both are set. |
    | `LOG_LEVEL` | optional | `INFO` | DEBUG / INFO / WARNING / ERROR. Default INFO. |
@@ -69,7 +71,7 @@ work normally.
 3. **Add persistent storage** (if using SQLite):
    - Settings → Volumes → "Add Volume" → mount path `/data`.
    - Set `SQLITE_PATH=/data/talkingtoad.db`.
-   - Skip this step if you use Upstash; Redis is external.
+   - Required: SQLite is the only store, so the volume is what makes data survive a redeploy.
 
 4. **Deploy and grab the public URL**. After the first successful deploy,
    Railway gives you a URL like `talkingtoad-api.up.railway.app`. That's

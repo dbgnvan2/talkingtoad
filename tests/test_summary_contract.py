@@ -19,17 +19,21 @@ whole suite green:
                        surface, so the counters could reach nothing and stay
                        green (P25).
 
-The image-summary KEY SET is compared across both stores, so the GUI cannot
-show a disclosure on SQLite and nothing on Redis. health_score_basis is
-asserted on the SQLite path only -- Redis has its own copy of that payload and
-no contract test; recorded in TODO.md rather than claimed here.
+The cross-backend key-set comparison that used to live here is gone with the
+Redis store it compared against (2026-08-31, Cycle 3). It earned its keep --
+it caught robots_txt/sitemap missing from the Redis summary -- but its value
+came entirely from having two implementations to disagree. With one store there
+is nothing to compare, and the drift class it policed no longer exists.
+
+What remains asserts the SQLite payload directly: the disclosure fields must be
+present and must survive update_job -> get_job, so a counter cannot reach the
+summary as a default and read as real (P25/P6).
 """
 from __future__ import annotations
 
 import pytest
 
 from api.models.job import CrawlJob
-from api.services.redis_store import RedisJobStore
 from api.services.sqlite_store import SQLiteJobStore
 
 
@@ -131,75 +135,3 @@ class TestImageSummaryCarriesTheMeasurementDisclosure:
             "the counters did not survive update_job -> get_job. A claim that "
             "does not reach the artifact is the orphan_detection bug again (P6)")
 
-    async def test_im1_redis_exposes_the_same_keys_as_sqlite(self, store):
-        """The key set must not diverge by backend."""
-        sqlite_keys = set(await store.get_image_summary("nope"))
-        redis_keys = set(await RedisJobStore.get_image_summary(
-            RedisJobStore.__new__(RedisJobStore), "nope"))
-        missing = {"images_measured", "images_measurable"} - redis_keys
-        assert not missing, f"Redis image summary is missing {missing}"
-        assert sqlite_keys == redis_keys, (
-            f"summary key sets diverge by backend: "
-            f"sqlite-only={sqlite_keys - redis_keys}, "
-            f"redis-only={redis_keys - sqlite_keys}")
-
-
-class TestRedisCarriesTheScoreBasisToo:
-    """Production runs Redis. Only the SQLite summary was asserted.
-
-    Both stores build their own summary payload, so a key present in one and
-    absent in the other means the disclosure shows on a dev machine and
-    vanishes in production — the failure mode nobody would see locally.
-    """
-
-    async def test_s1_redis_summary_includes_health_score_basis(self):
-        from unittest import mock
-
-        from api.models.job import CrawlJob
-        from api.services.redis_store import RedisJobStore
-
-        store = RedisJobStore.__new__(RedisJobStore)
-        job = CrawlJob(job_id="r1", target_url="https://example.com/",
-                       status="complete")
-        with mock.patch.object(RedisJobStore, "get_job",
-                               new=mock.AsyncMock(return_value=job)), \
-             mock.patch.object(RedisJobStore, "_load_issues",
-                               new=mock.AsyncMock(return_value=[])), \
-             mock.patch.object(RedisJobStore, "_load_pages",
-                               new=mock.AsyncMock(return_value=[])):
-            summary = await RedisJobStore.get_summary(store, "r1")
-        assert "health_score_basis" in summary, (
-            "SummaryPanel.jsx reads summary.health_score_basis and production "
-            "runs Redis — the disclosure would be absent exactly where it is "
-            "hardest to notice")
-        for key in ("mode", "categories_scored", "categories_unscored",
-                    "comparable"):
-            assert key in summary["health_score_basis"], f"missing {key!r}"
-
-    async def test_s1_both_stores_expose_the_same_summary_keys(self, store):
-        """The GUI must not diverge by backend."""
-        from unittest import mock
-
-        from api.models.job import CrawlJob
-        from api.services.redis_store import RedisJobStore
-
-        await store.create_job(CrawlJob(job_id="s1",
-                                        target_url="https://example.com/"))
-        sqlite_keys = set(await store.get_summary("s1"))
-
-        rstore = RedisJobStore.__new__(RedisJobStore)
-        job = CrawlJob(job_id="s1", target_url="https://example.com/")
-        with mock.patch.object(RedisJobStore, "get_job",
-                               new=mock.AsyncMock(return_value=job)), \
-             mock.patch.object(RedisJobStore, "_load_issues",
-                               new=mock.AsyncMock(return_value=[])), \
-             mock.patch.object(RedisJobStore, "_load_pages",
-                               new=mock.AsyncMock(return_value=[])):
-            redis_keys = set(await RedisJobStore.get_summary(rstore, "s1"))
-
-        assert "health_score_basis" in sqlite_keys & redis_keys
-        only_sqlite = sqlite_keys - redis_keys
-        only_redis = redis_keys - sqlite_keys
-        assert not (only_sqlite or only_redis), (
-            f"summary keys diverge by backend: sqlite-only={sorted(only_sqlite)}, "
-            f"redis-only={sorted(only_redis)}")
