@@ -45,7 +45,11 @@ def page(body: str = "", head: str = "", url: str = BASE, **kw):
             f"<body>{body or f'<h1>H</h1><p>{_FILLER}</p>'}</body></html>")
     return parse_page(
         FetchResult(url=url, final_url=url, status_code=kw.pop("status", 200),
-                    headers=kw.pop("headers", {}), html=html, content_type="text/html"),
+                    headers=kw.pop("headers", {}), html=html, content_type="text/html",
+                    # The fetcher always sets this, and text_to_html_ratio is
+                    # computed only when it is > 0 — without it, every
+                    # ratio-based check is silently unreachable in a fixture.
+                    response_size_bytes=len(html.encode("utf-8"))),
         BASE, is_homepage=(url == BASE))
 
 
@@ -902,6 +906,39 @@ CONTRACTS += [
      lambda: [page(url=BASE + str(i),
                    body="<h1>H</h1><p>" + " ".join([f"unique{i}word{j}" for j in range(400)])
                         + "</p>") for i in range(3)], "cross"),
+]
+
+# ── Seventh tranche: GEO and citation codes ────────────────────────────────
+_W = lambda n: " ".join(["counselling"] * n)          # noqa: E731
+_CITED = "".join(f"<a href='https://who.int/r{i}'>Report {i}</a> " for i in range(6))
+
+CONTRACTS += [
+    ("CITATIONS_MISSING_SUBSTANTIAL_CONTENT",
+     lambda: page(body=f"<h1>H</h1><p>{_W(700)}</p>"),
+     lambda: page(body=f"<h1>H</h1>{_CITED}<p>{_W(700)}</p>")),
+    ("FIRST_VIEWPORT_NO_ANSWER",
+     lambda: page(body=f"<h1>H</h1>{_CITED}<p>{_W(700)}</p>"),
+     lambda: page(body=f"<h1>H</h1>{_CITED}<h2>What is Bowen theory?</h2>"
+                       f"<p>Bowen theory is a model of family systems. {_W(700)}</p>")),
+    ("SECTION_VAGUE_OPENER",
+     lambda: page(body=f"<h1>H</h1>{_CITED}<h2>Overview</h2>"
+                       f"<p>It is important to note that this matters. {_W(300)}</p>"
+                       f"<h2>More</h2><p>There are many things. {_W(300)}</p>"),
+     lambda: page(body=f"<h1>H</h1>{_CITED}<h2>Overview</h2>"
+                       f"<p>Bowen theory explains family anxiety patterns. {_W(300)}</p>"
+                       f"<h2>More</h2><p>Differentiation reduces reactivity. {_W(300)}</p>")),
+    ("QUERY_COVERAGE_WEAK",
+     lambda: page(body=f"<h1>Bowen Family Systems Theory</h1>{_CITED}"
+                       f"<h2>Unrelated Heading</h2><p>{_W(400)}</p>"),
+     lambda: page(body=f"<h1>Bowen Family Systems Theory</h1>{_CITED}"
+                       f"<h2>Bowen Family Systems Theory Explained</h2>"
+                       f"<p>Bowen family systems theory {_W(400)}</p>")),
+    ("SEMANTIC_DENSITY_LOW",
+     # A page that is mostly inline CSS: the visible-text share is what matters,
+     # not the byte count.
+     lambda: page(body="<h1>H</h1><style>" + "a{color:red}" * 4000 + "</style>"
+                       f"<p>{_W(20)}</p>"),
+     lambda: page(body=f"<h1>H</h1>{_CITED}<p>{_W(600)}</p>")),
 ]
 
 CONTRACT_CODES = {c[0] for c in CONTRACTS}
