@@ -154,6 +154,25 @@ class _IssueSpec:
     # api/services/job_store_base.py::_site_scope_representatives. Scoring-only;
     # the issue still appears on every page where it was detected.
     scope: Literal["page", "site"] = "page"
+    # D2 — this code can only be produced by a FULL CRAWL; a single-page scan
+    # (/scan-page, the rescan button) cannot report it. Distinct from `scope`
+    # above, which is about how a finding is CHARGED once found; this is about
+    # whether it can be FOUND at all on a given path.
+    #
+    # Two reasons a code qualifies, and the name covers both deliberately:
+    #   - everything check_cross_page emits — the router path never calls it;
+    #   - NOT_IN_SITEMAP — check_page guards it on `sitemap_urls is not None`
+    #     and the router passes None.
+    # Note the flag is NOT a claim that the check logically needs several pages.
+    # Some entity checks (_check_placeholder_values, _check_default_hours) read
+    # a single page and could in principle run anywhere; they are listed because
+    # of where they are wired, not because of what they compute. Naming this
+    # `requires_site_context` would have asserted something untrue about them.
+    #
+    # /scan-page and the rescan endpoint derive their `checks_not_run`
+    # disclosure from this flag — do not mirror the list anywhere else. Bound to
+    # the checkers by tests/test_single_page_scan_discloses_inert_checks.py.
+    needs_full_crawl: bool = False
     human_description: str = ""   # plain-English label for nonprofit staff
     what_it_is: str = ""
     impact_desc: str = ""
@@ -681,6 +700,7 @@ _CATALOGUE: dict[str, _IssueSpec] = {
         fixability="wp_fixable",
     ),
     "TITLE_DUPLICATE": _IssueSpec(
+        needs_full_crawl=True,
         category="metadata", severity="warning",
         description="Same title used on multiple pages",
         recommendation="Make each page title unique. Describe what makes this page different from others on your site.",
@@ -712,6 +732,7 @@ _CATALOGUE: dict[str, _IssueSpec] = {
         fixability="wp_fixable",
     ),
     "META_DESC_DUPLICATE": _IssueSpec(
+        needs_full_crawl=True,
         category="metadata", severity="info",
         description="Same meta description on multiple pages",
         recommendation="Write a unique meta description for this page that reflects its specific content.",
@@ -937,6 +958,7 @@ _CATALOGUE: dict[str, _IssueSpec] = {
         fixability="developer_needed",
     ),
     "NOT_IN_SITEMAP": _IssueSpec(
+        needs_full_crawl=True,
         category="crawlability", severity="info",
         description="Crawlable page not listed in sitemap",
         recommendation="Add this URL to your XML sitemap so search engines can find it more reliably.",
@@ -986,6 +1008,7 @@ _CATALOGUE: dict[str, _IssueSpec] = {
         fixability="developer_needed",
     ),
     "ORPHAN_PAGE": _IssueSpec(
+        needs_full_crawl=True,
         category="crawlability", severity="warning",
         description="Page has no internal links pointing to it — search engines may not discover it",
         recommendation="Add at least one internal link to this page from a navigation menu, hub page, "
@@ -2043,6 +2066,7 @@ _CATALOGUE: dict[str, _IssueSpec] = {
     # ── "Search Everywhere" GEO — brand-entity + body-uniqueness (P1) ────────
     # Spec: docs/pending/2026-07-22_p1-entity-consistency-near-duplicate.md
     "ENTITY_NAME_INCONSISTENT": _IssueSpec(
+        needs_full_crawl=True,
         category="ai_readiness", severity="warning", scope="site",
         description="The organisation is named differently in structured data across pages "
                     "(after casing/legal-suffix normalisation), so no single brand entity is asserted",
@@ -2058,6 +2082,7 @@ _CATALOGUE: dict[str, _IssueSpec] = {
         fixability="content_edit",
     ),
     "ENTITY_SAMEAS_MISSING": _IssueSpec(
+        needs_full_crawl=True,
         category="ai_readiness", severity="info",
         description="An Organization or Person block in this page's JSON-LD has no sameAs links "
                     "to authoritative profiles (Wikipedia/Wikidata/official socials)",
@@ -2080,6 +2105,7 @@ _CATALOGUE: dict[str, _IssueSpec] = {
     # constraint forbids TalkingToad writing them.
     # Spec: docs/pending/2026-08-29_E5-entity-value-checks.md
     "ENTITY_HOURS_DEFAULT": _IssueSpec(
+        needs_full_crawl=True,
         category="ai_readiness", severity="info", scope="site",
         description="Opening hours are published for every day at the SEO plugin's default "
                     "times, which are almost certainly not the real hours",
@@ -2098,6 +2124,7 @@ _CATALOGUE: dict[str, _IssueSpec] = {
         fixability="developer_needed",
     ),
     "ENTITY_NAP_INCOMPLETE": _IssueSpec(
+        needs_full_crawl=True,
         category="ai_readiness", severity="warning", scope="site",
         description="The Organization/LocalBusiness structured data is missing identity fields "
                     "(name, address, telephone, email, logo) that its declared type implies",
@@ -2118,6 +2145,7 @@ _CATALOGUE: dict[str, _IssueSpec] = {
         fixability="developer_needed",
     ),
     "ENTITY_FIELD_EMPTY": _IssueSpec(
+        needs_full_crawl=True,
         category="ai_readiness", severity="info", scope="site",
         description="An entity field is present in the structured data but carries no value "
                     "(an empty string, list or object)",
@@ -2135,6 +2163,7 @@ _CATALOGUE: dict[str, _IssueSpec] = {
         fixability="developer_needed",
     ),
     "ENTITY_VALUE_PLACEHOLDER": _IssueSpec(
+        needs_full_crawl=True,
         category="ai_readiness", severity="info", scope="site",
         description="A structured-data field carries a placeholder or template default value "
                     "instead of real content",
@@ -2151,6 +2180,7 @@ _CATALOGUE: dict[str, _IssueSpec] = {
         fixability="developer_needed",
     ),
     "AUTHOR_IDENTITY_INCONSISTENT": _IssueSpec(
+        needs_full_crawl=True,
         category="ai_readiness", severity="info", scope="site",
         description="The same author name appears under differing author URLs (or one URL under "
                     "differing names) across pages, fragmenting author identity",
@@ -2165,6 +2195,7 @@ _CATALOGUE: dict[str, _IssueSpec] = {
         fixability="content_edit",
     ),
     "NEAR_DUPLICATE_BODY": _IssueSpec(
+        needs_full_crawl=True,
         category="ai_readiness", severity="warning", scope="site",
         description="Two or more pages have near-identical lead content after shared site template "
                     "(nav/footer) is removed — commodity content at high risk of AI absorption",
@@ -2181,6 +2212,7 @@ _CATALOGUE: dict[str, _IssueSpec] = {
         fixability="content_edit",
     ),
     "BOILERPLATE_RATIO_HIGH": _IssueSpec(
+        needs_full_crawl=True,
         category="ai_readiness", severity="info",
         description="Most of this page's text is site-wide template (repeated on many other pages) "
                     "with little unique content of its own",
@@ -2272,6 +2304,7 @@ _CATALOGUE: dict[str, _IssueSpec] = {
         fixability="developer_needed",
     ),
     "ANALYTICS_ID_INCONSISTENT": _IssueSpec(
+        needs_full_crawl=True,
         category="analytics", severity="info", scope="site",
         description="The analytics measurement ID is not the same on every crawled page (or some pages "
                     "have a tag and others don't).",

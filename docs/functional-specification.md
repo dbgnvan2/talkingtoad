@@ -1073,6 +1073,43 @@ inbound links, is not in the sitemap, and WordPress marks preview output
 noindex, so reporting them would be noise the owner must learn to ignore.
 → `tests/test_draft_scanning.py`.
 
+**D2 — a single-page scan declares the checks it could not run.**
+`_fetch_and_check_page`, behind `POST /api/crawl/scan-page` and the per-page
+rescan, never calls `check_cross_page` and passes `sitemap_urls=None` to
+`check_page`. **Fourteen codes are therefore unreachable on that path**, and a
+scan returning few or no findings was indistinguishable from a page that had
+passed them. Only one of the fourteen — `ORPHAN_PAGE` — was disclosed, by the
+2026-08-29 `orphan_detection: skipped_single_page` record; the other thirteen
+sat behind the same uncalled function and said nothing.
+
+`/scan-page` and the rescan response now carry `checks_not_run` (sorted) and
+`checks_not_run_reason`. The list is **derived** from the registry's
+`needs_full_crawl` flag on `_IssueSpec` — never mirrored in the router, which
+would recreate the hand-mirrored enumeration the disclosure exists to prevent.
+
+`needs_full_crawl` means *this code can only be produced by a full crawl*, which
+is deliberately not the same claim as "the check needs several pages": some
+entity checks read a single page and are listed only because of where they are
+wired. It is also distinct from `scope`, which governs how a finding is charged
+once found rather than whether it can be found.
+
+Membership is computed as cross-page emitters **minus any code another checker
+on the single-page path can also raise**, plus `NOT_IN_SITEMAP`. That subtraction
+is load-bearing: `CANONICAL_MISSING` is emitted by both `cross_page.py` and
+`metadata.py`, and `metadata.py` does run on this path, so declaring it un-run
+would send the operator to run a full crawl for a check already performed. A
+false disclosure is worse than a missing one.
+
+`checks_not_run` and the draft scan's `suppressed_codes` stay separate: *not run
+because of the code path* and *suppressed because pre-publication* are different
+claims, and merging them would let one justify the other.
+
+**Not yet rendered.** No frontend surface reads `checks_not_run`; the field is in
+the API contract only. Recorded here rather than described as integrated —
+shipping a disclosure nothing displays is the unwired-disclosure failure of
+2026-08-30.
+→ `tests/test_single_page_scan_discloses_inert_checks.py`.
+
 **E2 — broken-link source attribution.** `external_targets_seen` and
 `discovered_from.setdefault` retained only the first page linking to each broken
 target, so 120 broken internal links reported as 10. `external_target_sources`

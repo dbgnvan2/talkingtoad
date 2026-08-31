@@ -379,6 +379,29 @@ _PREPUBLICATION_NOISE_CODES = frozenset({
     "ORPHAN_PAGE", "NOT_IN_SITEMAP", "NOINDEX_META",
 })
 
+# D2 — codes a single-page scan cannot produce, because _fetch_and_check_page
+# never calls check_cross_page and passes sitemap_urls=None to check_page.
+# Derived from the registry's `needs_full_crawl` flag rather than listed here:
+# a literal copy would be a hand-mirrored enumeration, which is the class this
+# disclosure exists to stop. Bound to the checkers by
+# tests/test_single_page_scan_discloses_inert_checks.py.
+#
+# Distinct from _PREPUBLICATION_NOISE_CODES above. That set is *suppressed* on
+# a draft scan because it is meaningless before publication; this set is *not
+# run* because of which code path executed. Merging them would let one reason
+# stand in for the other.
+_CHECKS_NOT_RUN_REASON = (
+    "These checks only run during a full crawl, so this single-page scan did "
+    "not evaluate them. Their absence from the findings is not a pass — run a "
+    "full crawl to have them checked."
+)
+
+
+def _checks_a_single_page_scan_cannot_run() -> list[str]:
+    """Registry-derived list of codes unreachable on the single-page path."""
+    from api.crawler.checkers.registry import _CATALOGUE
+    return sorted(c for c, spec in _CATALOGUE.items() if spec.needs_full_crawl)
+
 
 async def _fetch_page_as_logged_in_user(url: str, *, bypass_cache: bool = False):
     """Fetch *url* with a WordPress logged-in session, so a draft is readable.
@@ -1287,6 +1310,11 @@ async def rescan_url(
         "total_issues": filtered_count,
         "page_data": rescan_page_data,
         "by_category": by_category,
+        # D2 — a rescan runs the same single-page path as /scan-page, so the
+        # same codes are unreachable. Without this, `resolved` on a rescan can
+        # read as "these are now fixed" when the check simply never ran.
+        "checks_not_run": _checks_a_single_page_scan_cannot_run(),
+        "checks_not_run_reason": _CHECKS_NOT_RUN_REASON,
     }
 
 
@@ -1500,7 +1528,12 @@ async def scan_single_page(
     logger.info("scan_page_complete", extra={"job_id": job_id, "url": url, "issues": len(new_issues), "images": len(all_images)})
 
     resp = {"job_id": job_id, "status": "complete", "url": url,
-            "issues": len(new_issues)}
+            "issues": len(new_issues),
+            # D2 — a single-page scan cannot produce these codes at all, so a
+            # result with few or no findings must not read as a full audit.
+            # Derived from the registry; never mirror the list here.
+            "checks_not_run": _checks_a_single_page_scan_cannot_run(),
+            "checks_not_run_reason": _CHECKS_NOT_RUN_REASON}
     if authenticated is True:
         # D1 — say what this scan was, in the response. A draft is invisible to
         # search engines, so these findings are pre-publication advice, not an
