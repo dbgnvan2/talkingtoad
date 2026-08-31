@@ -17,7 +17,8 @@ from urllib.parse import urlparse
 
 import httpx
 
-from api.crawler.fetcher import FetchResult, fetch_page, make_client
+from api.crawler.fetcher import (FetchResult, fetch_page, make_client,
+                                 make_ssrf_guarded_client)
 from api.crawler.issue_checker import (
     Issue,
     check_amphtml_links,
@@ -1031,6 +1032,16 @@ async def run_crawl(
         images_measured = 0
         images_measurable = 0
 
+        # SSRF: image URLs are taken from crawled HTML, so they are as
+        # untrusted as the page that carried them. Both image passes go through
+        # the guarded client, which refuses a private/internal target on the
+        # initial request AND on every redirect hop (CLAUDE.md, Security
+        # Defaults). The HEAD pass used the plain client and had the same gap;
+        # a fix to one external call is a fix to the class (P5), so both move
+        # together. The dimension pass makes it matter more: HEAD leaked little,
+        # a GET pulls the full body back.
+        img_client = make_ssrf_guarded_client()
+
         try:
             image_config = {
                 "max_image_size_kb": settings.img_size_limit_kb,
@@ -1067,7 +1078,8 @@ async def run_crawl(
                 if valid_img_data:
                     async def fetch_head_meta(img_url: str):
                         try:
-                            response = await client.head(img_url, timeout=3.0, follow_redirects=True)
+                            response = await img_client.head(img_url, timeout=3.0,
+                                                             follow_redirects=True)
                             if response.status_code == 200:
                                 content_length = response.headers.get("content-length")
                                 content_type = response.headers.get("content-type", "")
@@ -1130,7 +1142,8 @@ async def run_crawl(
                         try:
                             dim_results = await asyncio.wait_for(
                                 asyncio.gather(
-                                    *[_fetch_image_dimensions(u, client) for u in candidates],
+                                    *[_fetch_image_dimensions(u, img_client)
+                                      for u in candidates],
                                     return_exceptions=True),
                                 timeout=_IMAGE_DIMENSION_BUDGET_S)
                             for item in dim_results:
@@ -1234,6 +1247,11 @@ async def run_crawl(
             print(f"[IMG] Exception during image analysis: {img_exc}")
             log.exception("image_analysis_failed", extra={"error": str(img_exc)})
             all_images = []  # Continue crawl without images
+        finally:
+            # The guarded client is a connection pool, not a value: hiding it
+            # from view is not releasing it (P30). Closed on every exit from
+            # the image block, including the exception path above.
+            await img_client.aclose()
 
         print(f"[IMG] Final all_images count: {len(all_images)}")
 
