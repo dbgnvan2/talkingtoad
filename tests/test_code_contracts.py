@@ -168,7 +168,26 @@ def _run_render(inp):
     return js_render_issues(inp)
 
 
+def _run_images(inp):
+    """inp = a LIST of ImageInfo — for the cross-image duplicate check."""
+    from api.crawler import image_analyzer as IA
+    return IA._check_duplicates(inp, "j")
+
+
+def _run_page_with_deprecations(inp):
+    """inp = (page, deprecated_types). The deprecation list lives in config and
+    is EMPTY by default (AF7c), so the contract supplies one rather than
+    depending on whatever the config happens to hold."""
+    from unittest.mock import patch
+
+    import api.services.schema_typing as st
+    page_obj, deprecated = inp
+    with patch.object(st, "_DEPRECATED_SCHEMAS", set(deprecated)):
+        return check_page(page_obj)
+
+
 RUNNERS = {"page": _run_page, "url": _run_url, "image": _run_image, "cross": _run_cross,
+           "images": _run_images, "deprecations": _run_page_with_deprecations,
            "redirect": _run_redirect, "status": _run_status, "robots": _run_robots,
            "asset": _run_asset, "engine": _run_engine, "geo_llm": _run_geo_llm,
            "vitals": _run_vitals, "render": _run_render}
@@ -1050,6 +1069,82 @@ CONTRACTS += [
      lambda: {"chunks_not_self_contained": True}, lambda: {}, "geo_llm"),
     ("PROMOTIONAL_CONTENT_INTERRUPTS",
      lambda: {"promotional_content_interrupts": True}, lambda: {}, "geo_llm"),
+]
+
+# ── Tenth tranche ──────────────────────────────────────────────────────────
+_DEPRECATED_LD = ("<script type='application/ld+json'>"
+                  '{"@context":"https://schema.org","@type":"OldType","name":"X"}</script>')
+
+CONTRACTS += [
+    ("FAQ_ANSWERS_NOT_IN_HTML",
+     lambda: page(body=f"<h1>FAQ</h1>{_CITED}<div class='accordion'>"
+                       + "".join(f"<h3>What is thing {i}?</h3><div>x</div>" for i in range(4))
+                       + f"</div><p>{_W(300)}</p>"),
+     lambda: page(body=f"<h1>FAQ</h1>{_CITED}<div class='accordion'>"
+                       + "".join(f"<h3>What is thing {i}?</h3><div><p>{_W(60)}</p></div>"
+                                 for i in range(4))
+                       + f"</div><p>{_W(300)}</p>")),
+    ("JS_DEPENDENT_NAVIGATION",
+     lambda: page(body="<h1>H</h1><nav><span onclick='go()'>Home</span>"
+                       f"<span onclick='go()'>About</span></nav><p>{_W(400)}</p>"),
+     lambda: page(body=f"<h1>H</h1><nav><a href='{BASE}a'>Home</a>"
+                       f"<a href='{BASE}b'>About</a></nav><p>{_W(400)}</p>")),
+    ("IMG_DUPLICATE_CONTENT",
+     lambda: [img(url=f"{BASE}a.jpg", filename="a.jpg", content_hash="abc"),
+              img(url=f"{BASE}b.jpg", filename="b.jpg", alt="Another photo",
+                  content_hash="abc")],
+     lambda: [img(url=f"{BASE}a.jpg", filename="a.jpg", content_hash="abc"),
+              img(url=f"{BASE}c.jpg", filename="c.jpg", alt="Third photo",
+                  content_hash="xyz")], "images"),
+    ("SCHEMA_DEPRECATED_TYPE",
+     lambda: (page(head=_DEPRECATED_LD), {"OldType"}),
+     # Adversarial: with an empty config — the shipped default — the same page
+     # must stay clean. An empty list reports nothing, not something false.
+     lambda: (page(head=_DEPRECATED_LD), set()), "deprecations"),
+]
+
+# ── Eleventh tranche: more engine-driven codes ─────────────────────────────
+def _sitemap_of(mock, urls):
+    _engine_base(mock)
+    locs = "".join(f"<url><loc>{u}</loc></url>" for u in urls)
+    mock.get("https://example.com/sitemap.xml").mock(return_value=_httpx.Response(
+        200, headers={"content-type": "application/xml"},
+        text='<?xml version="1.0"?><urlset xmlns="http://www.sitemaps.org/schemas/'
+             f'sitemap/0.9">{locs}</urlset>'))
+    mock.get(BASE).mock(return_value=_httpx.Response(
+        200, headers={"content-type": "text/html"},
+        text=_OK_HTML.replace("<h1>H</h1>", f"<h1>H</h1><a href='{BASE}extra'>Extra</a>")))
+    mock.get(f"{BASE}extra").mock(return_value=_httpx.Response(
+        200, text=_OK_HTML, headers={"content-type": "text/html"}))
+
+
+def _amp(mock, status):
+    _engine_base(mock)
+    mock.get(BASE).mock(return_value=_httpx.Response(
+        200, headers={"content-type": "text/html"},
+        text=_OK_HTML.replace("</head>", f"<link rel='amphtml' href='{BASE}amp'></head>")))
+    mock.get(f"{BASE}amp").mock(return_value=_httpx.Response(
+        status, text=_OK_HTML, headers={"content-type": "text/html"}))
+    mock.head(f"{BASE}amp").mock(return_value=_httpx.Response(status))
+
+
+def _http_scheme(mock, redirects):
+    _engine_base(mock)
+    mock.get("http://example.com/").mock(return_value=(
+        _httpx.Response(301, headers={"location": BASE}) if redirects
+        else _httpx.Response(200, text=_OK_HTML, headers={"content-type": "text/html"})))
+
+
+CONTRACTS += [
+    ("NOT_IN_SITEMAP",
+     _eng(lambda m: _sitemap_of(m, [BASE])),
+     _eng(lambda m: _sitemap_of(m, [BASE, f"{BASE}extra"])), "engine"),
+    ("AMPHTML_BROKEN",
+     _eng(lambda m: _amp(m, 404)), _eng(lambda m: _amp(m, 200)), "engine"),
+    ("HTTPS_REDIRECT_MISSING",
+     # http:// serving 200 instead of redirecting to https is the defect.
+     _eng(lambda m: _http_scheme(m, redirects=False)),
+     _eng(lambda m: _http_scheme(m, redirects=True)), "engine"),
 ]
 
 CONTRACT_CODES = {c[0] for c in CONTRACTS}
