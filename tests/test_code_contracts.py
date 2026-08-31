@@ -68,8 +68,15 @@ def _with(obj, **attrs):
     return obj
 
 
+def _code_of(issue) -> str | None:
+    """Two issue shapes exist: the registry's (``.code``) and the persisted
+    model's (``.issue_code``). The citation path returns the latter, so a
+    harness that only knew ``.code`` reported a working check as dead."""
+    return getattr(issue, "code", None) or getattr(issue, "issue_code", None)
+
+
 def fires(code: str, p) -> bool:
-    return any(i.code == code for i in check_page(p))
+    return any(_code_of(i) == code for i in check_page(p))
 
 
 # ── Runners ────────────────────────────────────────────────────────────────
@@ -1249,6 +1256,24 @@ def _pdf_page(title=None, subject=None):
                            content_type="application/pdf"), BASE)
 
 
+def _run_citations(inp):
+    """inp = (pages, rows_by_url) — the AI-citation ingest derivation."""
+    import datetime
+
+    from api.routers.citations import derive_citation_issues
+    pages, rows = inp
+    return derive_citation_issues(pages, rows, datetime.date(2026, 8, 30), "job")
+
+
+def _cited_page(count, *, last_updated="2026-08-01", words=800):
+    """A CrawledPage carrying ingested AI-citation data."""
+    from api.models.page import CrawledPage
+    return CrawledPage(
+        page_id="p1", job_id="job", url=BASE, status_code=200, word_count=words,
+        ai_citation_count_30d=count, ai_citation_last_updated=last_updated)
+
+
+RUNNERS["citations"] = _run_citations
 RUNNERS["citation_sources"] = _run_citation_sources
 RUNNERS["robots_stale"] = lambda inp: _stale_table(inp)
 RUNNERS["robots_fresh"] = lambda inp: _fresh_table(inp)
@@ -1304,6 +1329,78 @@ CONTRACTS += [
                        f"<p>Differentiation is staying connected. {_W(300)}</p>")),
 ]
 
+# ── Final tranche ──────────────────────────────────────────────────────────
+CONTRACTS += [
+    ("AI_PREVIEW_SUPPRESSED",
+     lambda: page(headers={"x-robots-tag": "nosnippet"}),
+     lambda: page(headers={"x-robots-tag": "index, follow"})),
+    ("AI_PREVIEW_BLOCKED_AT_BOT",
+     # A per-bot directive that does NOT also make the page noindex: the check
+     # is gated on is_indexable, so "GPTBot: noindex" would suppress itself.
+     lambda: page(headers={"x-robots-tag": "GPTBot: nosnippet"}),
+     lambda: page(headers={"x-robots-tag": "index, follow"})),
+    ("AI_CONTENT_NOT_IN_TEXT",
+     lambda: page(body=f"<h1>H</h1><video src='/v.mp4'></video><p>{_W(20)}</p>"),
+     lambda: page(body=f"<h1>H</h1>{_CITED}<p>{_W(600)}</p>")),
+    ("RAW_HTML_JS_DEPENDENT",
+     # An SPA shell: a root div plus a large script, so the visible-text share
+     # falls below the 5% threshold.
+     lambda: page(body='<div id="root"></div><script>' + "var x=1;" * 3000 + "</script>"),
+     lambda: page(body=f"<h1>H</h1>{_CITED}<p>{_W(400)}</p>")),
+]
+
+def _external_link(mock, href):
+    _engine_base(mock)
+    mock.get(BASE).mock(return_value=_httpx.Response(
+        200, headers={"content-type": "text/html"},
+        text=_OK_HTML.replace("<h1>H</h1>", f"<h1>H</h1><a href='{href}'>Ext</a>")))
+    for verb in ("head", "get"):
+        getattr(mock, verb)(href).mock(return_value=_httpx.Response(200))
+
+
+CONTRACTS += [
+    ("EXTERNAL_LINK_SKIPPED",
+     # LinkedIn and friends block automated checks, so the link is recorded as
+     # UNVERIFIED rather than broken (P1: a bot-block is not a 404).
+     _eng(lambda m: _external_link(m, "https://www.linkedin.com/company/x")),
+     _eng(lambda m: _external_link(m, "https://who.int/report")), "engine"),
+]
+
+_GA4 = ("<script async src='https://www.googletagmanager.com/gtag/js?id=G-AAA111'></script>"
+        "<script>gtag('consent','default',{'ad_storage':'denied'});"
+        "gtag('config','G-AAA111');</script>")
+_ARTICLE_DATED = ('<script type="application/ld+json">{"@context":"https://schema.org",'
+                  '"@type":"Article","headline":"X","datePublished":"%s",'
+                  '"dateModified":"%s"}</script>')
+
+CONTRACTS += [
+    ("CTA_TRACKING_MISSING",
+     # Only runs when the page carries an analytics tag — a GTM-only site has no
+     # HTML markers to judge, so the check stays silent rather than guessing.
+     lambda: page(head=_GA4,
+                  body="<h1>H</h1><button class='btn track-signup'>Sign up today</button>"
+                       f"<button class='btn'>Donate now</button><p>{_W(300)}</p>"),
+     lambda: page(head=_GA4,
+                  body="<h1>H</h1><button class='btn track-signup'>Sign up today</button>"
+                       f"<button class='btn track-donate'>Donate now</button><p>{_W(300)}</p>")),
+    ("CONTENT_DATE_STALE_VISIBLE",
+     lambda: page(url=_BLOG, head=_ARTICLE_DATED % ("2015-01-01", "2015-01-01"),
+                  body=f"<h1>H</h1><p>{_W(400)}</p>"),
+     lambda: page(url=_BLOG, head=_ARTICLE_DATED % ("2026-08-01", "2026-08-01"),
+                  body=f"<h1>H</h1><p>{_W(400)}</p>")),
+]
+
+CONTRACTS += [
+    ("AI_CITED_PAGE",
+     lambda: ([_cited_page(4)], {}),
+     # No ingested data at all — "not measured" must emit NEITHER code (P31).
+     lambda: ([_cited_page(None)], {}), "citations"),
+    ("AI_HIGH_VALUE_UNCITED",
+     lambda: ([_cited_page(0)], {}),
+     # Cited pages are not "uncited", and a thin page is not "high value".
+     lambda: ([_cited_page(4)], {}), "citations"),
+]
+
 CONTRACT_CODES = {c[0] for c in CONTRACTS}
 
 
@@ -1322,7 +1419,7 @@ _IDS = [c[0] for c in ALL_CONTRACTS]
 def test_af11_positive_fixture_fires(code, positive, _negative, runner):
     """The check is not DEAD: an input that should trigger it, does."""
     issues = RUNNERS[runner](positive())
-    assert any(i.code == code for i in issues), (
+    assert any(_code_of(i) == code for i in issues), (
         f"{code} did not fire on its positive fixture (runner={runner})")
 
 
@@ -1340,7 +1437,7 @@ def test_af11_negative_fixture_stays_clean(code, _positive, negative, runner):
     """
     runner = NEGATIVE_RUNNER_OVERRIDE.get(code, runner)
     issues = RUNNERS[runner](negative())
-    assert not any(i.code == code for i in issues), (
+    assert not any(_code_of(i) == code for i in issues), (
         f"{code} fired on correct input (runner={runner})")
 
 
@@ -1362,6 +1459,24 @@ class TestSubsystemInvariants:
                                  unavailable_count=0, retryable_failures=0,
                                  strategy="mobile", had_api_key=True)
         assert vitals_issues(report) == [], "lab data must never raise a CWV finding"
+
+    def test_af11_cta_tracking_is_silent_without_a_convention(self):
+        """MI7 fires only when the page demonstrably uses a tracking convention.
+        A GTM-only site has no HTML markers to judge, so guessing would flag
+        every conversion button on it.
+
+        My CTA contract's negative HAS a convention, so it cannot notice this
+        guard being removed — the same gap the CWV lab-row case had.
+        """
+        from api.crawler.checkers.analytics import _check_cta_tracking
+
+        untracked_only = page(
+            head=_GA4,
+            body="<h1>H</h1><button class='btn'>Donate now</button>"
+                 f"<button class='btn'>Sign up today</button><p>{_W(300)}</p>")
+        issues: list = []
+        _check_cta_tracking(untracked_only, issues)
+        assert issues == [], "no tracking convention on the page — must not guess"
 
     def test_af11_failed_render_never_raises_a_finding(self):
         """Same shape one subsystem over: a render that ERRORED must produce

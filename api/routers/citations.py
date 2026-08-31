@@ -130,28 +130,7 @@ async def ingest_ai_citations(
     today = datetime.now(timezone.utc).date()
     new_issues: list[Issue] = []
 
-    for page in pages:
-        if page.ai_citation_count_30d is None:
-            continue  # No citation data ingested — emit neither code
-
-        if page.ai_citation_count_30d > 0:
-            # AI_CITED_PAGE: positive signal
-            ri = registry_make_issue("AI_CITED_PAGE", page_url=page.url, job_id=job_id)
-            new_issues.append(_registry_to_model_issue(ri, job_id, page.page_id, page.url))
-        elif page.ai_citation_count_30d == 0:
-            # AI_HIGH_VALUE_UNCITED: only if page is healthy + content-rich + recent ingest
-            norm_url = page.url.rstrip("/")
-            page_score = compute_page_health(rows_by_url.get(norm_url, []))
-            word_count = page.word_count or 0
-
-            if page_score >= 80 and word_count > 300 and page.ai_citation_last_updated:
-                try:
-                    last_updated = datetime.fromisoformat(page.ai_citation_last_updated).date()
-                    if (today - last_updated).days <= 60:
-                        ri = registry_make_issue("AI_HIGH_VALUE_UNCITED", page_url=page.url, job_id=job_id)
-                        new_issues.append(_registry_to_model_issue(ri, job_id, page.page_id, page.url))
-                except (ValueError, TypeError):
-                    pass
+    new_issues.extend(derive_citation_issues(pages, rows_by_url, today, job_id))
 
     # Remove any existing citation issues before saving new ones
     for page in pages:
@@ -170,6 +149,47 @@ async def ingest_ai_citations(
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
+
+def derive_citation_issues(pages, rows_by_url: dict, today, job_id: str) -> list:
+    """Derive AI_CITED_PAGE / AI_HIGH_VALUE_UNCITED from ingested citation data.
+
+    Purpose: a pure function so the two codes are testable without a store or an
+             HTTP round trip — they were the last two of 170 with no contract,
+             purely because the logic lived inside an async route handler.
+    Spec:    docs/pending/2026-08-30_audit-fixes.md#AF11
+    Tests:   tests/test_code_contracts.py (runner="citations")
+
+    A page with ``ai_citation_count_30d is None`` has no ingested data and emits
+    NEITHER code — "not measured" is not "not cited" (P31).
+    """
+    from api.services.job_store_base import compute_page_health
+
+    out: list = []
+    for page in pages:
+        if page.ai_citation_count_30d is None:
+            continue  # No citation data ingested — emit neither code
+
+        if page.ai_citation_count_30d > 0:
+            # AI_CITED_PAGE: positive signal
+            ri = registry_make_issue("AI_CITED_PAGE", page_url=page.url, job_id=job_id)
+            out.append(_registry_to_model_issue(ri, job_id, page.page_id, page.url))
+        elif page.ai_citation_count_30d == 0:
+            # AI_HIGH_VALUE_UNCITED: only if page is healthy + content-rich + recent ingest
+            norm_url = page.url.rstrip("/")
+            page_score = compute_page_health(rows_by_url.get(norm_url, []))
+            word_count = page.word_count or 0
+
+            if page_score >= 80 and word_count > 300 and page.ai_citation_last_updated:
+                try:
+                    last_updated = datetime.fromisoformat(page.ai_citation_last_updated).date()
+                    if (today - last_updated).days <= 60:
+                        ri = registry_make_issue("AI_HIGH_VALUE_UNCITED",
+                                                 page_url=page.url, job_id=job_id)
+                        out.append(_registry_to_model_issue(ri, job_id, page.page_id, page.url))
+                except (ValueError, TypeError):
+                    pass
+    return out
+
 
 def _registry_to_model_issue(
     ri: RegistryIssue,
