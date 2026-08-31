@@ -941,6 +941,44 @@ CONTRACTS += [
      lambda: page(body=f"<h1>H</h1>{_CITED}<p>{_W(600)}</p>")),
 ]
 
+# ── Eighth tranche ─────────────────────────────────────────────────────────
+CONTRACTS += [
+    ("AI_MAIN_CONTENT_LOW_RATIO",
+     lambda: page(body="<h1>H</h1><nav>"
+                       + "".join(f"<a href='/n{i}'>Navigation item {i}</a>" for i in range(400))
+                       + "</nav><footer>"
+                       + "".join(f"<a href='/f{i}'>Footer link {i}</a>" for i in range(200))
+                       + f"</footer><main><p>{_W(25)}</p></main>"),
+     lambda: page(body=f"<h1>H</h1>{_CITED}<main><p>{_W(700)}</p></main>")),
+    ("SECTION_CROSS_REFERENCES",
+     # The DEFECT is backward-reference phrasing that breaks section
+     # independence — not the absence of cross-references.
+     lambda: page(body=f"<h1>H</h1><h2>A</h2><p>As mentioned above, this matters. {_W(300)}</p>"
+                       f"<h2>B</h2><p>As discussed earlier, {_W(300)}</p>"),
+     lambda: page(body=f"<h1>H</h1><h2>A</h2><p>Bowen theory explains anxiety. {_W(300)}</p>"
+                       f"<h2>B</h2><p>Differentiation reduces reactivity. {_W(300)}</p>")),
+    ("CITATIONS_ORPHANED",
+     # An orphan citation is an external link with NO anchor text: the anchor
+     # text is what supplies the citation's context.
+     lambda: page(body=f"<h1>H</h1><p>{_W(300)}</p>"
+                       + "".join(f"<a href='https://who.int/report{i}'></a>" for i in range(4))
+                       + f"<p>{_W(300)}</p>"),
+     lambda: page(body="<h1>H</h1><p>According to the "
+                       "<a href='https://who.int/report'>WHO 2026 report</a>, rates fell. "
+                       f"{_W(600)}</p>")),
+]
+
+CONTRACTS += [
+    ("LINK_PROFILE_PROMOTIONAL",
+     # classify_body_links counts a link as promotional only on an affiliate
+     # marker (?ref=/?aff=//go/) — a plain shop link classifies as "other".
+     lambda: page(body="<h1>H</h1>"
+                       + "".join(f"<a href='https://shop.other.org/p{i}?ref=aff'>Buy now</a>"
+                                 for i in range(12))
+                       + f"<p>{_W(400)}</p>"),
+     lambda: page(body=f"<h1>H</h1>{_CITED}<p>{_W(400)}</p>")),
+]
+
 CONTRACT_CODES = {c[0] for c in CONTRACTS}
 
 
