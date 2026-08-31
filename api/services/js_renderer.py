@@ -20,7 +20,7 @@ from dataclasses import dataclass, field
 import httpx
 from bs4 import BeautifulSoup
 
-from api.crawler.fetcher import is_ssrf_safe
+from api.crawler.fetcher import is_ssrf_safe, make_ssrf_guarded_client
 
 logger = logging.getLogger(__name__)
 
@@ -104,15 +104,44 @@ def _jaccard(a: set[str], b: set[str]) -> float:
 
 
 async def _fetch_raw(url: str, user_agent: str) -> str:
-    """Fetch raw HTML with a specific user agent."""
-    headers = {"User-Agent": user_agent}
-    async with httpx.AsyncClient(
-        timeout=15.0,
-        follow_redirects=True,
-        headers=headers,
-    ) as client:
-        resp = await client.get(url)
+    """Fetch raw HTML with a specific user agent.
+
+    Uses the SSRF-guarded client, not a bare one. ``run_js_render_checks``
+    already refuses an internal *entry* URL, but this client follows
+    redirects, so a public host answering 302 to 169.254.169.254 was followed
+    — and CLAUDE.md requires the check at start *and on every redirect hop*.
+    """
+    async with make_ssrf_guarded_client(user_agent) as client:
+        resp = await client.get(url, timeout=15.0)
         return resp.text
+
+
+async def _guard_browser_request(route, request) -> None:
+    """Abort any browser request — of any kind — aimed at an internal address.
+
+    Purpose: the entry-URL check cannot protect the Playwright path.
+    Spec:    CLAUDE.md, Security Defaults
+    Tests:   tests/test_js_renderer_ssrf.py
+
+    A browser is not one fetch. ``page.goto`` follows redirects, loads every
+    subresource, and runs the page's JavaScript — so a public page that is
+    itself harmless can issue ``fetch("http://169.254.169.254/...")`` and read
+    cloud instance credentials with the crawler's network position. Guarding
+    only the URL we typed in protects nothing here, which is why every request
+    the browser makes is checked, not just the first.
+
+    ``is_ssrf_safe`` resolves DNS, so it runs off the event loop: this handler
+    fires once per subresource and must not stall the browser.
+    """
+    try:
+        safe = await asyncio.to_thread(is_ssrf_safe, request.url)
+    except Exception:              # noqa: BLE001 — a guard that errors must deny
+        safe = False
+    if safe:
+        await route.continue_()
+    else:
+        logger.warning("playwright_request_blocked", extra={"url": request.url})
+        await route.abort()
 
 
 async def _render_with_playwright(url: str) -> str | None:
@@ -123,6 +152,8 @@ async def _render_with_playwright(url: str) -> str | None:
         async with async_playwright() as p:
             browser = await p.chromium.launch(headless=True)
             page = await browser.new_page()
+            # Every request the browser makes, not merely the one we asked for.
+            await page.route("**/*", _guard_browser_request)
             await asyncio.wait_for(
                 page.goto(url, wait_until="networkidle"),
                 timeout=_PLAYWRIGHT_TIMEOUT_MS / 1000,

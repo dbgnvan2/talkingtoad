@@ -2193,8 +2193,12 @@ async def fetch_image_details(
         import io as pio
 
         start_time = time.time()
-        async with httpx.AsyncClient(follow_redirects=True, timeout=10.0) as client:
-            response = await client.get(image_url)
+        # The is_ssrf_safe check above covers the URL we were given; this
+        # client follows redirects, so without the guarded client a public
+        # host answering 302 to an internal address was followed. CLAUDE.md
+        # requires the check at start AND on every redirect hop.
+        async with make_ssrf_guarded_client() as client:
+            response = await client.get(image_url, timeout=10.0)
 
         load_time_ms = int((time.time() - start_time) * 1000)
         http_status = response.status_code
