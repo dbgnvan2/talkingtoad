@@ -49,6 +49,13 @@ def page(body: str = "", head: str = "", url: str = BASE, **kw):
         BASE, is_homepage=(url == BASE))
 
 
+def _with(obj, **attrs):
+    """Set attributes the ENGINE assigns after parsing (last_modified, depth)."""
+    for k, v in attrs.items():
+        setattr(obj, k, v)
+    return obj
+
+
 def fires(code: str, p) -> bool:
     return any(i.code == code for i in check_page(p))
 
@@ -79,7 +86,30 @@ def _run_cross(inp):
     return check_cross_page(inp, start_url=BASE)
 
 
-RUNNERS = {"page": _run_page, "url": _run_url, "image": _run_image, "cross": _run_cross}
+def _run_redirect(inp):
+    """inp = (url, first_status, chain, final_url)."""
+    from api.crawler.issue_checker import issues_for_redirect
+    url, status, chain, final = inp
+    return issues_for_redirect(url, status, chain, final_url=final, base_url=BASE)
+
+
+def _run_status(inp):
+    """inp = (status_code, url) -> the issue for an HTTP status, if any."""
+    from api.crawler.issue_checker import issue_for_status
+    issue = issue_for_status(inp[0], inp[1])
+    return [issue] if issue else []
+
+
+def _run_robots(inp):
+    """inp = robots.txt text."""
+    from api.crawler.robots import RobotsData, _parse_robots
+    from api.services.ai_readiness import check_ai_bot_access
+    parser, delay, sitemaps = _parse_robots(f"{BASE}robots.txt", inp)
+    return check_ai_bot_access(RobotsData(parser, delay, sitemaps, inp), BASE.rstrip("/"))
+
+
+RUNNERS = {"page": _run_page, "url": _run_url, "image": _run_image, "cross": _run_cross,
+           "redirect": _run_redirect, "status": _run_status, "robots": _run_robots}
 
 
 def img(**kw):
@@ -385,6 +415,120 @@ CONTRACTS += [
                        '{"@context":"https://schema.org","@type":"Product","name":"W",'
                        '"aggregateRating":{"@type":"AggregateRating","ratingValue":"4.5",'
                        '"reviewCount":"12"}}</script>')),
+]
+
+# ── Redirect / status codes ────────────────────────────────────────────────
+CONTRACTS += [
+    ("REDIRECT_301",
+     lambda: ("https://other.org/a", 301, ["https://other.org/b"], "https://other.org/b"),
+     lambda: ("https://other.org/a", 200, [], "https://other.org/a"), "redirect"),
+    ("REDIRECT_302",
+     lambda: ("https://other.org/a", 302, ["https://other.org/b"], "https://other.org/b"),
+     lambda: ("https://other.org/a", 200, [], "https://other.org/a"), "redirect"),
+    ("REDIRECT_CHAIN",
+     lambda: (f"{BASE}a", 301, [f"{BASE}b", f"{BASE}c", f"{BASE}d"], f"{BASE}d"),
+     lambda: (f"{BASE}a", 301, [f"{BASE}b"], f"{BASE}b"), "redirect"),
+    ("INTERNAL_REDIRECT_301",
+     lambda: (f"{BASE}old", 301, [f"{BASE}new"], f"{BASE}new"),
+     lambda: (f"{BASE}old", 200, [], f"{BASE}old"), "redirect"),
+    ("BROKEN_LINK_404",
+     lambda: (404, f"{BASE}gone"), lambda: (200, f"{BASE}here"), "status"),
+    ("BROKEN_LINK_410",
+     lambda: (410, f"{BASE}gone"), lambda: (200, f"{BASE}here"), "status"),
+    ("BROKEN_LINK_503",
+     lambda: (503, f"{BASE}down"), lambda: (200, f"{BASE}up"), "status"),
+    ("BROKEN_LINK_5XX",
+     lambda: (500, f"{BASE}boom"), lambda: (200, f"{BASE}fine"), "status"),
+]
+
+# ── robots.txt / AI-bot codes ──────────────────────────────────────────────
+_ROBOTS_OK = ("User-agent: *\nAllow: /\n"
+              "User-agent: GPTBot\nAllow: /\n"
+              "User-agent: OAI-SearchBot\nAllow: /\n"
+              "User-agent: ChatGPT-User\nAllow: /\n")
+CONTRACTS += [
+    ("AI_BOT_BLANKET_DISALLOW",
+     lambda: "User-agent: *\nDisallow: /\n", lambda: _ROBOTS_OK, "robots"),
+    ("AI_BOT_TRAINING_DISALLOWED",
+     lambda: "User-agent: GPTBot\nDisallow: /\nUser-agent: *\nAllow: /\n",
+     lambda: _ROBOTS_OK, "robots"),
+    ("AI_BOT_SEARCH_BLOCKED",
+     lambda: "User-agent: OAI-SearchBot\nDisallow: /\nUser-agent: *\nAllow: /\n",
+     lambda: _ROBOTS_OK, "robots"),
+    ("AI_BOT_USER_FETCH_BLOCKED",
+     lambda: "User-agent: ChatGPT-User\nDisallow: /\nUser-agent: *\nAllow: /\n",
+     lambda: _ROBOTS_OK, "robots"),
+    ("AI_BOT_NO_AI_DIRECTIVES",
+     lambda: "User-agent: *\nAllow: /\n", lambda: _ROBOTS_OK, "robots"),
+]
+
+# ── Page codes, fourth tranche ─────────────────────────────────────────────
+_LONG = " ".join(["word"] * 600)
+CONTRACTS += [
+    # Realistic prose, not one 400 KB token: the pathological fixture took 41s
+    # to parse and surfaced AF12 (quadratic email regex). Fixed there; the
+    # contract should exercise the size threshold, not the backtracking.
+    ("PAGE_SIZE_LARGE",
+     lambda: page(body="<h1>H</h1>" + "".join(
+         f"<p>{' '.join(['word'] * 100)}</p>" for _ in range(700))),
+     lambda: page()),
+    # _titles_mismatch flags only when the significant-word sets are DISJOINT,
+    # so the fixture words must not overlap at all ("Title" in both was enough
+    # to clear it).
+    ("TITLE_H1_MISMATCH",
+     lambda: page(title="Counselling Appointments In Vancouver",
+                  body=f"<h1>Podcast Episode Seventeen Transcript</h1><p>{_FILLER}</p>"),
+     lambda: page(title="Bowen Family Systems Training",
+                  body=f"<h1>Bowen Family Systems Training</h1><p>{_FILLER}</p>")),
+    ("SOCIAL_PREVIEW_METADATA_MISSING",
+     lambda: page(),
+     lambda: page(head="<meta property='og:title' content='T'>"
+                       "<meta property='og:description' content='D'>"
+                       "<meta property='og:image' content='https://example.com/i.jpg'>"
+                       "<meta name='twitter:card' content='summary_large_image'>")),
+    ("THIN_CONTENT",
+     lambda: page(body="<h1>H</h1><p>Only a few words here.</p>"),
+     lambda: page(body=f"<h1>H</h1><p>{_LONG}</p>")),
+    ("CONTENT_THIN",
+     lambda: page(body="<h1>H</h1><p>Only a few words here.</p>"),
+     lambda: page(body=f"<h1>H</h1><p>{_LONG}</p>")),
+    ("MISSING_HSTS",
+     lambda: page(url=BASE, headers={}),
+     lambda: page(url=BASE, headers={"strict-transport-security": "max-age=31536000"})),
+    # Fires on a block that PARSES but carries no @type. Syntactically broken
+    # JSON-LD is reported as JSON_LD_MISSING instead — see the audit's adjacent
+    # findings: "your structured data is absent" is not the same message as
+    # "your structured data is broken".
+    ("JSON_LD_INVALID",
+     lambda: page(head="<script type='application/ld+json'>"
+                       '{"@context":"https://schema.org","name":"No type here"}'
+                       "</script>"),
+     lambda: page(head="<script type='application/ld+json'>"
+                       '{"@context":"https://schema.org","@type":"Organization","name":"X"}'
+                       "</script>")),
+    ("PAGINATION_LINKS_PRESENT",
+     lambda: page(head="<link rel='next' href='https://example.com/p/2'>"),
+     lambda: page()),
+    # page.last_modified is assigned by the ENGINE after parse_page, not by the
+    # parser, so a unit fixture must set it explicitly.
+    ("CONTENT_STALE",
+     lambda: _with(page(url=_BLOG), last_modified="Mon, 01 Jan 2015 00:00:00 GMT"),
+     lambda: _with(page(url=_BLOG), last_modified="Mon, 01 Jul 2026 00:00:00 GMT")),
+    ("STRUCTURED_ELEMENTS_LOW",
+     lambda: page(body="<h1>H</h1><p>" + " ".join(["prose"] * 1400) + "</p>"),
+     lambda: page(body="<h1>H</h1>" + "".join(
+         f"<h2>Section {i}</h2><ul><li>a</li><li>b</li></ul><p>{' '.join(['word'] * 120)}</p>"
+         for i in range(6)))),
+    ("CONSENT_MODE_MISSING",
+     lambda: page(head="<script async src='https://www.googletagmanager.com/gtag/js?id=G-AAA111'>"
+                       "</script><script>gtag('config','G-AAA111');</script>"),
+     lambda: page(head="<script async src='https://www.googletagmanager.com/gtag/js?id=G-AAA111'>"
+                       "</script><script>gtag('consent','default',{'ad_storage':'denied'});"
+                       "gtag('config','G-AAA111');</script>")),
+    ("ANALYTICS_TAG_MISSING",
+     lambda: page(),
+     lambda: page(head="<script async src='https://www.googletagmanager.com/gtag/js?id=G-AAA111'>"
+                       "</script><script>gtag('config','G-AAA111');</script>")),
 ]
 
 CONTRACT_CODES = {c[0] for c in CONTRACTS}

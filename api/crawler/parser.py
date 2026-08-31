@@ -1788,7 +1788,15 @@ _PLACEHOLDER_HOSTS = frozenset({
 # Bare search-engine homepages used as filler (flagged only with empty path).
 _STRAY_HOSTS = frozenset({"google.com", "www.google.com"})
 
-_EMAIL_RE = _re_ar.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
+# AF12: quantifiers are BOUNDED to RFC 5321 limits (local part <= 64, domain
+# <= 255). The unbounded `+` retried from every starting position on text
+# with no "@", which is quadratic: a single 120 KB unbroken token took 16s
+# and 400 KB took over 40s inside _has_contact_info_in_text, stalling the
+# crawl on any page carrying a long minified or base64 blob in body text.
+# Realistic prose of the same byte size parses in 0.1s — the cost is the
+# backtracking, not the size.
+# Tests: tests/test_regex_performance.py
+_EMAIL_RE = _re_ar.compile(r"[A-Za-z0-9._%+-]{1,64}@[A-Za-z0-9.-]{1,255}\.[A-Za-z]{2,24}")
 # Loose phone matcher: 7+ digits with common separators (avoids matching years).
 _PHONE_RE = _re_ar.compile(r"(?:\+?\d[\s().-]?){7,}\d")
 

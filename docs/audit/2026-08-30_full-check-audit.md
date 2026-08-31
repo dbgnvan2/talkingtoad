@@ -715,3 +715,53 @@ The H2 finding is the most instructive: **the competitor has the same
 template-artifact failure mode we do.** Their report is an oracle, not an
 authority — the differential tells us where to look, and the artifact still
 decides.
+
+
+---
+
+# Part 5 — found while authoring contracts
+
+## AF12 — a quadratic regex stalled parsing for 41 seconds
+
+Not a check defect. Found because a contract fixture built a 400 KB page and the
+test suite timed out.
+
+`_EMAIL_RE` used unbounded quantifiers:
+
+```python
+r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}"
+```
+
+On text containing no `@`, the leading `+` matches greedily from every starting
+position and then fails — quadratic. Measured through `parse_page`, which calls
+`_has_contact_info_in_text` on every homepage:
+
+| Input | Parse time |
+|---|---|
+| 120 KB single token | **16 s** |
+| 400 KB single token | **41 s** |
+| 400 KB realistic prose | **0.1 s** |
+
+Size was never the problem; backtracking was. A page carrying a long minified or
+base64 blob in body text would stall the crawl for the better part of a minute,
+and a handful of them would dominate a 500-page budget.
+
+**Fix:** bound the quantifiers to RFC 5321 limits (local part ≤ 64, domain ≤
+255). **41 s → 0.06 s**, with no change to what matches — verified against real
+addresses and non-addresses. Guarded by `tests/test_regex_performance.py`, and
+mutation-proved: restoring the unbounded pattern fails three of its tests.
+
+**This is P33 again, from the other side.** A code-centric audit could not have
+found it — it belongs to no issue code. It surfaced only because building
+fixtures exercised the parser at a size no test had used before.
+
+## Adjacent finding — broken JSON-LD is reported as *missing*
+
+Syntactically invalid `<script type="application/ld+json">` never parses, so it
+produces `JSON_LD_MISSING` rather than `JSON_LD_INVALID`. The owner is told
+"you have no structured data" when the truth is "your structured data is
+broken" — a materially different instruction. `JSON_LD_INVALID` fires only on a
+block that parses but carries no `@type`.
+
+Not fixed: it needs a catalogue/help/doc decision about which code owns the
+"unparseable" case. Recorded, with the distinction pinned in the contract fixture.
