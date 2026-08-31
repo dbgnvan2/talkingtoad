@@ -1147,6 +1147,93 @@ CONTRACTS += [
      _eng(lambda m: _http_scheme(m, redirects=True)), "engine"),
 ]
 
+# ── Twelfth tranche: the last engine-driven codes ──────────────────────────
+def _www(mock, both_200):
+    _engine_base(mock)
+    mock.get("https://www.example.com/").mock(return_value=(
+        _httpx.Response(200, text=_OK_HTML, headers={"content-type": "text/html"})
+        if both_200 else _httpx.Response(301, headers={"location": BASE})))
+
+
+def _llms(mock, body):
+    _engine_base(mock)
+    mock.get("https://example.com/llms.txt").mock(return_value=_httpx.Response(
+        200, text=body, headers={"content-type": "text/plain"}))
+
+
+def _external(mock, times_out):
+    _engine_base(mock)
+    mock.get(BASE).mock(return_value=_httpx.Response(
+        200, headers={"content-type": "text/html"},
+        text=_OK_HTML.replace("<h1>H</h1>",
+                              "<h1>H</h1><a href='https://slow.example.org/x'>Ext</a>")))
+    for verb in ("head", "get"):
+        route = getattr(mock, verb)("https://slow.example.org/x")
+        route.mock(side_effect=_httpx.ConnectTimeout("t")) if times_out \
+            else route.mock(return_value=_httpx.Response(200))
+
+
+def _internal_timeout(mock, times_out):
+    _engine_base(mock)
+    mock.get(BASE).mock(return_value=_httpx.Response(
+        200, headers={"content-type": "text/html"},
+        text=_OK_HTML.replace("<h1>H</h1>", f"<h1>H</h1><a href='{BASE}dead'>D</a>")))
+    route = mock.get(f"{BASE}dead")
+    route.mock(side_effect=_httpx.ConnectTimeout("t")) if times_out \
+        else route.mock(return_value=_httpx.Response(
+            200, text=_OK_HTML, headers={"content-type": "text/html"}))
+
+
+CONTRACTS += [
+    ("WWW_CANONICALIZATION",
+     _eng(lambda m: _www(m, both_200=True)),
+     _eng(lambda m: _www(m, both_200=False)), "engine"),
+    ("LLMS_TXT_INVALID",
+     # A soft-404 HTML body served as llms.txt is the defect, not a 404 status.
+     _eng(lambda m: _llms(m, "<html><body>Page not found</body></html>")),
+     _eng(lambda m: _llms(m, "# Example\n\n## Docs\n- [Home](https://example.com/): homepage\n")),
+     "engine"),
+    ("EXTERNAL_LINK_TIMEOUT",
+     _eng(lambda m: _external(m, times_out=True)),
+     _eng(lambda m: _external(m, times_out=False)), "engine"),
+    ("PAGE_TIMEOUT",
+     _eng(lambda m: _internal_timeout(m, times_out=True)),
+     _eng(lambda m: _internal_timeout(m, times_out=False)), "engine"),
+]
+
+# ── Thirteenth tranche: AI-bot table codes ─────────────────────────────────
+def _stale_table(robots_text):
+    """Run the robots check with the AI-bot table pinned as long overdue."""
+    import datetime
+    from unittest.mock import patch
+    with patch("api.services.ai_bots.LAST_REVIEWED", datetime.datetime(2020, 1, 1)):
+        return _run_robots(robots_text)
+
+
+def _fresh_table(robots_text):
+    import datetime
+    from unittest.mock import patch
+    with patch("api.services.ai_bots.LAST_REVIEWED", datetime.datetime.now()):
+        return _run_robots(robots_text)
+
+
+RUNNERS["robots_stale"] = lambda inp: _stale_table(inp)
+RUNNERS["robots_fresh"] = lambda inp: _fresh_table(inp)
+
+CONTRACTS += [
+    ("AI_BOT_DEPRECATED_DIRECTIVE",
+     # anthropic-ai and claude-web are the retired agents in the table; naming
+     # one means the site is configured against a bot that no longer exists.
+     lambda: "User-agent: anthropic-ai\nDisallow: /\nUser-agent: *\nAllow: /\n",
+     lambda: _ROBOTS_OK, "robots"),
+]
+
+# AI_BOT_TABLE_STALE is a property of OUR table, not of the site's robots.txt,
+# so both fixtures use the same input and differ only in the pinned review date.
+CONTRACTS += [
+    ("AI_BOT_TABLE_STALE", lambda: _ROBOTS_OK, lambda: _ROBOTS_OK, "robots_stale"),
+]
+
 CONTRACT_CODES = {c[0] for c in CONTRACTS}
 
 
@@ -1169,12 +1256,19 @@ def test_af11_positive_fixture_fires(code, positive, _negative, runner):
         f"{code} did not fire on its positive fixture (runner={runner})")
 
 
+#: Contracts whose negative must run through a DIFFERENT runner, because the
+#: condition lives in our own state rather than in the input (AI_BOT_TABLE_STALE
+#: is a property of our bot table, not of the site's robots.txt).
+NEGATIVE_RUNNER_OVERRIDE = {"AI_BOT_TABLE_STALE": "robots_fresh"}
+
+
 @pytest.mark.parametrize("code,_positive,negative,runner", ALL_CONTRACTS, ids=_IDS)
 def test_af11_negative_fixture_stays_clean(code, _positive, negative, runner):
     """The check is not a FALSE POSITIVE: correct-looking input stays clean.
 
     This is the assertion that did not exist for IMG_ALT_MISSING.
     """
+    runner = NEGATIVE_RUNNER_OVERRIDE.get(code, runner)
     issues = RUNNERS[runner](negative())
     assert not any(i.code == code for i in issues), (
         f"{code} fired on correct input (runner={runner})")
