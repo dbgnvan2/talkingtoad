@@ -213,3 +213,60 @@ describe('ImageAnalysisPanel', () => {
     })
   })
 })
+
+describe('ImageAnalysisPanel — IM1 measurement disclosure', () => {
+  // The last seam. images_measured/images_measurable were wired model -> both
+  // stores -> summary -> panel, and every test sat below the panel: deleting
+  // the line that renders them left all 281 frontend tests green. Five image
+  // checks are sound only over measured images, so an image the dimension pass
+  // never reached must not render like one that came back clean.
+  const jobId = 'im1-job'
+  const domain = 'example.com'
+
+  const mountWith = (summaryExtras) => {
+    global.fetch.mockReset()
+    global.fetch.mockImplementation((url) => {
+      if (url.includes('/images/summary')) {
+        return mockFetchResponse({
+          total_images: 37,
+          images_with_issues: 4,
+          image_health_score: 80,
+          total_size_kb: 2048,
+          avg_load_time_ms: 170,
+          images_analyzed: 31,
+          by_issue: {},
+          ...summaryExtras,
+        })
+      }
+      if (url.includes('/images')) return mockFetchResponse({ images: [] })
+      return mockFetchResponse({})
+    })
+    return renderWithProviders(
+      <ImageAnalysisPanel jobId={jobId} domain={domain} />
+    )
+  }
+
+  it('states how many images were measured when the pass fell short', async () => {
+    mountWith({ images_measured: 31, images_measurable: 37 })
+    await waitFor(() => {
+      expect(screen.getByText(/31 of 37 measured/i)).toBeInTheDocument()
+    })
+  })
+
+  it('says nothing when every image was measured', async () => {
+    // A disclosure that always shows is noise; it must appear only on a shortfall.
+    mountWith({ images_measured: 37, images_measurable: 37 })
+    await waitFor(() => {
+      expect(screen.getByText(/37/)).toBeInTheDocument()
+    })
+    expect(screen.queryByText(/of 37 measured/i)).not.toBeInTheDocument()
+  })
+
+  it('says nothing when the counts are absent (a legacy job)', async () => {
+    mountWith({})
+    await waitFor(() => {
+      expect(screen.getByText(/fully analyzed/i)).toBeInTheDocument()
+    })
+    expect(screen.queryByText(/measured/i)).not.toBeInTheDocument()
+  })
+})

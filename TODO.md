@@ -91,6 +91,22 @@ high and medium ones were fixed in the same cycle (see LEARNINGS.md). Deferred:
 - [ ] **Measured images still carry `data_source="html_only"`** (`engine.py`), while
   `sqlite_store` counts `images_analyzed` as `data_source='full_fetch'` — so the image
   summary reports 0 analyzed for a run in which every image was downloaded and hashed.
+- [ ] **Dimension-pass concurrency caps worst-case coverage.** With `CONCURRENCY=6`,
+  `TIMEOUT_S=8`, `BUDGET_S=45`, the floor on measurable images is ≈ `6 × 45/8 ≈ 33`,
+  against up to 150 under the old unbounded gather. Honestly disclosed via
+  `images_measured`, and the bound is what stopped `load_time_ms` measuring our own
+  queue — but it is a real trade in the opposite direction from "measure more", and no
+  test pins it. Revisit once DNS memoisation's effect on real crawl times is measured.
+- [ ] **The threshold-honesty guard derives over claim PROSE, not over checks with
+  numeric triggers** (`tests/test_authority.py`). It greps each `claim` for
+  `\d+ (%|characters|seconds|ms|KB|MB|words|px)`, so a check whose claim does not
+  happen to quote a figure — or quotes `4s`, `0.25`, `1.5x` — escapes. It is better than
+  the hand-written list it replaced (which missed two codes) but still not the class it
+  names. Nothing validates that a `threshold_published_by_source: true` is justified; it
+  is a self-certification that suppresses the guard.
+- [ ] **`health_score_basis` has no Redis contract test.** `redis_store.py` carries its
+  own copy of the summary payload; only the SQLite path is asserted, and production runs
+  Redis. The image-summary key set IS compared across both.
 - [ ] **`_render_authority`'s final branch is an unguarded `else`**
   (`scripts/generate_issue_codes_doc.py`): an unrecognised `basis` renders as "our own
   judgement" and raises `KeyError` with no rationale. Unreachable today (schema tests

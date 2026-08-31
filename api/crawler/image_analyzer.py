@@ -30,6 +30,9 @@ DEFAULT_CONFIG = {
     # 100x100. Below this, file overhead dominates and bpp says nothing about
     # compression quality. Our figure, not a published one.
     "min_pixels_for_bpp": 10_000,
+    # A file this large is worth reporting whatever its pixel count. Our
+    # figure, not a published one.
+    "min_bytes_for_bpp": 50 * 1024,
     "alt_min_length": 5,
     "alt_max_length": 125,
     "overscale_ratio": 2.0,
@@ -296,7 +299,14 @@ def _check_performance(
         # correct. This check was dead until pixel dimensions started being
         # measured (IM1); without a floor it would fire on every icon, logo and
         # badge on every site the first time the crawler could see their size.
-        if pixels >= cfg["min_pixels_for_bpp"]:
+        # The pixel floor stops icons being reported, but on its own it also
+        # silences a genuinely bloated small image: a 64x64 badge at 150 KB is
+        # 37 bpp and sits under IMG_OVERSIZED's 200 KB, so nothing at all fired.
+        # The absolute-weight escape catches those without reintroducing the
+        # favicon false positives.
+        big_enough = pixels >= cfg["min_pixels_for_bpp"]
+        heavy_regardless = img.file_size_bytes >= cfg["min_bytes_for_bpp"]
+        if big_enough or heavy_regardless:
             bpp = img.file_size_bytes / pixels
             if bpp > cfg["bpp_threshold"]:
                 issues.append(make_issue(

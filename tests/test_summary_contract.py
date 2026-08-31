@@ -19,8 +19,10 @@ whole suite green:
                        surface, so the counters could reach nothing and stay
                        green (P25).
 
-Both stores are asserted: the key set must not diverge by backend, or the GUI
-shows a disclosure on SQLite and nothing on Redis.
+The image-summary KEY SET is compared across both stores, so the GUI cannot
+show a disclosure on SQLite and nothing on Redis. health_score_basis is
+asserted on the SQLite path only -- Redis has its own copy of that payload and
+no contract test; recorded in TODO.md rather than claimed here.
 """
 from __future__ import annotations
 
@@ -82,9 +84,15 @@ class TestSummaryCarriesTheScoreBasis:
 
 
 class TestImageSummaryCarriesTheMeasurementDisclosure:
-    async def test_im1_image_summary_includes_measurement_counts(self, store):
-        """ImageAnalysisPanel.jsx reads summary.images_measured /
-        images_measurable to print 'N of M measured'."""
+    async def test_im1_image_summary_includes_counts_with_images_present(self, store):
+        """The branch a real crawl takes.
+
+        A job with NO images returns from an early `total_images == 0` guard,
+        so a test using one exercises a different branch from production: the
+        main return could drop the keys entirely and stay green. This job has
+        an image.
+        """
+        from api.models.image import ImageInfo
         await store.create_job(CrawlJob(job_id="j3",
                                         target_url="https://example.com/"))
         # update_job is the production write path (api/routers/crawl.py) --
@@ -92,11 +100,27 @@ class TestImageSummaryCarriesTheMeasurementDisclosure:
         # anything not named in it, which is how orphan_detection was lost.
         await store.update_job("j3", status="complete", images_measured=12,
                                images_measurable=30)
+        await store.save_images([ImageInfo(
+            url="https://example.com/a.png", page_url="https://example.com/",
+            job_id="j3", width=800, height=600, file_size_bytes=40_000,
+            http_status=200)])
         summary = await store.get_image_summary("j3")
+        assert summary["total_images"] > 0, (
+            "precondition: this must exercise the WITH-images branch")
         assert summary["images_measured"] == 12
         assert summary["images_measurable"] == 30, (
             "the dimension-pass shortfall does not reach the image summary, so "
             "an image whose pixels were never read renders like a clean one")
+
+    async def test_im1_image_summary_includes_counts_with_no_images(self, store):
+        """And the empty branch, which returns early from a separate literal."""
+        await store.create_job(CrawlJob(job_id="j3b",
+                                        target_url="https://example.com/"))
+        await store.update_job("j3b", status="complete", images_measured=0,
+                               images_measurable=7)
+        summary = await store.get_image_summary("j3b")
+        assert summary["total_images"] == 0
+        assert summary["images_measurable"] == 7
 
     async def test_im1_counts_round_trip_through_the_job_store(self, store):
         await store.create_job(CrawlJob(job_id="j4",

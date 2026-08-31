@@ -264,13 +264,38 @@ class TestNewlyLiveChecksDoNotMisfire:
             "400x400 at 150 KB is ~0.96 bpp — genuinely bloated, and must "
             "still be caught")
 
-    def test_im1_broken_image_reports_from_the_scan_path(self):
-        """IMG_BROKEN stayed dead even once the crawl fetched the image and
-        saw the 404, because the status was discarded."""
-        from api.crawler.image_analyzer import _check_broken
-        from api.models.image import ImageInfo
-        img = ImageInfo(url="https://example.com/gone.png",
-                        page_url="https://example.com/", job_id="j",
-                        http_status=404)
-        codes = {i.code for i in _check_broken(img, "j")}
-        assert "IMG_BROKEN" in codes
+    @pytest.mark.asyncio
+    async def test_im1_broken_image_reports_end_to_end_from_a_crawl(self):
+        """404 -> ImageInfo.http_status -> IMG_BROKEN, through the engine.
+
+        The first version of this test hand-built ImageInfo(http_status=404)
+        and called _check_broken, so it asserted only that _check_broken reads
+        its own argument — which was never the bug. Mutating the actual fix
+        (dropping http_status from the failed-fetch return) left it green. This
+        drives a real crawl whose image 404s.
+        """
+        page = ("<!DOCTYPE html><html lang='en'><head>"
+                "<title>A Page With A Good Long Title</title>"
+                "<meta name='description' content='A description long enough "
+                "to pass the checks that run here without tripping them.'>"
+                "</head><body><h1>H</h1>"
+                "<img src='/gone.png' alt='A described photograph'>"
+                "<p>" + " ".join(["word"] * 80) + "</p></body></html>")
+        with respx.mock:
+            respx.get(f"{BASE}robots.txt").mock(return_value=httpx.Response(
+                200, text="User-agent: *\nDisallow:\n"))
+            respx.get(f"{BASE}sitemap.xml").mock(return_value=httpx.Response(404))
+            respx.get(BASE).mock(return_value=httpx.Response(
+                200, text=page, headers={"content-type": "text/html"}))
+            respx.head(f"{BASE}gone.png").mock(return_value=httpx.Response(
+                200, headers={"content-type": "image/png",
+                              "content-length": "5000"}))
+            respx.get(f"{BASE}gone.png").mock(return_value=httpx.Response(404))
+            result = await run_crawl("brk", BASE,
+                                     CrawlSettings(crawl_delay_ms=0, max_pages=3))
+
+        img = next(i for i in result.images if i.url.endswith("gone.png"))
+        assert img.http_status == 404, (
+            "the crawl observed the 404 and did not record it, so IMG_BROKEN "
+            "cannot fire from the scan path")
+        assert "IMG_BROKEN" in {i.code for i in result.issues}

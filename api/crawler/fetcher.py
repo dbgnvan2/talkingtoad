@@ -50,6 +50,16 @@ def _is_private_ip(ip_str: str) -> bool:
     return addr.is_private or addr.is_loopback or addr.is_link_local or addr.is_reserved
 
 
+# Resolution decisions, memoised. is_ssrf_safe calls getaddrinfo, which takes
+# no timeout and is not cached by Python. The image passes made it hot — up to
+# 150 HEADs plus 150 GETs per job, each with its own lookup, every one inside
+# the timed window that IMG_SLOW_LOAD is scored from. A 400 ms resolver was
+# measurably being reported as 415 ms of image load time.
+_SSRF_CACHE: dict[str, tuple[float, bool]] = {}
+_SSRF_CACHE_TTL_S = float(os.getenv("TT_SSRF_CACHE_TTL_S", "120"))
+_SSRF_CACHE_MAX = 2048
+
+
 def is_ssrf_safe(url: str) -> bool:
     """Return True if the URL's hostname does **not** resolve to a private IP.
 
@@ -60,6 +70,11 @@ def is_ssrf_safe(url: str) -> bool:
         hostname = urlparse(url).hostname
         if not hostname:
             return False
+        import time as _time
+        now = _time.monotonic()
+        cached = _SSRF_CACHE.get(hostname)
+        if cached and now - cached[0] < _SSRF_CACHE_TTL_S:
+            return cached[1]
         # Quick check for obvious private hostnames
         if hostname in ("localhost", "127.0.0.1", "0.0.0.0", "::1"):
             return False
@@ -67,10 +82,18 @@ def is_ssrf_safe(url: str) -> bool:
         for family, _, _, _, sockaddr in socket.getaddrinfo(hostname, None):
             ip_str = sockaddr[0]
             if _is_private_ip(ip_str):
+                if len(_SSRF_CACHE) >= _SSRF_CACHE_MAX:
+                    _SSRF_CACHE.clear()
+                _SSRF_CACHE[hostname] = (now, False)
                 return False
     except (socket.gaierror, OSError):
-        # Can't resolve — allow (will fail at fetch time with a clear error)
-        pass
+        # Can't resolve — allow (will fail at fetch time with a clear error).
+        # NOT cached: a resolver failure is transient, and caching it would
+        # turn one blip into two minutes of unchecked fetches (P1).
+        return True
+    if len(_SSRF_CACHE) >= _SSRF_CACHE_MAX:
+        _SSRF_CACHE.clear()
+    _SSRF_CACHE[hostname] = (now, True)
     return True
 
 

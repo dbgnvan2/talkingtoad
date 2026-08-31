@@ -213,7 +213,12 @@ Matrix): 180-day technical-improvement staleness and 20% traffic-decay drop.
 | Image URLs collected per job | 150 | `TT_IMAGE_URL_CAP_PER_JOB` env, `api/crawler/engine.py` |
 | Image dimension pass — total download budget | 48 MB | `TT_IMAGE_DIMENSION_TOTAL_BYTES` env, `api/crawler/engine.py` |
 | Image dimension pass — skip a single file over | 12 MB | `TT_IMAGE_DIMENSION_MAX_BYTES` env, `api/crawler/engine.py` |
-| Image dimension pass — max images measured | 250 | `TT_IMAGE_DIMENSION_MAX_COUNT` env, `api/crawler/engine.py` |
+| Image dimension pass — max images measured | 150 | `TT_IMAGE_DIMENSION_MAX_COUNT` env, `api/crawler/engine.py` |
+| Image dimension pass — concurrent downloads | 6 | `TT_IMAGE_DIMENSION_CONCURRENCY` env, `api/crawler/engine.py` |
+| Image dimension pass — Pillow pixel ceiling | 80,000,000 | `api/crawler/engine.py` (set once at import) |
+| SSRF resolution cache TTL | 120 s | `TT_SSRF_CACHE_TTL_S` env, `api/crawler/fetcher.py` |
+| IMG_POOR_COMPRESSION — minimum pixels | 10,000 (100×100) | `min_pixels_for_bpp`, `api/crawler/image_analyzer.py` |
+| IMG_POOR_COMPRESSION — weight that overrides the pixel floor | 50 KB | `min_bytes_for_bpp`, `api/crawler/image_analyzer.py` |
 | Image dimension pass — overall time budget | 45 s | `TT_IMAGE_DIMENSION_BUDGET_S` env, `api/crawler/engine.py` |
 | Image dimension pass — per-image timeout | 8 s | `TT_IMAGE_DIMENSION_TIMEOUT_S` env, `api/crawler/engine.py` |
 | Image dimension pass — assumed size when HEAD gives none | 150 KB | `api/crawler/engine.py` |

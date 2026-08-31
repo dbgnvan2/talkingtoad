@@ -83,8 +83,11 @@ _IMAGE_DIMENSION_TOTAL_BYTES = int(os.getenv("TT_IMAGE_DIMENSION_TOTAL_BYTES", s
 # Skip a single pathologically large file rather than spending the whole budget
 # on it. Its dimensions stay unmeasured and are reported as such.
 _IMAGE_DIMENSION_MAX_BYTES = int(os.getenv("TT_IMAGE_DIMENSION_MAX_BYTES", str(12 * 1024 * 1024)))
-# Kept at the per-job image cap: a larger number could never bind, and a dead
-# bound makes the resource story read stronger than the code delivers.
+# Defaults to the per-job image cap, so at defaults it never binds and the
+# byte budget is the operative bound. It is a separate env var, so raising
+# TT_IMAGE_URL_CAP_PER_JOB makes this one bite — which is why its skips are
+# counted separately from the byte budget's rather than merged into one number
+# that cannot say which bound stopped the pass.
 _IMAGE_DIMENSION_MAX_COUNT = int(os.getenv("TT_IMAGE_DIMENSION_MAX_COUNT", "150"))
 # A browser opens ~6 connections per host. The dimension pass previously
 # launched every candidate at once, so load_time_ms measured the crawler's own
@@ -95,6 +98,18 @@ _IMAGE_DIMENSION_TIMEOUT_S = float(os.getenv("TT_IMAGE_DIMENSION_TIMEOUT_S", "8"
 # Budgeting happens before the download, so an image whose HEAD gave no
 # content-length is charged this nominal amount against the budget.
 _IMAGE_DIMENSION_UNKNOWN_SIZE = 150 * 1024
+
+# Set once at import, not from inside the per-image download: this is a global
+# on the Pillow module, and writing it per image would lower the ceiling for
+# every other consumer in the process (image_processor, exif_injector) and
+# would silently override a deliberate opt-out set elsewhere.
+try:
+    from PIL import Image as _PILImage
+    if (_PILImage.MAX_IMAGE_PIXELS is None
+            or _PILImage.MAX_IMAGE_PIXELS > 80_000_000):
+        _PILImage.MAX_IMAGE_PIXELS = 80_000_000
+except Exception:                                   # noqa: BLE001
+    pass
 _MIN_CRAWL_DELAY_MS = 200
 _EXTERNAL_LINK_CAP_PER_PAGE = 50
 _EXTERNAL_LINK_CAP_PER_JOB = 500
@@ -1123,16 +1138,21 @@ async def run_crawl(
                 dimension_cache: dict[str, dict] = {}
                 measurable_total = len(valid_img_data)
                 skipped_oversize = 0
+                # Bound where the log reads them, not inside `if candidates:`
+                # — the same unbound-outside-its-guard shape as before (P13).
+                skipped_budget = 0
+                skipped_count_cap = 0
+                timed_out = 0
+                errored = 0
                 if valid_img_data:
                     # Walk in document order, charging each image's HEAD size
                     # against a total budget, and stop when it is spent. What
                     # falls off the end is counted and disclosed, never silent.
                     candidates: list[str] = []
                     budget_left = _IMAGE_DIMENSION_TOTAL_BYTES
-                    skipped_budget = 0
                     for d in valid_img_data:
                         if len(candidates) >= _IMAGE_DIMENSION_MAX_COUNT:
-                            skipped_budget += 1
+                            skipped_count_cap += 1
                             continue
                         size = head_metadata_cache.get(d["url"], {}).get("file_size")
                         cost = size if size else _IMAGE_DIMENSION_UNKNOWN_SIZE
@@ -1158,29 +1178,42 @@ async def run_crawl(
                             async with sem:
                                 return await _fetch_image_dimensions(u, img_client)
 
-                        deadline = asyncio.get_running_loop().time() + _IMAGE_DIMENSION_BUDGET_S
                         tasks = [asyncio.create_task(_measure(u)) for u in candidates]
+                        pending = set(tasks)
                         try:
-                            for coro in asyncio.as_completed(tasks):
-                                remaining = deadline - asyncio.get_running_loop().time()
-                                if remaining <= 0:
-                                    break
+                            # wait(), not as_completed(): breaking out of an
+                            # as_completed loop leaves its next wrapper coroutine
+                            # un-awaited, which emits a RuntimeWarning on every
+                            # budget expiry and raises under -W error.
+                            done, pending = await asyncio.wait(
+                                pending, timeout=_IMAGE_DIMENSION_BUDGET_S)
+                            timed_out = len(pending)
+                            for task in done:
                                 try:
-                                    item = await asyncio.wait_for(coro, timeout=remaining)
-                                except (asyncio.TimeoutError, Exception):
+                                    item = task.result()
+                                except Exception:
+                                    errored += 1
                                     continue
-                                # Harvested as each finishes. A single wait_for
-                                # around one gather cancelled everything on
-                                # expiry, discarding every completed download
+                                # Everything that finished is kept. A single
+                                # wait_for around one gather cancelled the lot
+                                # on expiry, discarding every completed download
                                 # and logging measured:0 — indistinguishable
                                 # from "the site has no images".
                                 if isinstance(item, tuple) and item[1]:
                                     dimension_cache[item[0]] = item[1]
+                        except Exception as dim_exc:
+                            # A slow or hostile image host must never fail a
+                            # crawl; the checks stay unavailable for that run,
+                            # and the reason is logged rather than inferred
+                            # from a ratio.
+                            log.warning("image_dimension_pass_failed",
+                                        extra={"error": str(dim_exc)})
                         finally:
-                            for task in tasks:
-                                if not task.done():
-                                    task.cancel()
-                            await asyncio.gather(*tasks, return_exceptions=True)
+                            for task in pending:
+                                task.cancel()
+                            if pending:
+                                await asyncio.gather(*pending,
+                                                     return_exceptions=True)
                     # Measured means Pillow read real pixels. A 404, a rejected
                     # content type or an SVG lands in the cache (its status and
                     # hash are still useful) but must not inflate coverage.
@@ -1191,6 +1224,9 @@ async def run_crawl(
                         "measurable_total": measurable_total,
                         "skipped_oversize": skipped_oversize,
                         "skipped_budget": skipped_budget,
+                        "skipped_count_cap": skipped_count_cap,
+                        "timed_out": timed_out,
+                        "errored": errored,
                     })
                 images_measured = sum(1 for v in dimension_cache.values()
                                       if "width" in v)
@@ -1566,13 +1602,6 @@ async def _fetch_image_dimensions(url: str, client) -> tuple[str, dict]:
             if status >= 400:
                 return url, {"http_status": status}
             content_type = (response.headers.get("content-type") or "").lower()
-            if not content_type.startswith("image/"):
-                # A soft-404 HTML page served for a missing image would
-                # otherwise be hashed and sized as though it were the image:
-                # ten broken <img> tags returning the same error page hash
-                # identically and fabricate IMG_DUPLICATE_CONTENT on nine.
-                return url, {"http_status": status,
-                             "rejected_content_type": content_type[:80]}
             buf = bytearray()
             async for chunk in response.aiter_bytes():
                 buf.extend(chunk)
@@ -1586,23 +1615,36 @@ async def _fetch_image_dimensions(url: str, client) -> tuple[str, dict]:
             "load_time_ms": int((time.time() - started) * 1000),
             "http_status": status,
         }
+        decoded = False
         try:
             from PIL import Image
-            # Only im.size is read (a header parse, not a raster decode), but
-            # the ceiling is set explicitly rather than left to whatever the
-            # installed Pillow defaults to — this runs on every crawl now, on
-            # bytes from an arbitrary host.
-            if Image.MAX_IMAGE_PIXELS is None or Image.MAX_IMAGE_PIXELS > 80_000_000:
-                Image.MAX_IMAGE_PIXELS = 80_000_000
             with Image.open(io.BytesIO(content)) as im:
                 out["width"], out["height"] = im.size
                 if im.format:
                     out["format"] = im.format.lower()
+            decoded = True
         except Exception:
-            # SVGs and anything Pillow cannot decode keep size and hash but no
-            # dimensions — a partial measurement, honestly partial, and not
-            # counted as measured.
             pass
+
+        if not decoded and not content_type.startswith("image/"):
+            # Decode first, and only fall back to the declared type.
+            #
+            # A soft-404 HTML page served for a missing image must not be
+            # hashed and sized as though it were the image: ten broken <img>
+            # tags returning the same error page would hash identically and
+            # fabricate IMG_DUPLICATE_CONTENT on nine of them.
+            #
+            # But gating on the content-type BEFORE decoding was worse than the
+            # bug it fixed: a valid PNG served as application/octet-stream — or
+            # with no Content-Type at all, which misconfigured object storage
+            # does routinely — was discarded, and all five IM1 checks went dead
+            # across the whole site. Pillow decoding the bytes is the strongest
+            # evidence available that they are an image; the declared type only
+            # decides the cases Pillow cannot read (SVG).
+            return url, {"http_status": status,
+                         "rejected_content_type": content_type[:80] or "(none)"}
+        # An SVG keeps size and hash but no dimensions — a partial measurement,
+        # honestly partial, and not counted as measured.
         return url, out
     except Exception:
         return url, {}
