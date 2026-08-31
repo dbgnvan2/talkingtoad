@@ -16,8 +16,13 @@ import pytest
 import yaml
 
 from api.crawler.checkers.authority import (SOURCE_TYPES, _AUTHORITY_FILE,
-                                            all_codes, authority_for,
-                                            is_heuristic, url_verification)
+                                            _VERIFICATION_FILE, all_codes,
+                                            authority_for, is_heuristic,
+                                            url_verification)
+
+# How long a recorded fetch may stand before it must be repeated. Sources move;
+# a liveness claim with no expiry is not a liveness claim.
+_VERIFICATION_MAX_AGE_DAYS = 180
 from api.crawler.checkers.registry import (_AI_READINESS_CONFIDENCE, _CATALOGUE,
                                            _ISSUE_SCORING)
 
@@ -102,6 +107,55 @@ class TestUrlsWereActuallyFetched:
             "citations pointing at URLs that were not confirmed to resolve:\n  "
             + "\n  ".join(unverified)
             + "\nRun scripts/verify_authority_urls.py and fix or repoint them.")
+
+    def test_v1_the_verification_is_not_indefinitely_old(self):
+        """A source that 404s next month keeps certifying itself otherwise.
+
+        The record stamps `checked_on` and nothing read it, so the liveness
+        claim had no expiry: the file is plain YAML a human can edit to keep
+        the test green, which is the "fix the code, don't fake the state"
+        boundary. Bound it instead, so the failure mode is "re-run the script".
+        """
+        import datetime
+
+        raw = yaml.safe_load(_VERIFICATION_FILE.read_text(encoding="utf-8"))
+        checked = raw.get("checked_on")
+        assert checked, "url_verification.yaml records no checked_on date"
+        age = (datetime.date.today()
+               - datetime.date.fromisoformat(str(checked))).days
+        assert age <= _VERIFICATION_MAX_AGE_DAYS, (
+            f"the citation URLs were last actually fetched {age} days ago "
+            f"({checked}), past the {_VERIFICATION_MAX_AGE_DAYS}-day bound. "
+            f"Run scripts/verify_authority_urls.py — a source that has moved "
+            f"or gone would still be certifying itself.")
+
+    def test_v1_a_citation_that_redirects_elsewhere_is_recorded_as_such(self):
+        """Recorded, not asserted away.
+
+        8 of the URLs redirect, two of them to Google's deprecation
+        announcements rather than the page cited. Both of those codes carry an
+        honest threshold_note about the 2023 retirements, so nothing is
+        misstated today — but a citation whose content moves under it would
+        otherwise stay green forever. This surfaces the drift rather than
+        failing on it, because a redirect is often benign (http->https, a
+        docs reorganisation).
+        """
+        moved = []
+        for code in sorted(_CATALOGUE):
+            entry = authority_for(code) or {}
+            url = entry.get("url")
+            if not url:
+                continue
+            rec = url_verification(url) or {}
+            final = rec.get("final_url")
+            if final and final != url:
+                moved.append((code, url, final))
+        # Not an assertion on the count — a bound on how far it can drift
+        # unnoticed. If most citations have moved, the record is stale.
+        assert len(moved) <= len(_CATALOGUE) // 4, (
+            f"{len(moved)} citations now redirect elsewhere; the record is "
+            f"drifting away from what it cites:\n  "
+            + "\n  ".join(f"{c}: {u} -> {f}" for c, u, f in moved[:10]))
 
 
 class TestReconcilesWithTheConfidenceLabel:

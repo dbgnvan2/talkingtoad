@@ -18,17 +18,47 @@ worse, it is NOT COMPARABLE, and this record is what says so.
 """
 from __future__ import annotations
 
-from api.crawler.checkers.registry import SCORING_MODEL_VERSION
+from api.crawler.checkers.registry import _CATALOGUE, SCORING_MODEL_VERSION
 from api.crawler.engine import (_ANALYSIS_CATEGORY_MAP, _UNGROUPED_CATEGORIES,
                                 CrawlSettings, _build_analysis_coverage)
 from api.services.job_store_base import health_score_basis
 
 
 def _every_category() -> set[str]:
-    every = set(_UNGROUPED_CATEGORIES)
+    """The categories that exist, taken from the CATALOGUE — not from the maps
+    the function under test reads.
+
+    This used to rebuild `every` from `_UNGROUPED_CATEGORIES` and
+    `_ANALYSIS_CATEGORY_MAP`, which is exactly how health_score_basis computes
+    it — so the test could only confirm the function agreed with itself
+    (P32). Mutation-checked: emptying `_ANALYSIS_CATEGORY_MAP["analytics"]`
+    left this file green, while a partial scan would have reported "covers N
+    of M" with `analytics` missing from both sides of the partition.
+
+    The registry is an independent oracle: a category exists because a code
+    declares it, not because a toggle map mentions it.
+    """
+    return {spec.category for spec in _CATALOGUE.values()}
+
+
+def test_s1_4a_the_toggle_maps_cover_every_category_that_exists():
+    """The two sources must agree, and this is where they are compared.
+
+    `security` is intentionally in no toggle group — it always runs — so it is
+    named here rather than silently excluded.
+    """
+    mapped = set(_UNGROUPED_CATEGORIES)
     for cats in _ANALYSIS_CATEGORY_MAP.values():
-        every |= cats
-    return every
+        mapped |= cats
+    declared = {spec.category for spec in _CATALOGUE.values()}
+    always_on = {"security"}
+    missing = declared - mapped - always_on
+    assert not missing, (
+        f"categories that codes emit but no analysis toggle reaches: "
+        f"{sorted(missing)} — a partial scan can neither run nor report them")
+    stale = mapped - declared
+    assert not stale, (
+        f"the toggle map names categories no code emits: {sorted(stale)}")
 
 
 class TestScoreBasis:

@@ -957,6 +957,7 @@ def _extract_cta_elements(soup: BeautifulSoup) -> list | None:
     from api.crawler.analytics_patterns import CTA_BUTTON_CLASS_HINTS
 
     out: list[dict] = []
+    cta_total = 0          # every qualifying CTA, including those past the cap
     for el in soup.find_all(["button", "a", "input"]):
         classes = " ".join(el.get("class", []) or [])
         cl = classes.lower()
@@ -977,16 +978,25 @@ def _extract_cta_elements(soup: BeautifulSoup) -> list | None:
         if not text:
             continue  # unnamed control — can't classify conversion intent
         ctx_classes, ctx_data = _cta_ancestor_markers(el)
-        out.append({
+        entry = {
             "text": text[:120],
             "class": classes,
             "onclick": (el.get("onclick") or ""),
             "data_attrs": [k for k in el.attrs if k.lower().startswith("data-")],
             "context_classes": ctx_classes,   # ancestor class tokens (lowercased)
             "context_data": ctx_data,          # ancestor data-* attr names (lowercased)
-        })
+        }
+        cta_total += 1
         if len(out) >= _MAX_CTA_ELEMENTS:
-            break
+            continue        # keep counting, stop collecting
+        out.append(entry)
+    if cta_total > len(out):
+        # P9 — a cap on core input must announce what it dropped. Silence here
+        # reads downstream as "this page has 300 CTAs", not "we stopped
+        # collecting at 300 of N".
+        log.info("cta_elements_capped", extra={
+            "cap": _MAX_CTA_ELEMENTS, "kept": len(out), "found": cta_total,
+        })
     return out or None
 
 

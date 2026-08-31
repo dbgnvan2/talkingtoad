@@ -124,8 +124,18 @@ def _render_authority(code: str) -> str:
     if basis == "observation":
         return ("**Basis:** measured during the crawl — not a published claim."
                 f"\n\n> {entry['method']}")
-    return ("**Basis:** TalkingToad's own judgement. No published source states "
-            f"this.\n\n> {entry['rationale']}")
+    if basis == "heuristic":
+        return ("**Basis:** TalkingToad's own judgement. No published source "
+                f"states this.\n\n> {entry['rationale']}")
+    # Not a fallthrough. An unrecognised basis previously landed in the
+    # heuristic branch, so a typo'd value would have published "our own
+    # judgement" over whatever the entry actually said — and raised KeyError
+    # if it carried no rationale. Say what is wrong instead of guessing.
+    raise ValueError(
+        f"{code}: unknown authority basis {basis!r}. Valid values are "
+        f"citation, observation, heuristic — see "
+        f"api/crawler/checkers/data/authority.yaml."
+    )
 
 
 def _render_code_entry(code: str) -> str:

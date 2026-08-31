@@ -145,6 +145,31 @@ _PAGE = ("<!DOCTYPE html><html lang='en'><head><title>A Page With A Good Long Ti
          "<p>" + " ".join(["word"] * 80) + "</p></body></html>")
 
 
+def _mock_many_images(mock, count: int, w: int, h: int):
+    """A site with `count` distinct images, at the SHIPPED cap values."""
+    body = _png(w, h)
+    imgs = "".join(
+        f"<img src='/i{i}.png' alt='A described photograph number {i}'>"
+        for i in range(count))
+    page = ("<!DOCTYPE html><html lang='en'><head>"
+            "<title>A Page With A Good Long Title</title>"
+            "<meta name='description' content='A description long enough to "
+            "pass the checks that run here without tripping any of them.'>"
+            "</head><body><h1>H</h1>" + imgs
+            + "<p>" + " ".join(["word"] * 80) + "</p></body></html>")
+    mock.get(ROBOTS).mock(return_value=httpx.Response(
+        200, text="User-agent: *\nDisallow:\n"))
+    mock.get(SITEMAP).mock(return_value=httpx.Response(404))
+    mock.get(BASE).mock(return_value=httpx.Response(
+        200, text=page, headers={"content-type": "text/html"}))
+    for i in range(count):
+        mock.head(f"{BASE}i{i}.png").mock(return_value=httpx.Response(
+            200, headers={"content-type": "image/png",
+                          "content-length": str(len(body))}))
+        mock.get(f"{BASE}i{i}.png").mock(return_value=httpx.Response(
+            200, content=body, headers={"content-type": "image/png"}))
+
+
 def _mock_site(mock, big=_png(2000, 1500), small=_png(40, 40)):
     big = _pad(big, 300_000)
     mock.get(ROBOTS).mock(return_value=httpx.Response(200, text="User-agent: *\nDisallow:\n"))
@@ -331,3 +356,68 @@ class TestDataSourceReflectsWhatWasActuallyDone:
                                      CrawlSettings(crawl_delay_ms=0, max_pages=5))
         assert all(i.data_source != "full_fetch" for i in result.images), (
             "an image the budget never reached is recorded as fully fetched")
+
+
+class TestTheShippedBoundsAreTheOnesTested:
+    """The caps were exercised only at patched values.
+
+    The byte budget was tested at 1 byte and the per-image cap at 200 KB,
+    against shipped defaults of 48 MB and 12 MB; `_IMAGE_DIMENSION_MAX_COUNT`
+    and `_IMAGE_DIMENSION_BUDGET_S` had no test at all. That proves the
+    mechanism and says nothing about the numbers actually shipped (P9) — a
+    default could be edited to 0, or to something that never binds, and the
+    suite would not notice.
+    """
+
+    def test_im1_shipped_defaults_are_exactly_these(self):
+        """Exact values, not a floor (P29). Changing one is then a deliberate
+        edit here, with thresholds.md updated in the same change."""
+        from api.crawler import engine as eng
+        assert eng._IMAGE_DIMENSION_TOTAL_BYTES == 48 * 1024 * 1024
+        assert eng._IMAGE_DIMENSION_MAX_BYTES == 12 * 1024 * 1024
+        assert eng._IMAGE_DIMENSION_MAX_COUNT == 150
+        assert eng._IMAGE_DIMENSION_BUDGET_S == 45
+        assert eng._IMAGE_DIMENSION_TIMEOUT_S == 8
+        assert eng._IMAGE_DIMENSION_CONCURRENCY == 6
+        assert eng._IMAGE_DIMENSION_UNKNOWN_SIZE == 150 * 1024
+
+    def test_im1_the_count_cap_matches_the_per_job_image_cap(self):
+        """They are separate env vars. If the URL cap is raised above the
+        dimension count cap, the count cap starts binding silently — which is
+        fine, but its skips must be counted separately so the log can say
+        which bound stopped the pass. This pins the relationship."""
+        import os
+
+        from api.crawler import engine as eng
+        url_cap = int(os.getenv("TT_IMAGE_URL_CAP_PER_JOB", "150"))
+        assert eng._IMAGE_DIMENSION_MAX_COUNT == url_cap, (
+            f"the dimension count cap ({eng._IMAGE_DIMENSION_MAX_COUNT}) no "
+            f"longer matches the per-job image cap ({url_cap}). That is "
+            f"allowed, but skipped_count_cap then becomes load-bearing and "
+            f"thresholds.md must say so.")
+
+    def test_im1_the_budget_admits_a_realistic_site_whole(self):
+        """The reference site is 72 images totalling 6.0 MB. A budget that
+        cannot admit a real small-nonprofit site would make the disclosure
+        fire on every crawl, which is how a cap becomes noise."""
+        from api.crawler import engine as eng
+        typical_site_bytes = 6 * 1024 * 1024
+        typical_site_images = 72
+        assert eng._IMAGE_DIMENSION_TOTAL_BYTES >= typical_site_bytes * 4, (
+            "the byte budget cannot comfortably admit a typical nonprofit site")
+        assert eng._IMAGE_DIMENSION_MAX_COUNT >= typical_site_images, (
+            "the count cap would truncate a typical nonprofit site")
+
+    @pytest.mark.asyncio
+    async def test_im1_the_shipped_budget_does_not_truncate_a_typical_site(self):
+        """End to end at the REAL defaults, with no patching: a site of ordinary
+        size must come back fully measured and disclose no shortfall."""
+        with respx.mock:
+            _mock_many_images(respx.mock, count=40, w=300, h=200)
+            result = await run_crawl("caps", BASE,
+                                     CrawlSettings(crawl_delay_ms=0, max_pages=3))
+        assert result.images_measurable == 40, (
+            f"expected 40 images, got {result.images_measurable}")
+        assert result.images_measured == 40, (
+            f"the shipped defaults truncated an ordinary site: measured "
+            f"{result.images_measured} of {result.images_measurable}")
