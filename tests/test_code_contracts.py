@@ -1217,6 +1217,39 @@ def _fresh_table(robots_text):
         return _run_robots(robots_text)
 
 
+def _run_citation_sources(inp):
+    """inp = (pages, inaccessible_urls) — the post-crawl accessibility pass."""
+    from api.crawler.issue_checker import citation_source_issues
+    pages, inaccessible = inp
+    return citation_source_issues(pages, inaccessible)
+
+
+def _pdf_page(title=None, subject=None):
+    """A real PDF parsed the way the crawler parses one (AF5)."""
+    import io
+
+    import pypdf
+
+    from api.crawler.fetcher import FetchResult
+    from api.crawler.parser import parse_page as _pp
+
+    writer = pypdf.PdfWriter()
+    writer.add_blank_page(width=200, height=200)
+    meta = {}
+    if title:
+        meta["/Title"] = title
+    if subject:
+        meta["/Subject"] = subject
+    if meta:
+        writer.add_metadata(meta)
+    buf = io.BytesIO()
+    writer.write(buf)
+    return _pp(FetchResult(url=f"{BASE}a.pdf", final_url=f"{BASE}a.pdf", status_code=200,
+                           headers={}, html=None, content=buf.getvalue(),
+                           content_type="application/pdf"), BASE)
+
+
+RUNNERS["citation_sources"] = _run_citation_sources
 RUNNERS["robots_stale"] = lambda inp: _stale_table(inp)
 RUNNERS["robots_fresh"] = lambda inp: _fresh_table(inp)
 
@@ -1232,6 +1265,43 @@ CONTRACTS += [
 # so both fixtures use the same input and differ only in the pinned review date.
 CONTRACTS += [
     ("AI_BOT_TABLE_STALE", lambda: _ROBOTS_OK, lambda: _ROBOTS_OK, "robots_stale"),
+]
+
+CONTRACTS += [
+    ("CITATIONS_SOURCES_INACCESSIBLE",
+     lambda: ([page(body="<h1>H</h1><p>According to the "
+                        "<a href='https://who.int/report'>WHO report</a>, "
+                        f"{_W(500)}</p>")], {"https://who.int/report"}),
+     lambda: ([page(body="<h1>H</h1><p>According to the "
+                        "<a href='https://who.int/report'>WHO report</a>, "
+                        f"{_W(500)}</p>")], set()), "citation_sources"),
+    ("DOCUMENT_PROPS_MISSING",
+     # AF5: reachable again now the PDF branch sits above parse_page's
+     # non-HTML early return.
+     lambda: _pdf_page(),
+     lambda: _pdf_page(title="A Policy Document", subject="Student policy summary")),
+]
+
+CONTRACTS += [
+    ("BOILERPLATE_RATIO_HIGH",
+     lambda: [page(url=BASE + str(i),
+                   body=f"<h1>P{i}</h1><p>"
+                        + " ".join(["shared boilerplate sentence about the organisation "
+                                    "and its services"] * 40)
+                        + f"</p><p>unique text {i}</p>") for i in range(4)],
+     lambda: [page(url=BASE + str(i),
+                   body=f"<h1>P{i}</h1><p>"
+                        + " ".join(f"distinct{i}term{j}" for j in range(300))
+                        + "</p>") for i in range(4)], "cross"),
+    ("GEO_SUMMARY_BURIED",
+     # "Buried" is POSITIONAL depth among the section's siblings, not page
+     # position and not DOM nesting: three non-content nodes sit between the
+     # question and its answer (threshold is 3).
+     lambda: page(body="<h1>H</h1><h2>What is differentiation?</h2>"
+                       "<figure></figure><div class='ad'></div><img src='/a.jpg' alt='A photo'>"
+                       f"<p>Differentiation is staying connected. {_W(300)}</p>"),
+     lambda: page(body="<h1>H</h1><h2>What is differentiation?</h2>"
+                       f"<p>Differentiation is staying connected. {_W(300)}</p>")),
 ]
 
 CONTRACT_CODES = {c[0] for c in CONTRACTS}
