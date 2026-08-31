@@ -49,6 +49,14 @@ def page(body: str = "", head: str = "", url: str = BASE, **kw):
         BASE, is_homepage=(url == BASE))
 
 
+def _fetch_asset(content_type: str, size: int):
+    """A FetchResult for a non-HTML asset, as the engine hands it to check_asset."""
+    from api.crawler.fetcher import FetchResult
+    return FetchResult(url=f"{BASE}a.pdf", final_url=f"{BASE}a.pdf", status_code=200,
+                       headers={"content-length": str(size)}, html=None,
+                       content_type=content_type, response_size_bytes=size)
+
+
 def _with(obj, **attrs):
     """Set attributes the ENGINE assigns after parsing (last_modified, depth)."""
     for k, v in attrs.items():
@@ -108,8 +116,56 @@ def _run_robots(inp):
     return check_ai_bot_access(RobotsData(parser, delay, sitemaps, inp), BASE.rstrip("/"))
 
 
+def _run_asset(inp):
+    """inp = FetchResult for a non-HTML asset (PDF/image)."""
+    from api.crawler.checkers.images import check_asset
+    return check_asset(inp, img_size_limit_kb=200)
+
+
+def _run_engine(inp):
+    """inp = a callable that registers respx mocks; returns the crawl's issues.
+
+    Several codes are emitted by the ENGINE, not by any checker — redirect
+    loops, login redirects, timeouts, www canonicalisation, robots blocks, the
+    llms.txt / ai.txt probes. They are only reachable through a real crawl, so
+    the contract runs one against mocked HTTP.
+    """
+    import asyncio
+
+    import respx
+
+    from api.crawler.engine import CrawlSettings, run_crawl
+
+    async def _go():
+        with respx.mock:
+            inp(respx.mock)
+            result = await run_crawl("contract", BASE,
+                                     CrawlSettings(crawl_delay_ms=0, max_pages=10))
+        return result.issues
+
+    return asyncio.run(_go())
+
+
 RUNNERS = {"page": _run_page, "url": _run_url, "image": _run_image, "cross": _run_cross,
-           "redirect": _run_redirect, "status": _run_status, "robots": _run_robots}
+           "redirect": _run_redirect, "status": _run_status, "robots": _run_robots,
+           "asset": _run_asset, "engine": _run_engine}
+
+
+# ── Engine-runner helpers ──────────────────────────────────────────────────
+_OK_ROBOTS = "User-agent: *\nDisallow:\n"
+_OK_HTML = ("<!DOCTYPE html><html lang='en'><head><title>A Page With A Good Long Title</title>"
+            "<meta name='description' content='A description long enough to pass the checks here.'>"
+            "</head><body><h1>H</h1><p>" + " ".join(["word"] * 80) + "</p></body></html>")
+
+
+def _engine_base(mock, *, robots=_OK_ROBOTS, home=None):
+    """Register the three probes every crawl makes, then the homepage."""
+    import httpx
+    mock.get("https://example.com/robots.txt").mock(return_value=httpx.Response(200, text=robots))
+    mock.get("https://example.com/sitemap.xml").mock(return_value=httpx.Response(404))
+    mock.get(BASE).mock(return_value=(home or httpx.Response(
+        200, text=_OK_HTML, headers={"content-type": "text/html"})))
+    return mock
 
 
 def img(**kw):
@@ -529,6 +585,166 @@ CONTRACTS += [
      lambda: page(),
      lambda: page(head="<script async src='https://www.googletagmanager.com/gtag/js?id=G-AAA111'>"
                        "</script><script>gtag('config','G-AAA111');</script>")),
+]
+
+# ── Fifth tranche: page/image/redirect codes with clear correct-input cases ──
+_LONG = " ".join(["word"] * 700)
+_TECH_LD = ("<script type='application/ld+json'>"
+            '{"@context":"https://schema.org","@type":"TechArticle","headline":"X"}</script>')
+
+CONTRACTS += [
+    # Suppressed when IMG_OVERSIZED already explains the size, so the positive
+    # must be dense-per-pixel WITHOUT tripping the oversize limit.
+    ("IMG_POOR_COMPRESSION",
+     lambda: img(width=200, height=150, file_size_bytes=190_000, format="jpeg"),
+     lambda: img(width=1600, height=1200, file_size_bytes=190_000, format="jpeg"), "image"),
+    ("IMG_SLOW_LOAD",
+     lambda: img(load_time_ms=9000, file_size_bytes=50_000),
+     lambda: img(load_time_ms=120, file_size_bytes=50_000), "image"),
+    ("REDIRECT_CASE_NORMALISE",
+     lambda: (f"{BASE}Cased", 301, [f"{BASE}cased"], f"{BASE}cased"),
+     lambda: (f"{BASE}old", 301, [f"{BASE}totally-different"], f"{BASE}totally-different"),
+     "redirect"),
+    ("REDIRECT_TRAILING_SLASH",
+     lambda: (f"{BASE}about", 301, [f"{BASE}about/"], f"{BASE}about/"),
+     lambda: (f"{BASE}old", 301, [f"{BASE}new"], f"{BASE}new"), "redirect"),
+
+
+
+    ("HIGH_CRAWL_DEPTH",
+     lambda: _with(page(), crawl_depth=7),
+     lambda: _with(page(), crawl_depth=2)),
+    ("CODE_BLOCK_MISSING_TECHNICAL",
+     lambda: page(head=_TECH_LD, url="https://example.com/tutorial/setup",
+                  body=f"<h1>Setup</h1><ol><li>Install</li><li>Configure</li></ol><p>{_LONG}</p>"),
+     lambda: page(head=_TECH_LD, url="https://example.com/tutorial/setup",
+                  body=f"<h1>Setup</h1><ol><li>Install</li><li>Configure</li></ol>"
+                       f"<pre><code>pip install thing</code></pre><p>{_LONG}</p>")),
+    ("AI_NO_VISUAL_COMPANION",
+     lambda: page(url="https://example.com/blog/post", head=_ARTICLE,
+                  body=f"<h1>H</h1><p>{_LONG}</p>"),
+     lambda: page(url="https://example.com/blog/post", head=_ARTICLE,
+                  body=f"<h1>H</h1><img src='/a.jpg' alt='A described photo'><p>{_LONG}</p>")),
+    ("BLOG_SECTIONS_MISSING",
+     lambda: page(url="https://example.com/blog/post", body=f"<h1>Post</h1><p>{_LONG}</p>"),
+     lambda: page(url="https://example.com/blog/post",
+                  body="<h1>Post</h1>" + "".join(
+                      f"<h2>Section {i} heading</h2><p>{' '.join(['word'] * 120)}</p>"
+                      for i in range(4)))),
+    ("CONTACT_INFO_NOT_IN_HTML",
+     lambda: page(url=BASE, body=f"<h1>Home</h1><p>{_LONG}</p>"),
+     lambda: page(url=BASE,
+                  body=f"<h1>Home</h1><a href='mailto:info@example.com'>Email us</a><p>{_LONG}</p>")),
+    # "no headings" means ZERO headings of any level — an <h1> counts.
+    ("CONTENT_UNSTRUCTURED",
+     lambda: page(body=f"<p>{_LONG}</p>"),
+     lambda: page(body="<h1>H</h1>" + "".join(
+         f"<h2>Section {i}</h2><p>{' '.join(['word'] * 120)}</p>" for i in range(5)))),
+    ("CONTENT_IMAGE_HEAVY",
+     lambda: page(body="<h1>H</h1>" + "".join(
+         f"<img src='/i{i}.jpg' alt='A described photo {i}'>" for i in range(20))
+         + f"<p>{' '.join(['word'] * 320)}</p>"),
+     lambda: page(body="<h1>H</h1>" + "".join(
+         f"<h2>Section {i}</h2><p>{' '.join(['word'] * 120)}</p>" for i in range(5))
+         + "<img src='/i.jpg' alt='A described photo'>")),
+
+
+    # check_asset takes a FetchResult, not an ImageInfo.
+    ("PDF_TOO_LARGE",
+     lambda: _fetch_asset("application/pdf", 20_000_000),
+     lambda: _fetch_asset("application/pdf", 200_000), "asset"),
+]
+
+# ── Engine-driven codes (runner="engine") ──────────────────────────────────
+# Emitted by run_crawl itself, so the contract runs a real crawl against mocked
+# HTTP. The fixture is a callable that registers the mocks.
+import httpx as _httpx   # noqa: E402  (test-local, keeps the fixtures readable)
+
+
+def _eng(setup):
+    return lambda: setup
+
+
+def _loop(mock):
+    _engine_base(mock)
+    mock.get(f"{BASE}a").mock(return_value=_httpx.Response(301, headers={"location": f"{BASE}b"}))
+    mock.get(f"{BASE}b").mock(return_value=_httpx.Response(301, headers={"location": f"{BASE}a"}))
+    mock.get(BASE).mock(return_value=_httpx.Response(
+        200, text=_OK_HTML.replace("<h1>H</h1>", f"<h1>H</h1><a href='{BASE}a'>loop</a>"),
+        headers={"content-type": "text/html"}))
+
+
+def _no_loop(mock):
+    _engine_base(mock)
+    mock.get(f"{BASE}a").mock(return_value=_httpx.Response(
+        200, text=_OK_HTML, headers={"content-type": "text/html"}))
+    mock.get(BASE).mock(return_value=_httpx.Response(
+        200, text=_OK_HTML.replace("<h1>H</h1>", f"<h1>H</h1><a href='{BASE}a'>ok</a>"),
+        headers={"content-type": "text/html"}))
+
+
+def _login_redirect(mock):
+    _engine_base(mock)
+    mock.get(f"{BASE}members").mock(return_value=_httpx.Response(
+        302, headers={"location": f"{BASE}wp-login.php?redirect_to=/members"}))
+    mock.get(f"{BASE}wp-login.php").mock(return_value=_httpx.Response(
+        200, text=_OK_HTML, headers={"content-type": "text/html"}))
+    mock.get(BASE).mock(return_value=_httpx.Response(
+        200, text=_OK_HTML.replace("<h1>H</h1>", f"<h1>H</h1><a href='{BASE}members'>Members</a>"),
+        headers={"content-type": "text/html"}))
+
+
+def _robots_blocked(mock):
+    _engine_base(mock, robots="User-agent: *\nDisallow: /private/\n")
+    mock.get(f"{BASE}private/x").mock(return_value=_httpx.Response(
+        200, text=_OK_HTML, headers={"content-type": "text/html"}))
+    mock.get(BASE).mock(return_value=_httpx.Response(
+        200, text=_OK_HTML.replace("<h1>H</h1>", f"<h1>H</h1><a href='{BASE}private/x'>P</a>"),
+        headers={"content-type": "text/html"}))
+
+
+def _sitemap_missing(mock):
+    _engine_base(mock)
+
+
+def _sitemap_present(mock):
+    _engine_base(mock)
+    mock.get("https://example.com/sitemap.xml").mock(return_value=_httpx.Response(
+        200, headers={"content-type": "application/xml"},
+        text=('<?xml version="1.0"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'
+              f"<url><loc>{BASE}</loc></url></urlset>")))
+
+
+def _llms_missing(mock):
+    _engine_base(mock)
+    mock.get("https://example.com/llms.txt").mock(return_value=_httpx.Response(404))
+
+
+def _llms_present(mock):
+    _engine_base(mock)
+    mock.get("https://example.com/llms.txt").mock(return_value=_httpx.Response(
+        200, text="# Example\n\n## Docs\n- [Home](https://example.com/): the homepage\n",
+        headers={"content-type": "text/plain"}))
+
+
+def _ai_txt_missing(mock):
+    _engine_base(mock)
+    mock.get("https://example.com/ai.txt").mock(return_value=_httpx.Response(404))
+
+
+def _ai_txt_present(mock):
+    _engine_base(mock)
+    mock.get("https://example.com/ai.txt").mock(return_value=_httpx.Response(
+        200, text="User-agent: *\nAllow: /\n", headers={"content-type": "text/plain"}))
+
+
+CONTRACTS += [
+    ("REDIRECT_LOOP", _eng(_loop), _eng(_no_loop), "engine"),
+    ("LOGIN_REDIRECT", _eng(_login_redirect), _eng(_no_loop), "engine"),
+    ("ROBOTS_BLOCKED", _eng(_robots_blocked), _eng(_no_loop), "engine"),
+    ("SITEMAP_MISSING", _eng(_sitemap_missing), _eng(_sitemap_present), "engine"),
+    ("LLMS_TXT_MISSING", _eng(_llms_missing), _eng(_llms_present), "engine"),
+    ("AI_TXT_MISSING", _eng(_ai_txt_missing), _eng(_ai_txt_present), "engine"),
 ]
 
 CONTRACT_CODES = {c[0] for c in CONTRACTS}
