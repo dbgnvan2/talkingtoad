@@ -21,6 +21,7 @@ import io
 import logging
 import math
 from dataclasses import dataclass, field
+from pathlib import Path as _PathLib
 from datetime import datetime, timezone
 from typing import Any
 from uuid import uuid4
@@ -181,6 +182,7 @@ async def _fetch_and_check_page(
     suppress_h1_strings: list[str] | None = None,
     suppress_banner_h1: bool = True,
     bypass_cache: bool = False,
+    authenticated: bool = False,
 ) -> _PageCheckResult | JSONResponse:
     """Fetch a URL, parse it, run issue checks and external link checks.
 
@@ -204,13 +206,38 @@ async def _fetch_and_check_page(
     is_homepage = url.rstrip("/") == base_url.rstrip("/")
 
     # ── Fetch ─────────────────────────────────────────────────────────
-    try:
-        async with make_client() as client:
-            result = await fetch_page(
-                url, client, timeout=_RESCAN_TIMEOUT, bypass_cache=bypass_cache,
+    # D1 — an unpublished page returns 404 to anyone not logged in, so auditing
+    # a draft before publishing needs an authenticated fetch. Opt-in per scan,
+    # single page only: run_crawl must keep making no authenticated calls (the
+    # architecture test forbids it, and a site-wide authenticated crawl would
+    # audit content no search engine can see, silently changing what the health
+    # score means).
+    # Spec:  docs/functional-specification.md (D1)
+    # Tests: tests/test_draft_scanning.py
+    if authenticated is True:
+        from api.routers.fixes_shared import _validate_wp_domain_for_url
+
+        domain_err = _validate_wp_domain_for_url(url)
+        if domain_err is not None:
+            return domain_err
+        try:
+            result = await _fetch_page_as_logged_in_user(
+                url, bypass_cache=bypass_cache)
+        except Exception as exc:
+            return _err(
+                "WP_AUTH_ERROR",
+                f"Could not sign in to WordPress to read this page: {exc}",
+                502,
             )
-    except Exception as exc:
-        return _err("FETCH_ERROR", str(exc), 500)
+    else:
+        try:
+            async with make_client() as client:
+                result = await fetch_page(
+                    url, client, timeout=_RESCAN_TIMEOUT,
+                    bypass_cache=bypass_cache,
+                )
+        except Exception as exc:
+            return _err("FETCH_ERROR", str(exc), 500)
 
     if result.status_code == 0:
         error_msg = result.error or "Unknown error"
@@ -234,6 +261,32 @@ async def _fetch_and_check_page(
     # ── Issue checks ──────────────────────────────────────────────────
     exempt_urls = await store.get_exempt_anchor_url_set()
     ignored_img_patterns = await store.get_ignored_image_pattern_list()
+
+    # E1 — an error page is not content. run_crawl already skips SEO checks on
+    # 4xx/5xx and emits the broken-link finding instead; this path did not, so
+    # the same URL was audited or not depending on which button reached it.
+    #
+    # What that produced, on a real report: a 404 for an unpublished post came
+    # back with NOINDEX_META, UNSAFE_CROSS_ORIGIN_LINK and CONSENT_MODE_MISSING
+    # — all describing WordPress's 404 TEMPLATE. The "unsafe cross-origin
+    # links" were the site footer's social icons; the noindex was the 404
+    # template's own, which is correct behaviour for a 404. Every one of them
+    # charged the site's health score for a page that does not exist.
+    #
+    # Spec:  docs/functional-specification.md (E1)
+    # Tests: tests/test_error_pages_not_audited.py
+    if result.status_code >= 400:
+        broken = issue_for_status(result.status_code, url)
+        err_issues = [_engine_issue_to_model(broken, job_id)] if broken else []
+        for issue in err_issues:
+            issue.page_url = url
+        return _PageCheckResult(
+            page=page,
+            fetch_result=result,
+            issues=err_issues,
+            exempt_urls=exempt_urls,
+        )
+
     eng_issues = check_page(
         page,
         suppress_h1_strings=suppress_h1_strings or None,
@@ -293,6 +346,14 @@ async def _fetch_and_check_page(
     eng_issues = collapse_per_target_occurrences(eng_issues)
 
     # ── Convert engine issues → Pydantic models ──────────────────────
+    if authenticated is True:
+        # A draft has no inbound links, is not in the sitemap, and WordPress
+        # marks preview output noindex. Reporting any of those is noise the
+        # owner would have to learn to ignore, and "learning to ignore a
+        # finding" is how a report stops being read.
+        eng_issues = [i for i in eng_issues
+                      if i.code not in _PREPUBLICATION_NOISE_CODES]
+
     # All eng_issues are attributed to this page (`url`) now.
     new_issues = [_engine_issue_to_model(i, job_id) for i in eng_issues]
     for issue in new_issues:
@@ -304,6 +365,63 @@ async def _fetch_and_check_page(
         issues=new_issues,
         exempt_urls=exempt_urls,
     )
+
+
+# D1 — where the WordPress credentials live. A module constant so a test can
+# point it elsewhere without writing to the real file (P28).
+_WP_CREDENTIALS_PATH = _PathLib("wp-credentials.json")
+
+# D1 — codes that are meaningless before a page is published. A draft has no
+# inbound links, is not in the sitemap, and WordPress marks preview output
+# noindex; reporting them on a deliberate draft scan is noise.
+# Spec: docs/functional-specification.md (D1)
+_PREPUBLICATION_NOISE_CODES = frozenset({
+    "ORPHAN_PAGE", "NOT_IN_SITEMAP", "NOINDEX_META",
+})
+
+
+async def _fetch_page_as_logged_in_user(url: str, *, bypass_cache: bool = False):
+    """Fetch *url* with a WordPress logged-in session, so a draft is readable.
+
+    Purpose: audit a page before it is published (D1).
+    Spec:    docs/functional-specification.md (D1)
+    Tests:   tests/test_draft_scanning.py
+
+    The caller MUST have domain-validated the URL first: these are the owner's
+    real WordPress credentials and they must never be sent to another host.
+
+    The session cookies are copied onto an SSRF-guarded client rather than
+    reusing WPClient's own, so the fetch keeps the same start-and-every-hop
+    protection as the rest of the crawler.
+    """
+    from api.services.wp_client import WPClient
+
+    creds_path = _WP_CREDENTIALS_PATH
+    if not creds_path.exists():
+        raise RuntimeError(
+            "wp-credentials.json not found — an authenticated scan needs "
+            "WordPress credentials for this site."
+        )
+    import json as _json
+
+    with open(creds_path) as fh:
+        creds = _json.load(fh)
+
+    async with WPClient(
+        site_url=creds["site_url"],
+        login_url=creds["login_url"],
+        username=creds["username"],
+        password=creds["password"],
+    ) as wp:
+        await wp.login()
+        cookies = {c.name: c.value for c in wp._client.cookies.jar}
+
+    async with make_ssrf_guarded_client() as client:
+        for name, value in cookies.items():
+            client.cookies.set(name, value)
+        return await fetch_page(
+            url, client, timeout=_RESCAN_TIMEOUT, bypass_cache=bypass_cache,
+        )
 
 
 # ── Background crawl task ──────────────────────────────────────────────────
@@ -1175,6 +1293,15 @@ async def rescan_url(
 @router.post("/scan-page", response_model=None)
 async def scan_single_page(
     url: str = Query(..., description="The page URL to fetch and analyse"),
+    authenticated: bool = Query(
+        False,
+        description=(
+            "Sign in to WordPress before fetching, so an unpublished draft can "
+            "be audited before it goes live. Single page only; a draft is "
+            "invisible to search engines, so its findings are pre-publication "
+            "advice, not an audit of anything live."
+        ),
+    ),
     store=Depends(get_store),
 ) -> dict | JSONResponse:
     """Create a new single-page job, fetch the URL, run issue checks, and return the job_id.
@@ -1236,6 +1363,7 @@ async def scan_single_page(
         suppress_h1_strings=suppress_h1s,
         suppress_banner_h1=suppress_banner,
         bypass_cache=False,
+        authenticated=authenticated,
     )
     if isinstance(check, JSONResponse):
         await store.update_job(job_id, status="failed", error_message="Fetch/parse failed")
@@ -1371,7 +1499,24 @@ async def scan_single_page(
 
     logger.info("scan_page_complete", extra={"job_id": job_id, "url": url, "issues": len(new_issues), "images": len(all_images)})
 
-    return {"job_id": job_id, "status": "complete", "url": url, "issues": len(new_issues)}
+    resp = {"job_id": job_id, "status": "complete", "url": url,
+            "issues": len(new_issues)}
+    if authenticated is True:
+        # D1 — say what this scan was, in the response. A draft is invisible to
+        # search engines, so these findings are pre-publication advice, not an
+        # audit of anything live; a reader who cannot tell the two apart will
+        # read a clean draft as a clean page.
+        resp["authenticated_scan"] = True
+        resp["visibility"] = "not-public"
+        resp["suppressed_codes"] = sorted(_PREPUBLICATION_NOISE_CODES)
+        resp["caveat"] = (
+            "Signed in to WordPress to read this page, so it may not be "
+            "published. Search engines cannot see it: these findings are "
+            "pre-publication advice, not a measurement of live SEO. "
+            "ORPHAN_PAGE, NOT_IN_SITEMAP and NOINDEX_META are suppressed "
+            "because they are meaningless before publication."
+        )
+    return resp
 
 
 @router.post("/{job_id}/mark-fixed", response_model=None)

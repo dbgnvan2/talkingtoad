@@ -1035,6 +1035,44 @@ override field and all seven of its uses are gone, and
 maintained beside it, so the two cannot disagree.
 → `tests/test_confidence_single_source.py`.
 
+**E1 — an error page is not content, on every path that can reach it.** A scoped
+scan reported an unpublished post's URL as a regular page carrying
+`NOINDEX_META`, `UNSAFE_CROSS_ORIGIN_LINK` and `CONSENT_MODE_MISSING`. The URL
+returns 404, and every finding described WordPress's **404 template** — the
+"unsafe cross-origin links" were the site footer's social icons, and the
+`noindex` was the 404 template's own, which is correct for a 404. All of them
+charged the health score for a page that does not exist.
+
+`run_crawl` had always guarded this. `_fetch_and_check_page` — the rescan and
+single-page path behind `scan_single_page` and the per-page rescan button —
+guarded only `status_code == 0` (a network failure) and then ran `check_page`
+unconditionally, so the same URL was audited or not depending on which button
+reached it. It now returns the `BROKEN_LINK_*` finding alone for any response
+`>= 400`, matching the crawl. The repo already pinned the two paths to agree on
+*broken links*; nothing had pinned them to agree on *the page itself*.
+→ `tests/test_error_pages_not_audited.py`.
+
+**D1 — scanning a draft on purpose.** An unpublished page returns 404 to anyone
+not signed in, so auditing one before publication needs an authenticated fetch:
+`POST /api/crawl/scan-page?url=…&authenticated=true`. It reuses the existing
+`WPClient` cookie login and copies the session cookies onto an SSRF-guarded
+client, so the fetch keeps start-and-every-hop protection.
+`_validate_wp_domain_for_url` is mandatory — the credentials belong to one site
+and must never be sent to another.
+
+Single page only, and deliberately not available for a whole-site crawl: the
+architecture test forbids WP API calls during a scan, and a site-wide
+authenticated crawl would audit content no search engine can see, silently
+changing what the health score means.
+
+The response says what the scan was — `authenticated_scan: true`,
+`visibility: "not-public"`, and a caveat that the findings are pre-publication
+advice rather than a measurement of live SEO. `ORPHAN_PAGE`, `NOT_IN_SITEMAP`
+and `NOINDEX_META` are suppressed and listed as suppressed: a draft has no
+inbound links, is not in the sitemap, and WordPress marks preview output
+noindex, so reporting them would be noise the owner must learn to ignore.
+→ `tests/test_draft_scanning.py`.
+
 **E2 — broken-link source attribution.** `external_targets_seen` and
 `discovered_from.setdefault` retained only the first page linking to each broken
 target, so 120 broken internal links reported as 10. `external_target_sources`

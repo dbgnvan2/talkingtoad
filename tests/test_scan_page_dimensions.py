@@ -59,7 +59,7 @@ async def _scan(store):
             200, text=PAGE, headers={"content-type": "text/html"}))
         respx.get("https://example.com/hero.png").mock(return_value=httpx.Response(
             200, content=_png(1200, 800), headers={"content-type": "image/png"}))
-        result = await scan_single_page(url=URL, store=store)
+        result = await scan_single_page(url=URL, authenticated=False, store=store)
     job_id = result["job_id"] if isinstance(result, dict) else None
     assert job_id, f"scan did not return a job: {result!r}"
     return job_id
