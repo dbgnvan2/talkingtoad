@@ -1110,6 +1110,41 @@ shipping a disclosure nothing displays is the unwired-disclosure failure of
 2026-08-30.
 → `tests/test_single_page_scan_discloses_inert_checks.py`.
 
+**D3 — the app must import on the Python and dependency set it ships on.** The
+suite passed on the dev interpreter (3.14) while `api.main` could not import at
+all on the pinned one (`Dockerfile`: `python:3.11-slim`), for two independent
+reasons.
+
+`api/routers/advisor.py` annotated `store: SQLiteJobStore` without importing the
+name. Annotations evaluate at def-time before Python 3.14; PEP 649 made them
+lazy in 3.14, so the dev box sees nothing and 3.11 raises `NameError` at import.
+Same class as the 2026-08-13 production bug, whose fix added
+`test_checker_modules_import_before_any_def` — scoped to *checker* modules, so
+routers were never covered.
+
+`api/services/gsc_client.py` imported `google-*` at module level while those
+packages are in neither `requirements.txt` nor the `Dockerfile`, so an optional
+feature's missing library stopped the whole application from starting. **GSC is
+opt-in and local-only** (owner's decision, 2026-08-31): the libraries are
+deliberately not shipped. `gsc_client` now imports them lazily and
+`_require_gsc_configured()` returns the same 503 for an absent library as for an
+absent setting, making the module's stated promise — *"TalkingToad behaves
+exactly as before"* — true for both. `pydantic` is now declared explicitly
+rather than relied on transitively through FastAPI.
+
+Guarded by `tests/test_shipping_runtime_imports.py`, which is **static AST, not
+an import sweep**: a sweep passes on 3.14 and is blind to the entire annotation
+class, so it would have certified this app healthy on the morning it could not
+boot. All 124 modules now import under 3.11 with pinned requirements.
+
+**Still open (not this item):** 28 tests fail under the pinned dependency set.
+`requirements.txt` pins `fastapi~=0.115.0` while development runs 0.136; under
+0.115, `from __future__ import annotations` makes `background_tasks:
+BackgroundTasks` an unresolvable string, so FastAPI treats it as a required
+query parameter and `POST /api/crawl/start` returns 422. Fourteen of eighteen
+pins are violated by the dev venv. Tracked for the CI cycle.
+→ `tests/test_shipping_runtime_imports.py`.
+
 **E2 — broken-link source attribution.** `external_targets_seen` and
 `discovered_from.setdefault` retained only the first page linking to each broken
 target, so 120 broken internal links reported as 10. `external_target_sources`

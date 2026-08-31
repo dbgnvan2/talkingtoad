@@ -4,6 +4,9 @@
 # in particular have had breaking changes between minors; the ~= operator
 # allows patch updates only.
 fastapi~=0.115.0
+# Declared explicitly rather than relied on transitively via fastapi:
+# every api/models module imports it at module level.
+pydantic~=2.7
 uvicorn[standard]~=0.30.0
 
 # HTTP client — also used as async test client via httpx.AsyncClient

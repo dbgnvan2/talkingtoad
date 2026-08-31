@@ -13,14 +13,79 @@ from __future__ import annotations
 import os
 import time
 import logging
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 
-from google.oauth2.credentials import Credentials
-from google_auth_oauthlib.flow import Flow
-from googleapiclient.discovery import build
-from googleapiclient.errors import HttpError
+if TYPE_CHECKING:  # names used only in annotations, which are lazy here
+    from google.oauth2.credentials import Credentials
+    from google_auth_oauthlib.flow import Flow
 
 logger = logging.getLogger(__name__)
+
+
+class GoogleLibrariesUnavailable(RuntimeError):
+    """The google-* packages are not installed.
+
+    GSC is opt-in: this module's docstring in api/routers/gsc.py promises that
+    without GSC configured "TalkingToad behaves exactly as before". That
+    promise was built for absent env vars and, until 2026-08-31, not for absent
+    libraries — google-* is in neither requirements.txt nor the Dockerfile, so
+    importing them at module level meant an optional feature stopped the whole
+    application from starting. Importing lazily makes the stated contract true:
+    a missing library disables GSC and nothing else.
+    """
+
+
+# Populated by _google() on first use. Kept as MODULE-LEVEL names, not
+# function locals, for two reasons: the functions below resolve them at call
+# time (so `mock.patch("api.services.gsc_client.build")` works, which the GSC
+# tests have always relied on), and the import stays lazy so an absent optional
+# package cannot stop the app from starting.
+Flow = None
+build = None
+HttpError = None
+
+
+def google_libraries_available() -> bool:
+    """True if the optional google-* packages can be imported."""
+    try:
+        _google()
+    except GoogleLibrariesUnavailable:
+        return False
+    return True
+
+
+def _google() -> None:
+    """Import the google-* packages on demand, binding the module-level names.
+
+    Raises GoogleLibrariesUnavailable rather than ModuleNotFoundError so the
+    router can turn it into the same 503 an unconfigured GSC returns.
+    """
+    global Flow, build, HttpError
+    # Each name is bound independently, and an already-bound name is never
+    # overwritten. Two failure modes this shape avoids, both hit while writing
+    # it: a single "already loaded" flag let the first call inside a
+    # `mock.patch(..., "build")` block import the real library and CLOBBER the
+    # mock (a test then ran live Google client code); and returning early
+    # whenever `build` was set left `HttpError` as None, so `except HttpError`
+    # raised TypeError in the two tests that exercise the error paths.
+    if Flow is not None and build is not None and HttpError is not None:
+        return
+    try:
+        from google_auth_oauthlib.flow import Flow as _Flow
+        from googleapiclient.discovery import build as _build
+        from googleapiclient.errors import HttpError as _HttpError
+    except ModuleNotFoundError as exc:  # pragma: no cover - needs the lib absent
+        raise GoogleLibrariesUnavailable(
+            "Google Search Console support needs google-api-python-client, "
+            "google-auth-oauthlib and google-auth, which are not installed. "
+            "GSC is opt-in and local-only by design; install them to enable it."
+        ) from exc
+    if Flow is None:
+        Flow = _Flow
+    if build is None:
+        build = _build
+    if HttpError is None:
+        HttpError = _HttpError
 
 CLIENT_CONFIG = {
     "web": {
@@ -46,6 +111,7 @@ SCOPES = [
 
 def build_flow(state: Optional[str] = None) -> Flow:
     """Build a Google OAuth flow from CLIENT_CONFIG (env-based, no JSON file)."""
+    _google()
     flow = Flow.from_client_config(CLIENT_CONFIG, scopes=SCOPES)
     redirect_uri = os.environ.get("GSC_OAUTH_REDIRECT_URI", "")
     flow.redirect_uri = redirect_uri
@@ -68,6 +134,7 @@ async def fetch_page_performance(
     Returns list of dicts with keys: url, clicks, impressions, ctr, position.
     Retries up to 5 times on 429/5xx with exponential delay.
     """
+    _google()
     service = build("searchconsole", "v1", credentials=creds, cache_discovery=False)
     end_date = time.strftime("%Y-%m-%d")
     start_date = time.strftime(
@@ -123,6 +190,7 @@ def list_properties(creds: Credentials) -> list[dict]:
     Returns list of dicts: [{site_url, permission_level}, ...].
     Prefer siteOwner properties (frontend/caller decides).
     """
+    _google()
     service = build("searchconsole", "v1", credentials=creds, cache_discovery=False)
     response = service.sites().list().execute()
     return [

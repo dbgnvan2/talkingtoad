@@ -18,6 +18,11 @@ from pydantic import BaseModel
 from api.models.advisor import AdvisorRequest
 from api.models.geo_config import GeoConfig
 from api.routers.crawl import get_store  # v2.3 (M0.5): shared helper; was a duplicate definition
+# Used in the `store:` annotations below. Annotations evaluate at def-time
+# before Python 3.14, so a missing import here is a NameError at import on the
+# 3.11 the Dockerfile pins — not a type-checker nit. Guarded by
+# tests/test_shipping_runtime_imports.py.
+from api.services.job_store import SQLiteJobStore
 from api.services.advisor import evaluate_page
 from api.services.auth import require_auth
 from api.services.rewriter import rewrite_page, RewriterRequest

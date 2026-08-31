@@ -24,7 +24,8 @@ from pydantic import BaseModel
 
 from api.models.performance import PerformanceRecord
 from api.services.auth import require_auth
-from api.services.gsc_client import build_flow, fetch_page_performance, list_properties
+from api.services.gsc_client import (build_flow, fetch_page_performance,
+                                     google_libraries_available, list_properties)
 from api.services.perf_join import build_crawled_key_map, match_key
 from api.services.refresh_trigger import ReviewFlag, evaluate_refresh
 
@@ -49,9 +50,23 @@ def _gsc_env_configured() -> bool:
 
 
 def _require_gsc_configured() -> None:
-    """Raise 503 if GSC env vars are not set (opt-in guarantee)."""
+    """Raise 503 if GSC cannot run (opt-in guarantee).
+
+    Two ways it cannot run, and both must land here. Absent env vars was always
+    covered. Absent google-* libraries was not: they are in neither
+    requirements.txt nor the Dockerfile, and importing them at module level
+    meant this optional feature stopped the whole app from starting rather than
+    disabling itself (fixed 2026-08-31). The module docstring promises that
+    without GSC "TalkingToad behaves exactly as before" — that is only true if
+    a missing library degrades the same way a missing setting does.
+    """
     if not _gsc_env_configured():
         raise HTTPException(status_code=503, detail="GSC not configured")
+    if not google_libraries_available():
+        raise HTTPException(
+            status_code=503,
+            detail="GSC unavailable: the optional google-* packages are not installed",
+        )
 
 
 def _get_store():

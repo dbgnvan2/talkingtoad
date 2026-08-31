@@ -13,6 +13,15 @@ import time
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+
+# GSC is opt-in and local-only: google-* is in neither requirements.txt nor the
+# Dockerfile (owner's decision, 2026-08-31). These tests exercise the real
+# Google client surface, so without the library there is nothing to test —
+# skip, rather than fail and make the shipping-config test run look broken.
+# api.services.gsc_client itself imports google lazily and degrades to a 503,
+# which is covered by tests/test_shipping_runtime_imports.py.
+pytest.importorskip("googleapiclient", reason="optional google-* packages not installed")
+
 from httpx import ASGITransport, AsyncClient
 
 from api.main import app
