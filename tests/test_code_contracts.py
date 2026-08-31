@@ -589,6 +589,7 @@ CONTRACTS += [
 
 # ── Fifth tranche: page/image/redirect codes with clear correct-input cases ──
 _LONG = " ".join(["word"] * 700)
+_REAL = "https://realsite.org/"
 _TECH_LD = ("<script type='application/ld+json'>"
             '{"@context":"https://schema.org","@type":"TechArticle","headline":"X"}</script>')
 
@@ -745,6 +746,162 @@ CONTRACTS += [
     ("SITEMAP_MISSING", _eng(_sitemap_missing), _eng(_sitemap_present), "engine"),
     ("LLMS_TXT_MISSING", _eng(_llms_missing), _eng(_llms_present), "engine"),
     ("AI_TXT_MISSING", _eng(_ai_txt_missing), _eng(_ai_txt_present), "engine"),
+]
+
+# ── Sixth tranche: entity, citation, schema and GEO codes ──────────────────
+def _ld(obj):
+    import json as _json
+    return f"<script type='application/ld+json'>{_json.dumps(obj)}</script>"
+
+
+def _site(head_blocks):
+    """A 3-page site carrying the entity graph on its homepage.
+
+    check_cross_page gates its site-scoped checks on a minimum page count, so a
+    single-page fixture is skipped silently — the first version of these four
+    contracts failed for exactly that reason.
+    """
+    return ([page(url=BASE, head="".join(head_blocks))]
+            + [page(url=BASE + c) for c in ("b", "c")])
+
+
+_ORG_GOOD = {"@context": "https://schema.org", "@type": "LocalBusiness",
+             "name": "Living Systems Counselling",
+             "telephone": "+1 604 555 0100",
+             "address": {"@type": "PostalAddress", "streetAddress": "123 Main St",
+                         "addressLocality": "North Vancouver", "addressRegion": "BC",
+                         "postalCode": "V7M 1A1", "addressCountry": "CA"},
+             "openingHoursSpecification": [
+                 {"@type": "OpeningHoursSpecification", "dayOfWeek": "Monday",
+                  "opens": "09:00", "closes": "17:00"}],
+             "email": "info@livingsystems.ca",
+             "url": "https://example.com/",
+             "logo": "https://example.com/logo.png",
+             "description": "Family systems counselling and training in North Vancouver.",
+             "sameAs": ["https://facebook.com/ls"]}
+
+CONTRACTS += [
+    # _check_entity_values runs AFTER check_cross_page's site-check gate, so it
+    # needs at least _MIN_PAGES_SITE_CHECKS pages — a single-page fixture is
+    # silently skipped. Shapes below match api/config/entity_values.json.
+    ("ENTITY_NAP_INCOMPLETE",
+     lambda: _site([_ld({k: v for k, v in _ORG_GOOD.items()
+                         if k not in ("telephone", "address", "email")})]),
+     lambda: _site([_ld(_ORG_GOOD)]), "cross"),
+    ("ENTITY_VALUE_PLACEHOLDER",
+     lambda: _site([_ld({**_ORG_GOOD, "name": "Your Business Name"})]),
+     lambda: _site([_ld(_ORG_GOOD)]), "cross"),
+    ("ENTITY_FIELD_EMPTY",
+     lambda: _site([_ld({**_ORG_GOOD, "telephone": "", "description": ""})]),
+     lambda: _site([_ld(_ORG_GOOD)]), "cross"),
+    ("ENTITY_HOURS_DEFAULT",
+     # config default_hours: 7 days, 09:00-17:00 — the "never edited it" shape.
+     lambda: _site([_ld({**_ORG_GOOD, "openingHoursSpecification": [
+         {"@type": "OpeningHoursSpecification",
+          "dayOfWeek": ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday",
+                        "Saturday", "Sunday"],
+          "opens": "09:00", "closes": "17:00"}]})]),
+     lambda: _site([_ld({**_ORG_GOOD, "openingHoursSpecification": [
+         {"@type": "OpeningHoursSpecification",
+          "dayOfWeek": ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"],
+          "opens": "08:30", "closes": "16:00"}]})]), "cross"),
+    ("SCHEMA_TYPE_MISMATCH",
+     lambda: page(url="https://example.com/contact-us",
+                  head=_ld({"@context": "https://schema.org", "@type": "Recipe",
+                            "name": "Not a contact page"})),
+     lambda: page(url="https://example.com/contact-us",
+                  head=_ld({"@context": "https://schema.org", "@type": "ContactPage",
+                            "name": "Contact"}))),
+    ("SCHEMA_VISIBLE_MISMATCH",
+     lambda: page(head=_ld({"@context": "https://schema.org", "@type": "Article",
+                            "headline": "A headline that appears nowhere on the page"}),
+                  body=f"<h1>Something Entirely Different</h1><p>{_FILLER}</p>"),
+     lambda: page(head=_ld({"@context": "https://schema.org", "@type": "Article",
+                            "headline": "Bowen Family Systems Training"}),
+                  body=f"<h1>Bowen Family Systems Training</h1><p>{_FILLER}</p>")),
+    ("AUTHOR_CREDENTIALS_MISSING",
+     lambda: page(url=_BLOG, head=_ld({"@context": "https://schema.org", "@type": "Article",
+                                       "headline": "X", "datePublished": "2026-01-01",
+                                       "dateModified": "2026-06-01",
+                                       "author": {"@type": "Person", "name": "Dave Galloway"}})),
+     lambda: page(url=_BLOG, head=_ld({"@context": "https://schema.org", "@type": "Article",
+                                       "headline": "X", "datePublished": "2026-01-01",
+                                       "dateModified": "2026-06-01",
+                                       "author": {"@type": "Person", "name": "Dave Galloway",
+                                                  "jobTitle": "Clinical Counsellor",
+                                                  "url": "https://example.com/team/dave",
+                                                  "sameAs": ["https://linkedin.com/in/dave"]}}))),
+    ("CONTENT_STAT_OUTDATED",
+     lambda: page(body=f"<h1>H</h1><p>In 2011, 62% of clients reported change.</p><p>{_FILLER}</p>"),
+     lambda: page(body=f"<h1>H</h1><p>In 2026, 62% of clients reported change.</p><p>{_FILLER}</p>")),
+    ("LINK_STACKED_DUPLICATE",
+     lambda: page(body=f"<h1>H</h1><div class='card'>"
+                       f"<a href='{BASE}x'><img src='/a.jpg' alt='A photo'></a>"
+                       f"<a href='{BASE}x'><h3>Title</h3></a>"
+                       f"<a href='{BASE}x'>Read more</a></div><p>{_FILLER}</p>"),
+     lambda: page(body=f"<h1>H</h1><div class='card'><a href='{BASE}x'>Title</a>"
+                       f"<a href='{BASE}y'>Another</a></div><p>{_FILLER}</p>")),
+    # BASE is example.com, which is itself in _PLACEHOLDER_HOSTS — so this
+    # contract needs a real-looking base or every link is a "placeholder".
+    ("WRONG_PLACEHOLDER_LINK",
+     lambda: page(url=_REAL, body=f"<h1>H</h1><a href='https://example.com/x'>Link</a>"
+                                  f"<p>{_FILLER}</p>"),
+     lambda: page(url=_REAL, body=f"<h1>H</h1><a href='{_REAL}x'>Link</a><p>{_FILLER}</p>")),
+    ("ORPHAN_CLAIM_TECHNICAL",
+     lambda: page(url="https://example.com/guide/setup",
+                  body="<h1>Guide</h1>"
+                       + "".join("<p>This system supports scaling to many users and "
+                                 "reduces latency for every request.</p>" for _ in range(4))
+                       + f"<p>{_LONG}</p>"),
+     lambda: page(url="https://example.com/guide/setup",
+                  body="<h1>Guide</h1>"
+                       + "".join(f"<p>This system supports scaling to many users, per "
+                                 f"<a href='https://who.int/r{i}'>the report</a>.</p>"
+                                 for i in range(8))
+                       + f"<p>{_LONG}</p>")),
+    ("ANALYTICS_TAG_DUPLICATE",
+     lambda: page(head="<script async src='https://www.googletagmanager.com/gtag/js?id=G-AAA111'>"
+                       "</script><script>gtag('config','G-AAA111');</script>"
+                       "<script async src='https://www.googletagmanager.com/gtag/js?id=G-AAA111'>"
+                       "</script><script>gtag('config','G-AAA111');</script>"),
+     lambda: page(head="<script async src='https://www.googletagmanager.com/gtag/js?id=G-AAA111'>"
+                       "</script><script>gtag('config','G-AAA111');</script>")),
+    ("ANALYTICS_ID_INCONSISTENT",
+     lambda: [page(url=BASE, head="<script async src='https://www.googletagmanager.com/gtag/js?"
+                                  "id=G-AAA111'></script><script>gtag('config','G-AAA111');</script>"),
+              page(url=BASE + "b", head="<script async src='https://www.googletagmanager.com/gtag/js?"
+                                        "id=G-BBB222'></script><script>gtag('config','G-BBB222');</script>")],
+     lambda: [page(url=BASE, head="<script async src='https://www.googletagmanager.com/gtag/js?"
+                                  "id=G-AAA111'></script><script>gtag('config','G-AAA111');</script>"),
+              page(url=BASE + "b", head="<script async src='https://www.googletagmanager.com/gtag/js?"
+                                        "id=G-AAA111'></script><script>gtag('config','G-AAA111');</script>")],
+     "cross"),
+    ("ENTITY_NAME_INCONSISTENT",
+     lambda: [page(url=BASE, head=_ld({**_ORG_GOOD, "name": "Living Systems Counselling"})),
+              page(url=BASE + "b", head=_ld({**_ORG_GOOD, "name": "Totally Different Society"})),
+              page(url=BASE + "c", head=_ld({**_ORG_GOOD, "name": "A Third Distinct Name"}))],
+     lambda: [page(url=BASE, head=_ld(_ORG_GOOD)),
+              page(url=BASE + "b", head=_ld(_ORG_GOOD)),
+              page(url=BASE + "c", head=_ld(_ORG_GOOD))], "cross"),
+    ("AUTHOR_IDENTITY_INCONSISTENT",
+     lambda: [page(url=BASE + str(i), head=_ld({"@context": "https://schema.org",
+                                                "@type": "Article", "headline": "X",
+                                                "author": {"@type": "Person",
+                                                           "name": n, "url": u}}))
+              for i, (n, u) in enumerate([("Dave Galloway", "https://example.com/a"),
+                                          ("Dave Galloway", "https://example.com/b"),
+                                          ("Dave Galloway", "https://example.com/c")])],
+     lambda: [page(url=BASE + str(i), head=_ld({"@context": "https://schema.org",
+                                                "@type": "Article", "headline": "X",
+                                                "author": {"@type": "Person",
+                                                           "name": "Dave Galloway",
+                                                           "url": "https://example.com/a"}}))
+              for i in range(3)], "cross"),
+    ("NEAR_DUPLICATE_BODY",
+     lambda: [page(url=BASE + str(i), body=f"<h1>H</h1><p>{_LONG}</p>") for i in range(3)],
+     lambda: [page(url=BASE + str(i),
+                   body="<h1>H</h1><p>" + " ".join([f"unique{i}word{j}" for j in range(400)])
+                        + "</p>") for i in range(3)], "cross"),
 ]
 
 CONTRACT_CODES = {c[0] for c in CONTRACTS}
