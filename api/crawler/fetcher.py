@@ -65,32 +65,64 @@ def is_ssrf_safe(url: str) -> bool:
 
     Used to block SSRF attacks where a user-supplied URL targets internal
     services (localhost, 169.254.x.x, 10.x.x.x, 192.168.x.x, etc.).
+
+    Resolution failures are NOT one case, and the difference decides the
+    answer:
+
+    * ``gaierror`` — the resolver answered "no such host" (or is down).
+      **Allow.** httpx resolves through the same resolver, so the fetch that
+      follows fails anyway, and denying here would report every dead external
+      link as a security block instead of the broken link it is — link_router
+      checks every outbound link through this function.
+    * any other ``OSError`` — we could not *attempt* the check. ``EMFILE`` /
+      ``ENOMEM`` under load says nothing about the host. **Deny.** This
+      returned True until 2026-08-31, so file-descriptor exhaustion made every
+      URL evaluate as safe at exactly the moment the process was least
+      healthy — and the image passes put this guard on a far hotter path
+      (up to 150 HEADs plus 150 GETs per job), making those conditions much
+      more reachable. An unverifiable URL is not a verified-safe one.
+
+    Neither outcome is cached: both are transient, and caching one would turn a
+    single blip into a whole TTL of unchecked fetches (P1).
     """
+    import time as _time
+
     try:
         hostname = urlparse(url).hostname
-        if not hostname:
-            return False
-        import time as _time
-        now = _time.monotonic()
-        cached = _SSRF_CACHE.get(hostname)
-        if cached and now - cached[0] < _SSRF_CACHE_TTL_S:
-            return cached[1]
-        # Quick check for obvious private hostnames
-        if hostname in ("localhost", "127.0.0.1", "0.0.0.0", "::1"):
-            return False
-        # Resolve and check all addresses
-        for family, _, _, _, sockaddr in socket.getaddrinfo(hostname, None):
-            ip_str = sockaddr[0]
-            if _is_private_ip(ip_str):
-                if len(_SSRF_CACHE) >= _SSRF_CACHE_MAX:
-                    _SSRF_CACHE.clear()
-                _SSRF_CACHE[hostname] = (now, False)
-                return False
-    except (socket.gaierror, OSError):
-        # Can't resolve — allow (will fail at fetch time with a clear error).
-        # NOT cached: a resolver failure is transient, and caching it would
-        # turn one blip into two minutes of unchecked fetches (P1).
+    except ValueError:
+        return False
+    if not hostname:
+        return False
+
+    now = _time.monotonic()
+    cached = _SSRF_CACHE.get(hostname)
+    if cached and now - cached[0] < _SSRF_CACHE_TTL_S:
+        return cached[1]
+
+    # Quick check for obvious private hostnames
+    if hostname in ("localhost", "127.0.0.1", "0.0.0.0", "::1"):
+        return False
+
+    try:
+        infos = socket.getaddrinfo(hostname, None)
+    except socket.gaierror:
+        logger.debug("ssrf_unresolvable", extra={"hostname": hostname})
         return True
+    except OSError as exc:
+        logger.warning(
+            "ssrf_unverifiable",
+            extra={"hostname": hostname, "errno": getattr(exc, "errno", None),
+                   "error": str(exc)},
+        )
+        return False
+
+    for _family, _, _, _, sockaddr in infos:
+        if _is_private_ip(sockaddr[0]):
+            if len(_SSRF_CACHE) >= _SSRF_CACHE_MAX:
+                _SSRF_CACHE.clear()
+            _SSRF_CACHE[hostname] = (now, False)
+            return False
+
     if len(_SSRF_CACHE) >= _SSRF_CACHE_MAX:
         _SSRF_CACHE.clear()
     _SSRF_CACHE[hostname] = (now, True)

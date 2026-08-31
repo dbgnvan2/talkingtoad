@@ -17,6 +17,7 @@ Each test is named so a future regression names itself in the test output.
 
 from __future__ import annotations
 
+import errno
 import socket
 from unittest.mock import patch
 
@@ -209,6 +210,101 @@ class TestIsSsrfSafePublicAllowed:
         """
         with patch("api.crawler.fetcher.socket.getaddrinfo", side_effect=socket.gaierror):
             assert is_ssrf_safe("https://does-not-exist.example.invalid/") is True
+
+
+class TestIsSsrfSafeUnverifiableFailsClosed:
+    """A resolution failure is not one case, and the difference decides the answer.
+
+    `except (socket.gaierror, OSError): return True` treated them as one. The
+    gaierror half is right — httpx shares the resolver, so a dead host fails at
+    fetch time anyway. The other half was a hole: EMFILE/ENOMEM says nothing
+    about the host, and returning True made EVERY url evaluate as safe at
+    exactly the moment the process was least healthy. The image dimension pass
+    put this guard on a far hotter path (up to 150 HEADs plus 150 GETs per job),
+    which is what made those conditions worth closing.
+    """
+
+    def setup_method(self):
+        from api.crawler.fetcher import _SSRF_CACHE
+        _SSRF_CACHE.clear()
+
+    @pytest.mark.parametrize("err", [
+        OSError(errno.EMFILE, "Too many open files"),
+        OSError(errno.ENOMEM, "Cannot allocate memory"),
+        OSError(errno.ENFILE, "Too many open files in system"),
+        PermissionError("sandbox denied the socket"),
+    ])
+    def test_resource_exhaustion_denies_rather_than_allowing(self, err):
+        with patch("api.crawler.fetcher.socket.getaddrinfo", side_effect=err):
+            assert is_ssrf_safe("https://example.com/") is False, (
+                f"{err!r} left the URL evaluating as safe. We could not run "
+                f"the check at all; an unverifiable URL is not a verified one.")
+
+    def test_the_attack_this_closes(self):
+        """Under fd exhaustion, an internal target must not sail through."""
+        with patch("api.crawler.fetcher.socket.getaddrinfo",
+                   side_effect=OSError(errno.EMFILE, "Too many open files")):
+            for url in ("http://169.254.169.254/latest/meta-data/",
+                        "http://10.0.0.5/admin",
+                        "http://192.168.1.1/"):
+                assert is_ssrf_safe(url) is False, (
+                    f"{url} was allowed because the guard could not resolve. "
+                    f"Resource exhaustion is reachable under load, and this is "
+                    f"the moment an internal fetch must not be permitted.")
+
+    def test_a_denial_from_exhaustion_is_not_cached(self):
+        """Transient. Caching it would turn one blip into a whole TTL of
+        wrongly-denied fetches, and the resolution cache exists to save
+        lookups, not to freeze a verdict taken while the process was sick."""
+        from api.crawler.fetcher import _SSRF_CACHE
+        with patch("api.crawler.fetcher.socket.getaddrinfo",
+                   side_effect=OSError(errno.EMFILE, "x")):
+            assert is_ssrf_safe("https://example.com/") is False
+        assert "example.com" not in _SSRF_CACHE, (
+            "a transient failure was written to the resolution cache")
+        # and once the resolver recovers, the host resolves normally
+        fake = [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 0))]
+        with patch("api.crawler.fetcher.socket.getaddrinfo", return_value=fake):
+            assert is_ssrf_safe("https://example.com/") is True
+
+    def test_an_unresolvable_host_is_not_cached_either(self):
+        from api.crawler.fetcher import _SSRF_CACHE
+        with patch("api.crawler.fetcher.socket.getaddrinfo",
+                   side_effect=socket.gaierror):
+            assert is_ssrf_safe("https://gone.invalid/") is True
+        assert "gone.invalid" not in _SSRF_CACHE
+
+
+class TestDeadExternalLinksAreNotReportedAsSecurityBlocks:
+    """Why gaierror must keep ALLOWING, stated as a test.
+
+    link_router checks every outbound link through is_ssrf_safe. Denying on
+    gaierror would turn every dead external domain on a customer's site into
+    "SSRF_BLOCKED: resolves to a private/internal network" — a false and
+    alarming statement about a link that is merely broken. This pins the
+    distinction so a future tightening cannot take the gaierror half with it.
+    """
+
+    def setup_method(self):
+        from api.crawler.fetcher import _SSRF_CACHE
+        _SSRF_CACHE.clear()
+
+    @pytest.mark.asyncio
+    async def test_unresolvable_host_is_a_fetch_failure_not_an_ssrf_block(self):
+        import httpx
+
+        from api.crawler.fetcher import fetch_page
+        with patch("api.crawler.fetcher.socket.getaddrinfo",
+                   side_effect=socket.gaierror):
+            async with httpx.AsyncClient(
+                transport=httpx.MockTransport(
+                    lambda r: (_ for _ in ()).throw(
+                        httpx.ConnectError("name resolution failed")))
+            ) as client:
+                result = await fetch_page("https://gone.invalid/", client)
+        assert "SSRF" not in (result.error or ""), (
+            f"a dead external link was reported as a security block: "
+            f"{result.error!r}")
 
 
 class TestIsSsrfSafeMalformedUrls:

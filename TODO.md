@@ -36,16 +36,17 @@ This file tracks infrastructure improvements, testing gaps, and future features 
 Four independent cold reviews of `6fd86e4..HEAD`. 12 + 14 + 9 + 9 findings; the
 high and medium ones were fixed in the same cycle (see LEARNINGS.md). Deferred:
 
-- [ ] **`is_ssrf_safe` fails OPEN on a non-DNS `OSError`** (`api/crawler/fetcher.py:70`).
-  `except (socket.gaierror, OSError): pass` → `return True`. The `gaierror` half is
-  genuinely harmless (httpx shares the resolver, so an unresolvable host fails at fetch
-  time anyway), and denying it would turn a transient DNS blip into a security-looking
-  block (P1). The hole is the **non-gaierror** `OSError` — `EMFILE`/`ENOMEM` under load
-  makes *every* URL evaluate as safe. Scoped fix: keep the allow for `gaierror`, deny for
-  other `OSError`. Pre-existing and shared by every caller, so it needs its own change
-  and its own blast-radius check. Measured consequence today: the Playwright guard let
-  `ftp://internal.host` and `chrome://settings` through until a scheme allowlist was
-  added — deny-by-accident, not deny-by-design.
+- [x] **`is_ssrf_safe` fails OPEN on a non-DNS `OSError`** — done 2026-08-31. Split the
+  two cases: `gaierror` still allows (httpx shares the resolver, so a dead host fails at
+  fetch time anyway, and denying would report every dead external link as a security
+  block — `link_router` checks every outbound link through this function); any other
+  `OSError` now denies, because `EMFILE`/`ENOMEM` says nothing about the host and
+  returning True made every URL evaluate as safe at exactly the moment the process was
+  least healthy. Neither outcome is cached — both are transient (P1). Guarded on both
+  sides: `tests/test_fetcher.py::TestIsSsrfSafeUnverifiableFailsClosed` fails if it is
+  too loose, `::TestDeadExternalLinksAreNotReportedAsSecurityBlocks` fails if a future
+  tightening takes the `gaierror` half with it. A sweep of every guard-shaped function
+  in `api/` found no other `except → return True`.
 - [ ] **Resolve-then-fetch TOCTOU / DNS rebinding** — `is_ssrf_safe` resolves, then httpx
   resolves again; nothing pins the address. Needs IP pinning via a custom transport, i.e.
   a design change. **Accepted limitation, now wider:** the dimension pass persists
