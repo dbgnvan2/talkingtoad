@@ -58,6 +58,25 @@
 
 ## Open risks (found by review, not yet bitten)
 
+- **`RedisJobStore` is unexercised code, and several docs assert it is production.** The owner
+  has never configured Upstash; `get_job_store()` returns Redis only when
+  `UPSTASH_REDIS_REST_URL` **and** `UPSTASH_REDIS_REST_TOKEN` are both set, so it has always
+  returned SQLite (startup log: `sqlite_store: job_store_init`). Verified divergences, all
+  currently dormant: **10 public methods exist on SQLite and not on Redis** (including
+  `get_exempt_anchor_url_set`, called unconditionally at `crawl.py:443` in `run_crawl_task` —
+  every crawl would raise `AttributeError` on Redis); **10 `CrawlJob` fields are write-only** —
+  `update_job` persists them and `_mapping_to_job` never reads them back, so `phase` returns
+  `'queued'` and the whole `robots_txt_*` / `sitemap_*` family returns `None` after a real
+  round-trip (proven against an in-memory hash); **14 of 40 `CrawledPage` fields** and
+  `Issue.fixability` are not serialised; `list_recent_jobs` / `list_jobs_by_domain` are `[]`
+  stubs. The Redis tests cannot see any of this — they drive an `AsyncMock`, which returns a
+  Mock for any attribute, so a missing method is indistinguishable from a working one (P6).
+  `CLAUDE.md` and `docs/deployment-railway.md` both present Redis as the production store, and
+  the deployment doc's `DATABASE_URL=redis://…` instruction does not match `get_job_store()`,
+  which would treat that value as a **SQLite file path**. Decision pending: delete the backend
+  (removes five contract pairs outright) or bind it with real round-trip parity tests. Until
+  then, treat every "production runs Redis" claim in this file as unverified.
+
 - **New fetches must route through `is_ssrf_safe()`.** Any Phase-2/3 outbound call (PageSpeed
   Insights, render-comparison, competitor crawl, GA4) is a fresh chance to bypass SSRF — wire it in.
 - **Silent display/computation caps.** Several caps protect the crawler but can starve a check or hide
@@ -107,6 +126,14 @@
 ## Fix log
 
 Newest first. Format: **Issue → Root cause → What would have caught it → Fix → Pattern.**
+
+- **2026-08-31 — the documented way to start the backend could not start the backend, and the app answered HTTP 500 on every page (reported by the owner).**
+  - *Issue:* the owner reported 500s across the running app. Nothing in the app was broken. `frontend/vite.config.js` proxies `/api` → `localhost:8000`, and Vite's proxy returns **500** — not a connection error — when nothing is listening there, so a backend that never started is indistinguishable from a backend that crashed. The backend never started because the command in `CLAUDE.md` **cannot work**: `cd api && uvicorn main:app`. `api/main.py:33` imports absolutely (`from api.routers import crawl as crawl_router`), so run from inside `api/` the repo root is not on `sys.path` and the import raises `ModuleNotFoundError: No module named 'api'` before uvicorn binds.
+  - *Root cause:* "how to start the backend" is stated in **four** places — `CLAUDE.md`, `docs/deployment-railway.md`, `docs/specs/core-crawler/v1.4-nonprofit-crawler.md`, `Dockerfile`. Three say `uvicorn api.main:app` and are correct; one drifted. Nothing bound the copies. Identical shape to the 2026-08-07 category-list bug, with one aggravating difference: the drifted copy is **documentation an agent reads as instruction at the top of every session**, so the wrong command is what gets followed and re-suggested.
+  - *What would have caught it:* any test that ran a documented command. There was none — the suite verified the app's behaviour thoroughly and never verified that the app could be started the way the docs say. 3,513 tests, zero of them about startup.
+  - *Fix:* `CLAUDE.md` now carries the same command as the other three, with the reason (absolute imports ⇒ repo root as CWD) beside it so the next edit cannot silently undo it, plus a note that a dead backend presents as 500s. New `tests/test_startup_contract.py` extracts every `uvicorn <target>` from all four sources and **imports each target in a subprocess from its documented working directory** — it does not string-match. A test asserting `target == "api.main:app"` would stay green while the app was unstartable for a different reason (renamed module, broken import inside `main.py`); it would pin the string, not the property. Two tests were red before the fix and green after; three more guard the guard, including one asserting a source that stops yielding commands is a failure rather than a vacuous pass, and two adversarial cases pinning that the wrong target and the wrong CWD genuinely fail — a check that cannot fail proves nothing (P27).
+  - *Two corrections to my own analysis, worth more than the fix:* (a) I reported in a dual-implementation inventory that the router's `check_page` call drifted from the engine's on **four** kwargs. Re-testing before writing the spec, **three did not survive**: `hsts_checked_hosts` and `favicon_emitted` only dedupe *across* pages, so on a single-page scan both paths emit identically, and `page_size_limit_kb` is not a user setting at all — it is an engine-local default of 300 against a checker default of 300, the same number. Only `sitemap_urls` is real drift (`NOT_IN_SITEMAP` is silently dead on the single-page path). A plausible mechanism is not a defect; **check each member of a claimed class before building a spec on the count.** (b) The 2026-08-31 entry below attributes blank robots/sitemap panels to Redis and states "production runs Redis". The owner has never configured Upstash, and the startup log reads `sqlite_store: job_store_init` — `get_job_store()` has always returned SQLite. That root cause is **wrong**, the symptom is still unexplained, and `redis_store.py` is unexercised code (see Open risks).
+  - *Pattern:* **P3/P12** — an instruction mirrored across N sites with no test binding the copies. Plus a new one worth naming: **a repo can test its product exhaustively and never test its own entry point.** Anything a human or agent is told to run is a contract; the test must execute it, not match its text.
 
 - **2026-08-31 — a 404 was audited as a page, and I spent four wrong hypotheses before reading the evidence that was already in the database (reported by the owner).**
   - *Issue:* a scoped scan of the `team_members` post type reported `https://livingsystems.ca/team-members/14528` as a regular page carrying `NOINDEX_META`, `MISSING_HSTS`, `UNSAFE_CROSS_ORIGIN_LINK` and `CONSENT_MODE_MISSING`. The URL returns 404. Every finding described WordPress's **404 template**: the six "unsafe cross-origin links" were the site footer's Facebook/Instagram/LinkedIn icons, and the `noindex, follow` was the 404 template's own, which is correct behaviour for a 404. All four charged the site's health score for a page that does not exist.

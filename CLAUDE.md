@@ -260,8 +260,11 @@ by Claude Code); `LEARNINGS.md` holds the TalkingToad-specific risks and history
 ## Running Locally
 
 ```bash
-# Backend
-cd api && uvicorn main:app --reload --port 8000
+# Backend — from the repo root, NOT from api/.
+# api/main.py imports absolutely (`from api.routers import ...`), so the repo
+# root must be the working directory or the import fails before the server binds.
+# Guarded by tests/test_startup_contract.py.
+uvicorn api.main:app --reload --port 8000
 
 # Frontend
 cd frontend && npm run dev
@@ -269,6 +272,10 @@ cd frontend && npm run dev
 # Tests
 pytest tests/ -v
 ```
+
+> If `uvicorn` is not on your PATH, use `./venv/bin/uvicorn` — the project venv has it;
+> system Python may not. A backend that is not listening on :8000 shows up as **HTTP 500
+> on every page**, because Vite's `/api` proxy returns 500 rather than a connection error.
 
 ---
 
