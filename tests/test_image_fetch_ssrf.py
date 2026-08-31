@@ -105,28 +105,27 @@ class TestGuardedClientRefusesInternalTargets:
 
 
 class TestTheCrawlUsesTheGuardedClient:
-    """Wiring, asserted at the boundary: it is not enough that a guarded client
-    exists somewhere in the module (P25)."""
+    """Wiring, asserted by what the DOWNLOAD actually did.
+
+    The first version of this test asserted that a guarded client was
+    *constructed*. That is not the same claim: leaving the construction intact
+    and handing the dimension pass a bare `httpx.AsyncClient(follow_redirects=
+    True)` left the whole file green. The pass that pulls a full body back
+    could be un-guarded without a single red light (P25 — the assertion sat one
+    layer below the thing it named).
+
+    So this drives a real crawl whose image redirects inward, and asserts the
+    internal target was never requested.
+    """
 
     @pytest.mark.asyncio
-    async def test_ssrf_crawl_image_passes_use_a_guarded_client(self, monkeypatch):
-        import api.crawler.engine as engine
-
-        made: list[str] = []
-        real_guarded = engine.make_ssrf_guarded_client
-
-        def spy_guarded(*a, **kw):
-            made.append("guarded")
-            return real_guarded(*a, **kw)
-
-        monkeypatch.setattr(engine, "make_ssrf_guarded_client", spy_guarded)
-
+    async def test_ssrf_crawl_image_pass_does_not_follow_a_redirect_inward(self):
         page = ("<!DOCTYPE html><html lang='en'><head>"
                 "<title>A Page With A Good Long Title</title>"
                 "<meta name='description' content='A description long enough to "
                 "pass the checks that run here without tripping them.'>"
                 "</head><body><h1>H</h1>"
-                "<img src='/a.png' alt='A described photograph'>"
+                "<img src='/a.png' alt='A described photograph' width='300'>"
                 "<p>" + " ".join(["word"] * 80) + "</p></body></html>")
         with respx.mock:
             respx.get("https://example.com/robots.txt").mock(
@@ -136,12 +135,48 @@ class TestTheCrawlUsesTheGuardedClient:
             respx.get(BASE).mock(return_value=httpx.Response(
                 200, text=page, headers={"content-type": "text/html"}))
             respx.head(f"{BASE}a.png").mock(return_value=httpx.Response(
-                200, headers={"content-type": "image/png", "content-length": "10"}))
+                200, headers={"content-type": "image/png",
+                              "content-length": "120000"}))
+            # the image itself redirects to the cloud metadata service
             respx.get(f"{BASE}a.png").mock(return_value=httpx.Response(
-                200, content=b"x" * 10, headers={"content-type": "image/png"}))
-            await run_crawl("ssrf1", BASE, CrawlSettings(crawl_delay_ms=0, max_pages=3))
+                302, headers={"location": "http://169.254.169.254/creds.png"}))
+            inner = respx.get("http://169.254.169.254/creds.png").mock(
+                return_value=httpx.Response(200, content=_png(300, 200),
+                                            headers={"content-type": "image/png"}))
+            result = await run_crawl("ssrf1", BASE,
+                                     CrawlSettings(crawl_delay_ms=0, max_pages=3))
 
-        assert made, (
-            "the crawl's image passes did not build an SSRF-guarded client. "
-            "Image src values come from crawled HTML and must not be fetched "
-            "with the unguarded crawl client.")
+        assert not inner.called, (
+            "the crawl's dimension pass followed an image redirect to the "
+            "cloud metadata service and pulled the body back")
+        assert result.images_measured == 0, (
+            "something was recorded as measured from a refused fetch")
+
+    @pytest.mark.asyncio
+    async def test_ssrf_crawl_image_pass_still_measures_a_public_image(self):
+        """The guard must not disable the pass it protects."""
+        page = ("<!DOCTYPE html><html lang='en'><head>"
+                "<title>A Page With A Good Long Title</title>"
+                "<meta name='description' content='A description long enough to "
+                "pass the checks that run here without tripping them.'>"
+                "</head><body><h1>H</h1>"
+                "<img src='/ok.png' alt='A described photograph' width='300'>"
+                "<p>" + " ".join(["word"] * 80) + "</p></body></html>")
+        with respx.mock:
+            respx.get("https://example.com/robots.txt").mock(
+                return_value=httpx.Response(200, text="User-agent: *\nDisallow:\n"))
+            respx.get("https://example.com/sitemap.xml").mock(
+                return_value=httpx.Response(404))
+            respx.get(BASE).mock(return_value=httpx.Response(
+                200, text=page, headers={"content-type": "text/html"}))
+            respx.head(f"{BASE}ok.png").mock(return_value=httpx.Response(
+                200, headers={"content-type": "image/png",
+                              "content-length": "9000"}))
+            respx.get(f"{BASE}ok.png").mock(return_value=httpx.Response(
+                200, content=_png(900, 600),
+                headers={"content-type": "image/png"}))
+            result = await run_crawl("ssrf2", BASE,
+                                     CrawlSettings(crawl_delay_ms=0, max_pages=3))
+        assert result.images_measured == 1, "the public image was not measured"
+        img = next(i for i in result.images if i.url.endswith("ok.png"))
+        assert img.width == 900 and img.height == 600

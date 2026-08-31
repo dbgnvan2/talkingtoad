@@ -31,6 +31,71 @@ This file tracks infrastructure improvements, testing gaps, and future features 
 - [ ] **Persistent Settings:** Save the user's preferred PDF export options (Help Text ON/OFF) in localStorage.
 - [ ] **Real-time Log Streaming:** Instead of just a progress bar, show a "Live Console" during the crawl for power users.
 
+### From the 2026-08-30 IM1/V1/SSRF /csdp sweep (4 cold passes: failure-pattern, correctness, security, test-quality)
+
+Four independent cold reviews of `6fd86e4..HEAD`. 12 + 14 + 9 + 9 findings; the
+high and medium ones were fixed in the same cycle (see LEARNINGS.md). Deferred:
+
+- [ ] **`is_ssrf_safe` fails OPEN on a non-DNS `OSError`** (`api/crawler/fetcher.py:70`).
+  `except (socket.gaierror, OSError): pass` → `return True`. The `gaierror` half is
+  genuinely harmless (httpx shares the resolver, so an unresolvable host fails at fetch
+  time anyway), and denying it would turn a transient DNS blip into a security-looking
+  block (P1). The hole is the **non-gaierror** `OSError` — `EMFILE`/`ENOMEM` under load
+  makes *every* URL evaluate as safe. Scoped fix: keep the allow for `gaierror`, deny for
+  other `OSError`. Pre-existing and shared by every caller, so it needs its own change
+  and its own blast-radius check. Measured consequence today: the Playwright guard let
+  `ftp://internal.host` and `chrome://settings` through until a scheme allowlist was
+  added — deny-by-accident, not deny-by-design.
+- [ ] **Resolve-then-fetch TOCTOU / DNS rebinding** — `is_ssrf_safe` resolves, then httpx
+  resolves again; nothing pins the address. Needs IP pinning via a custom transport, i.e.
+  a design change. **Accepted limitation, now wider:** the dimension pass persists
+  `http_status`, `file_size_bytes` and an MD5 of the body, readable back via
+  `GET /api/crawl/{job_id}/images/{url}` — a status/size/content-hash oracle over the
+  container's internal network for an authenticated user crawling their own site.
+- [ ] **Playwright render budget vs the per-request guard** (`js_renderer.py`). Each
+  intercepted request costs a driver round trip plus an uncached `getaddrinfo`;
+  `_PLAYWRIGHT_TIMEOUT_MS` is still 5000 with `wait_until="networkidle"`. An 80-subresource
+  page may now time out, which silently disables `JS_RENDERED_CONTENT_DIFFERS`,
+  `CONTENT_CLOAKING_DETECTED` and `UA_CONTENT_DIFFERS`. **Not measurable here — Playwright
+  is not installed on this machine.** Fix when it can be measured: memoise resolution per
+  hostname, and re-measure the budget with the guard installed.
+- [ ] **`scan_single_page` gets no dimension pass** (`api/routers/crawl.py:1278-1299` still
+  hardcodes `width=None … content_hash=None`). The five image checks stay dead on that
+  entry point, with no disclosure. P25: the capability was added at one front end only.
+  Decide: wire it, or record deliberately that single-page scan does not measure images.
+- [ ] **25 help entries use a superseded confidence vocabulary** — `issueHelp.js` says
+  `Mechanistic` / `Empirical` / `Conventional` where the API says `Established` /
+  `Reasonable proxy` / `Heuristic`. Not drift: they answer "why do we believe this",
+  which V1's `authority.yaml` `basis` now answers properly. Reconciling them is an
+  editorial decision. Named exactly in `tests/test_confidence_help_parity.py::
+  LEGACY_VOCABULARY`, asserted as an exact set so the list cannot quietly grow.
+- [ ] **Citation liveness has no staleness bound.** `url_verification.yaml` records
+  `checked_on` and nothing asserts it, so a source that 404s next month keeps certifying
+  itself. Also: 8 of 56 URLs redirect, two of them to Google's deprecation announcements
+  rather than the cited page; `final_url` is recorded but never compared. Add a max-age
+  assertion and a `final_url` check (or an explicit waiver per URL). No CI job re-runs
+  `scripts/verify_authority_urls.py`.
+- [ ] **`test_authority.py` heuristic-share band is 30–140 against an actual 57** (P29).
+  Self-described as a smoke check; roughly half the heuristics could be re-badged as
+  citations before it notices. Replace with an exact count updated deliberately.
+- [ ] **`test_score_basis.py::_every_category` computes its oracle from the code under
+  test** (P32). Mutating `_ANALYSIS_CATEGORY_MAP` left it green. An independent oracle
+  exists in the repo: `{s.category for s in _CATALOGUE.values()}`.
+- [ ] **Image caps are exercised only at patched values** (P9). `_IMAGE_DIMENSION_MAX_COUNT`
+  (150) and `_IMAGE_DIMENSION_BUDGET_S` (45) have no test at all; the byte caps are tested
+  at 1 byte and 200 KB, not at 48 MB / 12 MB. Also `skipped_oversize` / `skipped_budget`
+  are logged but not folded into `images_measured` / `images_measurable`.
+- [ ] **`IMG_DUPLICATE_CONTENT` vs query-string variants.** Images are deduped by exact URL,
+  so `logo.png` and `logo.png?ver=6.4` are two entries that now hash identically. Real
+  `?fit=` Photon URLs exist in the local DB. Normalise before the duplicate check.
+- [ ] **Measured images still carry `data_source="html_only"`** (`engine.py`), while
+  `sqlite_store` counts `images_analyzed` as `data_source='full_fetch'` — so the image
+  summary reports 0 analyzed for a run in which every image was downloaded and hashed.
+- [ ] **`_render_authority`'s final branch is an unguarded `else`**
+  (`scripts/generate_issue_codes_doc.py`): an unrecognised `basis` renders as "our own
+  judgement" and raises `KeyError` with no rationale. Unreachable today (schema tests
+  enforce the three values); make it explicit anyway.
+
 ## 🟢 Low Priority: Tech Debt
 - [ ] **Type Safety:** Migrate `Results.jsx` and other large components to TypeScript.
 - [ ] **CSS Refactoring:** Clean up duplicate Tailwind classes in `Results.jsx` into shared base components.

@@ -27,6 +27,9 @@ DEFAULT_CONFIG = {
     "max_image_size_kb": 200,
     "slow_load_threshold_ms": 1000,
     "bpp_threshold": 0.5,
+    # 100x100. Below this, file overhead dominates and bpp says nothing about
+    # compression quality. Our figure, not a published one.
+    "min_pixels_for_bpp": 10_000,
     "alt_min_length": 5,
     "alt_max_length": 125,
     "overscale_ratio": 2.0,
@@ -287,7 +290,13 @@ def _check_performance(
     # ── Consequence: IMG_POOR_COMPRESSION — suppressed if already OVERSIZED ──
     if not oversized and img.file_size_bytes and img.width and img.height:
         pixels = img.width * img.height
-        if pixels > 0:
+        # Small images cannot amortise container/palette overhead across their
+        # pixels, so bytes-per-pixel is meaningless for them: a 16x16 favicon of
+        # 1 KB is 4.0 bpp against a 0.5 threshold — eight times over, and
+        # correct. This check was dead until pixel dimensions started being
+        # measured (IM1); without a floor it would fire on every icon, logo and
+        # badge on every site the first time the crawler could see their size.
+        if pixels >= cfg["min_pixels_for_bpp"]:
             bpp = img.file_size_bytes / pixels
             if bpp > cfg["bpp_threshold"]:
                 issues.append(make_issue(

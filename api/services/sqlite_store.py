@@ -100,6 +100,8 @@ class SQLiteJobStore:
             # E1.4 — image-cap disclosure (analysed N of M)
             ("images_seen_total", "INTEGER"),
             ("images_collected", "INTEGER"),
+            ("images_measured", "INTEGER"),
+            ("images_measurable", "INTEGER"),
             # O2 — orphan-detection coverage (complete / skipped_*)
             ("orphan_detection", "TEXT"),
             # AF10 — sitemap fetch coverage
@@ -266,6 +268,8 @@ class SQLiteJobStore:
             "scoring_model_version",
             "images_seen_total",
             "images_collected",
+            "images_measured",
+            "images_measurable",
             "orphan_detection",
             "sitemap_coverage",
             "analysis_coverage",
@@ -1131,12 +1135,18 @@ class SQLiteJobStore:
         # surface (GUI card, PDF, Excel) reads it from one place instead of each
         # plumbing the job through separately.
         async with db.execute(
-            "SELECT images_seen_total, images_collected FROM crawl_jobs WHERE job_id = ?",
+            "SELECT images_seen_total, images_collected, images_measured, "
+            "images_measurable FROM crawl_jobs WHERE job_id = ?",
             (job_id,),
         ) as cursor:
             cap_row = await cursor.fetchone()
         seen_total = cap_row[0] if cap_row else None
         collected = cap_row[1] if cap_row else None
+        # IM1 — the same disclosure for the dimension pass. Five image checks
+        # are sound only over measured images; an unmeasured one is "not
+        # checked" and must not be rendered as clean.
+        measured = cap_row[2] if cap_row else None
+        measurable = cap_row[3] if cap_row else None
 
         if total_images == 0:
             return {
@@ -1153,6 +1163,8 @@ class SQLiteJobStore:
                 "avg_score": None,
                 "images_seen_total": seen_total,
                 "images_collected": collected,
+                "images_measured": measured,
+                "images_measurable": measurable,
             }
 
         # Analyzed = those with http_status > 0 (full fetch)
@@ -1239,6 +1251,9 @@ class SQLiteJobStore:
             # E1.4 — coverage disclosure (see the zero-image branch above).
             "images_seen_total": seen_total,
             "images_collected": collected,
+            # IM1 — dimension-measurement disclosure (same reason).
+            "images_measured": measured,
+            "images_measurable": measurable,
         }
 
     async def get_image_by_url(self, job_id: str, url: str) -> ImageInfo | None:
@@ -1721,6 +1736,9 @@ def _row_to_job(row: dict) -> CrawlJob:
         # which surfaces must render as such rather than as full coverage.
         images_seen_total=row.get("images_seen_total"),
         images_collected=row.get("images_collected"),
+        # IM1 — same: legacy rows predate these, and None means "not recorded".
+        images_measured=row.get("images_measured"),
+        images_measurable=row.get("images_measurable"),
         orphan_detection=json.loads(row["orphan_detection"]) if row.get("orphan_detection") else None,
         sitemap_coverage=json.loads(row["sitemap_coverage"]) if row.get("sitemap_coverage") else None,
         analysis_coverage=json.loads(row["analysis_coverage"]) if row.get("analysis_coverage") else None,

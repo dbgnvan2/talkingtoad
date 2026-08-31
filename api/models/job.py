@@ -116,6 +116,13 @@ class CrawlJob(BaseModel):
     # audits read back as None, which surfaces render as "not recorded".
     images_seen_total: int | None = None
     images_collected: int | None = None
+    # IM1 (2026-08-30) — dimension-measurement disclosure. `images_measurable`
+    # is every collected image; `images_measured` is how many had their pixels
+    # actually read. IMG_OVERSCALED / IMG_NO_SRCSET / IMG_DUPLICATE_CONTENT /
+    # IMG_SLOW_LOAD / IMG_POOR_COMPRESSION are sound only over measured images,
+    # so an unmeasured one is "not checked" and must never render as clean.
+    images_measured: int | None = None
+    images_measurable: int | None = None
     # O2 (2026-08-29) — whether ORPHAN_PAGE ran, and over how much of the site.
     # `status` is one of complete / skipped_partial_scan / skipped_truncated /
     # skipped_cancelled. ORPHAN_PAGE is an absence-proof, unsound over a partial

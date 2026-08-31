@@ -60,12 +60,68 @@ class TestFetchImageDimensions:
 
     @pytest.mark.asyncio
     async def test_im1_failure_measures_nothing_rather_than_guessing(self):
-        """A download error must leave the fields UNMEASURED, never guessed."""
+        """A 404 measures nothing — but KEEPS its status.
+
+        Returning a bare {} made "the image is 404" and "we never fetched it"
+        the same stored value (http_status fell back to 0), so IMG_BROKEN could
+        not fire even though the crawl had just observed the 404.
+        """
         with respx.mock:
             respx.get(f"{BASE}gone.png").mock(return_value=httpx.Response(404))
             async with httpx.AsyncClient() as c:
                 _, meta = await _fetch_image_dimensions(f"{BASE}gone.png", c)
-        assert meta == {}
+        assert meta["http_status"] == 404, "the observed status was discarded"
+        assert "width" not in meta and "content_hash" not in meta, (
+            "nothing may be measured from a failed response")
+
+    @pytest.mark.asyncio
+    async def test_im1_unreachable_host_measures_nothing_at_all(self):
+        """No response at all is distinct from a response that was an error."""
+        with respx.mock:
+            respx.get(f"{BASE}dead.png").mock(
+                side_effect=httpx.ConnectError("refused"))
+            async with httpx.AsyncClient() as c:
+                _, meta = await _fetch_image_dimensions(f"{BASE}dead.png", c)
+        assert meta == {}, "no server answered, so there is nothing to record"
+
+    @pytest.mark.asyncio
+    async def test_im1_soft_404_html_is_not_hashed_as_an_image(self):
+        """A site serving an HTML error page for a missing image must not have
+        it hashed and sized as the image.
+
+        Ten broken <img> tags returning the same error page would otherwise
+        hash identically and fabricate IMG_DUPLICATE_CONTENT on nine of them,
+        about images that do not exist — and the HTML's length would feed
+        IMG_OVERSIZED and IMG_POOR_COMPRESSION.
+        """
+        with respx.mock:
+            respx.get(f"{BASE}missing.png").mock(return_value=httpx.Response(
+                200, text="<html><body>Not found</body></html>",
+                headers={"content-type": "text/html; charset=utf-8"}))
+            async with httpx.AsyncClient() as c:
+                _, meta = await _fetch_image_dimensions(f"{BASE}missing.png", c)
+        assert "content_hash" not in meta, (
+            "an HTML error page was hashed as image content")
+        assert "file_size_bytes" not in meta and "width" not in meta
+        assert meta["http_status"] == 200
+
+    @pytest.mark.asyncio
+    async def test_im1_body_over_the_cap_is_abandoned_mid_stream(self):
+        """The byte budget upstream is computed from the HEAD content-length,
+        which the remote host supplies. A host can advertise 1 KB and send far
+        more, so the only real ceiling is the one enforced while reading."""
+        from api.crawler import engine as eng
+        big = b"\x00" * 400_000
+        with respx.mock, mock.patch.object(eng, "_IMAGE_DIMENSION_MAX_BYTES", 50_000):
+            respx.get(f"{BASE}huge.png").mock(return_value=httpx.Response(
+                200, content=big,
+                headers={"content-type": "image/png", "content-length": "1024"}))
+            async with httpx.AsyncClient() as c:
+                _, meta = await eng._fetch_image_dimensions(f"{BASE}huge.png", c)
+        assert meta.get("oversize_abandoned") is True, (
+            "the body was read past the cap despite a truthful cap and a "
+            "lying content-length")
+        assert "content_hash" not in meta and "width" not in meta
 
     @pytest.mark.asyncio
     async def test_im1_undecodable_image_keeps_size_but_no_dimensions(self):
@@ -170,3 +226,51 @@ class TestCrawlIntegration:
             result = await run_crawl("im3", BASE, CrawlSettings(crawl_delay_ms=0, max_pages=5))
         codes = {i.code for i in result.issues}
         assert "IMG_OVERSCALED" in codes, f"expected IMG_OVERSCALED, got {sorted(codes)}"
+
+
+class TestNewlyLiveChecksDoNotMisfire:
+    """IM1 woke five checks, not the four the first spec listed.
+
+    IMG_POOR_COMPRESSION was dead alongside the named four because it needs
+    width and height. Nothing measured what a 0.5 bytes-per-pixel threshold
+    does to a small image, because nobody noticed it had woken up.
+    """
+
+    @staticmethod
+    def _img(w, h, kb):
+        from api.models.image import ImageInfo
+        return ImageInfo(url="https://example.com/i.png",
+                         page_url="https://example.com/", job_id="j",
+                         width=w, height=h, file_size_bytes=int(kb * 1024))
+
+    @pytest.mark.parametrize("w,h,kb", [(16, 16, 1), (32, 32, 2), (64, 64, 4),
+                                        (99, 99, 12)])
+    def test_im1_small_icons_do_not_report_poor_compression(self, w, h, kb):
+        from api.crawler.image_analyzer import DEFAULT_CONFIG, _check_performance
+        codes = {i.code for i in _check_performance(
+            self._img(w, h, kb), DEFAULT_CONFIG, "j")}
+        bpp = (kb * 1024) / (w * h)
+        assert "IMG_POOR_COMPRESSION" not in codes, (
+            f"a {w}x{h} icon at {kb} KB is {bpp:.1f} bpp and was reported as "
+            f"poorly compressed. File overhead dominates below 100x100; the "
+            f"ratio says nothing about compression there.")
+
+    def test_im1_a_genuinely_bloated_large_image_still_reports(self):
+        """The floor must not disable the check it bounds."""
+        from api.crawler.image_analyzer import DEFAULT_CONFIG, _check_performance
+        codes = {i.code for i in _check_performance(
+            self._img(400, 400, 150), DEFAULT_CONFIG, "j")}
+        assert "IMG_POOR_COMPRESSION" in codes, (
+            "400x400 at 150 KB is ~0.96 bpp — genuinely bloated, and must "
+            "still be caught")
+
+    def test_im1_broken_image_reports_from_the_scan_path(self):
+        """IMG_BROKEN stayed dead even once the crawl fetched the image and
+        saw the 404, because the status was discarded."""
+        from api.crawler.image_analyzer import _check_broken
+        from api.models.image import ImageInfo
+        img = ImageInfo(url="https://example.com/gone.png",
+                        page_url="https://example.com/", job_id="j",
+                        http_status=404)
+        codes = {i.code for i in _check_broken(img, "j")}
+        assert "IMG_BROKEN" in codes

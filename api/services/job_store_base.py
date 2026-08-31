@@ -402,7 +402,12 @@ def health_score_basis(analysis_coverage: dict | None, settings=None) -> dict:
         # `enabled_analyses` selection IS in its persisted settings — so the
         # basis is recoverable for every historical job rather than assumed.
         enabled = getattr(settings, "enabled_analyses", None) if settings else None
-        if enabled:
+        # `is not None`, not truthiness: [] is a REAL selection meaning "every
+        # analysis group off", under which only `security` runs. Treating it as
+        # absent made the least-covered scan in the system report mode "all"
+        # and comparable: true — the exact misreading this function exists to
+        # prevent, on the one job where it matters most.
+        if enabled is not None:
             from api.crawler.engine import _build_analysis_coverage
             analysis_coverage = _build_analysis_coverage(settings)
         else:

@@ -2229,6 +2229,8 @@ Rendered page contains substantially more content than raw HTML (>20% more token
 
 > Google documents a two-phase crawl in which rendered content is processed later than the served HTML.
 
+**What the source does not say:** The 20% token-difference trigger is ours. Google documents the two-phase crawl but publishes no threshold at which a difference matters.
+
 ---
 
 ### LINK_PROFILE_PROMOTIONAL
@@ -2569,6 +2571,8 @@ AI crawler user agents (GPTBot, ClaudeBot) receive substantially less content th
 **Basis:** published source — [Google Search Central](https://developers.google.com/search/docs/essentials/spam-policies) (vendor)
 
 > Serving different content to a crawler than to a user is cloaking, which Google's spam policies prohibit.
+
+**What the source does not say:** The 20% token-difference trigger is ours. Google's spam policies define cloaking but set no measured threshold, and a smaller difference can still be deliberate.
 
 ---
 

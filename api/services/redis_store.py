@@ -104,6 +104,8 @@ class RedisJobStore:
             "scoring_model_version",
             "images_seen_total",
             "images_collected",
+            "images_measured",
+            "images_measurable",
             "orphan_detection",
             "sitemap_coverage",
             "analysis_coverage",
@@ -514,6 +516,8 @@ class RedisJobStore:
             "avg_score": None,
             "images_seen_total": None,
             "images_collected": None,
+            "images_measured": None,
+            "images_measurable": None,
         }
 
     async def get_image_by_url(self, job_id: str, url: str) -> ImageInfo | None:
@@ -647,6 +651,8 @@ class RedisJobStore:
             # E1.4 — image-cap disclosure; "" sentinel for None.
             "images_seen_total": "" if job.images_seen_total is None else str(job.images_seen_total),
             "images_collected": "" if job.images_collected is None else str(job.images_collected),
+            "images_measured": "" if job.images_measured is None else str(job.images_measured),
+            "images_measurable": "" if job.images_measurable is None else str(job.images_measurable),
             "orphan_detection": json.dumps(job.orphan_detection) if job.orphan_detection else "",
             "sitemap_coverage": json.dumps(job.sitemap_coverage) if job.sitemap_coverage else "",
             "analysis_coverage": json.dumps(job.analysis_coverage) if job.analysis_coverage else "",
@@ -679,6 +685,8 @@ class RedisJobStore:
             # E1.4 — legacy hashes lack these keys; "" and missing both → None.
             images_seen_total=int(m["images_seen_total"]) if m.get("images_seen_total") else None,
             images_collected=int(m["images_collected"]) if m.get("images_collected") else None,
+            images_measured=int(m["images_measured"]) if m.get("images_measured") else None,
+            images_measurable=int(m["images_measurable"]) if m.get("images_measurable") else None,
             orphan_detection=json.loads(m["orphan_detection"]) if m.get("orphan_detection") else None,
             sitemap_coverage=json.loads(m["sitemap_coverage"]) if m.get("sitemap_coverage") else None,
             analysis_coverage=json.loads(m["analysis_coverage"]) if m.get("analysis_coverage") else None,

@@ -38,6 +38,7 @@ _UA_GENERIC = (
 )
 
 _PLAYWRIGHT_TIMEOUT_MS = 5000  # hard timeout for page load
+_INLINE_SCHEMES = ("data:", "blob:")
 _DIFF_THRESHOLD = 0.20         # >20% token difference triggers issue
 _JACCARD_THRESHOLD = 0.30      # < 0.30 similarity triggers cloaking warning
 _TOP_N_KEYWORDS = 10
@@ -133,14 +134,33 @@ async def _guard_browser_request(route, request) -> None:
     ``is_ssrf_safe`` resolves DNS, so it runs off the event loop: this handler
     fires once per subresource and must not stall the browser.
     """
+    url = request.url
+    # data: and blob: never touch the network, so there is nothing to guard —
+    # but is_ssrf_safe denies them (no hostname), which would silently strip
+    # inline images and fonts from the render. The GEO checks compare rendered
+    # against raw content, so that would show up as a content difference caused
+    # by us rather than by the site.
+    if url.startswith(_INLINE_SCHEMES):
+        await route.continue_()
+        return
+    # Everything else must be http(s). An allowlist, because is_ssrf_safe is
+    # not a scheme check and fails OPEN when a hostname will not resolve: with
+    # only that guard, ftp://internal.host and chrome://settings were both
+    # allowed through — denied by accident for file:// (no hostname) and
+    # permitted for the rest. Verified, not assumed.
+    if not url.startswith(("http://", "https://")):
+        logger.warning("playwright_request_blocked",
+                       extra={"url": url, "reason": "scheme"})
+        await route.abort()
+        return
     try:
-        safe = await asyncio.to_thread(is_ssrf_safe, request.url)
+        safe = await asyncio.to_thread(is_ssrf_safe, url)
     except Exception:              # noqa: BLE001 — a guard that errors must deny
         safe = False
     if safe:
         await route.continue_()
     else:
-        logger.warning("playwright_request_blocked", extra={"url": request.url})
+        logger.warning("playwright_request_blocked", extra={"url": url})
         await route.abort()
 
 

@@ -543,6 +543,17 @@ function ImageSummaryStats({ summary }) {
     ? `analysed ${collected} of ${seen} found`
     : null
 
+  // IM1 (2026-08-30) — the same disclosure for the dimension pass. Five checks
+  // (IMG_OVERSCALED, IMG_NO_SRCSET, IMG_DUPLICATE_CONTENT, IMG_SLOW_LOAD,
+  // IMG_POOR_COMPRESSION) need an image's real pixel size, so they are sound
+  // only over measured images. Without this line, an image the pass never
+  // reached renders exactly like one that came back clean.
+  const measured = summary.images_measured
+  const measurable = summary.images_measurable
+  const measuredText = measured != null && measurable != null && measurable > measured
+    ? `${measured} of ${measurable} measured`
+    : null
+
   const partialCount = summary.total_images - (summary.images_analyzed || 0)
   const analysisText = summary.images_analyzed
     ? `${summary.images_analyzed} fully analyzed${partialCount > 0 ? `, ${partialCount} partial` : ''}`
@@ -561,7 +572,7 @@ function ImageSummaryStats({ summary }) {
       <StatCard
         label="Total Images"
         value={summary.total_images}
-        subtext={analysisText}
+        subtext={measuredText ? `${analysisText} · ${measuredText}` : analysisText}
       />
       <StatCard
         label="Total Size"

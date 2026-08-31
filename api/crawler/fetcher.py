@@ -299,13 +299,19 @@ def make_ssrf_guarded_client(user_agent: str | None = None) -> httpx.AsyncClient
     """
 
     async def _guard_request(request: httpx.Request) -> None:
-        if not is_ssrf_safe(str(request.url)):
+        # is_ssrf_safe resolves DNS (socket.getaddrinfo, which takes no
+        # timeout), so it runs off the event loop. This hook fires for every
+        # request and every redirect hop, and the image passes put it on a hot
+        # path: a page naming images on a domain whose nameservers blackhole
+        # would otherwise stall the whole crawler, serially, per image.
+        if not await asyncio.to_thread(is_ssrf_safe, str(request.url)):
             raise httpx.RequestError(f"SSRF_BLOCKED request to {request.url}", request=request)
 
     async def _guard_redirect(response: httpx.Response) -> None:
         if response.is_redirect:
             loc = response.headers.get("location")
-            if loc and not is_ssrf_safe(str(response.url.join(loc))):
+            if loc and not await asyncio.to_thread(
+                    is_ssrf_safe, str(response.url.join(loc))):
                 raise httpx.RequestError(
                     f"SSRF_BLOCKED redirect to {loc}", request=response.request
                 )

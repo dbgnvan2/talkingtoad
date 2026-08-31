@@ -90,3 +90,27 @@ class TestExportsNameTheBasis:
             "categories_unchecked": ["metadata", "heading"]}))
         assert note and "3 of 5 categories" in note
         assert "not comparable" in note
+
+
+def test_s1_empty_analysis_selection_is_not_a_full_scan():
+    """`enabled_analyses=[]` means every group OFF, not "no selection made".
+
+    The legacy-recovery branch tested truthiness, so [] fell through to the
+    full-scan default and returned mode "all" with comparable: True — for the
+    least-covered scan the system can produce (only `security` runs). The one
+    job where the basis matters most was the one job that lied about it.
+    """
+    from api.crawler.engine import CrawlSettings, _enabled_categories
+    from api.services.job_store_base import health_score_basis
+
+    assert sorted(_enabled_categories([])) == ["security"], (
+        "precondition: [] must mean only security runs")
+
+    basis = health_score_basis(None, CrawlSettings(enabled_analyses=[]))
+    assert basis["mode"] == "partial", (
+        f"an empty selection reported mode={basis['mode']!r}")
+    assert basis["comparable"] is False, (
+        "a scan of one category was reported as comparable to a full audit")
+    assert basis["categories_scored"] == ["security"]
+    assert len(basis["categories_unscored"]) > 5, (
+        "the categories that did not run were not reported as unscored")

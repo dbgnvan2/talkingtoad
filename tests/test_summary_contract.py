@@ -1,0 +1,120 @@
+"""Fields the frontend reads must be asserted in the API response.
+
+Spec:  CLAUDE.md — "CRITICAL: API Contract Tests (Non-Negotiable)". Any endpoint
+       called by frontend code must have an integration test asserting every
+       field the frontend depends on.
+Tests: this file
+
+Two disclosures shipped without one, and both were provably deletable with the
+whole suite green:
+
+  health_score_basis   sqlite_store.get_summary -> SummaryPanel.jsx reads
+                       `summary?.health_score_basis`. Deleting the payload line
+                       left 3425 tests passing; the Health Score silently
+                       reverts to a bare number on a partial scan, which is the
+                       entire misreading the feature exists to prevent.
+
+  images_measured/     get_image_summary -> ImageAnalysisPanel.jsx. The unit
+  images_measurable    test asserted CrawlResult fields, one layer below any
+                       surface, so the counters could reach nothing and stay
+                       green (P25).
+
+Both stores are asserted: the key set must not diverge by backend, or the GUI
+shows a disclosure on SQLite and nothing on Redis.
+"""
+from __future__ import annotations
+
+import pytest
+
+from api.models.job import CrawlJob
+from api.services.redis_store import RedisJobStore
+from api.services.sqlite_store import SQLiteJobStore
+
+
+@pytest.fixture
+async def store(tmp_path):
+    """Yields, then closes.
+
+    Returning the store without closing it leaves the aiosqlite connection
+    thread alive, which keeps the interpreter from exiting: a single-test run
+    of this file hung indefinitely. Not using a resource is not releasing it
+    (P30) — and an explicit temporary path keeps the suite off the real
+    database (P28).
+    """
+    s = SQLiteJobStore(db_path=str(tmp_path / "t.db"))
+    await s.init()
+    try:
+        yield s
+    finally:
+        await s.close()
+
+
+class TestSummaryCarriesTheScoreBasis:
+    async def test_s1_summary_response_includes_health_score_basis(self, store):
+        """SummaryPanel.jsx:33 reads summary.health_score_basis."""
+        job = CrawlJob(job_id="j1", target_url="https://example.com/",
+                       status="complete")
+        await store.create_job(job)
+        summary = await store.get_summary("j1")
+        assert "health_score_basis" in summary, (
+            "SummaryPanel.jsx reads summary.health_score_basis. Without it the "
+            "Health Score renders as a bare number for a scan that may have "
+            "run one category of thirteen.")
+        basis = summary["health_score_basis"]
+        for key in ("mode", "categories_scored", "categories_unscored",
+                    "comparable"):
+            assert key in basis, f"health_score_basis missing {key!r}"
+
+    async def test_s1_basis_survives_a_partial_scan_to_the_response(self, store):
+        """The value must be right at the boundary, not merely present."""
+        from api.models.job import CrawlSettings
+        job = CrawlJob(job_id="j2", target_url="https://example.com/",
+                       status="complete",
+                       settings=CrawlSettings(enabled_analyses=["link_integrity"]))
+        await store.create_job(job)
+        basis = (await store.get_summary("j2"))["health_score_basis"]
+        assert basis["mode"] == "partial", (
+            f"a scan of one analysis group reported mode={basis['mode']!r}")
+        assert basis["comparable"] is False, (
+            "a partial scan was reported as comparable to a full one")
+        assert basis["categories_unscored"], (
+            "no category was reported as unscored on a one-group scan")
+
+
+class TestImageSummaryCarriesTheMeasurementDisclosure:
+    async def test_im1_image_summary_includes_measurement_counts(self, store):
+        """ImageAnalysisPanel.jsx reads summary.images_measured /
+        images_measurable to print 'N of M measured'."""
+        await store.create_job(CrawlJob(job_id="j3",
+                                        target_url="https://example.com/"))
+        # update_job is the production write path (api/routers/crawl.py) --
+        # create_job's INSERT is a fixed column list and silently drops
+        # anything not named in it, which is how orphan_detection was lost.
+        await store.update_job("j3", status="complete", images_measured=12,
+                               images_measurable=30)
+        summary = await store.get_image_summary("j3")
+        assert summary["images_measured"] == 12
+        assert summary["images_measurable"] == 30, (
+            "the dimension-pass shortfall does not reach the image summary, so "
+            "an image whose pixels were never read renders like a clean one")
+
+    async def test_im1_counts_round_trip_through_the_job_store(self, store):
+        await store.create_job(CrawlJob(job_id="j4",
+                                        target_url="https://example.com/"))
+        await store.update_job("j4", images_measured=5, images_measurable=99)
+        back = await store.get_job("j4")
+        assert back.images_measured == 5 and back.images_measurable == 99, (
+            "the counters did not survive update_job -> get_job. A claim that "
+            "does not reach the artifact is the orphan_detection bug again (P6)")
+
+    async def test_im1_redis_exposes_the_same_keys_as_sqlite(self, store):
+        """The key set must not diverge by backend."""
+        sqlite_keys = set(await store.get_image_summary("nope"))
+        redis_keys = set(await RedisJobStore.get_image_summary(
+            RedisJobStore.__new__(RedisJobStore), "nope"))
+        missing = {"images_measured", "images_measurable"} - redis_keys
+        assert not missing, f"Redis image summary is missing {missing}"
+        assert sqlite_keys == redis_keys, (
+            f"summary key sets diverge by backend: "
+            f"sqlite-only={sqlite_keys - redis_keys}, "
+            f"redis-only={redis_keys - sqlite_keys}")

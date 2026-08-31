@@ -416,6 +416,10 @@ async def _run_crawl_background(
             # every export can state coverage honestly.
             images_seen_total=result.images_seen_total,
             images_collected=result.images_collected,
+            # IM1: same for the dimension pass. An image whose pixels were
+            # never read is "not checked", not "clean".
+            images_measured=result.images_measured,
+            images_measurable=result.images_measurable,
             # O2: persist WHY orphan detection did or did not run, so no surface
             # has to infer "clean" from an empty result set (P31 corollary).
             orphan_detection=result.orphan_detection,

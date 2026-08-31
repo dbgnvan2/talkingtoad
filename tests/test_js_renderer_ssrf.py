@@ -223,3 +223,32 @@ class TestBrowserRequestGuard:
         assert events.index("route") < events.index("goto"), (
             f"routing was attached after navigation ({events}) — the goto "
             f"itself, and every redirect it follows, would be unguarded")
+
+    @pytest.mark.parametrize("url", ["data:image/png;base64,iVBORw0KGgo=",
+                                     "blob:https://example.com/abc-123"])
+    @pytest.mark.asyncio
+    async def test_ssrf_inline_schemes_are_allowed_not_stripped(self, url):
+        """data: and blob: never touch the network.
+
+        is_ssrf_safe denies them because they have no hostname, so a bare guard
+        would strip every inline image and font from the render — and the GEO
+        checks compare rendered against raw content, so that reads as a
+        difference caused by the crawler rather than by the site.
+        """
+        route = _FakeRoute()
+        await _guard_browser_request(route, _FakeRequest(url))
+        assert route.continued and not route.aborted, (
+            f"{url.split(':')[0]}: was blocked; it makes no network request")
+
+    @pytest.mark.parametrize("url", ["file:///etc/passwd",
+                                     "ftp://internal.host/x",
+                                     "chrome://settings"])
+    @pytest.mark.asyncio
+    async def test_ssrf_other_schemes_without_a_hostname_are_still_denied(self, url):
+        """The data:/blob: allowance must be exactly that, not a hole for
+        every URL that fails to parse a hostname."""
+        route = _FakeRoute()
+        await _guard_browser_request(route, _FakeRequest(url))
+        assert route.aborted and not route.continued, (
+            f"{url} was allowed through the inline-scheme exemption")
+

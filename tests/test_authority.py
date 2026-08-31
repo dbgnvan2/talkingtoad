@@ -59,6 +59,9 @@ class TestSchema:
                 f"{code}: unknown source_type {entry['source_type']!r}")
             assert entry["url"].startswith("https://"), (
                 f"{code}: citation URL must be https")
+            assert not (entry.get("threshold_note")
+                        and entry.get("threshold_published_by_source")), (
+                f"{code}: claims the threshold is both ours and the source's")
         elif basis == "observation":
             method = entry.get("method", "")
             assert len(method) >= 60, (
@@ -155,6 +158,12 @@ class TestThresholdHonesty:
         "PAGE_SIZE_LARGE", "HIGH_CRAWL_DEPTH", "REDIRECT_CHAIN",
         "SEMANTIC_DENSITY_LOW", "AI_MAIN_CONTENT_LOW_RATIO",
         "IMG_POOR_COMPRESSION", "NEAR_DUPLICATE_BODY",
+        # Added after a cold review found them missing: both fire on
+        # js_renderer._DIFF_THRESHOLD = 0.20, both cite Google, and neither
+        # carried a threshold_note — precisely the failure this class names.
+        # A hand-written list cannot police a class it does not enumerate,
+        # which is why the guard below now derives instead of sampling.
+        "JS_RENDERED_CONTENT_DIFFERS", "UA_CONTENT_DIFFERS",
     ]
 
     @pytest.mark.parametrize("code", NUMERIC_TRIGGER_CODES)
@@ -176,6 +185,39 @@ class TestThresholdHonesty:
         assert not gone, (
             f"these codes no longer exist, so the honesty check above is not "
             f"testing anything: {gone}")
+
+    def test_v1_every_citation_naming_a_threshold_declares_whose_it_is(self):
+        """The list above is hand-written, so it can only police the codes
+        somebody remembered to add. This derives instead: any citation whose
+        own claim talks about a specific number must say whose number it is.
+
+        A cold review found two codes missing from the hand-written list
+        (JS_RENDERED_CONTENT_DIFFERS, UA_CONTENT_DIFFERS) — a sampled check
+        policing a class it did not enumerate.
+        """
+        import re
+        offenders = []
+        for code in sorted(_CATALOGUE):
+            entry = authority_for(code) or {}
+            if entry.get("basis") != "citation":
+                continue
+            if entry.get("threshold_note"):
+                continue
+            if entry.get("threshold_published_by_source"):
+                # The opposite case, stated explicitly: Google does publish the
+                # Core Web Vitals bands, so quoting 4s or 500ms is reporting
+                # the source's own figure, not dressing ours as theirs.
+                continue
+            # A claim that quotes a figure while the source is a vendor is the
+            # risky shape: it reads as though the vendor published the figure.
+            claim = entry.get("claim", "")
+            if entry.get("source_type") == "vendor" and re.search(
+                    r"\b\d+\s*(%|characters|seconds|ms|KB|MB|words|px)\b", claim):
+                offenders.append(f"{code}: {claim[:70]}")
+        assert not offenders, (
+            "a vendor citation quotes a figure with no threshold_note saying "
+            "whether the figure is the vendor's or ours:\n  "
+            + "\n  ".join(offenders))
 
 
 class TestTheRecordIsUsable:

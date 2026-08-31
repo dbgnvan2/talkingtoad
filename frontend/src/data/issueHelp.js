@@ -1931,7 +1931,7 @@ const issueHelp = {
     title: "No supporting visual",
     category: "ai_readiness",
     severity: "info",
-    confidence: "Reasonable proxy",
+    confidence: "Heuristic",
     definition:
       "This page has substantial text (over 300 words) but no images or video. " +
       "Adding relevant visuals helps both human readers and AI systems better " +
@@ -2613,7 +2613,7 @@ const issueHelp = {
     title: "High-value page not cited by AI",
     category: "ai_readiness",
     severity: "info",
-    confidence: "Reasonable proxy",
+    confidence: "Heuristic",
     definition:
       "This healthy, content-rich page has zero AI citations despite recent monitoring data, " +
       "suggesting an AI visibility gap.",
@@ -2845,7 +2845,7 @@ const issueHelp = {
     title: "Contact info not in text",
     category: "ai_readiness",
     severity: "warning",
-    confidence: "Heuristic",
+    confidence: "Reasonable proxy",
     definition:
       "The homepage exposes no machine-readable contact details — no mailto:/tel: link, no " +
       "email address, and no phone-number pattern in the visible text. Contact info may exist " +
@@ -3001,7 +3001,7 @@ const issueHelp = {
     title: "Default opening hours published",
     category: "ai_readiness",
     severity: "info",
-    confidence: "Established",
+    confidence: "Heuristic",
     definition:
       "The structured data publishes opening hours for every day of the week at the SEO " +
       "plugin's default times (typically 9:00-17:00), which is what the field contains when " +

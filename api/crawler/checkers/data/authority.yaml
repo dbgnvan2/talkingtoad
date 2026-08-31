@@ -5,6 +5,11 @@
 #                       Requires source, source_type, url, claim.
 #   basis: heuristic  — no published source states it. Requires rationale
 #                       saying what we believe and why, and what it is NOT.
+# threshold_published_by_source: true marks the opposite case — the cited
+# source DOES publish the figure the check fires on (Google's Core Web Vitals
+# bands). Every check with a numeric trigger must carry one or the other, so
+# the record always states WHOSE number it is rather than leaving it inferred.
+#
 #   basis: observation — not a claim about the world: a fact TalkingToad
 #                       recorded during this crawl. Requires method, saying what
 #                       was measured and what it does NOT establish. Added
@@ -264,18 +269,21 @@ CWV_LCP_POOR:
   source_type: vendor
   url: https://web.dev/articles/lcp
   claim: Largest Contentful Paint over 4 seconds at the 75th percentile is Google's published "poor" band.
+  threshold_published_by_source: true
 CWV_CLS_POOR:
   basis: citation
   source: web.dev (Google)
   source_type: vendor
   url: https://web.dev/articles/cls
   claim: Cumulative Layout Shift above 0.25 at the 75th percentile is Google's published "poor" band.
+  threshold_published_by_source: true
 CWV_INP_POOR:
   basis: citation
   source: web.dev (Google)
   source_type: vendor
   url: https://web.dev/articles/inp
   claim: Interaction to Next Paint over 500 ms at the 75th percentile is Google's published "poor" band.
+  threshold_published_by_source: true
 JS_DEPENDENT_NAVIGATION:
   basis: citation
   source: Google Search Central
@@ -742,12 +750,14 @@ JS_RENDERED_CONTENT_DIFFERS:
   source_type: vendor
   url: https://developers.google.com/search/docs/crawling-indexing/javascript/javascript-seo-basics
   claim: Google documents a two-phase crawl in which rendered content is processed later than the served HTML.
+  threshold_note: "The 20% token-difference trigger is ours. Google documents the two-phase crawl but publishes no threshold at which a difference matters."
 UA_CONTENT_DIFFERS:
   basis: citation
   source: Google Search Central
   source_type: vendor
   url: https://developers.google.com/search/docs/essentials/spam-policies
   claim: Serving different content to a crawler than to a user is cloaking, which Google's spam policies prohibit.
+  threshold_note: "The 20% token-difference trigger is ours. Google's spam policies define cloaking but set no measured threshold, and a smaller difference can still be deliberate."
 CONTENT_CLOAKING_DETECTED:
   basis: citation
   source: Google Search Central
