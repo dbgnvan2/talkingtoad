@@ -36,7 +36,10 @@ from typing import Literal
 # model — impact/effort tables, derivation matrix, suppression clusters,
 # site-scope rules, or the category cap — changes, so a stored report records
 # which model produced it. Read as None on legacy audits saved before the stamp.
-SCORING_MODEL_VERSION = "2026-07-06-r5"
+# r6 (2026-08-30): arithmetic unchanged; the score now carries the coverage it
+# was computed over, so a partial scan cannot be read as a whole-site number.
+# Spec: docs/pending/2026-08-30_score-coverage-basis.md#S3
+SCORING_MODEL_VERSION = "2026-08-30-r6"
 
 # ---------------------------------------------------------------------------
 # Category display order + labels — SINGLE SOURCE OF TRUTH (CLN2)

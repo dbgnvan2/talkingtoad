@@ -17,6 +17,7 @@ from datetime import datetime, timezone
 
 from api.services.job_store_base import (
     _DEFAULT_TTL_DAYS,
+    health_score_basis,
 )
 
 logger = logging.getLogger(__name__)
@@ -314,6 +315,10 @@ class RedisJobStore:
             "orphan_detection": job.orphan_detection,
             "sitemap_coverage": job.sitemap_coverage,
             "analysis_coverage": job.analysis_coverage,
+            # S1: what the health score was computed OVER. A partial scan
+            # scores 100 for categories it never ran, so the number must
+            # carry its basis or it invites a false comparison.
+            "health_score_basis": health_score_basis(job.analysis_coverage, job.settings),
         }
 
     async def get_pages_with_issue_counts(

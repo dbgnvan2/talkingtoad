@@ -23,6 +23,7 @@ from api.services.job_store_base import (
     _PRIORITY_ORDER,
     _compute_v15_health_score,
     _compute_agent_health_score,
+    health_score_basis,
     _DEFAULT_TTL_DAYS,
 )
 
@@ -620,6 +621,10 @@ class SQLiteJobStore:
             "sitemap_coverage": job.sitemap_coverage,
             # C1: an unchecked category is "not checked", not a clean zero.
             "analysis_coverage": job.analysis_coverage,
+            # S1: what the health score was computed OVER. A partial scan
+            # scores 100 for categories it never ran, so the number must
+            # carry its basis or it invites a false comparison.
+            "health_score_basis": health_score_basis(job.analysis_coverage, job.settings),
             "robots_txt": robots_info,
             "sitemap": sitemap_info,
         }

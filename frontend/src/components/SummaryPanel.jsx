@@ -28,6 +28,9 @@ export default function SummaryPanel({ summary, domain, jobId, onCategoryClick, 
     analysisCoverage?.mode === 'partial' ? (analysisCoverage.categories_unchecked || []) : []
   )
   const isUnchecked = (key) => uncheckedCategories.has(key)
+  // S2: what the health score was computed over. comparable === false means the
+  // number covers only some categories and must not be read as a site score.
+  const scoreBasis = summary?.health_score_basis ?? null
   const toast = useToast()
   const { getFontClass } = useTheme()
   const [aiTesting, setAiTesting] = useState(false)
@@ -117,7 +120,15 @@ export default function SummaryPanel({ summary, domain, jobId, onCategoryClick, 
           quality averaged; Hygiene is how much of the estate one defect touches.
           Spec: docs/pending/2026-08-29_E4-site-prevalence-escalation.md */}
       <div className={`grid grid-cols-1 gap-4 ${summary.site_hygiene_score != null ? 'md:grid-cols-3' : 'md:grid-cols-2'}`}>
-        <StatCard label="Health Score" value={summary.health_score} color={summary.health_score > 80 ? 'text-green-600' : 'text-amber-500'} />
+        {/* S2: a partial scan scores 100 for categories it never ran, so the
+            number must never appear bare — it invites a comparison it cannot
+            support. See docs/pending/2026-08-30_score-coverage-basis.md#S2 */}
+        <StatCard
+          label={scoreBasis?.comparable === false
+            ? `Health Score (${scoreBasis.categories_scored.length} of ${scoreBasis.categories_scored.length + scoreBasis.categories_unscored.length} categories)`
+            : 'Health Score'}
+          value={summary.health_score}
+          color={summary.health_score > 80 ? 'text-green-600' : 'text-amber-500'} />
         <StatCard
           label="Agent Health"
           value={summary.agent_health_score ?? '—'}
@@ -226,6 +237,9 @@ export default function SummaryPanel({ summary, domain, jobId, onCategoryClick, 
           <p className="text-blue-700 font-medium">This was a partial scan.</p>
           <p className="text-sm text-gray-600 mt-1">
             {`These categories were not checked and report nothing: ${(analysisCoverage.categories_unchecked || []).map(c => c.replace(/_/g, ' ')).join(', ')}. A category that did not run shows no findings, which is not the same as having none.`}
+          </p>
+          <p className="text-sm text-gray-600 mt-2">
+            {`The health score covers only the categories that ran, so it is not comparable with a full scan of the same site.`}
           </p>
         </div>
       )}

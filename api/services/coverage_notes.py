@@ -103,6 +103,11 @@ def analysis_coverage_note(job) -> str | None:
     if not unchecked:
         return None
     pretty = ", ".join(c.replace("_", " ") for c in unchecked)
+    checked = cov.get("categories_checked") or []
+    total = len(checked) + len(unchecked)
     return ("Analyses: this was a PARTIAL scan. These categories were not checked and "
             f"report nothing: {pretty}. A category that did not run shows no findings, "
-            "which is not the same as having none.")
+            "which is not the same as having none. "
+            # S2: the score must not be read as a whole-site number.
+            f"The health score therefore covers {len(checked)} of {total} categories and is "
+            "not comparable with a full scan of the same site.")

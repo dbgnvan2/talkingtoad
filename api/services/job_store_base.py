@@ -372,6 +372,58 @@ def compute_impact_health(
     return round(sum(page_scores) / len(page_scores)), len(page_scores)
 
 
+def health_score_basis(analysis_coverage: dict | None, settings=None) -> dict:
+    """Describe what a health score was computed OVER.
+
+    Purpose: Page Health is ``100 - sum(impact)``, so a category that never ran
+             contributes nothing and "we did not look" is arithmetically
+             identical to "we found nothing". Measured on livingsystems.ca: a
+             scan of one analysis group scored 100/100 while the full scan of the
+             same site scored 87.
+    Spec:    docs/pending/2026-08-30_score-coverage-basis.md#S1
+    Tests:   tests/test_score_basis.py
+
+    The fix is NOT to deduct for unchecked categories — inventing a penalty for a
+    check that did not run is fabricating a finding. A partial scan's score is
+    not worse, it is NOT COMPARABLE, and this record is what says so.
+
+    A legacy audit with no coverage record falls back to its persisted
+    ``enabled_analyses`` setting, so the basis is recovered for the whole job
+    history rather than assumed to be complete.
+    """
+    from api.crawler.engine import _ANALYSIS_CATEGORY_MAP, _UNGROUPED_CATEGORIES
+
+    every: set[str] = set(_UNGROUPED_CATEGORIES)
+    for cats in _ANALYSIS_CATEGORY_MAP.values():
+        every |= cats
+
+    if not isinstance(analysis_coverage, dict):
+        # Legacy audit: the coverage record did not exist yet, but the crawl's
+        # `enabled_analyses` selection IS in its persisted settings — so the
+        # basis is recoverable for every historical job rather than assumed.
+        enabled = getattr(settings, "enabled_analyses", None) if settings else None
+        if enabled:
+            from api.crawler.engine import _build_analysis_coverage
+            analysis_coverage = _build_analysis_coverage(settings)
+        else:
+            return {"mode": "all", "categories_scored": sorted(every),
+                    "categories_unscored": [], "comparable": True}
+
+    if analysis_coverage.get("mode") != "partial":
+        return {"mode": "all", "categories_scored": sorted(every),
+                "categories_unscored": [], "comparable": True}
+
+    scored = set(analysis_coverage.get("categories_checked") or [])
+    return {
+        "mode": "partial",
+        "categories_scored": sorted(scored),
+        "categories_unscored": sorted(every - scored),
+        # Two scores computed over different category sets cannot be compared,
+        # and a bare number invites exactly that comparison.
+        "comparable": False,
+    }
+
+
 async def _compute_v15_health_score(
     db: aiosqlite.Connection,
     job_id: str,
