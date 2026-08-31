@@ -44,6 +44,10 @@ Links use non-descriptive anchor text like 'click here' or 'read more'
 
 **Plain-English:** Non-Descriptive Link Text
 
+**Basis:** published source — [W3C WAI (WCAG 2.2, SC 2.4.4)](https://www.w3.org/WAI/WCAG22/Understanding/link-purpose-in-context) (standard)
+
+> A link's purpose should be determinable from its text; "click here" conveys nothing when links are listed out of context.
+
 ---
 
 ### CANONICAL_EXTERNAL
@@ -54,6 +58,10 @@ Canonical points to a different domain
 **Recommendation:** Review this canonical tag — it is pointing search engines to a page on a different website.
 
 **Plain-English:** External Preferred URL
+
+**Basis:** published source — [Google Search Central](https://developers.google.com/search/docs/crawling-indexing/consolidate-duplicate-urls) (vendor)
+
+> A canonical pointing to another domain asks Google to index that domain's URL instead of this one.
 
 ---
 
@@ -66,6 +74,10 @@ No canonical tag — page has query strings or is a near-duplicate
 
 **Plain-English:** Ambiguous Preferred URL
 
+**Basis:** published source — [Google Search Central](https://developers.google.com/search/docs/crawling-indexing/consolidate-duplicate-urls) (vendor)
+
+> A rel=canonical tells Google which URL to treat as authoritative among duplicates, such as query-string variants.
+
 ---
 
 ### CANONICAL_SELF_MISSING
@@ -76,6 +88,12 @@ Indexable page has no canonical tag — consider adding a self-referencing canon
 **Recommendation:** Add <link rel="canonical" href="[this-page-url]"> to the page <head>. A self-referencing canonical is a best-practice signal to search engines confirming which URL is the preferred version of this page.
 
 **Plain-English:** No Canonical Tag
+
+**Basis:** published source — [Google Search Central](https://developers.google.com/search/docs/crawling-indexing/consolidate-duplicate-urls) (vendor)
+
+> Google supports a self-referencing canonical as an explicit statement of the preferred URL.
+
+**What the source does not say:** Google states a canonical is not required. We report the absence as a suggestion, not a fault.
 
 ---
 
@@ -88,6 +106,10 @@ No favicon found (homepage only)
 
 **Plain-English:** Missing Website Icon
 
+**Basis:** published source — [Google Search Central](https://developers.google.com/search/docs/appearance/favicon-in-search) (vendor)
+
+> Google can show a site's favicon beside its search results, and defines how the icon is declared and discovered.
+
 ---
 
 ### LANG_MISSING
@@ -99,6 +121,10 @@ Page is missing the lang attribute on the <html> element
 
 **Plain-English:** No Language Declared
 
+**Basis:** published source — [W3C WAI (WCAG 2.2, SC 3.1.1)](https://www.w3.org/WAI/WCAG22/Understanding/language-of-page) (standard)
+
+> The default human language of a page must be programmatically determinable, which the lang attribute provides.
+
 ---
 
 ### LINK_EMPTY_ANCHOR
@@ -109,6 +135,10 @@ Link has no visible anchor text — screen readers and search engines cannot des
 **Recommendation:** Add descriptive text inside the link. If it is an icon-only link, add an aria-label attribute (e.g. aria-label="Donate now").
 
 **Plain-English:** Empty Link Text
+
+**Basis:** published source — [W3C WAI (WCAG 2.2, SC 2.4.4)](https://www.w3.org/WAI/WCAG22/Understanding/link-purpose-in-context) (standard)
+
+> A link with no discernible text has no announceable purpose.
 
 ---
 
@@ -126,6 +156,10 @@ In your page-builder's card or listing template, keep a single link with descrip
 
 **Plain-English:** Stacked Duplicate Links
 
+**Basis:** TalkingToad's own judgement. No published source states this.
+
+> Our judgement. Several links to one destination inside a card (the common "whole card is clickable" pattern) make a screen-reader user hear the same destination repeatedly. It is a usability observation, not a WCAG failure, and the pattern is not wrong in itself.
+
 ---
 
 ### META_DESC_DUPLICATE
@@ -136,6 +170,10 @@ Same meta description on multiple pages
 **Recommendation:** Write a unique meta description for this page that reflects its specific content.
 
 **Plain-English:** Duplicate Summary Snippet
+
+**Basis:** published source — [Google Search Central](https://developers.google.com/search/docs/appearance/snippet) (vendor)
+
+> Google advises a distinct description per page; identical descriptions cannot differentiate results.
 
 ---
 
@@ -153,6 +191,10 @@ Add a <meta name='description'> tag to your page. Use your SEO plugin to write a
 
 **Plain-English:** Missing Summary Snippet
 
+**Basis:** published source — [Google Search Central](https://developers.google.com/search/docs/appearance/snippet) (vendor)
+
+> Google uses the meta description as one source for the result snippet when it summarises the page well.
+
 ---
 
 ### META_DESC_TOO_LONG
@@ -164,6 +206,12 @@ Meta description over 160 characters
 
 **Plain-English:** Too-Long Summary Snippet
 
+**Basis:** published source — [Google Search Central](https://developers.google.com/search/docs/appearance/snippet) (vendor)
+
+> Google truncates snippets to the available width and may generate its own text instead.
+
+**What the source does not say:** The 160-character figure is ours. Google publishes no description length and states snippet length varies.
+
 ---
 
 ### META_DESC_TOO_SHORT
@@ -174,6 +222,10 @@ Meta description under 70 characters
 **Recommendation:** Expand the description to 70–160 characters to give search engines more context.
 
 **Plain-English:** Too-Short Summary Snippet
+
+**Basis:** TalkingToad's own judgement. No published source states this.
+
+> Our judgement, and the 70-character floor is ours. Google publishes no minimum and frequently writes its own snippet regardless. A very short description simply has less chance of answering the query.
 
 ---
 
@@ -191,6 +243,10 @@ Populate og:title, og:description, og:image and twitter:card (via your SEO plugi
 
 **Plain-English:** Missing Social Preview Metadata
 
+**Basis:** published source — [The Open Graph protocol](https://ogp.me/) (standard)
+
+> Open Graph tags declare the title, description and image a platform uses when a URL is shared.
+
 ---
 
 ### TITLE_DUPLICATE
@@ -202,6 +258,10 @@ Same title used on multiple pages
 
 **Plain-English:** Duplicate Page Name
 
+**Basis:** published source — [Google Search Central](https://developers.google.com/search/docs/appearance/title-link) (vendor)
+
+> Google advises a unique, descriptive title for each page so results are distinguishable.
+
 ---
 
 ### TITLE_H1_MISMATCH
@@ -212,6 +272,10 @@ The page title and the H1 heading share no significant words
 **Recommendation:** Align the page title and H1 heading so they describe the same topic. They do not need to be identical, but both should clearly reflect the page's main subject. Significant mismatch confuses users who click a search result and then see an unrelated heading.
 
 **Plain-English:** Title and Heading Disagree
+
+**Basis:** TalkingToad's own judgement. No published source states this.
+
+> Our judgement. A title and an H1 that share no significant words usually means one of them does not describe the page. No source requires them to match, and a deliberate difference is legitimate.
 
 ---
 
@@ -229,6 +293,10 @@ Add a <title> tag to the <head> section of your HTML. In WordPress, you can typi
 
 **Plain-English:** Missing Name Tag
 
+**Basis:** published source — [Google Search Central](https://developers.google.com/search/docs/appearance/title-link) (vendor)
+
+> Google uses the title element as the primary source for the title link shown in search results.
+
 ---
 
 ### TITLE_TOO_LONG
@@ -236,9 +304,15 @@ Add a <title> tag to the <head> section of your HTML. In WordPress, you can typi
 
 Title over 60 characters
 
-**Recommendation:** Shorten the title to under 60 characters. Google truncates longer titles in search results.
+**Recommendation:** Aim for about 60 characters. Google does not publish a title length limit — it truncates by pixel width, and may rewrite a title regardless of length — so treat 60 as a guide, not a rule.
 
 **Plain-English:** Too-Long Page Name
+
+**Basis:** published source — [Google Search Central](https://developers.google.com/search/docs/appearance/title-link) (vendor)
+
+> Google may rewrite or truncate a title link when it does not suit the query or the available width.
+
+**What the source does not say:** The 60-character figure is ours. Google publishes no title length limit; truncation is by pixel width, which varies by device and characters used.
 
 ---
 
@@ -250,6 +324,12 @@ Title under 30 characters
 **Recommendation:** Expand the title to 30–60 characters. Include your organisation name and the page topic.
 
 **Plain-English:** Too-Short Page Name
+
+**Basis:** published source — [Google Search Central](https://developers.google.com/search/docs/appearance/title-link) (vendor)
+
+> Google advises titles be descriptive and concise rather than vague or generic.
+
+**What the source does not say:** The 30-character floor is ours. Google publishes no minimum. A short title is not automatically a poor one.
 
 ---
 
@@ -269,6 +349,10 @@ No H1 tag found on page
 
 **Plain-English:** Missing Main Heading
 
+**Basis:** published source — [W3C WAI (WCAG 2.2, SC 1.3.1)](https://www.w3.org/WAI/WCAG22/Understanding/info-and-relationships) (standard)
+
+> Structure conveyed visually must be available programmatically; a top-level heading is how a page states its subject.
+
 ---
 
 ### H1_MULTIPLE
@@ -279,6 +363,10 @@ More than one H1 on the page
 **Recommendation:** Remove extra H1 tags. Each page should have exactly one H1 that introduces the main topic.
 
 **Plain-English:** Multiple Main Headings
+
+**Basis:** TalkingToad's own judgement. No published source states this.
+
+> Our judgement, and Google has said publicly that multiple H1s are fine. The HTML standard permits them. We report it as a structure-clarity signal, not a ranking fault, and score it accordingly. Anyone told this must be fixed for Google's sake has been misinformed.
 
 ---
 
@@ -291,6 +379,10 @@ One or more heading tags have no text content
 
 **Plain-English:** Empty Heading
 
+**Basis:** published source — [W3C WAI (WCAG 2.2, SC 2.4.6)](https://www.w3.org/WAI/WCAG22/Understanding/headings-and-labels) (standard)
+
+> Headings must describe topic or purpose; a heading with no text describes nothing and still occupies the outline.
+
 ---
 
 ### HEADING_SKIP
@@ -301,6 +393,12 @@ Heading levels skip (e.g., H1 → H3)
 **Recommendation:** Fix the heading structure so levels are not skipped. Use H1, then H2, then H3 in order.
 
 **Plain-English:** Skipped Heading Level
+
+**Basis:** published source — [W3C WAI (WCAG 2.2, SC 1.3.1)](https://www.w3.org/WAI/WCAG22/Understanding/info-and-relationships) (standard)
+
+> Heading levels express document structure; a skipped level misstates the nesting to anyone navigating by headings.
+
+**What the source does not say:** Skipping a level is advisory in WCAG, not a conformance failure. We report it as structure, not as an accessibility violation.
 
 ---
 
@@ -320,6 +418,10 @@ Link destination returns 404 Not Found
 
 **Plain-English:** Dead Link
 
+**Basis:** published source — [IETF RFC 9110 §15.5.5](https://www.rfc-editor.org/rfc/rfc9110) (standard)
+
+> 404 means the origin server found no current representation for the target resource.
+
 ---
 
 ### BROKEN_LINK_410
@@ -330,6 +432,10 @@ Link destination returns 410 Gone
 **Recommendation:** Remove this link. The destination has been permanently removed.
 
 **Plain-English:** Removed Link
+
+**Basis:** published source — [IETF RFC 9110 §15.5.11](https://www.rfc-editor.org/rfc/rfc9110) (standard)
+
+> 410 means the resource is permanently gone and the condition is expected to be permanent.
 
 ---
 
@@ -342,6 +448,10 @@ Link destination returns 503 — may be temporarily down or blocking automated c
 
 **Plain-English:** Temporarily Blocked Link
 
+**Basis:** published source — [IETF RFC 9110 §15.6.4](https://www.rfc-editor.org/rfc/rfc9110) (standard)
+
+> 503 means the server is temporarily unable to handle the request — a transient condition, not a broken destination.
+
 ---
 
 ### BROKEN_LINK_5XX
@@ -352,6 +462,10 @@ Link destination returns a server error
 **Recommendation:** Check whether the linked site is down. If the problem persists, remove or replace the link.
 
 **Plain-English:** Broken Server Link
+
+**Basis:** published source — [IETF RFC 9110 §15.6](https://www.rfc-editor.org/rfc/rfc9110) (standard)
+
+> A 5xx status means the server failed to fulfil an apparently valid request.
 
 ---
 
@@ -364,6 +478,10 @@ Link not verified — social media platforms block automated checks
 
 **Plain-English:** Unverified Social Link
 
+**Basis:** measured during the crawl — not a published claim.
+
+> TalkingToad chose not to verify this destination, typically because the platform blocks automated checks. Recorded so an unverified link is never silently counted as working. Says nothing about whether the link works.
+
 ---
 
 ### EXTERNAL_LINK_TIMEOUT
@@ -374,6 +492,10 @@ External link did not respond — destination may be slow or unavailable
 **Recommendation:** Click the link to confirm it works in a browser. If it consistently fails, the destination site may be down or the domain may have expired.
 
 **Plain-English:** Slow External Link
+
+**Basis:** measured during the crawl — not a published claim.
+
+> The destination did not respond within TalkingToad's timeout. Recorded as unverified, not as broken: a slow response and a dead host are different findings and must not be reported as the same one.
 
 ---
 
@@ -391,6 +513,10 @@ Set the link's href to the actual target page. Reserve '#'/'javascript:void(0)' 
 
 **Plain-English:** Dead Call-to-Action Link
 
+**Basis:** TalkingToad's own judgement. No published source states this.
+
+> Our judgement that a call-to-action whose href is "#" or "javascript:void(0)" with no handler is a dead control. No standard forbids it — the pattern is legitimate for JS-driven widgets — so this is reported on navigational elements only, where a destination is expected.
+
 ---
 
 ### WRONG_PLACEHOLDER_LINK
@@ -406,6 +532,10 @@ An agent following the link lands somewhere meaningless (or unreachable), breaki
 Edit the link to use the real URL. If the link is a legitimate reference to that domain, ignore the flag — the check is conservative and uses link text and position to avoid false positives.
 
 **Plain-English:** Link to Placeholder Domain
+
+**Basis:** published source — [IETF RFC 2606](https://www.rfc-editor.org/rfc/rfc2606) (standard)
+
+> example.com, example.net and example.org are reserved for documentation and cannot serve a real destination.
 
 ---
 
@@ -425,6 +555,10 @@ Internal page URL redirects with a 301 — links should point to the final URL
 
 **Plain-English:** Internal Redirect Link
 
+**Basis:** published source — [Google Search Central](https://developers.google.com/search/docs/crawling-indexing/301-redirects) (vendor)
+
+> Google recommends updating internal links to point at the final URL rather than relying on a redirect.
+
 ---
 
 ### META_REFRESH_REDIRECT
@@ -435,6 +569,10 @@ Page uses a <meta http-equiv="refresh"> tag to redirect users
 **Recommendation:** Replace meta refresh redirects with server-side 301 redirects.
 
 **Plain-English:** HTML Redirect (Outdated)
+
+**Basis:** published source — [W3C WAI (WCAG 2.2, SC 2.2.1)](https://www.w3.org/WAI/WCAG22/Understanding/timing-adjustable) (standard)
+
+> A timed client-side redirect moves users without their control unless the delay can be adjusted or turned off.
 
 ---
 
@@ -447,6 +585,10 @@ Page returns a permanent redirect
 
 **Plain-English:** Permanent Redirect
 
+**Basis:** published source — [Google Search Central](https://developers.google.com/search/docs/crawling-indexing/301-redirects) (vendor)
+
+> A 301 is the permanent-move signal Google uses to transfer a URL's indexing signals to the target.
+
 ---
 
 ### REDIRECT_302
@@ -457,6 +599,10 @@ Page returns a temporary redirect
 **Recommendation:** Confirm whether this redirect is intentional. If permanent, change it to a 301 redirect.
 
 **Plain-English:** Temporary Redirect
+
+**Basis:** published source — [Google Search Central](https://developers.google.com/search/docs/crawling-indexing/301-redirects) (vendor)
+
+> A 302 signals a temporary move, so Google keeps indexing the original URL.
 
 ---
 
@@ -469,6 +615,10 @@ Redirect normalises URL case — your web server handles this automatically
 
 **Plain-English:** Auto-Corrected URL (Case)
 
+**Basis:** TalkingToad's own judgement. No published source states this.
+
+> TalkingToad's own judgement that a redirect existing only to normalise URL case is routine server behaviour and not a defect. It is reported for completeness, not as something to fix. No source is claimed because no source is needed for a decision to say less.
+
 ---
 
 ### REDIRECT_CHAIN
@@ -479,6 +629,12 @@ Page involves a multi-hop redirect chain
 **Recommendation:** Consolidate the redirect chain to a single direct redirect to the final destination.
 
 **Plain-English:** Multi-Hop Detour
+
+**Basis:** published source — [Google Search Central](https://developers.google.com/search/docs/crawling-indexing/301-redirects) (vendor)
+
+> Google advises keeping redirect chains short; long chains cost crawl budget and risk being abandoned.
+
+**What the source does not say:** Google does not publish a maximum hop count. The hop count at which TalkingToad reports is ours.
 
 ---
 
@@ -491,6 +647,10 @@ Redirect loop detected
 
 **Plain-English:** Spinning Page
 
+**Basis:** published source — [IETF RFC 9110](https://www.rfc-editor.org/rfc/rfc9110) (standard)
+
+> A client must detect and break redirect cycles; a looping URL can never be retrieved.
+
 ---
 
 ### REDIRECT_TRAILING_SLASH
@@ -501,6 +661,10 @@ Redirect adds or removes a trailing slash — your CMS handles this automaticall
 **Recommendation:** No urgent action needed. Your CMS corrects this for visitors automatically. To eliminate the extra round trip, update internal links to use the canonical URL with the trailing slash your server expects.
 
 **Plain-English:** Auto-Corrected URL (Slash)
+
+**Basis:** TalkingToad's own judgement. No published source states this.
+
+> As above: adding or removing a trailing slash is standard CMS behaviour. Reported so the redirect is visible, explicitly not scored as a fault.
 
 ---
 
@@ -520,6 +684,10 @@ Page declares an AMP version via <link rel="amphtml"> but the AMP URL is not rea
 
 **Plain-English:** Broken Mobile Version
 
+**Basis:** TalkingToad's own judgement. No published source states this.
+
+> Our judgement. A declared AMP version that does not resolve is a broken reference by inspection. AMP itself is deprecated as a Google Search requirement, so this is reported as cleanup, not as an SEO fault.
+
 ---
 
 ### CONTENT_STALE
@@ -530,6 +698,10 @@ Page content has not been modified in over 12 months
 **Recommendation:** Review and refresh this page's content. Search engines favour recently updated pages, and visitors may lose trust in outdated information. Even small updates signal freshness.
 
 **Plain-English:** Stale Content
+
+**Basis:** TalkingToad's own judgement. No published source states this.
+
+> Our judgement, and the 12-month window is ours. Age is not a defect — reference content is often correct for years. It flags pages worth a review, and is deliberately scored low.
 
 ---
 
@@ -542,6 +714,10 @@ Page is more than 4 clicks from the homepage
 
 **Plain-English:** Hard-to-Reach Page
 
+**Basis:** TalkingToad's own judgement. No published source states this.
+
+> Our judgement, and the 4-click figure is ours. Google publishes no depth limit. Deeply buried pages tend to be crawled less often and are harder for people to reach; neither effect has a published threshold.
+
 ---
 
 ### INTERNAL_NOFOLLOW
@@ -552,6 +728,10 @@ Internal link carries rel="nofollow", which may prevent search engines from disc
 **Recommendation:** Remove the nofollow attribute from internal links. Reserve rel="nofollow" for links to external or user-generated content.
 
 **Plain-English:** Blocked Internal Link
+
+**Basis:** published source — [Google Search Central](https://developers.google.com/search/docs/crawling-indexing/qualify-outbound-links) (vendor)
+
+> rel="nofollow" tells Google not to use the link for discovery or ranking, which on an internal link works against the site.
 
 ---
 
@@ -564,6 +744,10 @@ Page redirects to a login screen
 
 **Plain-English:** Login-Protected Page
 
+**Basis:** measured during the crawl — not a published claim.
+
+> The URL redirected to a login screen during this crawl, so its content was not read. Frequently intended. Recorded so the page is not counted as a healthy public page.
+
 ---
 
 ### MISSING_VIEWPORT_META
@@ -574,6 +758,10 @@ Page is missing the viewport meta tag
 **Recommendation:** Add <meta name="viewport" content="width=device-width, initial-scale=1"> to the <head>. Without it, mobile browsers render the page at desktop width and zoom out, making it hard to use.
 
 **Plain-English:** Not Mobile-Friendly
+
+**Basis:** published source — [Google Search Central](https://developers.google.com/search/docs/appearance/page-experience) (vendor)
+
+> Google evaluates whether pages work on mobile devices; without a viewport meta tag a page is rendered at desktop width and zoomed out.
 
 ---
 
@@ -586,6 +774,10 @@ Page has a noindex HTTP header
 
 **Plain-English:** Hidden from Search (Server)
 
+**Basis:** published source — [Google Search Central](https://developers.google.com/search/docs/crawling-indexing/block-indexing) (vendor)
+
+> X-Robots-Tag&#58; noindex in the HTTP response has the same effect as the meta tag, and applies to non-HTML files too.
+
 ---
 
 ### NOINDEX_META
@@ -596,6 +788,10 @@ Page has a noindex meta tag
 **Recommendation:** Confirm whether this page should be excluded from search results. Remove the noindex tag if not.
 
 **Plain-English:** Hidden from Search
+
+**Basis:** published source — [Google Search Central](https://developers.google.com/search/docs/crawling-indexing/block-indexing) (vendor)
+
+> A noindex meta tag instructs Google to drop the page from its index entirely.
 
 ---
 
@@ -608,6 +804,12 @@ Crawlable page not listed in sitemap
 
 **Plain-English:** Missing from Sitemap
 
+**Basis:** published source — [sitemaps.org protocol](https://www.sitemaps.org/protocol.html) (standard)
+
+> A sitemap lists the URLs a site wants crawled; a crawlable page absent from it is not advertised for discovery.
+
+**What the source does not say:** Omission from a sitemap does not prevent indexing. Reported as a discovery gap, not a fault.
+
 ---
 
 ### ORPHAN_PAGE
@@ -618,6 +820,12 @@ Page has no internal links pointing to it — search engines may not discover it
 **Recommendation:** Add at least one internal link to this page from a navigation menu, hub page, or relevant content page so search engines and visitors can find it.
 
 **Plain-English:** Disconnected Page
+
+**Basis:** published source — [Google Search Central](https://developers.google.com/search/docs/crawling-indexing/overview-google-crawlers) (vendor)
+
+> Google discovers pages primarily by following links; a page nothing links to must be found some other way.
+
+**What the source does not say:** Only sound over a complete link graph. TalkingToad suppresses this check on a partial scan rather than infer absence from a subset.
 
 ---
 
@@ -630,6 +838,12 @@ HTML page response is unusually large — slower to load, especially on mobile c
 
 **Plain-English:** Overweight Page
 
+**Basis:** published source — [web.dev (Google)](https://web.dev/articles/lcp) (vendor)
+
+> Response size is one determinant of how quickly the main content can be rendered.
+
+**What the source does not say:** The size at which we report is ours. No source sets an HTML weight limit.
+
 ---
 
 ### PAGE_TIMEOUT
@@ -640,6 +854,10 @@ Page did not respond within the timeout period
 **Recommendation:** Check the page manually. A persistent timeout may indicate a slow server, heavy page weight, or a broken URL. Consider increasing server response speed.
 
 **Plain-English:** Slow-Loading Page
+
+**Basis:** measured during the crawl — not a published claim.
+
+> The page did not respond within TalkingToad's own timeout during this crawl. Records that the page was not read, so it is never counted as clean. Not a verdict on the site's speed for a visitor.
 
 ---
 
@@ -652,6 +870,10 @@ Page declares rel="next" or rel="prev" pagination link elements
 
 **Plain-English:** Paginated Content
 
+**Basis:** TalkingToad's own judgement. No published source states this.
+
+> Purely informational. Google announced in 2019 that it no longer uses rel=next/prev for indexing. Reported so the markup is visible; explicitly not scored as a fault, and not a recommendation to remove it.
+
 ---
 
 ### PARA_TOO_LONG
@@ -662,6 +884,10 @@ One or more paragraphs exceed 150 words, making content harder to scan and extra
 **Recommendation:** Break long paragraphs into shorter units of 50–100 words each. Short paragraphs improve both human readability and AI passage extraction — AI systems prefer self-contained, focused chunks.
 
 **Plain-English:** Overly Long Paragraphs
+
+**Basis:** TalkingToad's own judgement. No published source states this.
+
+> Our judgement, and the 150-word figure is ours. No standard sets a paragraph length. Long paragraphs are harder to scan on a phone; that is a readability opinion, not a ranking claim.
 
 ---
 
@@ -674,6 +900,10 @@ PDF file exceeds 10 MB
 
 **Plain-English:** Oversized Document
 
+**Basis:** TalkingToad's own judgement. No published source states this.
+
+> Our judgement, and the 10 MB figure is ours. It reflects what is reasonable to ask a visitor on a mobile connection to download, not any published limit.
+
 ---
 
 ### ROBOTS_BLOCKED
@@ -685,6 +915,10 @@ Page blocked by robots.txt
 
 **Plain-English:** Blocked by Crawl Rules
 
+**Basis:** published source — [IETF RFC 9309](https://www.rfc-editor.org/rfc/rfc9309.html) (standard)
+
+> A Disallow rule instructs a conforming crawler not to fetch the matching paths.
+
 ---
 
 ### THIN_CONTENT
@@ -695,6 +929,12 @@ Page has fewer than 300 words of body content
 **Recommendation:** Expand the page content to at least 300 words to provide more value to users and search engines.
 
 **Plain-English:** Low Information
+
+**Basis:** published source — [Google Search Central](https://developers.google.com/search/docs/fundamentals/creating-helpful-content) (vendor)
+
+> Google advises pages provide substantial, complete and comprehensive coverage of their topic.
+
+**What the source does not say:** The 300-word figure is ours. Google publishes no word count and states explicitly that there is no minimum. A short page can be complete.
 
 ---
 
@@ -714,6 +954,10 @@ No sitemap found for this domain
 
 **Plain-English:** No Sitemap
 
+**Basis:** published source — [sitemaps.org protocol](https://www.sitemaps.org/protocol.html) (standard)
+
+> A sitemap lets a site tell crawlers which URLs are available and is the standard mechanism for URL discovery.
+
 ---
 
 <a id="security"></a>
@@ -732,6 +976,10 @@ HTTP version of the site does not redirect to HTTPS
 
 **Plain-English:** Insecure URL Not Redirected
 
+**Basis:** published source — [Google Search Central](https://developers.google.com/search/docs/fundamentals/seo-starter-guide) (vendor)
+
+> Google's own starter guidance is written around a site served over HTTPS, with one scheme serving each URL.
+
 ---
 
 ### HTTP_PAGE
@@ -742,6 +990,10 @@ Page is served over HTTP, not HTTPS
 **Recommendation:** Migrate to HTTPS and configure a server-side 301 redirect from HTTP to HTTPS.
 
 **Plain-English:** Unsecured Page
+
+**Basis:** published source — [Google Search Central](https://web.dev/articles/why-https-matters) (vendor)
+
+> Google states HTTPS protects the integrity and confidentiality of a site's traffic and is a prerequisite for many web platform features.
 
 ---
 
@@ -754,6 +1006,10 @@ HTTPS page is missing the Strict-Transport-Security header
 
 **Plain-English:** Security Header Missing
 
+**Basis:** published source — [IETF RFC 6797](https://www.rfc-editor.org/rfc/rfc6797) (standard)
+
+> Strict-Transport-Security instructs a browser to use HTTPS only, closing the first-request downgrade window.
+
 ---
 
 ### MIXED_CONTENT
@@ -764,6 +1020,10 @@ HTTPS page loads resources over HTTP
 **Recommendation:** Update all resource URLs to use HTTPS. Check images, scripts, stylesheets, and iframes.
 
 **Plain-English:** Partially Unsecured Page
+
+**Basis:** published source — [MDN Web Docs](https://developer.mozilla.org/en-US/docs/Web/Security/Mixed_content) (standard)
+
+> Browsers block or downgrade insecure subresources on an HTTPS page, so mixed content breaks the page's security guarantee.
 
 ---
 
@@ -776,6 +1036,10 @@ External link opens in a new tab without rel="noopener" or rel="noreferrer"
 
 **Plain-English:** Unsafe External Link
 
+**Basis:** published source — [OWASP](https://owasp.org/www-community/attacks/Reverse_Tabnabbing) (industry)
+
+> A target="_blank" link without rel="noopener" lets the opened page rewrite the opener's location.
+
 ---
 
 ### WWW_CANONICALIZATION
@@ -786,6 +1050,10 @@ Both www and non-www versions of the site resolve without redirecting to each ot
 **Recommendation:** Configure a 301 redirect so one version (www or non-www) redirects to the other. This consolidates link equity and avoids duplicate content.
 
 **Plain-English:** www/non-www Not Consolidated
+
+**Basis:** published source — [Google Search Central](https://developers.google.com/search/docs/crawling-indexing/canonicalization) (vendor)
+
+> When several URLs serve the same content Google picks one canonical; serving both www and non-www without redirecting leaves that choice to Google.
 
 ---
 
@@ -805,6 +1073,10 @@ URL contains encoded spaces (%20)
 
 **Plain-English:** Spaces in Web Address
 
+**Basis:** published source — [Google Search Central](https://developers.google.com/search/docs/crawling-indexing/url-structure) (vendor)
+
+> Google recommends simple, readable URLs; percent-encoded spaces make a URL harder to read and to share intact.
+
 ---
 
 ### URL_HAS_UNDERSCORES
@@ -815,6 +1087,10 @@ URL path uses underscores instead of hyphens
 **Recommendation:** Use hyphens as word separators in URL paths. Google treats underscores as word-joiners.
 
 **Plain-English:** Underscores in Web Address
+
+**Basis:** published source — [Google Search Central](https://developers.google.com/search/docs/crawling-indexing/url-structure) (vendor)
+
+> Google recommends hyphens rather than underscores to separate words in a URL path.
 
 ---
 
@@ -827,6 +1103,10 @@ URL exceeds 200 characters
 
 **Plain-English:** Overly Long Web Address
 
+**Basis:** TalkingToad's own judgement. No published source states this.
+
+> Our judgement, and the 200-character figure is ours. Google states no URL length limit for ranking. Long URLs are harder to share and more often truncated in display, which is a usability argument, not a ranking one.
+
 ---
 
 ### URL_UPPERCASE
@@ -837,6 +1117,10 @@ URL path contains uppercase characters
 **Recommendation:** Use lowercase-only URLs. Most web servers will auto-redirect uppercase URLs to lowercase, but this creates an unnecessary extra redirect. Update internal links and page slugs to use lowercase only to avoid that redirect entirely.
 
 **Plain-English:** Mixed-Case Web Address
+
+**Basis:** TalkingToad's own judgement. No published source states this.
+
+> Our judgement. URL paths are case-sensitive on most servers, so mixed case invites duplicate URLs for one page. Google does not require lowercase paths; consistency is the point, not the case itself.
 
 ---
 
@@ -856,6 +1140,10 @@ Image alt text matches the filename
 
 **Plain-English:** Alt Text is Filename
 
+**Basis:** TalkingToad's own judgement. No published source states this.
+
+> Our judgement. Alt text identical to the filename is almost always auto-generated rather than written, so it rarely serves the equivalent purpose WCAG 1.1.1 requires. Occasionally a filename genuinely is the best description, so this is reported, not asserted.
+
 ---
 
 ### IMG_ALT_GENERIC
@@ -866,6 +1154,10 @@ Image alt text uses a generic term like 'image', 'photo', or 'picture'
 **Recommendation:** Replace generic alt text with a specific description of what the image shows. Instead of 'photo', describe the scene, people, or objects depicted.
 
 **Plain-English:** Generic Alt Text
+
+**Basis:** published source — [W3C WAI (WCAG 2.2, SC 1.1.1)](https://www.w3.org/WAI/WCAG22/Understanding/non-text-content) (standard)
+
+> The alternative must serve the equivalent purpose; "image" or "photo" conveys nothing the element did not already announce.
 
 ---
 
@@ -878,6 +1170,10 @@ One or more images are missing an alt attribute or have empty/blank alt text
 
 **Plain-English:** Images Missing Alt Text
 
+**Basis:** published source — [W3C WAI (WCAG 2.2, SC 1.1.1)](https://www.w3.org/WAI/WCAG22/Understanding/non-text-content) (standard)
+
+> Non-text content must have a text alternative serving the equivalent purpose.
+
 ---
 
 ### IMG_ALT_MISUSED
@@ -888,6 +1184,10 @@ Alt text usage is incorrect for image type (decorative image has alt text)
 **Recommendation:** Decorative images should have empty alt="" to be skipped by screen readers. Only meaningful images should have descriptive alt text.
 
 **Plain-English:** Alt Text Misused
+
+**Basis:** published source — [W3C WAI (WCAG 2.2, SC 1.1.1)](https://www.w3.org/WAI/WCAG22/Understanding/non-text-content) (standard)
+
+> Purely decorative images must be implemented so assistive technology can ignore them — which alt="" does and descriptive alt text defeats.
 
 ---
 
@@ -900,6 +1200,10 @@ Image alt text is too long (over 125 characters)
 
 **Plain-English:** Alt Text Too Long
 
+**Basis:** TalkingToad's own judgement. No published source states this.
+
+> Our judgement, and the 125-character figure is ours. WCAG sets no length. The figure is long-standing practitioner convention reflecting older screen readers; a longer alt is not a conformance failure, and a complex image may need one.
+
 ---
 
 ### IMG_ALT_TOO_SHORT
@@ -910,6 +1214,10 @@ Image alt text is too short (under 5 characters)
 **Recommendation:** Expand the alt text to at least 5 characters. Describe what the image shows, not just a single word.
 
 **Plain-English:** Alt Text Too Short
+
+**Basis:** TalkingToad's own judgement. No published source states this.
+
+> Our judgement, and the 5-character floor is ours. WCAG sets no minimum, and a very short alt can be exactly right ("Logo"). It flags the case where alt was filled in to silence a checker.
 
 ---
 
@@ -922,6 +1230,10 @@ Image src URL returns an error response (4xx/5xx)
 
 **Plain-English:** Broken Image
 
+**Basis:** published source — [IETF RFC 9110](https://www.rfc-editor.org/rfc/rfc9110) (standard)
+
+> A 4xx or 5xx response means no representation was returned, so the image cannot render.
+
 ---
 
 ### IMG_DUPLICATE_CONTENT
@@ -932,6 +1244,10 @@ Same image content used under multiple URLs
 **Recommendation:** Consolidate duplicate images to a single URL. This saves server space and improves caching efficiency.
 
 **Plain-English:** Duplicate Image
+
+**Basis:** TalkingToad's own judgement. No published source states this.
+
+> Our judgement. Byte-identical images under different URLs each occupy the cache separately and are each downloaded once. Not a ranking claim, and duplicates are sometimes deliberate.
 
 ---
 
@@ -944,6 +1260,10 @@ Image uses legacy format (JPEG/PNG/GIF) where WebP would save significant space
 
 **Plain-English:** Legacy Image Format
 
+**Basis:** published source — [web.dev (Google)](https://web.dev/articles/serve-images-webp) (vendor)
+
+> WebP typically produces substantially smaller files than equivalent-quality JPEG or PNG.
+
 ---
 
 ### IMG_NO_SRCSET
@@ -954,6 +1274,10 @@ Large image lacks srcset for responsive delivery
 **Recommendation:** Add a srcset attribute to serve appropriately sized images to mobile devices. This improves load times on smaller screens.
 
 **Plain-English:** Missing Responsive Images
+
+**Basis:** published source — [web.dev (Google)](https://web.dev/articles/serve-responsive-images) (vendor)
+
+> srcset lets the browser choose a source matched to the device, avoiding the download of pixels it cannot display.
 
 ---
 
@@ -966,6 +1290,12 @@ Image intrinsic size is more than 2x its display size (wasted bandwidth)
 
 **Plain-English:** Overscaled Image
 
+**Basis:** published source — [web.dev (Google)](https://web.dev/articles/serve-responsive-images) (vendor)
+
+> Serving an image substantially larger than its display size transfers bytes the user can never see.
+
+**What the source does not say:** The 2x ratio is ours. No source sets a threshold, and 2x is deliberately lenient so high-density displays are not flagged.
+
 ---
 
 ### IMG_OVERSIZED
@@ -976,6 +1306,10 @@ Image file exceeds 200 KB
 **Recommendation:** Compress this image. Use Squoosh, TinyPNG, or ImageOptim to reduce the file size without visible quality loss.
 
 **Plain-English:** Oversized Image
+
+**Basis:** TalkingToad's own judgement. No published source states this.
+
+> Our judgement, and the 200 KB figure is ours. No source publishes a per-image weight limit; what matters is the page total and the connection. The figure is a practical budget for a nonprofit site on mobile, and is configurable.
 
 ---
 
@@ -988,6 +1322,12 @@ Image has poor compression efficiency (high bytes per pixel)
 
 **Plain-English:** Poor Compression
 
+**Basis:** published source — [Chrome Lighthouse documentation (Google)](https://developer.chrome.com/docs/lighthouse/performance/uses-optimized-images) (vendor)
+
+> Images that are not efficiently encoded transfer more bytes than their visual quality requires.
+
+**What the source does not say:** The bytes-per-pixel threshold is ours. It is a proxy: some images legitimately need a high bit rate.
+
 ---
 
 ### IMG_SLOW_LOAD
@@ -998,6 +1338,10 @@ Image takes too long to load (over 1 second)
 **Recommendation:** Optimize the image by compressing it, reducing dimensions, or using a CDN. Consider lazy loading for below-the-fold images.
 
 **Plain-English:** Slow Loading Image
+
+**Basis:** TalkingToad's own judgement. No published source states this.
+
+> Our judgement, and the 1-second figure is ours. It is measured from the crawler's network, not the user's, so it indicates a slow origin rather than a slow experience for any particular visitor.
 
 ---
 
@@ -1017,6 +1361,10 @@ robots.txt blocks all bots with User-agent: * / Disallow: /
 
 **Plain-English:** All Bots Blocked
 
+**Basis:** published source — [IETF RFC 9309](https://www.rfc-editor.org/rfc/rfc9309.html) (standard)
+
+> User-agent: * with Disallow: / instructs every conforming crawler to fetch nothing.
+
 ---
 
 ### AI_BOT_DEPRECATED_DIRECTIVE
@@ -1027,6 +1375,10 @@ robots.txt references a deprecated AI bot user agent
 **Recommendation:** Remove deprecated directives (anthropic-ai, claude-web) and replace with current bot names (ClaudeBot, Claude-SearchBot, Claude-User).
 
 **Plain-English:** Deprecated AI Bot Name in robots.txt
+
+**Basis:** published source — [OpenAI bot documentation](https://platform.openai.com/docs/bots) (vendor)
+
+> The vendors publish their current user-agent tokens; a rule naming a token no longer in use has no effect.
 
 ---
 
@@ -1039,6 +1391,10 @@ robots.txt has no explicit directives for known AI bots
 
 **Plain-English:** No AI Bot Configuration
 
+**Basis:** TalkingToad's own judgement. No published source states this.
+
+> Informational, and deliberately not a recommendation. It reports that robots.txt names no AI crawler either way. Whether to allow or block them is the organisation's decision, and TalkingToad takes no position on it.
+
 ---
 
 ### AI_BOT_SEARCH_BLOCKED
@@ -1049,6 +1405,10 @@ A major AI search bot is disallowed in robots.txt
 **Recommendation:** Allow AI search bots in robots.txt. This bot enables ChatGPT, Gemini, and other AI engines to include your site in their answers.
 
 **Plain-English:** AI Search Bot Blocked
+
+**Basis:** published source — [OpenAI bot documentation](https://platform.openai.com/docs/bots) (vendor)
+
+> OpenAI documents its crawler user agents and states that disallowing them in robots.txt stops those fetches.
 
 ---
 
@@ -1061,6 +1421,10 @@ Internal AI bot reference table has not been reviewed in >12 months
 
 **Plain-English:** AI Bot Table Needs Review
 
+**Basis:** measured during the crawl — not a published claim.
+
+> TalkingToad's own table of AI crawler user agents has not been refreshed within the freshness window. A statement about this tool, not about the site, surfaced because a stale table produces confident wrong answers.
+
 ---
 
 ### AI_BOT_TRAINING_DISALLOWED
@@ -1071,6 +1435,12 @@ An AI training bot is disallowed in robots.txt
 **Recommendation:** This may be intentional. If accidental, allow the bot. Blocking training bots does not affect AI search visibility.
 
 **Plain-English:** AI Training Bot Disallowed
+
+**Basis:** published source — [OpenAI bot documentation](https://platform.openai.com/docs/bots) (vendor)
+
+> GPTBot is the documented training crawler and honours a robots.txt disallow.
+
+**What the source does not say:** Blocking training crawlers is a legitimate choice. TalkingToad reports the state and does not recommend allowing it.
 
 ---
 
@@ -1083,6 +1453,10 @@ An AI user-fetch bot is disallowed in robots.txt
 
 **Plain-English:** AI User Bot Blocked
 
+**Basis:** published source — [OpenAI bot documentation](https://platform.openai.com/docs/bots) (vendor)
+
+> OpenAI documents a separate user-triggered fetch agent, so blocking it stops retrieval on behalf of a person who asked for the page by name.
+
 ---
 
 ### AI_CITED_PAGE
@@ -1093,6 +1467,10 @@ This page has been cited by AI engines in the last 30 days, indicating establish
 **Recommendation:** Maintain content quality and freshness to sustain AI citation status.
 
 **Plain-English:** AI-Cited Page
+
+**Basis:** measured during the crawl — not a published claim.
+
+> A citation of this URL was recorded by the configured citation source within the window. An observation, not a prediction. It establishes nothing about pages with no recorded citation, which may simply not have been sampled.
 
 ---
 
@@ -1105,6 +1483,10 @@ Important content on this page is not in textual form — it is carried by image
 
 **Plain-English:** Content Not Available as Text
 
+**Basis:** published source — [W3C WAI (WCAG 2.2, SC 1.1.1)](https://www.w3.org/WAI/WCAG22/Understanding/non-text-content) (standard)
+
+> Information carried only by an image needs a text alternative to be available to anything that reads text.
+
 ---
 
 ### AI_HIGH_VALUE_UNCITED
@@ -1115,6 +1497,10 @@ This healthy, content-rich page has zero AI citations despite recent data, sugge
 **Recommendation:** Improve content structure, add schema markup, and build backlinks to increase AI discoverability.
 
 **Plain-English:** High-Value Page Not AI-Cited
+
+**Basis:** TalkingToad's own judgement. No published source states this.
+
+> Our judgement, and the weakest kind. That a page we rate as high-value has no recorded citation may mean it is not being surfaced, or only that our sampling did not see one. Absence of a citation is not evidence of a problem, which is why this is labelled Heuristic and scored low.
 
 ---
 
@@ -1127,6 +1513,10 @@ The main content area contains less than 40% of the page's visible text. Navigat
 
 **Plain-English:** Low Main Content Ratio
 
+**Basis:** TalkingToad's own judgement. No published source states this.
+
+> Our judgement, and the 40% figure is ours. It depends on TalkingToad identifying the main content area correctly, which on an unusual template it may not.
+
 ---
 
 ### AI_NO_VISUAL_COMPANION
@@ -1137,6 +1527,10 @@ A substantial text page (article/service/FAQ) has no images or video to support 
 **Recommendation:** Add at least one relevant, high-quality image or video. Visuals help both readers and AI systems understand and surface your content.
 
 **Plain-English:** No Supporting Visual
+
+**Basis:** TalkingToad's own judgement. No published source states this.
+
+> Our judgement, and the weakest kind. A long text page with no image may be harder to engage with. Nothing establishes an effect on AI retrieval, and it is scored accordingly.
 
 ---
 
@@ -1149,6 +1543,10 @@ An X-Robots-Tag directive specifically blocks an AI crawler (e.g. GPTBot, Google
 
 **Plain-English:** AI Bot Blocked
 
+**Basis:** published source — [Google Search Central](https://developers.google.com/search/docs/crawling-indexing/robots-meta-tag) (vendor)
+
+> X-Robots-Tag directives can be addressed to a named user agent, applying to that crawler only.
+
 ---
 
 ### AI_PREVIEW_SUPPRESSED
@@ -1159,6 +1557,10 @@ An X-Robots-Tag response header suppresses this page's search/AI preview (nosnip
 **Recommendation:** If you want this page to be eligible for AI Overviews and citations, remove the nosnippet / max-snippet:0 directive from the X-Robots-Tag header (often set in server config or an SEO plugin).
 
 **Plain-English:** AI Preview Suppressed
+
+**Basis:** published source — [Google Search Central](https://developers.google.com/search/docs/crawling-indexing/robots-meta-tag) (vendor)
+
+> Google documents nosnippet and max-snippet in the X-Robots-Tag header as suppressing the text preview for a page.
 
 ---
 
@@ -1171,6 +1573,10 @@ No /ai.txt file found at site root
 
 **Plain-English:** No ai.txt File
 
+**Basis:** TalkingToad's own judgement. No published source states this.
+
+> Our judgement, and weak. ai.txt is one of several competing proposals for declaring AI usage preferences, adopted by no major engine. Reported for completeness and scored near zero; robots.txt is the mechanism that actually works today.
+
 ---
 
 ### AUTHOR_BYLINE_MISSING
@@ -1181,6 +1587,10 @@ Blog or article page has no author byline, rel=author, or JSON-LD author field
 **Recommendation:** Add an author byline with name and optionally credentials. Include rel='author' on the author link and an 'author' field in your JSON-LD BlogPosting schema.
 
 **Plain-English:** No Author Attribution
+
+**Basis:** published source — [Google Search Central](https://developers.google.com/search/docs/fundamentals/creating-helpful-content) (vendor)
+
+> Google's guidance asks who wrote the content and whether the site makes authorship clear.
 
 ---
 
@@ -1198,6 +1608,10 @@ Add jobTitle / description / sameAs / url to the author Person in your JSON-LD.
 
 **Plain-English:** Author Credentials Missing
 
+**Basis:** TalkingToad's own judgement. No published source states this.
+
+> Our judgement. Google's helpful-content guidance discusses expertise but publishes no credential requirement and no way to verify one. That a byline carries no stated credential is an observation about the page, not a measure of the author.
+
 ---
 
 ### AUTHOR_IDENTITY_INCONSISTENT
@@ -1214,6 +1628,10 @@ Use one canonical author name + profile URL across all articles.
 
 **Plain-English:** Inconsistent Author Identity
 
+**Basis:** TalkingToad's own judgement. No published source states this.
+
+> Our judgement. The same person named differently across a site gives a consumer no single identity to resolve. Name variants are often legitimate.
+
 ---
 
 ### BLOG_SECTIONS_MISSING
@@ -1224,6 +1642,10 @@ Blog or article page lacks sufficient heading structure for AI citation anchors
 **Recommendation:** Add H2/H3 headings to break content into named sections. AI engines use headings as citation anchors — a long post with fewer than 3 headings cannot be accurately quoted or cited by AI.
 
 **Plain-English:** No Section Headings for AI Citation
+
+**Basis:** TalkingToad's own judgement. No published source states this.
+
+> Our judgement. A long article with almost no headings offers no structure to navigate or excerpt by. The section count that triggers this is ours.
 
 ---
 
@@ -1241,6 +1663,10 @@ Expand the page with original, page-specific substance.
 
 **Plain-English:** Mostly Boilerplate
 
+**Basis:** TalkingToad's own judgement. No published source states this.
+
+> Our judgement, and the ratio is ours. When most of a page's text is the same header, footer and sidebar found sitewide, little of the page is about its own subject. Correct and unavoidable on short pages.
+
 ---
 
 ### CENTRAL_CLAIM_BURIED
@@ -1251,6 +1677,10 @@ The page's main claim or answer does not appear in the first 150 words
 **Recommendation:** State the central point in the opening paragraph. AI systems weight early content more heavily when deciding what to extract and cite.
 
 **Plain-English:** Main Point Buried
+
+**Basis:** TalkingToad's own judgement. No published source states this.
+
+> Our judgement, and the first-150-words window is ours. No engine operator publishes anything about where an answer should sit. The reasoning is that a summariser reading a truncated page sees the opening first — plausible, unconfirmed.
 
 ---
 
@@ -1263,6 +1693,10 @@ More than half of the page's H2/H3 sections are not understandable in isolation
 
 **Plain-English:** Sections Lack Context
 
+**Basis:** TalkingToad's own judgement. No published source states this.
+
+> Our judgement, and the half-of-sections threshold is ours. Retrieval systems commonly index passages rather than pages, so a section that only makes sense after the one above it may be retrieved without its context. How any given engine chunks a page is not published.
+
 ---
 
 ### CITATIONS_MISSING_SUBSTANTIAL_CONTENT
@@ -1273,6 +1707,12 @@ Page has 200+ words but no citations or source attribution
 **Recommendation:** Add citations to factual claims. Use inline references or a Sources section.
 
 **Plain-English:** Missing Citations
+
+**Basis:** published source — [Aggarwal et al., GEO: Generative Engine Optimization (KDD 2024)](https://arxiv.org/abs/2311.09735) (research)
+
+> Adding cited sources was among the interventions that raised visibility in the study's generative engines.
+
+**What the source does not say:** The 200-word trigger is ours. Plenty of legitimate pages cite nothing.
 
 ---
 
@@ -1285,6 +1725,10 @@ Page has citations without surrounding context
 
 **Plain-English:** Citations Without Context
 
+**Basis:** TalkingToad's own judgement. No published source states this.
+
+> Our judgement. A citation with no surrounding sentence explaining what it supports cannot be evaluated by a reader or summarised faithfully. No source states this.
+
 ---
 
 ### CITATIONS_SOURCES_INACCESSIBLE
@@ -1295,6 +1739,10 @@ Page cites sources that are broken or inaccessible
 **Recommendation:** Replace broken citation links with working alternatives.
 
 **Plain-English:** Inaccessible Citation Sources
+
+**Basis:** published source — [IETF RFC 9110](https://www.rfc-editor.org/rfc/rfc9110) (standard)
+
+> A cited URL returning 4xx or 5xx cannot be retrieved, so the citation cannot be checked by anyone following it.
 
 ---
 
@@ -1307,6 +1755,10 @@ Technical how-to/guide page with numbered steps has no <pre> or <code> blocks
 
 **Plain-English:** No Code Blocks in Technical Guide
 
+**Basis:** TalkingToad's own judgement. No published source states this.
+
+> Our judgement. Numbered technical steps with no code or preformatted block often mean commands are inline in prose, where they are easy to mistranscribe. Not every technical guide involves code.
+
 ---
 
 ### COMPARISON_TABLE_MISSING
@@ -1317,6 +1769,10 @@ Page contains comparison language ('vs', 'versus', 'compared to') but no table
 **Recommendation:** Add a structured comparison table. Tables are the most extractable format for comparisons — AI systems can read them as structured data.
 
 **Plain-English:** Comparison Without Table
+
+**Basis:** TalkingToad's own judgement. No published source states this.
+
+> Our judgement. A page using comparison language without a table leaves the comparison implicit. Detected from phrasing, so it will flag pages where "versus" was incidental.
 
 ---
 
@@ -1334,6 +1790,10 @@ Render contact details as plain HTML text in the footer or a contact block. Opti
 
 **Plain-English:** Contact Info Not in Text
 
+**Basis:** published source — [W3C WAI (WCAG 2.2, SC 1.1.1)](https://www.w3.org/WAI/WCAG22/Understanding/non-text-content) (standard)
+
+> Contact details rendered only as an image or injected by script are not present as text for any reader of the served page.
+
 ---
 
 ### CONTENT_CLOAKING_DETECTED
@@ -1344,6 +1804,12 @@ Rendered content appears to shift the page's topic versus raw HTML — possible 
 **Recommendation:** Ensure raw HTML and rendered content describe the same topic. Serving different content to AI crawlers than to users violates search quality guidelines.
 
 **Plain-English:** Possible Content Cloaking
+
+**Basis:** published source — [Google Search Central](https://developers.google.com/search/docs/essentials/spam-policies) (vendor)
+
+> Google defines cloaking as presenting different content to users and search engines, and treats it as a policy violation.
+
+**What the source does not say:** TalkingToad detects a topic shift between raw and rendered content. That is a signal, not a finding of intent, and a common cause is a personalisation script rather than deception.
 
 ---
 
@@ -1356,6 +1822,10 @@ Visible/declared modified date is old enough to read as stale for its page type
 
 **Plain-English:** Stale Visible Date
 
+**Basis:** TalkingToad's own judgement. No published source states this.
+
+> Our judgement, and the staleness window is ours. A visible date that reads as old undermines a reader's confidence in time-sensitive content. Age is not error, and much content is correct indefinitely.
+
 ---
 
 ### CONTENT_IMAGE_HEAVY
@@ -1366,6 +1836,10 @@ Page has significantly more images than text sections
 **Recommendation:** Add descriptive captions and surrounding text for each image. AI systems rely on text context to interpret visual content.
 
 **Plain-English:** Image-Heavy Layout
+
+**Basis:** TalkingToad's own judgement. No published source states this.
+
+> Our judgement. A page carrying far more images than text sections may hold its meaning in pictures, which a text reader cannot see. Entirely correct for a gallery.
 
 ---
 
@@ -1378,6 +1852,10 @@ Page has no visible text — only images, video, or interactive media
 
 **Plain-English:** No Text Content
 
+**Basis:** published source — [W3C WAI (WCAG 2.2, SC 1.1.1)](https://www.w3.org/WAI/WCAG22/Understanding/non-text-content) (standard)
+
+> Content carried only as images or media has no text equivalent, so anything consuming text — assistive technology or a crawler — receives nothing.
+
 ---
 
 ### CONTENT_STAT_OUTDATED
@@ -1388,6 +1866,10 @@ Body text references a year that is ≥24 months old without mentioning the curr
 **Recommendation:** Update the statistic or reference to the current year, or add context that acknowledges the original year while explaining continued relevance.
 
 **Plain-English:** Outdated Year Reference
+
+**Basis:** TalkingToad's own judgement. No published source states this.
+
+> Our judgement, and the 24-month window is ours. A bare old year in body text may be a stale statistic or may be a historical reference, which TalkingToad cannot reliably tell apart.
 
 ---
 
@@ -1400,6 +1882,12 @@ Page has very little text (under 100 words)
 
 **Plain-English:** Thin Content
 
+**Basis:** published source — [Google Search Central](https://developers.google.com/search/docs/fundamentals/creating-helpful-content) (vendor)
+
+> Google advises content offer substantial value rather than little of substance.
+
+**What the source does not say:** The 100-word figure is ours. Google publishes no word count and states there is no minimum. A contact page can be complete at 40 words.
+
 ---
 
 ### CONTENT_UNSTRUCTURED
@@ -1410,6 +1898,10 @@ Page has substantial text but no heading structure
 **Recommendation:** Add H2 and H3 headings to break content into sections. Headings help AI systems identify topics and extract structured information.
 
 **Plain-English:** No Heading Structure
+
+**Basis:** published source — [W3C WAI (WCAG 2.2, SC 1.3.1)](https://www.w3.org/WAI/WCAG22/Understanding/info-and-relationships) (standard)
+
+> Structure conveyed visually must be programmatically determinable; substantial text with no headings exposes no structure at all.
 
 ---
 
@@ -1422,6 +1914,10 @@ H2 headings do not use conversational interrogatives (How, What, Why)
 
 **Plain-English:** Non-Conversational Headings
 
+**Basis:** TalkingToad's own judgement. No published source states this.
+
+> Our judgement, and a contested one. Phrasing headings as questions is common advice for AI search and no operator has confirmed it helps. Scored low deliberately, because writing every heading as a question makes for worse pages.
+
 ---
 
 ### DATE_MODIFIED_MISSING
@@ -1432,6 +1928,10 @@ Blog or article page has no last-modified date in JSON-LD
 **Recommendation:** Add dateModified to your JSON-LD schema to signal content freshness to AI systems.
 
 **Plain-English:** Missing Last-Modified Date
+
+**Basis:** published source — [Google Search Central](https://developers.google.com/search/docs/appearance/publication-dates) (vendor)
+
+> Google documents dateModified as the declared signal for when content last changed.
 
 ---
 
@@ -1444,6 +1944,10 @@ Blog or article page has no publication date in JSON-LD or meta tags
 
 **Plain-English:** Missing Publication Date
 
+**Basis:** published source — [Google Search Central](https://developers.google.com/search/docs/appearance/publication-dates) (vendor)
+
+> Google documents how it determines a page's publication date and recommends stating it explicitly in structured data and visibly on the page.
+
 ---
 
 ### DOCUMENT_PROPS_MISSING
@@ -1454,6 +1958,10 @@ PDF is missing internal Title or Subject metadata
 **Recommendation:** Update PDF document properties to include a clear Title and Subject. AIs use these properties for source labels and citations.
 
 **Plain-English:** Missing Document Info
+
+**Basis:** published source — [W3C WAI (WCAG 2.2 technique PDF18)](https://www.w3.org/WAI/WCAG22/Techniques/pdf/PDF18) (standard)
+
+> W3C documents setting a PDF's document-properties Title as the technique that gives the file a name assistive technology and other consumers can read.
 
 ---
 
@@ -1471,10 +1979,14 @@ Enter the value in your SEO plugin settings. The field is already configured to 
 
 **Plain-English:** Empty Entity Field
 
+**Basis:** published source — [schema.org](https://schema.org/docs/gs.html) (standard)
+
+> A declared property carrying no value states nothing, while appearing in the markup as though it does.
+
 ---
 
 ### ENTITY_HOURS_DEFAULT
-**Severity:** 🟡 warning | **Confidence:** Established | **Impact:** 6 | **Effort:** 1
+**Severity:** 🔵 info | **Confidence:** Heuristic | **Impact:** 2 | **Effort:** 1
 
 **What it is**
 Local SEO plugins pre-fill opening hours with 9:00-17:00 for all seven days. If nobody changes them, those invented hours are published to search engines as verified fact.
@@ -1486,6 +1998,10 @@ Unlike a missing field, this actively asserts something false. It can send someo
 In your SEO plugin's Local SEO settings, either enter the verified opening hours or disable opening-hours output. If the address is an administrative office with no public hours, disable it.
 
 **Plain-English:** Default Opening Hours Published
+
+**Basis:** TalkingToad's own judgement. No published source states this.
+
+> Our judgement. Identical hours on all seven days at an SEO plugin's default value is more often an untouched default than a real schedule. Some organisations genuinely do open the same hours daily, so this is reported, not asserted.
 
 ---
 
@@ -1503,6 +2019,10 @@ Standardise Organization.name across all pages/templates to a single spelling.
 
 **Plain-English:** Inconsistent Organisation Name
 
+**Basis:** TalkingToad's own judgement. No published source states this.
+
+> Our judgement. Different organisation names across a site's own structured data give a consumer no single identity to resolve to. Legitimate for a site covering several entities.
+
 ---
 
 ### ENTITY_NAP_INCOMPLETE
@@ -1518,6 +2038,10 @@ Search engines and AI assistants use these fields to connect your site to a real
 Fill in the listed fields in your SEO plugin's Site Representation and Local SEO settings, using the same values shown in your footer and contact page. If you have no customer-facing premises, change the type instead of inventing an address.
 
 **Plain-English:** Incomplete Organization Details
+
+**Basis:** published source — [Google Search Central](https://developers.google.com/search/docs/appearance/structured-data/local-business) (vendor)
+
+> Google documents the identity fields — name, address, telephone — that identify a local business.
 
 ---
 
@@ -1535,6 +2059,10 @@ Add sameAs URLs to the Organization/Person JSON-LD block.
 
 **Plain-English:** No sameAs Entity Links
 
+**Basis:** published source — [schema.org](https://schema.org/sameAs) (standard)
+
+> sameAs links an entity to its authoritative pages elsewhere, which is how a consumer disambiguates one organisation from a similarly named one.
+
 ---
 
 ### ENTITY_VALUE_PLACEHOLDER
@@ -1551,6 +2079,10 @@ Edit the field in your SEO plugin's Site Representation settings and write the r
 
 **Plain-English:** Placeholder Value in Structured Data
 
+**Basis:** TalkingToad's own judgement. No published source states this.
+
+> Our judgement. A field carrying a template default ("Your Business Name", "123 Main St") is worse than an absent field, because it asserts something false. The list of placeholder values is editorial and may miss cases.
+
 ---
 
 ### EXTERNAL_CITATIONS_LOW
@@ -1561,6 +2093,10 @@ Edit the field in your SEO plugin's Site Representation settings and write the r
 **Recommendation:** Add links to authoritative external sources (.gov, .edu, research papers, official docs). Aggarwal et al. (2023) found citations measurably increase AI engine quotability.
 
 **Plain-English:** No External Citations
+
+**Basis:** TalkingToad's own judgement. No published source states this.
+
+> Our judgement, and the 500-word trigger is ours. A long page linking to no external source gives a reader nothing to corroborate it against. Original reporting and primary material legitimately cite nothing.
 
 ---
 
@@ -1573,6 +2109,10 @@ FAQ questions are in the HTML but their answers are not — the answer text only
 
 **Plain-English:** FAQ Answers Hidden From AI
 
+**Basis:** published source — [Google Search Central](https://developers.google.com/search/docs/crawling-indexing/javascript/javascript-seo-basics) (vendor)
+
+> Answer text revealed only on interaction or injected by script is absent from the served HTML.
+
 ---
 
 ### FAQ_SCHEMA_MISSING
@@ -1583,6 +2123,12 @@ Page has an FAQ section but no FAQPage JSON-LD schema
 **Recommendation:** Add FAQPage schema to your FAQ section so AI systems can extract Q&A pairs directly.
 
 **Plain-English:** FAQ Without Schema
+
+**Basis:** published source — [Google Search Central](https://developers.google.com/search/docs/appearance/structured-data/faqpage) (vendor)
+
+> Google documents FAQPage markup as the way to declare question-and-answer content explicitly.
+
+**What the source does not say:** Google restricted FAQ rich results in 2023. The markup still states the structure unambiguously, which is the basis for reporting it — not a promise of a rich result.
 
 ---
 
@@ -1595,6 +2141,10 @@ First 200 words contain no direct answer signal (definition, TL;DR, summary phra
 
 **Plain-English:** No Lead Answer
 
+**Basis:** TalkingToad's own judgement. No published source states this.
+
+> Our judgement, and the 200-word window is ours. It detects the absence of an answer-shaped signal, which is a crude proxy for whether the page actually answers anything.
+
 ---
 
 ### GEO_SUMMARY_BURIED
@@ -1605,6 +2155,10 @@ The first paragraph or list does not lead its H2 or H3 section — the core answ
 **Recommendation:** Reorder each H2/H3 section so the core answer leads in 1–2 sentences, with supporting content following. AI retrievers and skimming humans both miss answers that aren't immediately under the heading.
 
 **Plain-English:** Answer Buried Under H2/H3
+
+**Basis:** TalkingToad's own judgement. No published source states this.
+
+> Our judgement. A section whose opening sentence does not lead the section is harder to excerpt. No source states this.
 
 ---
 
@@ -1622,6 +2176,12 @@ Populate the HowTo `step` array in your structured data.
 
 **Plain-English:** Incomplete HowTo Schema
 
+**Basis:** published source — [Google Search Central](https://developers.google.com/search/docs/appearance/structured-data/how-to) (vendor)
+
+> Google documents the required properties of HowTo markup; an incomplete block does not describe the procedure.
+
+**What the source does not say:** Google retired HowTo rich results in 2023. Reported for structural clarity only.
+
 ---
 
 ### JSON_LD_INVALID
@@ -1632,6 +2192,10 @@ A JSON-LD block is present but missing @type or @context (invalid schema)
 **Recommendation:** Ensure every JSON-LD block includes both @type and @context fields. Malformed schema blocks are ignored by search engines and AI parsers.
 
 **Plain-English:** Invalid JSON-LD Schema
+
+**Basis:** published source — [schema.org](https://schema.org/docs/gs.html) (standard)
+
+> A JSON-LD block without @context and @type declares no vocabulary or type, so no consumer can interpret it.
 
 ---
 
@@ -1644,6 +2208,12 @@ No JSON-LD structured data found on this indexable page
 
 **Plain-English:** Missing AI Schema
 
+**Basis:** published source — [Google Search Central](https://developers.google.com/search/docs/appearance/structured-data/intro-structured-data) (vendor)
+
+> Structured data is Google's documented mechanism for stating explicitly what a page is about.
+
+**What the source does not say:** Structured data is not required for indexing. Reported as an opportunity, not a fault.
+
 ---
 
 ### JS_RENDERED_CONTENT_DIFFERS
@@ -1654,6 +2224,10 @@ Rendered page contains substantially more content than raw HTML (>20% more token
 **Recommendation:** Pre-render key content as HTML so AI crawlers can access it without JavaScript. Consider server-side rendering or static generation for important pages.
 
 **Plain-English:** JS-Gated Content
+
+**Basis:** published source — [Google Search Central](https://developers.google.com/search/docs/crawling-indexing/javascript/javascript-seo-basics) (vendor)
+
+> Google documents a two-phase crawl in which rendered content is processed later than the served HTML.
 
 ---
 
@@ -1666,6 +2240,10 @@ Over 80% of outbound body-text links point to the same organisation's own domain
 
 **Plain-English:** All-Internal Link Profile
 
+**Basis:** TalkingToad's own judgement. No published source states this.
+
+> Our judgement, and the 80% figure is ours. Outbound links that nearly all point to one organisation read as promotion rather than reference. Entirely legitimate for a site documenting its own work.
+
 ---
 
 ### LLMS_TXT_INVALID
@@ -1677,6 +2255,10 @@ Over 80% of outbound body-text links point to the same organisation's own domain
 
 **Plain-English:** Invalid AI Instruction File
 
+**Basis:** published source — [llmstxt.org](https://llmstxt.org/) (industry)
+
+> The proposal defines the file's expected structure, against which a malformed file can be identified.
+
 ---
 
 ### LLMS_TXT_MISSING
@@ -1687,6 +2269,12 @@ No llms.txt found at root
 **Recommendation:** Create an /llms.txt file to help LLMs and AI agents (Gemini, Perplexity) accurately crawl and cite your high-value content.
 
 **Plain-English:** Missing AI Instruction File
+
+**Basis:** published source — [llmstxt.org](https://llmstxt.org/) (industry)
+
+> llms.txt is a published proposal for a root file describing a site's content to language models.
+
+**What the source does not say:** A proposal, not a standard. No engine operator has committed to reading it, so absence is reported as an option, not a defect.
 
 ---
 
@@ -1704,6 +2292,12 @@ Merge or meaningfully differentiate the flagged pages.
 
 **Plain-English:** Near-Duplicate Page Content
 
+**Basis:** published source — [Google Search Central](https://developers.google.com/search/docs/crawling-indexing/consolidate-duplicate-urls) (vendor)
+
+> Google consolidates pages it judges duplicates and indexes one of them, so the others may not appear separately.
+
+**What the source does not say:** The similarity threshold is ours, measured after removing shared template text. Near-duplicate lead paragraphs are normal across a service-area set.
+
 ---
 
 ### ORPHAN_CLAIM_TECHNICAL
@@ -1714,6 +2308,10 @@ Technical/how-to page has 3+ factual claims not paired with a source link or att
 **Recommendation:** Add a source link or attribution ('according to [source]') next to each specific capability claim, number, or procedure step.
 
 **Plain-English:** Unsourced Technical Claims
+
+**Basis:** TalkingToad's own judgement. No published source states this.
+
+> Our judgement, and the 3-claim trigger is ours. Detecting an unsupported factual claim is a language judgement TalkingToad makes approximately, and it will both miss claims and flag supported ones.
 
 ---
 
@@ -1731,6 +2329,10 @@ Add review / aggregateRating to the Product JSON-LD (only with real ratings).
 
 **Plain-English:** Product Missing Review Schema
 
+**Basis:** published source — [Google Search Central](https://developers.google.com/search/docs/appearance/structured-data/product) (vendor)
+
+> Google documents review and aggregateRating as the properties that carry rating information for a product.
+
 ---
 
 ### PROMOTIONAL_CONTENT_INTERRUPTS
@@ -1741,6 +2343,10 @@ Mid-article sections classified as promotional interrupt the content flow
 **Recommendation:** Move promotional or sales content to the end or to a sidebar. AI systems may de-weight or skip sections they identify as promotional.
 
 **Plain-English:** Promotional Content in Article
+
+**Basis:** TalkingToad's own judgement. No published source states this.
+
+> Our judgement. Promotional blocks between body sections interrupt the argument and may be excerpted as though they were part of it. Classifying a section as promotional is a language judgement that will misfire.
 
 ---
 
@@ -1753,6 +2359,10 @@ Page H1 topic terms are under-represented in the intro or section headings — A
 
 **Plain-English:** Weak Query Coverage
 
+**Basis:** TalkingToad's own judgement. No published source states this.
+
+> Our judgement. If the H1's topic terms barely appear in the body, the page may not cover what it announces. A term-overlap proxy, easily fooled by synonyms and by good writing that avoids repetition.
+
 ---
 
 ### QUOTATIONS_MISSING
@@ -1763,6 +2373,12 @@ Page H1 topic terms are under-represented in the intro or section headings — A
 **Recommendation:** Add quoted statements from named experts or sources. Use <blockquote> for longer quotes. Aggarwal et al. (2023) found quotations measurably increase AI citation rates.
 
 **Plain-English:** No Expert Quotations
+
+**Basis:** published source — [Aggarwal et al., GEO: Generative Engine Optimization (KDD 2024)](https://arxiv.org/abs/2311.09735) (research)
+
+> Adding quotations from named sources was among the interventions that raised visibility in the study's generative engines.
+
+**What the source does not say:** The 500-word trigger is ours, and the finding is one study on a research corpus, not a vendor statement.
 
 ---
 
@@ -1775,6 +2391,10 @@ Page raw HTML is a JavaScript app shell with near-zero visible text
 
 **Plain-English:** JS-Only Content (No SSR)
 
+**Basis:** published source — [Google Search Central](https://developers.google.com/search/docs/crawling-indexing/javascript/javascript-seo-basics) (vendor)
+
+> Content present only after JavaScript execution is not in the served HTML, and rendering is a deferred second pass.
+
 ---
 
 ### SCHEMA_DEPRECATED_TYPE
@@ -1785,6 +2405,10 @@ Page uses deprecated schema.org types
 **Recommendation:** Replace deprecated schema types with modern equivalents from schema.org.
 
 **Plain-English:** Deprecated Schema Type
+
+**Basis:** published source — [schema.org](https://schema.org/docs/gs.html) (standard)
+
+> schema.org marks superseded types; a consumer is under no obligation to interpret one.
 
 ---
 
@@ -1802,6 +2426,10 @@ Add a <script type="application/ld+json"> Organization block to your homepage (T
 
 **Plain-English:** No Organization Schema
 
+**Basis:** published source — [Google Search Central](https://developers.google.com/search/docs/appearance/structured-data/organization) (vendor)
+
+> Google documents Organization structured data as how a site states its identity, logo and contact details.
+
 ---
 
 ### SCHEMA_TYPE_CONFLICT
@@ -1813,6 +2441,10 @@ Page declares multiple conflicting schema types
 
 **Plain-English:** Conflicting Schema Types
 
+**Basis:** published source — [Google Search Central](https://developers.google.com/search/docs/appearance/structured-data/sd-policies) (vendor)
+
+> Contradictory type declarations leave a consumer no basis for choosing between them.
+
 ---
 
 ### SCHEMA_TYPE_MISMATCH
@@ -1823,6 +2455,12 @@ Page schema type does not match inferred page type
 **Recommendation:** Ensure JSON-LD @type matches the page content (Article for blog posts, Person for team bios, Service for service pages).
 
 **Plain-English:** Mismatched Schema Type
+
+**Basis:** published source — [Google Search Central](https://developers.google.com/search/docs/appearance/structured-data/sd-policies) (vendor)
+
+> Google's structured-data policies require markup to describe the page it is on.
+
+**What the source does not say:** TalkingToad infers the page type from its content. The inference can be wrong, so this is reported rather than asserted.
 
 ---
 
@@ -1836,6 +2474,10 @@ For each field listed below, compare the schema value with the page. If the valu
 
 **Plain-English:** Schema Not in Visible Text
 
+**Basis:** published source — [Google Search Central](https://developers.google.com/search/docs/appearance/structured-data/sd-policies) (vendor)
+
+> Google requires structured data to reflect content visible on the page; markup asserting what the page does not say is a policy violation.
+
 ---
 
 ### SECTION_CROSS_REFERENCES
@@ -1846,6 +2488,10 @@ Page contains backward-reference phrases ('as mentioned above', 'as discussed ea
 **Recommendation:** Remove or replace phrases like 'as mentioned above' with the actual information being referenced. AI systems cite individual passages in isolation — a passage that refers to earlier content cannot be understood or quoted on its own.
 
 **Plain-English:** Section Back-References
+
+**Basis:** TalkingToad's own judgement. No published source states this.
+
+> Our judgement. "As mentioned above" breaks when a passage is read on its own. Perfectly good prose for a reader going top to bottom, which is why this is scored low.
 
 ---
 
@@ -1858,6 +2504,10 @@ One or more H2/H3 sections begin with a vague demonstrative reference ('This met
 
 **Plain-English:** Vague Section Openers
 
+**Basis:** TalkingToad's own judgement. No published source states this.
+
+> Our judgement. A section opening on "this" or "these" with no antecedent in the section reads as incomplete when excerpted. A writing observation.
+
 ---
 
 ### SEMANTIC_DENSITY_LOW
@@ -1868,6 +2518,10 @@ Text-to-HTML ratio is below 10%
 **Recommendation:** Clean up excessive code-bloat (styles, scripts, nested divs). High code-to-text ratios consume more AI tokens and confuse retrieval engines.
 
 **Plain-English:** High Code-to-Text Ratio
+
+**Basis:** TalkingToad's own judgement. No published source states this.
+
+> Our judgement, and the 10% figure is ours. Text-to-HTML ratio is a crude proxy for markup bloat that penalises pages built by any modern page builder regardless of their content. Scored low for that reason.
 
 ---
 
@@ -1880,6 +2534,12 @@ Text-to-HTML ratio is below 10%
 
 **Plain-English:** No Statistics
 
+**Basis:** published source — [Aggarwal et al., GEO: Generative Engine Optimization (KDD 2024)](https://arxiv.org/abs/2311.09735) (research)
+
+> Adding statistics to source content measurably raised its visibility in the generative engines the study tested.
+
+**What the source does not say:** The 500-word trigger is ours. The study tested a research corpus, not this site, and no engine operator has confirmed the effect.
+
 ---
 
 ### STRUCTURED_ELEMENTS_LOW
@@ -1891,6 +2551,10 @@ Page has very few structured elements (lists, tables, code blocks) relative to c
 
 **Plain-English:** Low Structured Element Count
 
+**Basis:** TalkingToad's own judgement. No published source states this.
+
+> Our judgement. Lists, tables and code blocks mark structure explicitly where a paragraph only implies it. The count that triggers this is ours, and plenty of good pages are pure prose.
+
 ---
 
 ### UA_CONTENT_DIFFERS
@@ -1901,6 +2565,10 @@ AI crawler user agents (GPTBot, ClaudeBot) receive substantially less content th
 **Recommendation:** Ensure AI crawler requests receive the same content as regular browsers. Serving stripped content to AI bots prevents citation and indexing.
 
 **Plain-English:** AI Bot Content Stripping
+
+**Basis:** published source — [Google Search Central](https://developers.google.com/search/docs/essentials/spam-policies) (vendor)
+
+> Serving different content to a crawler than to a user is cloaking, which Google's spam policies prohibit.
 
 ---
 
@@ -1923,6 +2591,10 @@ Move the tag into the site-wide header/footer template with a single measurement
 
 **Plain-English:** Inconsistent Analytics ID
 
+**Basis:** TalkingToad's own judgement. No published source states this.
+
+> Our judgement. Different measurement IDs across pages of one site usually means a partial migration, splitting the data between properties. A deliberate multi-property setup is legitimate, so this is reported, not asserted.
+
 ---
 
 ### ANALYTICS_TAG_DUPLICATE
@@ -1938,6 +2610,10 @@ Double-tagging inflates pageviews and sessions and roughly halves your reported 
 Pick one delivery path for GA4 (usually GTM) and remove the other. Re-crawl to confirm a single tag remains. This is a heuristic from the page markup — verify in GA4 DebugView or Tag Assistant before removing anything.
 
 **Plain-English:** Duplicate Analytics Tag
+
+**Basis:** published source — [Google Analytics Help](https://support.google.com/analytics/answer/9304153) (vendor)
+
+> Google documents one GA4 tag per page; a second copy double-counts pageviews and events.
 
 ---
 
@@ -1955,6 +2631,10 @@ Ensure the GA4 tag (or the GTM container that loads it) is present in the shared
 
 **Plain-English:** No Analytics Tag
 
+**Basis:** TalkingToad's own judgement. No published source states this.
+
+> Not an SEO claim at all. It reports that no GA4 or Tag Manager snippet was found, so the organisation cannot see what this page does. Whether to install analytics is the site owner's decision.
+
 ---
 
 ### CONSENT_MODE_MISSING
@@ -1970,6 +2650,12 @@ Without Consent Mode, analytics may collect data before consent (a privacy/GDPR 
 If you serve EU/UK visitors, set up Consent Mode v2 in GTM alongside your consent banner (advisory — this is a heuristic markup check, not legal advice).
 
 **Plain-English:** Consent Mode Not Detected
+
+**Basis:** published source — [Google Analytics Help](https://support.google.com/analytics/answer/9976101) (vendor)
+
+> Google documents Consent Mode as the mechanism for adjusting tag behaviour according to user consent.
+
+**What the source does not say:** Whether consent signalling is legally required depends on jurisdiction. TalkingToad does not give legal advice and does not assert a requirement.
 
 ---
 
@@ -1987,6 +2673,10 @@ Add the same click-tracking marker your other buttons use (the class or data-* a
 
 **Plain-English:** Conversion Button Not Tracked
 
+**Basis:** TalkingToad's own judgement. No published source states this.
+
+> Our judgement, and it depends on a convention we infer from the site's own markup&#58; if some buttons are tagged for click tracking and comparable ones are not, the untagged ones are probably an oversight. Silent when no convention is detectable, because then there is nothing to be inconsistent with.
+
 ---
 
 ### OUTBOUND_LINK_UNTRACKABLE
@@ -2003,6 +2693,10 @@ Add an aria-label (or descriptive alt text on the image) to the link so it has a
 
 **Plain-English:** Untrackable Outbound Link
 
+**Basis:** TalkingToad's own judgement. No published source states this.
+
+> Our judgement. An image-or-icon-only external link gives analytics no label to report, so its clicks are unattributable in reports. A usability and measurement observation, not a standard.
+
 ---
 
 ### SELF_REFERENCING_UTM
@@ -2018,6 +2712,10 @@ Clicking an internal UTM'd link restarts the GA4 session and reattributes the vi
 Edit the link to point to the clean internal URL with no utm_* parameters. Reserve UTMs for external campaigns (emails, ads, social posts).
 
 **Plain-English:** Self-Referencing Campaign Link
+
+**Basis:** published source — [Google Analytics Help](https://support.google.com/analytics/answer/10917952) (vendor)
+
+> UTM campaign parameters start a new session attributed to that campaign; using them on internal links restarts attribution mid-visit.
 
 ---
 
@@ -2040,6 +2738,10 @@ Give images and embeds explicit width and height so the browser can reserve thei
 
 **Plain-English:** Poor Cumulative Layout Shift
 
+**Basis:** published source — [web.dev (Google)](https://web.dev/articles/cls) (vendor)
+
+> Cumulative Layout Shift above 0.25 at the 75th percentile is Google's published "poor" band.
+
 ---
 
 ### CWV_INP_POOR
@@ -2055,6 +2757,10 @@ Core Web Vitals are a confirmed Google ranking input, and a page that does not r
 Reduce the JavaScript that runs when someone taps or types. Look for large scripts from page builders, chat widgets and analytics tags competing on the main thread, and defer anything not needed for the first interaction.
 
 **Plain-English:** Poor Interaction to Next Paint
+
+**Basis:** published source — [web.dev (Google)](https://web.dev/articles/inp) (vendor)
+
+> Interaction to Next Paint over 500 ms at the 75th percentile is Google's published "poor" band.
 
 ---
 
@@ -2072,6 +2778,10 @@ Find the largest element in the first screenful - usually the hero image or head
 
 **Plain-English:** Poor Largest Contentful Paint
 
+**Basis:** published source — [web.dev (Google)](https://web.dev/articles/lcp) (vendor)
+
+> Largest Contentful Paint over 4 seconds at the 75th percentile is Google's published "poor" band.
+
 ---
 
 ### JS_DEPENDENT_NAVIGATION
@@ -2087,6 +2797,10 @@ AI crawlers (GPTBot, ClaudeBot, PerplexityBot) and task agents frequently do not
 Use server-side rendering or static-site generation so the <nav> contains real <a href> links in the initial HTML. A <noscript> fallback list of links also helps.
 
 **Plain-English:** Navigation Needs JavaScript
+
+**Basis:** published source — [Google Search Central](https://developers.google.com/search/docs/crawling-indexing/javascript/javascript-seo-basics) (vendor)
+
+> Google renders JavaScript but in a deferred second pass; links absent from the served HTML are discovered later, if at all.
 
 ---
 
@@ -2109,6 +2823,10 @@ Add visible text, an aria-label (e.g. aria-label="Search"), a <label for> for fo
 
 **Plain-English:** Unlabelled Control
 
+**Basis:** published source — [W3C WAI (WCAG 2.2, SC 4.1.2)](https://www.w3.org/WAI/WCAG22/Understanding/name-role-value) (standard)
+
+> Every user-interface component must expose a name; a control with none cannot be operated by assistive technology.
+
 ---
 
 ### LANDMARK_MAIN_MISSING
@@ -2124,6 +2842,12 @@ Without a <main> landmark, agents and assistive technology must heuristically gu
 Wrap your primary content in <main>…</main> (one per page). Most themes have a content template where this can be added.
 
 **Plain-English:** No Main Content Landmark
+
+**Basis:** published source — [W3C ARIA Authoring Practices Guide](https://www.w3.org/WAI/ARIA/apg/patterns/landmarks/) (standard)
+
+> Landmark regions let assistive-technology users jump to a page's primary content instead of traversing it linearly.
+
+**What the source does not say:** Landmarks are a W3C best practice, not a WCAG success criterion. Absence is not a conformance failure.
 
 ---
 
@@ -2141,6 +2865,12 @@ Wrap your main menu in <nav>…</nav>. Add aria-label if you have more than one 
 
 **Plain-English:** No Navigation Landmark
 
+**Basis:** published source — [W3C ARIA Authoring Practices Guide](https://www.w3.org/WAI/ARIA/apg/patterns/landmarks/) (standard)
+
+> A navigation landmark identifies a block of navigational links so it can be found or skipped.
+
+**What the source does not say:** Best practice, not a WCAG success criterion.
+
 ---
 
 ### NON_SEMANTIC_BUTTON
@@ -2156,5 +2886,9 @@ Task-executing agents and assistive technology identify what they can operate fr
 Replace the <div>/<span> with a <button> (for actions) or <a href> (for navigation). If you must keep the element, add role="button", tabindex="0", and an accessible name.
 
 **Plain-English:** Fake Button (div/span)
+
+**Basis:** published source — [W3C WAI (WCAG 2.2, SC 4.1.2)](https://www.w3.org/WAI/WCAG22/Understanding/name-role-value) (standard)
+
+> A component's role must be programmatically determinable; a clickable div exposes no role, so it is not announced or reachable as a control.
 
 ---

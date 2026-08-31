@@ -987,6 +987,54 @@ bound in bytes. On the reference site the pass measures 32 of 34 images for
 independent probe identified.
 → `tests/test_image_dimensions.py`, § IM1 above.
 
+**V1 — every scored code declares what it rests on.** TalkingToad scores 170
+codes and stated all of them in one voice, so a user could not tell a finding
+backed by a W3C success criterion from one resting on a number we chose. Worse,
+several checks cite a real source for the *subject* while firing on a
+*threshold* that source does not publish: Google documents the title link and
+publishes no length limit, so our 60 characters read as Google's rule.
+
+`api/crawler/checkers/data/authority.yaml` now records, for each of the 170
+codes, one of three bases:
+
+| Basis | Meaning | Required fields | Count |
+|---|---|---|---|
+| `citation` | a published source states the claim | source, source_type, url, claim | 107 |
+| `heuristic` | no source states it; this is our judgement | rationale saying what we believe and what it is not | 57 |
+| `observation` | a fact measured during this crawl, not a claim about the world | method, saying what was measured and what it does not establish | 6 |
+
+`threshold_note` is required on any citation whose check fires on a number the
+cited source does not publish, and `docs/issue-codes.md` renders it under
+**What the source does not say**. `source_type` is vendor / standard /
+research / industry, which keeps a research finding from being read as vendor
+confirmation — the one published GEO study backs several signals no engine
+operator has confirmed, and those stay `Heuristic`.
+
+Every cited URL was fetched, not asserted: `scripts/verify_authority_urls.py`
+records the status of all 56 in `data/url_verification.yaml`, and a test fails
+on any citation not recorded as 200. Three URLs in the first draft were
+plausible and did not exist.
+
+The record reconciles with the AI-readiness confidence label in both
+directions: a code labelled `Established` must carry a vendor or standards
+citation, and one labelled `Heuristic` may not cite a vendor without a
+threshold_note. That check found `ENTITY_HOURS_DEFAULT` labelled `Established`
+for an inference nobody has confirmed; relabelling it `Heuristic` dropped its
+impact 6 → 2 and its severity warning → info, because `derive_impact` reads the
+confidence tier. A finding we cannot support now costs a site less.
+→ `tests/test_authority.py`, `api/crawler/checkers/authority.py`.
+
+**V1.1 — the confidence label is derived, not duplicated.** The label existed in
+three places: an `_IssueSpec.confidence_label` override field, the
+`_AI_READINESS_CONFIDENCE` dict, and `_CALIBRATION[code][0]`, which is what
+`derive_impact` actually scores from. `make_issue` read `spec.confidence_label
+or dict`, so the override won silently and had drifted on two codes — the API
+and `docs/issue-codes.md` published different labels for the same finding. The
+override field and all seven of its uses are gone, and
+`_AI_READINESS_CONFIDENCE` is now derived from `_CALIBRATION` rather than
+maintained beside it, so the two cannot disagree.
+→ `tests/test_confidence_single_source.py`.
+
 **E2 — broken-link source attribution.** `external_targets_seen` and
 `discovered_from.setdefault` retained only the first page linking to each broken
 target, so 120 broken internal links reported as 10. `external_target_sources`

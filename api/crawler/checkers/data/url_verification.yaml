@@ -1,0 +1,173 @@
+checked_on: '2026-08-30'
+method: HTTP GET, redirects followed, desktop browser user agent
+note: Fetched for real; not asserted. A citation whose URL is not recorded here as 200 must not ship.
+  Re-run scripts/verify_authority_urls.py to refresh.
+urls:
+  https://arxiv.org/abs/2311.09735:
+    final_url: https://arxiv.org/abs/2311.09735
+    status: 200
+  https://developer.chrome.com/docs/lighthouse/performance/uses-optimized-images:
+    final_url: https://developer.chrome.com/docs/lighthouse/performance/uses-optimized-images
+    status: 200
+  https://developer.mozilla.org/en-US/docs/Web/Security/Mixed_content:
+    final_url: https://developer.mozilla.org/en-US/docs/Web/Security/Defenses/Mixed_content
+    status: 200
+  https://developers.google.com/search/docs/appearance/favicon-in-search:
+    final_url: https://developers.google.com/search/docs/appearance/favicon-in-search
+    status: 200
+  https://developers.google.com/search/docs/appearance/page-experience:
+    final_url: https://developers.google.com/search/docs/appearance/page-experience
+    status: 200
+  https://developers.google.com/search/docs/appearance/publication-dates:
+    final_url: https://developers.google.com/search/docs/appearance/publication-dates
+    status: 200
+  https://developers.google.com/search/docs/appearance/snippet:
+    final_url: https://developers.google.com/search/docs/appearance/snippet
+    status: 200
+  https://developers.google.com/search/docs/appearance/structured-data/faqpage:
+    final_url: https://developers.google.com/search/updates#removing-faq-rich-result
+    status: 200
+  https://developers.google.com/search/docs/appearance/structured-data/how-to:
+    final_url: https://developers.google.com/search/updates#how-to-deprecation
+    status: 200
+  https://developers.google.com/search/docs/appearance/structured-data/intro-structured-data:
+    final_url: https://developers.google.com/search/docs/appearance/structured-data/intro-structured-data
+    status: 200
+  https://developers.google.com/search/docs/appearance/structured-data/local-business:
+    final_url: https://developers.google.com/search/docs/appearance/structured-data/local-business
+    status: 200
+  https://developers.google.com/search/docs/appearance/structured-data/organization:
+    final_url: https://developers.google.com/search/docs/appearance/structured-data/organization
+    status: 200
+  https://developers.google.com/search/docs/appearance/structured-data/product:
+    final_url: https://developers.google.com/search/docs/appearance/structured-data/product
+    status: 200
+  https://developers.google.com/search/docs/appearance/structured-data/sd-policies:
+    final_url: https://developers.google.com/search/docs/appearance/structured-data/sd-policies
+    status: 200
+  https://developers.google.com/search/docs/appearance/title-link:
+    final_url: https://developers.google.com/search/docs/appearance/title-link
+    status: 200
+  https://developers.google.com/search/docs/crawling-indexing/301-redirects:
+    final_url: https://developers.google.com/search/docs/crawling-indexing/301-redirects
+    status: 200
+  https://developers.google.com/search/docs/crawling-indexing/block-indexing:
+    final_url: https://developers.google.com/search/docs/crawling-indexing/block-indexing
+    status: 200
+  https://developers.google.com/search/docs/crawling-indexing/canonicalization:
+    final_url: https://developers.google.com/search/docs/crawling-indexing/canonicalization
+    status: 200
+  https://developers.google.com/search/docs/crawling-indexing/consolidate-duplicate-urls:
+    final_url: https://developers.google.com/search/docs/crawling-indexing/consolidate-duplicate-urls
+    status: 200
+  https://developers.google.com/search/docs/crawling-indexing/javascript/javascript-seo-basics:
+    final_url: https://developers.google.com/search/docs/crawling-indexing/javascript/javascript-seo-basics
+    status: 200
+  https://developers.google.com/search/docs/crawling-indexing/overview-google-crawlers:
+    final_url: https://developers.google.com/crawling/docs/crawlers-fetchers/overview-google-crawlers
+    status: 200
+  https://developers.google.com/search/docs/crawling-indexing/qualify-outbound-links:
+    final_url: https://developers.google.com/search/docs/crawling-indexing/qualify-outbound-links
+    status: 200
+  https://developers.google.com/search/docs/crawling-indexing/robots-meta-tag:
+    final_url: https://developers.google.com/search/docs/crawling-indexing/robots-meta-tag
+    status: 200
+  https://developers.google.com/search/docs/crawling-indexing/url-structure:
+    final_url: https://developers.google.com/search/docs/crawling-indexing/url-structure
+    status: 200
+  https://developers.google.com/search/docs/essentials/spam-policies:
+    final_url: https://developers.google.com/search/docs/essentials/spam-policies
+    status: 200
+  https://developers.google.com/search/docs/fundamentals/creating-helpful-content:
+    final_url: https://developers.google.com/search/docs/fundamentals/creating-helpful-content
+    status: 200
+  https://developers.google.com/search/docs/fundamentals/seo-starter-guide:
+    final_url: https://developers.google.com/search/docs/fundamentals/seo-starter-guide
+    status: 200
+  https://llmstxt.org/:
+    final_url: https://llmstxt.org/
+    status: 200
+  https://ogp.me/:
+    final_url: https://ogp.me/
+    status: 200
+  https://owasp.org/www-community/attacks/Reverse_Tabnabbing:
+    final_url: https://owasp.org/www-community/attacks/Reverse_Tabnabbing
+    status: 200
+  https://platform.openai.com/docs/bots:
+    final_url: https://developers.openai.com/api/docs/bots
+    status: 200
+  https://schema.org/docs/gs.html:
+    final_url: https://schema.org/docs/gs.html
+    status: 200
+  https://schema.org/sameAs:
+    final_url: https://schema.org/sameAs
+    status: 200
+  https://support.google.com/analytics/answer/10917952:
+    final_url: https://support.google.com/analytics/answer/10917952
+    status: 200
+  https://support.google.com/analytics/answer/9304153:
+    final_url: https://support.google.com/analytics/answer/9304153
+    status: 200
+  https://support.google.com/analytics/answer/9976101:
+    final_url: https://support.google.com/analytics/answer/9976101
+    status: 200
+  https://web.dev/articles/cls:
+    final_url: https://web.dev/articles/cls
+    status: 200
+  https://web.dev/articles/inp:
+    final_url: https://web.dev/articles/inp
+    status: 200
+  https://web.dev/articles/lcp:
+    final_url: https://web.dev/articles/lcp
+    status: 200
+  https://web.dev/articles/serve-images-webp:
+    final_url: https://web.dev/articles/serve-images-webp
+    status: 200
+  https://web.dev/articles/serve-responsive-images:
+    final_url: https://web.dev/articles/serve-responsive-images
+    status: 200
+  https://web.dev/articles/why-https-matters:
+    final_url: https://web.dev/articles/why-https-matters
+    status: 200
+  https://www.rfc-editor.org/rfc/rfc2606:
+    final_url: https://www.rfc-editor.org/info/rfc2606/
+    status: 200
+  https://www.rfc-editor.org/rfc/rfc6797:
+    final_url: https://www.rfc-editor.org/info/rfc6797/
+    status: 200
+  https://www.rfc-editor.org/rfc/rfc9110:
+    final_url: https://www.rfc-editor.org/info/rfc9110/
+    status: 200
+  https://www.rfc-editor.org/rfc/rfc9309.html:
+    final_url: https://www.rfc-editor.org/rfc/rfc9309.html
+    status: 200
+  https://www.sitemaps.org/protocol.html:
+    final_url: https://www.sitemaps.org/protocol.html
+    status: 200
+  https://www.w3.org/WAI/ARIA/apg/patterns/landmarks/:
+    final_url: https://www.w3.org/WAI/ARIA/apg/patterns/landmarks/
+    status: 200
+  https://www.w3.org/WAI/WCAG22/Techniques/pdf/PDF18:
+    final_url: https://www.w3.org/WAI/WCAG22/Techniques/pdf/PDF18
+    status: 200
+  https://www.w3.org/WAI/WCAG22/Understanding/headings-and-labels:
+    final_url: https://www.w3.org/WAI/WCAG22/Understanding/headings-and-labels
+    status: 200
+  https://www.w3.org/WAI/WCAG22/Understanding/info-and-relationships:
+    final_url: https://www.w3.org/WAI/WCAG22/Understanding/info-and-relationships
+    status: 200
+  https://www.w3.org/WAI/WCAG22/Understanding/language-of-page:
+    final_url: https://www.w3.org/WAI/WCAG22/Understanding/language-of-page
+    status: 200
+  https://www.w3.org/WAI/WCAG22/Understanding/link-purpose-in-context:
+    final_url: https://www.w3.org/WAI/WCAG22/Understanding/link-purpose-in-context
+    status: 200
+  https://www.w3.org/WAI/WCAG22/Understanding/name-role-value:
+    final_url: https://www.w3.org/WAI/WCAG22/Understanding/name-role-value
+    status: 200
+  https://www.w3.org/WAI/WCAG22/Understanding/non-text-content:
+    final_url: https://www.w3.org/WAI/WCAG22/Understanding/non-text-content
+    status: 200
+  https://www.w3.org/WAI/WCAG22/Understanding/timing-adjustable:
+    final_url: https://www.w3.org/WAI/WCAG22/Understanding/timing-adjustable
+    status: 200

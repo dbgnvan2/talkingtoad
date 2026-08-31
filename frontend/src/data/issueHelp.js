@@ -87,15 +87,17 @@ const issueHelp = {
     category: "metadata",
     severity: "info",
     definition:
-      "The page title exceeds 60 characters. Google typically displays around 50–60 " +
-      "characters in search results before cutting the title off with an ellipsis (…).",
+      "The page title is longer than about 60 characters. Google publishes no title " +
+      "length limit — it truncates by pixel width, so the cut-off varies with the " +
+      "characters used and the device, and it may rewrite a title at any length.",
     impact:
       "The end of your title — often the most distinguishing part — will be cut off in " +
       "search results, making the listing less informative and less clickable to potential " +
       "visitors.",
     fix:
-      "Shorten the title to under 60 characters while keeping the most important keywords " +
-      "at the beginning. Put the specific page topic first, then the organisation name.",
+      "Aim for about 60 characters, treating it as a guide rather than a rule. Put the " +
+      "most distinguishing words at the beginning: the specific page topic first, then " +
+      "the organisation name.",
   },
 
   META_DESC_MISSING: {
@@ -2998,7 +3000,7 @@ const issueHelp = {
   ENTITY_HOURS_DEFAULT: {
     title: "Default opening hours published",
     category: "ai_readiness",
-    severity: "warning",
+    severity: "info",
     confidence: "Established",
     definition:
       "The structured data publishes opening hours for every day of the week at the SEO " +

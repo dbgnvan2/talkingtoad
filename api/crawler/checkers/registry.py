@@ -370,7 +370,11 @@ _ISSUE_SCORING: dict[str, tuple[int, int]] = {
     # derive_impact() from the (confidence, effect_size) tiers below, as
     # asserted by test_r3_calibration.py. ENTITY_HOURS_DEFAULT is the highest of
     # the four: unlike a missing field it actively asserts something false.
-    "ENTITY_HOURS_DEFAULT":         (6, 1),
+    # Impact fell 6 -> 2 on 2026-08-30 (V1) when the confidence tier was
+    # corrected from Established to Heuristic. derive_impact reads that
+    # tier, so a finding we cannot support now costs the site less. The
+    # relabel was the point; this is the score following it, not a tuning.
+    "ENTITY_HOURS_DEFAULT":         (2, 1),
     "ENTITY_NAP_INCOMPLETE":        (6, 2),
     "ENTITY_FIELD_EMPTY":           (2, 1),
     "ENTITY_VALUE_PLACEHOLDER":     (2, 1),
@@ -473,7 +477,11 @@ _CALIBRATION: dict[str, tuple[str, str, bool]] = {
     "DOCUMENT_PROPS_MISSING": ("Established", "small", False),
     "ENTITY_NAME_INCONSISTENT": ("Reasonable proxy", "moderate", False),
     "ENTITY_SAMEAS_MISSING": ("Reasonable proxy", "small", False),
-    "ENTITY_HOURS_DEFAULT": ("Established", "moderate", False),
+    # Corrected 2026-08-30 (V1). "Established" means a vendor confirmed the
+    # effect. Nobody has: inferring that identical seven-day hours at a
+    # plugin default are untouched rather than real is our own guess, and
+    # some organisations genuinely do open the same hours every day.
+    "ENTITY_HOURS_DEFAULT": ("Heuristic", "moderate", False),
     "ENTITY_NAP_INCOMPLETE": ("Established", "moderate", False),
     "ENTITY_FIELD_EMPTY": ("Established", "small", False),
     "ENTITY_VALUE_PLACEHOLDER": ("Reasonable proxy", "small", False),
@@ -689,7 +697,7 @@ _CATALOGUE: dict[str, _IssueSpec] = {
     "TITLE_TOO_LONG": _IssueSpec(
         category="metadata", severity="info",
         description="Title over 60 characters",
-        recommendation="Shorten the title to under 60 characters. Google truncates longer titles in search results.",
+        recommendation="Aim for about 60 characters. Google does not publish a title length limit — it truncates by pixel width, and may rewrite a title regardless of length — so treat 60 as a guide, not a rule.",
         human_description="Too-Long Page Name",
         fixability="wp_fixable",
     ),
@@ -2072,7 +2080,7 @@ _CATALOGUE: dict[str, _IssueSpec] = {
     # constraint forbids TalkingToad writing them.
     # Spec: docs/pending/2026-08-29_E5-entity-value-checks.md
     "ENTITY_HOURS_DEFAULT": _IssueSpec(
-        category="ai_readiness", severity="warning", scope="site",
+        category="ai_readiness", severity="info", scope="site",
         description="Opening hours are published for every day at the SEO plugin's default "
                     "times, which are almost certainly not the real hours",
         recommendation="Verify the organisation's real public hours and enter them, or turn off "
@@ -2384,84 +2392,19 @@ def _titles_mismatch(title: str, h1: str) -> bool:
 #
 # The architecture test in tests/test_architecture_constraints.py enforces
 # that every code with category=="ai_readiness" has an entry here.
+# The AI-readiness confidence label is DERIVED, never maintained.
+#
+# It lived in a literal dict here until 2026-08-30 (V1) while _CALIBRATION above
+# carried the same tier for all 170 codes as its first element — and _CALIBRATION
+# is what derive_impact reads, so the tier is a scoring input. Two hand-kept
+# copies of one fact: correcting ENTITY_HOURS_DEFAULT in one of them was enough
+# to make them disagree, which is exactly how the last copy of this label drifted
+# (see test_confidence_single_source.py). Deriving removes the class rather than
+# fixing the instance.
 _AI_READINESS_CONFIDENCE: dict[str, str] = {
-    # Regenerated from _CALIBRATION (R3, 2026-07-03). Canonical 3 tiers;
-    # the Aggarwal 'measured' lane is tracked separately in _CALIBRATION.
-    "AI_BOT_BLANKET_DISALLOW": "Established",
-    "AI_BOT_DEPRECATED_DIRECTIVE": "Established",
-    "AI_BOT_NO_AI_DIRECTIVES": "Heuristic",
-    "AI_BOT_SEARCH_BLOCKED": "Established",
-    "AI_BOT_TABLE_STALE": "Heuristic",
-    "AI_BOT_TRAINING_DISALLOWED": "Established",
-    "AI_BOT_USER_FETCH_BLOCKED": "Established",
-    "AI_CITED_PAGE": "Established",
-    "AI_CONTENT_NOT_IN_TEXT": "Reasonable proxy",
-    "AI_HIGH_VALUE_UNCITED": "Heuristic",
-    "AI_MAIN_CONTENT_LOW_RATIO": "Heuristic",
-    "AI_NO_VISUAL_COMPANION": "Heuristic",
-    "AI_PREVIEW_BLOCKED_AT_BOT": "Established",
-    "AI_PREVIEW_SUPPRESSED": "Established",
-    "AI_TXT_MISSING": "Heuristic",
-    "AUTHOR_BYLINE_MISSING": "Reasonable proxy",
-    "AUTHOR_IDENTITY_INCONSISTENT": "Heuristic",
-    "BLOG_SECTIONS_MISSING": "Heuristic",
-    "BOILERPLATE_RATIO_HIGH": "Heuristic",
-    "HOWTO_SCHEMA_INCOMPLETE": "Heuristic",
-    "PRODUCT_REVIEW_SCHEMA_MISSING": "Reasonable proxy",
-    "AUTHOR_CREDENTIALS_MISSING": "Heuristic",
-    "CENTRAL_CLAIM_BURIED": "Heuristic",
-    "CHUNKS_NOT_SELF_CONTAINED": "Heuristic",
-    "CITATIONS_MISSING_SUBSTANTIAL_CONTENT": "Heuristic",
-    "CITATIONS_ORPHANED": "Heuristic",
-    "CITATIONS_SOURCES_INACCESSIBLE": "Heuristic",
-    "CODE_BLOCK_MISSING_TECHNICAL": "Heuristic",
-    "COMPARISON_TABLE_MISSING": "Heuristic",
-    "CONTACT_INFO_NOT_IN_HTML": "Reasonable proxy",
-    "CONTENT_CLOAKING_DETECTED": "Reasonable proxy",
-    "CONTENT_DATE_STALE_VISIBLE": "Reasonable proxy",
-    "CONTENT_IMAGE_HEAVY": "Heuristic",
-    "CONTENT_NOT_EXTRACTABLE_NO_TEXT": "Established",
-    "CONTENT_STAT_OUTDATED": "Heuristic",
-    "CONTENT_THIN": "Reasonable proxy",
-    "CONTENT_UNSTRUCTURED": "Reasonable proxy",
-    "CONVERSATIONAL_H2_MISSING": "Heuristic",
-    "DATE_MODIFIED_MISSING": "Reasonable proxy",
-    "DATE_PUBLISHED_MISSING": "Reasonable proxy",
-    "DOCUMENT_PROPS_MISSING": "Established",
-    "ENTITY_NAME_INCONSISTENT": "Reasonable proxy",
-    "ENTITY_SAMEAS_MISSING": "Reasonable proxy",
-    "ENTITY_HOURS_DEFAULT": "Established",
-    "ENTITY_NAP_INCOMPLETE": "Established",
-    "ENTITY_FIELD_EMPTY": "Established",
-    "ENTITY_VALUE_PLACEHOLDER": "Reasonable proxy",
-    "EXTERNAL_CITATIONS_LOW": "Heuristic",
-    "FAQ_SCHEMA_MISSING": "Established",
-    "FAQ_ANSWERS_NOT_IN_HTML": "Reasonable proxy",
-    "FIRST_VIEWPORT_NO_ANSWER": "Heuristic",
-    "GEO_SUMMARY_BURIED": "Heuristic",
-    "JSON_LD_INVALID": "Reasonable proxy",
-    "JSON_LD_MISSING": "Reasonable proxy",
-    "JS_RENDERED_CONTENT_DIFFERS": "Established",
-    "LINK_PROFILE_PROMOTIONAL": "Heuristic",
-    "LLMS_TXT_INVALID": "Heuristic",
-    "LLMS_TXT_MISSING": "Heuristic",
-    "NEAR_DUPLICATE_BODY": "Reasonable proxy",
-    "ORPHAN_CLAIM_TECHNICAL": "Heuristic",
-    "PROMOTIONAL_CONTENT_INTERRUPTS": "Heuristic",
-    "QUERY_COVERAGE_WEAK": "Heuristic",
-    "QUOTATIONS_MISSING": "Heuristic",
-    "RAW_HTML_JS_DEPENDENT": "Established",
-    "SCHEMA_DEPRECATED_TYPE": "Established",
-    "SCHEMA_ORG_MISSING": "Reasonable proxy",
-    "SCHEMA_TYPE_CONFLICT": "Reasonable proxy",
-    "SCHEMA_TYPE_MISMATCH": "Reasonable proxy",
-    "SCHEMA_VISIBLE_MISMATCH": "Established",
-    "SECTION_CROSS_REFERENCES": "Heuristic",
-    "SECTION_VAGUE_OPENER": "Heuristic",
-    "SEMANTIC_DENSITY_LOW": "Heuristic",
-    "STATISTICS_COUNT_LOW": "Heuristic",
-    "STRUCTURED_ELEMENTS_LOW": "Heuristic",
-    "UA_CONTENT_DIFFERS": "Reasonable proxy",
+    code: _CALIBRATION[code][0]
+    for code, spec in _CATALOGUE.items()
+    if spec.category == "ai_readiness" and code in _CALIBRATION
 }
 def make_issue(
     code: str,

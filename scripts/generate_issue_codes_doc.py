@@ -33,6 +33,7 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
+from api.crawler.checkers.authority import authority_for  # noqa: E402
 from api.crawler.issue_checker import (  # noqa: E402
     _AI_READINESS_CONFIDENCE,
     _CATALOGUE,
@@ -106,6 +107,27 @@ def _group_by_category() -> dict[str, list[str]]:
     return dict(sorted(groups.items(), key=lambda kv: _sort_key_for_category(kv[0])))
 
 
+def _render_authority(code: str) -> str:
+    """Render the code's evidence basis, in the user's language."""
+    entry = authority_for(code)
+    if not entry:
+        return ""
+    basis = entry.get("basis")
+    if basis == "citation":
+        lines = [f"**Basis:** published source — "
+                 f"[{entry['source']}]({entry['url']}) ({entry['source_type']})",
+                 f"> {entry['claim']}"]
+        if entry.get("threshold_note"):
+            lines.append(f"**What the source does not say:** "
+                         f"{entry['threshold_note']}")
+        return "\n\n".join(lines)
+    if basis == "observation":
+        return ("**Basis:** measured during the crawl — not a published claim."
+                f"\n\n> {entry['method']}")
+    return ("**Basis:** TalkingToad's own judgement. No published source states "
+            f"this.\n\n> {entry['rationale']}")
+
+
 def _render_code_entry(code: str) -> str:
     """Render a single issue code as a doc section."""
     spec = _CATALOGUE[code]
@@ -142,6 +164,13 @@ def _render_code_entry(code: str) -> str:
 
     if spec.human_description:
         body_parts.append(f"**Plain-English:** {spec.human_description}")
+
+    # V1 — say what this finding rests on. A check backed by a W3C success
+    # criterion and one resting on a number we chose were previously stated in
+    # the same voice, which let a house convention read as somebody else's rule.
+    basis_block = _render_authority(code)
+    if basis_block:
+        body_parts.append(basis_block)
 
     body = "\n\n".join(body_parts) if body_parts else ""
 

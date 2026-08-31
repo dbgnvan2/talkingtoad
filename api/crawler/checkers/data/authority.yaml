@@ -1,0 +1,1135 @@
+# V1 — the evidence basis for every issue code TalkingToad scores.
+#
+# Each code declares ONE of:
+#   basis: citation   — a published source states the underlying claim.
+#                       Requires source, source_type, url, claim.
+#   basis: heuristic  — no published source states it. Requires rationale
+#                       saying what we believe and why, and what it is NOT.
+#   basis: observation — not a claim about the world: a fact TalkingToad
+#                       recorded during this crawl. Requires method, saying what
+#                       was measured and what it does NOT establish. Added
+#                       2026-08-30 because several codes were filed as
+#                       heuristics, which under-describes a measurement, and one
+#                       was given a filler citation for want of an honest slot.
+#
+# threshold_note is REQUIRED on any citation whose check fires on a specific
+# number the cited source does not specify. Google publishes no title length,
+# no word count and no image weight; those numbers are ours. A citation for
+# the subject does not license the threshold, and conflating the two is how a
+# tool comes to present its own conventions as somebody else's rules.
+#
+# source_type: vendor | standard | research | industry
+#   vendor   — the operator of the system being described (Google, OpenAI…)
+#   standard — a normative spec (W3C, WHATWG, IETF)
+#   research — a published study
+#   industry — practitioner consensus in a named, citable place
+#
+# Every url here was fetched and its status recorded in url_verification.yaml.
+# Editorial content lives in this file, not in Python (global rule 9).
+
+# ─────────────────────────── security ───────────────────────────
+HTTP_PAGE:
+  basis: citation
+  source: Google Search Central
+  source_type: vendor
+  url: https://web.dev/articles/why-https-matters
+  claim: Google states HTTPS protects the integrity and confidentiality of a site's traffic and is a prerequisite for many web platform features.
+HTTPS_REDIRECT_MISSING:
+  basis: citation
+  source: Google Search Central
+  source_type: vendor
+  url: https://developers.google.com/search/docs/fundamentals/seo-starter-guide
+  claim: Google's own starter guidance is written around a site served over HTTPS, with one scheme serving each URL.
+MISSING_HSTS:
+  basis: citation
+  source: IETF RFC 6797
+  source_type: standard
+  url: https://www.rfc-editor.org/rfc/rfc6797
+  claim: Strict-Transport-Security instructs a browser to use HTTPS only, closing the first-request downgrade window.
+MIXED_CONTENT:
+  basis: citation
+  source: MDN Web Docs
+  source_type: standard
+  url: https://developer.mozilla.org/en-US/docs/Web/Security/Mixed_content
+  claim: Browsers block or downgrade insecure subresources on an HTTPS page, so mixed content breaks the page's security guarantee.
+UNSAFE_CROSS_ORIGIN_LINK:
+  basis: citation
+  source: OWASP
+  source_type: industry
+  url: https://owasp.org/www-community/attacks/Reverse_Tabnabbing
+  claim: A target="_blank" link without rel="noopener" lets the opened page rewrite the opener's location.
+WWW_CANONICALIZATION:
+  basis: citation
+  source: Google Search Central
+  source_type: vendor
+  url: https://developers.google.com/search/docs/crawling-indexing/canonicalization
+  claim: When several URLs serve the same content Google picks one canonical; serving both www and non-www without redirecting leaves that choice to Google.
+
+# ─────────────────────────── redirect ───────────────────────────
+REDIRECT_301:
+  basis: citation
+  source: Google Search Central
+  source_type: vendor
+  url: https://developers.google.com/search/docs/crawling-indexing/301-redirects
+  claim: A 301 is the permanent-move signal Google uses to transfer a URL's indexing signals to the target.
+REDIRECT_302:
+  basis: citation
+  source: Google Search Central
+  source_type: vendor
+  url: https://developers.google.com/search/docs/crawling-indexing/301-redirects
+  claim: A 302 signals a temporary move, so Google keeps indexing the original URL.
+INTERNAL_REDIRECT_301:
+  basis: citation
+  source: Google Search Central
+  source_type: vendor
+  url: https://developers.google.com/search/docs/crawling-indexing/301-redirects
+  claim: Google recommends updating internal links to point at the final URL rather than relying on a redirect.
+REDIRECT_CHAIN:
+  basis: citation
+  source: Google Search Central
+  source_type: vendor
+  url: https://developers.google.com/search/docs/crawling-indexing/301-redirects
+  claim: Google advises keeping redirect chains short; long chains cost crawl budget and risk being abandoned.
+  threshold_note: Google does not publish a maximum hop count. The hop count at which TalkingToad reports is ours.
+REDIRECT_LOOP:
+  basis: citation
+  source: IETF RFC 9110
+  source_type: standard
+  url: https://www.rfc-editor.org/rfc/rfc9110
+  claim: A client must detect and break redirect cycles; a looping URL can never be retrieved.
+META_REFRESH_REDIRECT:
+  basis: citation
+  source: W3C WAI (WCAG 2.2, SC 2.2.1)
+  source_type: standard
+  url: https://www.w3.org/WAI/WCAG22/Understanding/timing-adjustable
+  claim: A timed client-side redirect moves users without their control unless the delay can be adjusted or turned off.
+REDIRECT_CASE_NORMALISE:
+  basis: heuristic
+  rationale: >-
+    TalkingToad's own judgement that a redirect existing only to normalise URL
+    case is routine server behaviour and not a defect. It is reported for
+    completeness, not as something to fix. No source is claimed because no
+    source is needed for a decision to say less.
+REDIRECT_TRAILING_SLASH:
+  basis: heuristic
+  rationale: >-
+    As above: adding or removing a trailing slash is standard CMS behaviour.
+    Reported so the redirect is visible, explicitly not scored as a fault.
+
+# ────────────────────────── broken_link ─────────────────────────
+BROKEN_LINK_404:
+  basis: citation
+  source: IETF RFC 9110 §15.5.5
+  source_type: standard
+  url: https://www.rfc-editor.org/rfc/rfc9110
+  claim: 404 means the origin server found no current representation for the target resource.
+BROKEN_LINK_410:
+  basis: citation
+  source: IETF RFC 9110 §15.5.11
+  source_type: standard
+  url: https://www.rfc-editor.org/rfc/rfc9110
+  claim: 410 means the resource is permanently gone and the condition is expected to be permanent.
+BROKEN_LINK_5XX:
+  basis: citation
+  source: IETF RFC 9110 §15.6
+  source_type: standard
+  url: https://www.rfc-editor.org/rfc/rfc9110
+  claim: A 5xx status means the server failed to fulfil an apparently valid request.
+BROKEN_LINK_503:
+  basis: citation
+  source: IETF RFC 9110 §15.6.4
+  source_type: standard
+  url: https://www.rfc-editor.org/rfc/rfc9110
+  claim: 503 means the server is temporarily unable to handle the request — a transient condition, not a broken destination.
+EXTERNAL_LINK_SKIPPED:
+  basis: observation
+  method: >-
+    TalkingToad chose not to verify this destination, typically because the
+    platform blocks automated checks. Recorded so an unverified link is never
+    silently counted as working. Says nothing about whether the link works.
+EXTERNAL_LINK_TIMEOUT:
+  basis: observation
+  method: >-
+    The destination did not respond within TalkingToad's timeout. Recorded as
+    unverified, not as broken: a slow response and a dead host are different
+    findings and must not be reported as the same one.
+PLACEHOLDER_LINK:
+  basis: heuristic
+  rationale: >-
+    Our judgement that a call-to-action whose href is "#" or "javascript:void(0)"
+    with no handler is a dead control. No standard forbids it — the pattern is
+    legitimate for JS-driven widgets — so this is reported on navigational
+    elements only, where a destination is expected.
+WRONG_PLACEHOLDER_LINK:
+  basis: citation
+  source: IETF RFC 2606
+  source_type: standard
+  url: https://www.rfc-editor.org/rfc/rfc2606
+  claim: example.com, example.net and example.org are reserved for documentation and cannot serve a real destination.
+
+# ───────────────────────── url_structure ────────────────────────
+URL_HAS_UNDERSCORES:
+  basis: citation
+  source: Google Search Central
+  source_type: vendor
+  url: https://developers.google.com/search/docs/crawling-indexing/url-structure
+  claim: Google recommends hyphens rather than underscores to separate words in a URL path.
+URL_HAS_SPACES:
+  basis: citation
+  source: Google Search Central
+  source_type: vendor
+  url: https://developers.google.com/search/docs/crawling-indexing/url-structure
+  claim: Google recommends simple, readable URLs; percent-encoded spaces make a URL harder to read and to share intact.
+URL_UPPERCASE:
+  basis: heuristic
+  rationale: >-
+    Our judgement. URL paths are case-sensitive on most servers, so mixed case
+    invites duplicate URLs for one page. Google does not require lowercase
+    paths; consistency is the point, not the case itself.
+URL_TOO_LONG:
+  basis: heuristic
+  rationale: >-
+    Our judgement, and the 200-character figure is ours. Google states no URL
+    length limit for ranking. Long URLs are harder to share and more often
+    truncated in display, which is a usability argument, not a ranking one.
+
+# ─────────────────────────── sitemap ────────────────────────────
+SITEMAP_MISSING:
+  basis: citation
+  source: sitemaps.org protocol
+  source_type: standard
+  url: https://www.sitemaps.org/protocol.html
+  claim: A sitemap lets a site tell crawlers which URLs are available and is the standard mechanism for URL discovery.
+
+# ─────────────────────────── heading ────────────────────────────
+H1_MISSING:
+  basis: citation
+  source: W3C WAI (WCAG 2.2, SC 1.3.1)
+  source_type: standard
+  url: https://www.w3.org/WAI/WCAG22/Understanding/info-and-relationships
+  claim: Structure conveyed visually must be available programmatically; a top-level heading is how a page states its subject.
+H1_MULTIPLE:
+  basis: heuristic
+  rationale: >-
+    Our judgement, and Google has said publicly that multiple H1s are fine. The
+    HTML standard permits them. We report it as a structure-clarity signal, not
+    a ranking fault, and score it accordingly. Anyone told this must be fixed
+    for Google's sake has been misinformed.
+HEADING_EMPTY:
+  basis: citation
+  source: W3C WAI (WCAG 2.2, SC 2.4.6)
+  source_type: standard
+  url: https://www.w3.org/WAI/WCAG22/Understanding/headings-and-labels
+  claim: Headings must describe topic or purpose; a heading with no text describes nothing and still occupies the outline.
+HEADING_SKIP:
+  basis: citation
+  source: W3C WAI (WCAG 2.2, SC 1.3.1)
+  source_type: standard
+  url: https://www.w3.org/WAI/WCAG22/Understanding/info-and-relationships
+  claim: Heading levels express document structure; a skipped level misstates the nesting to anyone navigating by headings.
+  threshold_note: Skipping a level is advisory in WCAG, not a conformance failure. We report it as structure, not as an accessibility violation.
+
+# ────────────────────────── semantic_html ───────────────────────
+INTERACTIVE_NO_ACCESSIBLE_NAME:
+  basis: citation
+  source: W3C WAI (WCAG 2.2, SC 4.1.2)
+  source_type: standard
+  url: https://www.w3.org/WAI/WCAG22/Understanding/name-role-value
+  claim: Every user-interface component must expose a name; a control with none cannot be operated by assistive technology.
+NON_SEMANTIC_BUTTON:
+  basis: citation
+  source: W3C WAI (WCAG 2.2, SC 4.1.2)
+  source_type: standard
+  url: https://www.w3.org/WAI/WCAG22/Understanding/name-role-value
+  claim: A component's role must be programmatically determinable; a clickable div exposes no role, so it is not announced or reachable as a control.
+LANDMARK_MAIN_MISSING:
+  basis: citation
+  source: W3C ARIA Authoring Practices Guide
+  source_type: standard
+  url: https://www.w3.org/WAI/ARIA/apg/patterns/landmarks/
+  claim: Landmark regions let assistive-technology users jump to a page's primary content instead of traversing it linearly.
+  threshold_note: Landmarks are a W3C best practice, not a WCAG success criterion. Absence is not a conformance failure.
+LANDMARK_NAV_MISSING:
+  basis: citation
+  source: W3C ARIA Authoring Practices Guide
+  source_type: standard
+  url: https://www.w3.org/WAI/ARIA/apg/patterns/landmarks/
+  claim: A navigation landmark identifies a block of navigational links so it can be found or skipped.
+  threshold_note: Best practice, not a WCAG success criterion.
+
+# ────────────────────────── rendering ───────────────────────────
+CWV_LCP_POOR:
+  basis: citation
+  source: web.dev (Google)
+  source_type: vendor
+  url: https://web.dev/articles/lcp
+  claim: Largest Contentful Paint over 4 seconds at the 75th percentile is Google's published "poor" band.
+CWV_CLS_POOR:
+  basis: citation
+  source: web.dev (Google)
+  source_type: vendor
+  url: https://web.dev/articles/cls
+  claim: Cumulative Layout Shift above 0.25 at the 75th percentile is Google's published "poor" band.
+CWV_INP_POOR:
+  basis: citation
+  source: web.dev (Google)
+  source_type: vendor
+  url: https://web.dev/articles/inp
+  claim: Interaction to Next Paint over 500 ms at the 75th percentile is Google's published "poor" band.
+JS_DEPENDENT_NAVIGATION:
+  basis: citation
+  source: Google Search Central
+  source_type: vendor
+  url: https://developers.google.com/search/docs/crawling-indexing/javascript/javascript-seo-basics
+  claim: Google renders JavaScript but in a deferred second pass; links absent from the served HTML are discovered later, if at all.
+
+# ─────────────────────────── metadata ───────────────────────────
+TITLE_MISSING:
+  basis: citation
+  source: Google Search Central
+  source_type: vendor
+  url: https://developers.google.com/search/docs/appearance/title-link
+  claim: Google uses the title element as the primary source for the title link shown in search results.
+TITLE_DUPLICATE:
+  basis: citation
+  source: Google Search Central
+  source_type: vendor
+  url: https://developers.google.com/search/docs/appearance/title-link
+  claim: Google advises a unique, descriptive title for each page so results are distinguishable.
+TITLE_TOO_LONG:
+  basis: citation
+  source: Google Search Central
+  source_type: vendor
+  url: https://developers.google.com/search/docs/appearance/title-link
+  claim: Google may rewrite or truncate a title link when it does not suit the query or the available width.
+  threshold_note: The 60-character figure is ours. Google publishes no title length limit; truncation is by pixel width, which varies by device and characters used.
+TITLE_TOO_SHORT:
+  basis: citation
+  source: Google Search Central
+  source_type: vendor
+  url: https://developers.google.com/search/docs/appearance/title-link
+  claim: Google advises titles be descriptive and concise rather than vague or generic.
+  threshold_note: The 30-character floor is ours. Google publishes no minimum. A short title is not automatically a poor one.
+META_DESC_MISSING:
+  basis: citation
+  source: Google Search Central
+  source_type: vendor
+  url: https://developers.google.com/search/docs/appearance/snippet
+  claim: Google uses the meta description as one source for the result snippet when it summarises the page well.
+META_DESC_DUPLICATE:
+  basis: citation
+  source: Google Search Central
+  source_type: vendor
+  url: https://developers.google.com/search/docs/appearance/snippet
+  claim: Google advises a distinct description per page; identical descriptions cannot differentiate results.
+META_DESC_TOO_LONG:
+  basis: citation
+  source: Google Search Central
+  source_type: vendor
+  url: https://developers.google.com/search/docs/appearance/snippet
+  claim: Google truncates snippets to the available width and may generate its own text instead.
+  threshold_note: The 160-character figure is ours. Google publishes no description length and states snippet length varies.
+META_DESC_TOO_SHORT:
+  basis: heuristic
+  rationale: >-
+    Our judgement, and the 70-character floor is ours. Google publishes no
+    minimum and frequently writes its own snippet regardless. A very short
+    description simply has less chance of answering the query.
+CANONICAL_MISSING:
+  basis: citation
+  source: Google Search Central
+  source_type: vendor
+  url: https://developers.google.com/search/docs/crawling-indexing/consolidate-duplicate-urls
+  claim: A rel=canonical tells Google which URL to treat as authoritative among duplicates, such as query-string variants.
+CANONICAL_SELF_MISSING:
+  basis: citation
+  source: Google Search Central
+  source_type: vendor
+  url: https://developers.google.com/search/docs/crawling-indexing/consolidate-duplicate-urls
+  claim: Google supports a self-referencing canonical as an explicit statement of the preferred URL.
+  threshold_note: Google states a canonical is not required. We report the absence as a suggestion, not a fault.
+CANONICAL_EXTERNAL:
+  basis: citation
+  source: Google Search Central
+  source_type: vendor
+  url: https://developers.google.com/search/docs/crawling-indexing/consolidate-duplicate-urls
+  claim: A canonical pointing to another domain asks Google to index that domain's URL instead of this one.
+LANG_MISSING:
+  basis: citation
+  source: W3C WAI (WCAG 2.2, SC 3.1.1)
+  source_type: standard
+  url: https://www.w3.org/WAI/WCAG22/Understanding/language-of-page
+  claim: The default human language of a page must be programmatically determinable, which the lang attribute provides.
+FAVICON_MISSING:
+  basis: citation
+  source: Google Search Central
+  source_type: vendor
+  url: https://developers.google.com/search/docs/appearance/favicon-in-search
+  claim: Google can show a site's favicon beside its search results, and defines how the icon is declared and discovered.
+ANCHOR_TEXT_GENERIC:
+  basis: citation
+  source: W3C WAI (WCAG 2.2, SC 2.4.4)
+  source_type: standard
+  url: https://www.w3.org/WAI/WCAG22/Understanding/link-purpose-in-context
+  claim: A link's purpose should be determinable from its text; "click here" conveys nothing when links are listed out of context.
+LINK_EMPTY_ANCHOR:
+  basis: citation
+  source: W3C WAI (WCAG 2.2, SC 2.4.4)
+  source_type: standard
+  url: https://www.w3.org/WAI/WCAG22/Understanding/link-purpose-in-context
+  claim: A link with no discernible text has no announceable purpose.
+LINK_STACKED_DUPLICATE:
+  basis: heuristic
+  rationale: >-
+    Our judgement. Several links to one destination inside a card (the common
+    "whole card is clickable" pattern) make a screen-reader user hear the same
+    destination repeatedly. It is a usability observation, not a WCAG failure,
+    and the pattern is not wrong in itself.
+TITLE_H1_MISMATCH:
+  basis: heuristic
+  rationale: >-
+    Our judgement. A title and an H1 that share no significant words usually
+    means one of them does not describe the page. No source requires them to
+    match, and a deliberate difference is legitimate.
+SOCIAL_PREVIEW_METADATA_MISSING:
+  basis: citation
+  source: The Open Graph protocol
+  source_type: standard
+  url: https://ogp.me/
+  claim: Open Graph tags declare the title, description and image a platform uses when a URL is shared.
+
+# ──────────────────────────── image ─────────────────────────────
+IMG_ALT_MISSING:
+  basis: citation
+  source: W3C WAI (WCAG 2.2, SC 1.1.1)
+  source_type: standard
+  url: https://www.w3.org/WAI/WCAG22/Understanding/non-text-content
+  claim: Non-text content must have a text alternative serving the equivalent purpose.
+IMG_ALT_MISUSED:
+  basis: citation
+  source: W3C WAI (WCAG 2.2, SC 1.1.1)
+  source_type: standard
+  url: https://www.w3.org/WAI/WCAG22/Understanding/non-text-content
+  claim: Purely decorative images must be implemented so assistive technology can ignore them — which alt="" does and descriptive alt text defeats.
+IMG_ALT_GENERIC:
+  basis: citation
+  source: W3C WAI (WCAG 2.2, SC 1.1.1)
+  source_type: standard
+  url: https://www.w3.org/WAI/WCAG22/Understanding/non-text-content
+  claim: The alternative must serve the equivalent purpose; "image" or "photo" conveys nothing the element did not already announce.
+IMG_ALT_DUP_FILENAME:
+  basis: heuristic
+  rationale: >-
+    Our judgement. Alt text identical to the filename is almost always
+    auto-generated rather than written, so it rarely serves the equivalent
+    purpose WCAG 1.1.1 requires. Occasionally a filename genuinely is the best
+    description, so this is reported, not asserted.
+IMG_ALT_TOO_LONG:
+  basis: heuristic
+  rationale: >-
+    Our judgement, and the 125-character figure is ours. WCAG sets no length.
+    The figure is long-standing practitioner convention reflecting older screen
+    readers; a longer alt is not a conformance failure, and a complex image may
+    need one.
+IMG_ALT_TOO_SHORT:
+  basis: heuristic
+  rationale: >-
+    Our judgement, and the 5-character floor is ours. WCAG sets no minimum, and
+    a very short alt can be exactly right ("Logo"). It flags the case where alt
+    was filled in to silence a checker.
+IMG_BROKEN:
+  basis: citation
+  source: IETF RFC 9110
+  source_type: standard
+  url: https://www.rfc-editor.org/rfc/rfc9110
+  claim: A 4xx or 5xx response means no representation was returned, so the image cannot render.
+IMG_FORMAT_LEGACY:
+  basis: citation
+  source: web.dev (Google)
+  source_type: vendor
+  url: https://web.dev/articles/serve-images-webp
+  claim: WebP typically produces substantially smaller files than equivalent-quality JPEG or PNG.
+IMG_NO_SRCSET:
+  basis: citation
+  source: web.dev (Google)
+  source_type: vendor
+  url: https://web.dev/articles/serve-responsive-images
+  claim: srcset lets the browser choose a source matched to the device, avoiding the download of pixels it cannot display.
+IMG_OVERSCALED:
+  basis: citation
+  source: web.dev (Google)
+  source_type: vendor
+  url: https://web.dev/articles/serve-responsive-images
+  claim: Serving an image substantially larger than its display size transfers bytes the user can never see.
+  threshold_note: The 2x ratio is ours. No source sets a threshold, and 2x is deliberately lenient so high-density displays are not flagged.
+IMG_OVERSIZED:
+  basis: heuristic
+  rationale: >-
+    Our judgement, and the 200 KB figure is ours. No source publishes a
+    per-image weight limit; what matters is the page total and the connection.
+    The figure is a practical budget for a nonprofit site on mobile, and is
+    configurable.
+IMG_POOR_COMPRESSION:
+  basis: citation
+  source: Chrome Lighthouse documentation (Google)
+  source_type: vendor
+  url: https://developer.chrome.com/docs/lighthouse/performance/uses-optimized-images
+  claim: Images that are not efficiently encoded transfer more bytes than their visual quality requires.
+  threshold_note: "The bytes-per-pixel threshold is ours. It is a proxy: some images legitimately need a high bit rate."
+IMG_SLOW_LOAD:
+  basis: heuristic
+  rationale: >-
+    Our judgement, and the 1-second figure is ours. It is measured from the
+    crawler's network, not the user's, so it indicates a slow origin rather
+    than a slow experience for any particular visitor.
+IMG_DUPLICATE_CONTENT:
+  basis: heuristic
+  rationale: >-
+    Our judgement. Byte-identical images under different URLs each occupy the
+    cache separately and are each downloaded once. Not a ranking claim, and
+    duplicates are sometimes deliberate.
+
+# ────────────────────────── crawlability ────────────────────────
+ROBOTS_BLOCKED:
+  basis: citation
+  source: IETF RFC 9309
+  source_type: standard
+  url: https://www.rfc-editor.org/rfc/rfc9309.html
+  claim: A Disallow rule instructs a conforming crawler not to fetch the matching paths.
+NOINDEX_META:
+  basis: citation
+  source: Google Search Central
+  source_type: vendor
+  url: https://developers.google.com/search/docs/crawling-indexing/block-indexing
+  claim: A noindex meta tag instructs Google to drop the page from its index entirely.
+NOINDEX_HEADER:
+  basis: citation
+  source: Google Search Central
+  source_type: vendor
+  url: https://developers.google.com/search/docs/crawling-indexing/block-indexing
+  claim: X-Robots-Tag&#58; noindex in the HTTP response has the same effect as the meta tag, and applies to non-HTML files too.
+NOT_IN_SITEMAP:
+  basis: citation
+  source: sitemaps.org protocol
+  source_type: standard
+  url: https://www.sitemaps.org/protocol.html
+  claim: A sitemap lists the URLs a site wants crawled; a crawlable page absent from it is not advertised for discovery.
+  threshold_note: Omission from a sitemap does not prevent indexing. Reported as a discovery gap, not a fault.
+ORPHAN_PAGE:
+  basis: citation
+  source: Google Search Central
+  source_type: vendor
+  url: https://developers.google.com/search/docs/crawling-indexing/overview-google-crawlers
+  claim: Google discovers pages primarily by following links; a page nothing links to must be found some other way.
+  threshold_note: Only sound over a complete link graph. TalkingToad suppresses this check on a partial scan rather than infer absence from a subset.
+HIGH_CRAWL_DEPTH:
+  basis: heuristic
+  rationale: >-
+    Our judgement, and the 4-click figure is ours. Google publishes no depth
+    limit. Deeply buried pages tend to be crawled less often and are harder for
+    people to reach; neither effect has a published threshold.
+INTERNAL_NOFOLLOW:
+  basis: citation
+  source: Google Search Central
+  source_type: vendor
+  url: https://developers.google.com/search/docs/crawling-indexing/qualify-outbound-links
+  claim: rel="nofollow" tells Google not to use the link for discovery or ranking, which on an internal link works against the site.
+THIN_CONTENT:
+  basis: citation
+  source: Google Search Central
+  source_type: vendor
+  url: https://developers.google.com/search/docs/fundamentals/creating-helpful-content
+  claim: Google advises pages provide substantial, complete and comprehensive coverage of their topic.
+  threshold_note: The 300-word figure is ours. Google publishes no word count and states explicitly that there is no minimum. A short page can be complete.
+CONTENT_STALE:
+  basis: heuristic
+  rationale: >-
+    Our judgement, and the 12-month window is ours. Age is not a defect —
+    reference content is often correct for years. It flags pages worth a
+    review, and is deliberately scored low.
+PAGE_TIMEOUT:
+  basis: observation
+  method: >-
+    The page did not respond within TalkingToad's own timeout during this
+    crawl. Records that the page was not read, so it is never counted as clean.
+    Not a verdict on the site's speed for a visitor.
+PAGE_SIZE_LARGE:
+  basis: citation
+  source: web.dev (Google)
+  source_type: vendor
+  url: https://web.dev/articles/lcp
+  claim: Response size is one determinant of how quickly the main content can be rendered.
+  threshold_note: The size at which we report is ours. No source sets an HTML weight limit.
+PDF_TOO_LARGE:
+  basis: heuristic
+  rationale: >-
+    Our judgement, and the 10 MB figure is ours. It reflects what is reasonable
+    to ask a visitor on a mobile connection to download, not any published
+    limit.
+MISSING_VIEWPORT_META:
+  basis: citation
+  source: Google Search Central
+  source_type: vendor
+  url: https://developers.google.com/search/docs/appearance/page-experience
+  claim: Google evaluates whether pages work on mobile devices; without a viewport meta tag a page is rendered at desktop width and zoomed out.
+LOGIN_REDIRECT:
+  basis: observation
+  method: >-
+    The URL redirected to a login screen during this crawl, so its content was
+    not read. Frequently intended. Recorded so the page is not counted as a
+    healthy public page.
+AMPHTML_BROKEN:
+  basis: heuristic
+  rationale: >-
+    Our judgement. A declared AMP version that does not resolve is a broken
+    reference by inspection. AMP itself is deprecated as a Google Search
+    requirement, so this is reported as cleanup, not as an SEO fault.
+PAGINATION_LINKS_PRESENT:
+  basis: heuristic
+  rationale: >-
+    Purely informational. Google announced in 2019 that it no longer uses
+    rel=next/prev for indexing. Reported so the markup is visible; explicitly
+    not scored as a fault, and not a recommendation to remove it.
+PARA_TOO_LONG:
+  basis: heuristic
+  rationale: >-
+    Our judgement, and the 150-word figure is ours. No standard sets a
+    paragraph length. Long paragraphs are harder to scan on a phone; that is a
+    readability opinion, not a ranking claim.
+
+# ─────────────────────────── analytics ──────────────────────────
+ANALYTICS_TAG_MISSING:
+  basis: heuristic
+  rationale: >-
+    Not an SEO claim at all. It reports that no GA4 or Tag Manager snippet was
+    found, so the organisation cannot see what this page does. Whether to
+    install analytics is the site owner's decision.
+ANALYTICS_TAG_DUPLICATE:
+  basis: citation
+  source: Google Analytics Help
+  source_type: vendor
+  url: https://support.google.com/analytics/answer/9304153
+  claim: Google documents one GA4 tag per page; a second copy double-counts pageviews and events.
+ANALYTICS_ID_INCONSISTENT:
+  basis: heuristic
+  rationale: >-
+    Our judgement. Different measurement IDs across pages of one site usually
+    means a partial migration, splitting the data between properties. A
+    deliberate multi-property setup is legitimate, so this is reported, not
+    asserted.
+CONSENT_MODE_MISSING:
+  basis: citation
+  source: Google Analytics Help
+  source_type: vendor
+  url: https://support.google.com/analytics/answer/9976101
+  claim: Google documents Consent Mode as the mechanism for adjusting tag behaviour according to user consent.
+  threshold_note: Whether consent signalling is legally required depends on jurisdiction. TalkingToad does not give legal advice and does not assert a requirement.
+CTA_TRACKING_MISSING:
+  basis: heuristic
+  rationale: >-
+    Our judgement, and it depends on a convention we infer from the site's own
+    markup&#58; if some buttons are tagged for click tracking and comparable ones are
+    not, the untagged ones are probably an oversight. Silent when no convention
+    is detectable, because then there is nothing to be inconsistent with.
+OUTBOUND_LINK_UNTRACKABLE:
+  basis: heuristic
+  rationale: >-
+    Our judgement. An image-or-icon-only external link gives analytics no label
+    to report, so its clicks are unattributable in reports. A usability and
+    measurement observation, not a standard.
+SELF_REFERENCING_UTM:
+  basis: citation
+  source: Google Analytics Help
+  source_type: vendor
+  url: https://support.google.com/analytics/answer/10917952
+  claim: UTM campaign parameters start a new session attributed to that campaign; using them on internal links restarts attribution mid-visit.
+
+# ═══════════════════════ ai_readiness ════════════════════════
+# These reconcile with _AI_READINESS_CONFIDENCE in registry.py: a code labelled
+# "Established" must carry a vendor citation here, and a code labelled
+# "Heuristic" must not — otherwise the label is claiming more, or less, than
+# the evidence. test_authority.py enforces both directions.
+
+# ── robots / bot access: the operators publish these ─────────────
+AI_BOT_BLANKET_DISALLOW:
+  basis: citation
+  source: IETF RFC 9309
+  source_type: standard
+  url: https://www.rfc-editor.org/rfc/rfc9309.html
+  claim: "User-agent: * with Disallow: / instructs every conforming crawler to fetch nothing."
+AI_BOT_SEARCH_BLOCKED:
+  basis: citation
+  source: OpenAI bot documentation
+  source_type: vendor
+  url: https://platform.openai.com/docs/bots
+  claim: OpenAI documents its crawler user agents and states that disallowing them in robots.txt stops those fetches.
+AI_BOT_TRAINING_DISALLOWED:
+  basis: citation
+  source: OpenAI bot documentation
+  source_type: vendor
+  url: https://platform.openai.com/docs/bots
+  claim: GPTBot is the documented training crawler and honours a robots.txt disallow.
+  threshold_note: Blocking training crawlers is a legitimate choice. TalkingToad reports the state and does not recommend allowing it.
+AI_BOT_USER_FETCH_BLOCKED:
+  basis: citation
+  source: OpenAI bot documentation
+  source_type: vendor
+  url: https://platform.openai.com/docs/bots
+  claim: OpenAI documents a separate user-triggered fetch agent, so blocking it stops retrieval on behalf of a person who asked for the page by name.
+AI_BOT_DEPRECATED_DIRECTIVE:
+  basis: citation
+  source: OpenAI bot documentation
+  source_type: vendor
+  url: https://platform.openai.com/docs/bots
+  claim: The vendors publish their current user-agent tokens; a rule naming a token no longer in use has no effect.
+AI_BOT_NO_AI_DIRECTIVES:
+  basis: heuristic
+  rationale: >-
+    Informational, and deliberately not a recommendation. It reports that
+    robots.txt names no AI crawler either way. Whether to allow or block them
+    is the organisation's decision, and TalkingToad takes no position on it.
+AI_BOT_TABLE_STALE:
+  basis: observation
+  method: >-
+    TalkingToad's own table of AI crawler user agents has not been refreshed
+    within the freshness window. A statement about this tool, not about the
+    site, surfaced because a stale table produces confident wrong answers.
+AI_PREVIEW_SUPPRESSED:
+  basis: citation
+  source: Google Search Central
+  source_type: vendor
+  url: https://developers.google.com/search/docs/crawling-indexing/robots-meta-tag
+  claim: Google documents nosnippet and max-snippet in the X-Robots-Tag header as suppressing the text preview for a page.
+AI_PREVIEW_BLOCKED_AT_BOT:
+  basis: citation
+  source: Google Search Central
+  source_type: vendor
+  url: https://developers.google.com/search/docs/crawling-indexing/robots-meta-tag
+  claim: X-Robots-Tag directives can be addressed to a named user agent, applying to that crawler only.
+
+# ── citation observation ─────────────────────────────────────────
+AI_CITED_PAGE:
+  basis: observation
+  method: >-
+    A citation of this URL was recorded by the configured citation source
+    within the window. An observation, not a prediction. It establishes nothing
+    about pages with no recorded citation, which may simply not have been
+    sampled.
+AI_HIGH_VALUE_UNCITED:
+  basis: heuristic
+  rationale: >-
+    Our judgement, and the weakest kind. That a page we rate as high-value has
+    no recorded citation may mean it is not being surfaced, or only that our
+    sampling did not see one. Absence of a citation is not evidence of a
+    problem, which is why this is labelled Heuristic and scored low.
+
+# ── extractability: what a text-only fetcher can actually read ───
+CONTENT_NOT_EXTRACTABLE_NO_TEXT:
+  basis: citation
+  source: W3C WAI (WCAG 2.2, SC 1.1.1)
+  source_type: standard
+  url: https://www.w3.org/WAI/WCAG22/Understanding/non-text-content
+  claim: Content carried only as images or media has no text equivalent, so anything consuming text — assistive technology or a crawler — receives nothing.
+RAW_HTML_JS_DEPENDENT:
+  basis: citation
+  source: Google Search Central
+  source_type: vendor
+  url: https://developers.google.com/search/docs/crawling-indexing/javascript/javascript-seo-basics
+  claim: Content present only after JavaScript execution is not in the served HTML, and rendering is a deferred second pass.
+JS_RENDERED_CONTENT_DIFFERS:
+  basis: citation
+  source: Google Search Central
+  source_type: vendor
+  url: https://developers.google.com/search/docs/crawling-indexing/javascript/javascript-seo-basics
+  claim: Google documents a two-phase crawl in which rendered content is processed later than the served HTML.
+UA_CONTENT_DIFFERS:
+  basis: citation
+  source: Google Search Central
+  source_type: vendor
+  url: https://developers.google.com/search/docs/essentials/spam-policies
+  claim: Serving different content to a crawler than to a user is cloaking, which Google's spam policies prohibit.
+CONTENT_CLOAKING_DETECTED:
+  basis: citation
+  source: Google Search Central
+  source_type: vendor
+  url: https://developers.google.com/search/docs/essentials/spam-policies
+  claim: Google defines cloaking as presenting different content to users and search engines, and treats it as a policy violation.
+  threshold_note: TalkingToad detects a topic shift between raw and rendered content. That is a signal, not a finding of intent, and a common cause is a personalisation script rather than deception.
+AI_CONTENT_NOT_IN_TEXT:
+  basis: citation
+  source: W3C WAI (WCAG 2.2, SC 1.1.1)
+  source_type: standard
+  url: https://www.w3.org/WAI/WCAG22/Understanding/non-text-content
+  claim: Information carried only by an image needs a text alternative to be available to anything that reads text.
+CONTACT_INFO_NOT_IN_HTML:
+  basis: citation
+  source: W3C WAI (WCAG 2.2, SC 1.1.1)
+  source_type: standard
+  url: https://www.w3.org/WAI/WCAG22/Understanding/non-text-content
+  claim: Contact details rendered only as an image or injected by script are not present as text for any reader of the served page.
+FAQ_ANSWERS_NOT_IN_HTML:
+  basis: citation
+  source: Google Search Central
+  source_type: vendor
+  url: https://developers.google.com/search/docs/crawling-indexing/javascript/javascript-seo-basics
+  claim: Answer text revealed only on interaction or injected by script is absent from the served HTML.
+
+# ── structured data: schema.org and Google document these ────────
+JSON_LD_MISSING:
+  basis: citation
+  source: Google Search Central
+  source_type: vendor
+  url: https://developers.google.com/search/docs/appearance/structured-data/intro-structured-data
+  claim: Structured data is Google's documented mechanism for stating explicitly what a page is about.
+  threshold_note: Structured data is not required for indexing. Reported as an opportunity, not a fault.
+JSON_LD_INVALID:
+  basis: citation
+  source: schema.org
+  source_type: standard
+  url: https://schema.org/docs/gs.html
+  claim: A JSON-LD block without @context and @type declares no vocabulary or type, so no consumer can interpret it.
+SCHEMA_ORG_MISSING:
+  basis: citation
+  source: Google Search Central
+  source_type: vendor
+  url: https://developers.google.com/search/docs/appearance/structured-data/organization
+  claim: Google documents Organization structured data as how a site states its identity, logo and contact details.
+SCHEMA_DEPRECATED_TYPE:
+  basis: citation
+  source: schema.org
+  source_type: standard
+  url: https://schema.org/docs/gs.html
+  claim: schema.org marks superseded types; a consumer is under no obligation to interpret one.
+SCHEMA_TYPE_MISMATCH:
+  basis: citation
+  source: Google Search Central
+  source_type: vendor
+  url: https://developers.google.com/search/docs/appearance/structured-data/sd-policies
+  claim: Google's structured-data policies require markup to describe the page it is on.
+  threshold_note: TalkingToad infers the page type from its content. The inference can be wrong, so this is reported rather than asserted.
+SCHEMA_TYPE_CONFLICT:
+  basis: citation
+  source: Google Search Central
+  source_type: vendor
+  url: https://developers.google.com/search/docs/appearance/structured-data/sd-policies
+  claim: Contradictory type declarations leave a consumer no basis for choosing between them.
+SCHEMA_VISIBLE_MISMATCH:
+  basis: citation
+  source: Google Search Central
+  source_type: vendor
+  url: https://developers.google.com/search/docs/appearance/structured-data/sd-policies
+  claim: Google requires structured data to reflect content visible on the page; markup asserting what the page does not say is a policy violation.
+FAQ_SCHEMA_MISSING:
+  basis: citation
+  source: Google Search Central
+  source_type: vendor
+  url: https://developers.google.com/search/docs/appearance/structured-data/faqpage
+  claim: Google documents FAQPage markup as the way to declare question-and-answer content explicitly.
+  threshold_note: Google restricted FAQ rich results in 2023. The markup still states the structure unambiguously, which is the basis for reporting it — not a promise of a rich result.
+HOWTO_SCHEMA_INCOMPLETE:
+  basis: citation
+  source: Google Search Central
+  source_type: vendor
+  url: https://developers.google.com/search/docs/appearance/structured-data/how-to
+  claim: Google documents the required properties of HowTo markup; an incomplete block does not describe the procedure.
+  threshold_note: Google retired HowTo rich results in 2023. Reported for structural clarity only.
+PRODUCT_REVIEW_SCHEMA_MISSING:
+  basis: citation
+  source: Google Search Central
+  source_type: vendor
+  url: https://developers.google.com/search/docs/appearance/structured-data/product
+  claim: Google documents review and aggregateRating as the properties that carry rating information for a product.
+ENTITY_NAP_INCOMPLETE:
+  basis: citation
+  source: Google Search Central
+  source_type: vendor
+  url: https://developers.google.com/search/docs/appearance/structured-data/local-business
+  claim: Google documents the identity fields — name, address, telephone — that identify a local business.
+ENTITY_FIELD_EMPTY:
+  basis: citation
+  source: schema.org
+  source_type: standard
+  url: https://schema.org/docs/gs.html
+  claim: A declared property carrying no value states nothing, while appearing in the markup as though it does.
+ENTITY_VALUE_PLACEHOLDER:
+  basis: heuristic
+  rationale: >-
+    Our judgement. A field carrying a template default ("Your Business Name",
+    "123 Main St") is worse than an absent field, because it asserts something
+    false. The list of placeholder values is editorial and may miss cases.
+ENTITY_HOURS_DEFAULT:
+  basis: heuristic
+  rationale: >-
+    Our judgement. Identical hours on all seven days at an SEO plugin's default
+    value is more often an untouched default than a real schedule. Some
+    organisations genuinely do open the same hours daily, so this is reported,
+    not asserted.
+ENTITY_NAME_INCONSISTENT:
+  basis: heuristic
+  rationale: >-
+    Our judgement. Different organisation names across a site's own structured
+    data give a consumer no single identity to resolve to. Legitimate for a
+    site covering several entities.
+ENTITY_SAMEAS_MISSING:
+  basis: citation
+  source: schema.org
+  source_type: standard
+  url: https://schema.org/sameAs
+  claim: sameAs links an entity to its authoritative pages elsewhere, which is how a consumer disambiguates one organisation from a similarly named one.
+DOCUMENT_PROPS_MISSING:
+  basis: citation
+  source: W3C WAI (WCAG 2.2 technique PDF18)
+  source_type: standard
+  url: https://www.w3.org/WAI/WCAG22/Techniques/pdf/PDF18
+  claim: W3C documents setting a PDF's document-properties Title as the technique that gives the file a name assistive technology and other consumers can read.
+
+# ── dates and authorship ─────────────────────────────────────────
+DATE_PUBLISHED_MISSING:
+  basis: citation
+  source: Google Search Central
+  source_type: vendor
+  url: https://developers.google.com/search/docs/appearance/publication-dates
+  claim: Google documents how it determines a page's publication date and recommends stating it explicitly in structured data and visibly on the page.
+DATE_MODIFIED_MISSING:
+  basis: citation
+  source: Google Search Central
+  source_type: vendor
+  url: https://developers.google.com/search/docs/appearance/publication-dates
+  claim: Google documents dateModified as the declared signal for when content last changed.
+CONTENT_DATE_STALE_VISIBLE:
+  basis: heuristic
+  rationale: >-
+    Our judgement, and the staleness window is ours. A visible date that reads
+    as old undermines a reader's confidence in time-sensitive content. Age is
+    not error, and much content is correct indefinitely.
+AUTHOR_BYLINE_MISSING:
+  basis: citation
+  source: Google Search Central
+  source_type: vendor
+  url: https://developers.google.com/search/docs/fundamentals/creating-helpful-content
+  claim: Google's guidance asks who wrote the content and whether the site makes authorship clear.
+AUTHOR_CREDENTIALS_MISSING:
+  basis: heuristic
+  rationale: >-
+    Our judgement. Google's helpful-content guidance discusses expertise but
+    publishes no credential requirement and no way to verify one. That a byline
+    carries no stated credential is an observation about the page, not a
+    measure of the author.
+AUTHOR_IDENTITY_INCONSISTENT:
+  basis: heuristic
+  rationale: >-
+    Our judgement. The same person named differently across a site gives a
+    consumer no single identity to resolve. Name variants are often legitimate.
+
+# ── GEO signals. One peer-reviewed study exists; no engine operator has
+#    confirmed any of it. Where the study covers a signal we cite it and the
+#    label stays Heuristic, because research is not vendor confirmation.
+STATISTICS_COUNT_LOW:
+  basis: citation
+  source: "Aggarwal et al., GEO: Generative Engine Optimization (KDD 2024)"
+  source_type: research
+  url: https://arxiv.org/abs/2311.09735
+  claim: Adding statistics to source content measurably raised its visibility in the generative engines the study tested.
+  threshold_note: The 500-word trigger is ours. The study tested a research corpus, not this site, and no engine operator has confirmed the effect.
+QUOTATIONS_MISSING:
+  basis: citation
+  source: "Aggarwal et al., GEO: Generative Engine Optimization (KDD 2024)"
+  source_type: research
+  url: https://arxiv.org/abs/2311.09735
+  claim: Adding quotations from named sources was among the interventions that raised visibility in the study's generative engines.
+  threshold_note: The 500-word trigger is ours, and the finding is one study on a research corpus, not a vendor statement.
+CITATIONS_MISSING_SUBSTANTIAL_CONTENT:
+  basis: citation
+  source: "Aggarwal et al., GEO: Generative Engine Optimization (KDD 2024)"
+  source_type: research
+  url: https://arxiv.org/abs/2311.09735
+  claim: Adding cited sources was among the interventions that raised visibility in the study's generative engines.
+  threshold_note: The 200-word trigger is ours. Plenty of legitimate pages cite nothing.
+CITATIONS_ORPHANED:
+  basis: heuristic
+  rationale: >-
+    Our judgement. A citation with no surrounding sentence explaining what it
+    supports cannot be evaluated by a reader or summarised faithfully. No
+    source states this.
+CITATIONS_SOURCES_INACCESSIBLE:
+  basis: citation
+  source: IETF RFC 9110
+  source_type: standard
+  url: https://www.rfc-editor.org/rfc/rfc9110
+  claim: A cited URL returning 4xx or 5xx cannot be retrieved, so the citation cannot be checked by anyone following it.
+EXTERNAL_CITATIONS_LOW:
+  basis: heuristic
+  rationale: >-
+    Our judgement, and the 500-word trigger is ours. A long page linking to no
+    external source gives a reader nothing to corroborate it against. Original
+    reporting and primary material legitimately cite nothing.
+LINK_PROFILE_PROMOTIONAL:
+  basis: heuristic
+  rationale: >-
+    Our judgement, and the 80% figure is ours. Outbound links that nearly all
+    point to one organisation read as promotion rather than reference. Entirely
+    legitimate for a site documenting its own work.
+ORPHAN_CLAIM_TECHNICAL:
+  basis: heuristic
+  rationale: >-
+    Our judgement, and the 3-claim trigger is ours. Detecting an unsupported
+    factual claim is a language judgement TalkingToad makes approximately, and
+    it will both miss claims and flag supported ones.
+
+# ── structure and answerability: practitioner convention, no vendor source ──
+CENTRAL_CLAIM_BURIED:
+  basis: heuristic
+  rationale: >-
+    Our judgement, and the first-150-words window is ours. No engine operator
+    publishes anything about where an answer should sit. The reasoning is that
+    a summariser reading a truncated page sees the opening first — plausible,
+    unconfirmed.
+FIRST_VIEWPORT_NO_ANSWER:
+  basis: heuristic
+  rationale: >-
+    Our judgement, and the 200-word window is ours. It detects the absence of
+    an answer-shaped signal, which is a crude proxy for whether the page
+    actually answers anything.
+GEO_SUMMARY_BURIED:
+  basis: heuristic
+  rationale: >-
+    Our judgement. A section whose opening sentence does not lead the section
+    is harder to excerpt. No source states this.
+CHUNKS_NOT_SELF_CONTAINED:
+  basis: heuristic
+  rationale: >-
+    Our judgement, and the half-of-sections threshold is ours. Retrieval
+    systems commonly index passages rather than pages, so a section that only
+    makes sense after the one above it may be retrieved without its context.
+    How any given engine chunks a page is not published.
+SECTION_VAGUE_OPENER:
+  basis: heuristic
+  rationale: >-
+    Our judgement. A section opening on "this" or "these" with no antecedent in
+    the section reads as incomplete when excerpted. A writing observation.
+SECTION_CROSS_REFERENCES:
+  basis: heuristic
+  rationale: >-
+    Our judgement. "As mentioned above" breaks when a passage is read on its
+    own. Perfectly good prose for a reader going top to bottom, which is why
+    this is scored low.
+CONVERSATIONAL_H2_MISSING:
+  basis: heuristic
+  rationale: >-
+    Our judgement, and a contested one. Phrasing headings as questions is
+    common advice for AI search and no operator has confirmed it helps.
+    Scored low deliberately, because writing every heading as a question makes
+    for worse pages.
+QUERY_COVERAGE_WEAK:
+  basis: heuristic
+  rationale: >-
+    Our judgement. If the H1's topic terms barely appear in the body, the page
+    may not cover what it announces. A term-overlap proxy, easily fooled by
+    synonyms and by good writing that avoids repetition.
+BLOG_SECTIONS_MISSING:
+  basis: heuristic
+  rationale: >-
+    Our judgement. A long article with almost no headings offers no structure
+    to navigate or excerpt by. The section count that triggers this is ours.
+CONTENT_UNSTRUCTURED:
+  basis: citation
+  source: W3C WAI (WCAG 2.2, SC 1.3.1)
+  source_type: standard
+  url: https://www.w3.org/WAI/WCAG22/Understanding/info-and-relationships
+  claim: Structure conveyed visually must be programmatically determinable; substantial text with no headings exposes no structure at all.
+STRUCTURED_ELEMENTS_LOW:
+  basis: heuristic
+  rationale: >-
+    Our judgement. Lists, tables and code blocks mark structure explicitly
+    where a paragraph only implies it. The count that triggers this is ours,
+    and plenty of good pages are pure prose.
+COMPARISON_TABLE_MISSING:
+  basis: heuristic
+  rationale: >-
+    Our judgement. A page using comparison language without a table leaves the
+    comparison implicit. Detected from phrasing, so it will flag pages where
+    "versus" was incidental.
+CODE_BLOCK_MISSING_TECHNICAL:
+  basis: heuristic
+  rationale: >-
+    Our judgement. Numbered technical steps with no code or preformatted block
+    often mean commands are inline in prose, where they are easy to
+    mistranscribe. Not every technical guide involves code.
+CONTENT_THIN:
+  basis: citation
+  source: Google Search Central
+  source_type: vendor
+  url: https://developers.google.com/search/docs/fundamentals/creating-helpful-content
+  claim: Google advises content offer substantial value rather than little of substance.
+  threshold_note: The 100-word figure is ours. Google publishes no word count and states there is no minimum. A contact page can be complete at 40 words.
+NEAR_DUPLICATE_BODY:
+  basis: citation
+  source: Google Search Central
+  source_type: vendor
+  url: https://developers.google.com/search/docs/crawling-indexing/consolidate-duplicate-urls
+  claim: Google consolidates pages it judges duplicates and indexes one of them, so the others may not appear separately.
+  threshold_note: The similarity threshold is ours, measured after removing shared template text. Near-duplicate lead paragraphs are normal across a service-area set.
+BOILERPLATE_RATIO_HIGH:
+  basis: heuristic
+  rationale: >-
+    Our judgement, and the ratio is ours. When most of a page's text is the
+    same header, footer and sidebar found sitewide, little of the page is
+    about its own subject. Correct and unavoidable on short pages.
+SEMANTIC_DENSITY_LOW:
+  basis: heuristic
+  rationale: >-
+    Our judgement, and the 10% figure is ours. Text-to-HTML ratio is a crude
+    proxy for markup bloat that penalises pages built by any modern page
+    builder regardless of their content. Scored low for that reason.
+AI_MAIN_CONTENT_LOW_RATIO:
+  basis: heuristic
+  rationale: >-
+    Our judgement, and the 40% figure is ours. It depends on TalkingToad
+    identifying the main content area correctly, which on an unusual template
+    it may not.
+CONTENT_IMAGE_HEAVY:
+  basis: heuristic
+  rationale: >-
+    Our judgement. A page carrying far more images than text sections may hold
+    its meaning in pictures, which a text reader cannot see. Entirely correct
+    for a gallery.
+AI_NO_VISUAL_COMPANION:
+  basis: heuristic
+  rationale: >-
+    Our judgement, and the weakest kind. A long text page with no image may be
+    harder to engage with. Nothing establishes an effect on AI retrieval, and
+    it is scored accordingly.
+PROMOTIONAL_CONTENT_INTERRUPTS:
+  basis: heuristic
+  rationale: >-
+    Our judgement. Promotional blocks between body sections interrupt the
+    argument and may be excerpted as though they were part of it. Classifying
+    a section as promotional is a language judgement that will misfire.
+CONTENT_STAT_OUTDATED:
+  basis: heuristic
+  rationale: >-
+    Our judgement, and the 24-month window is ours. A bare old year in body
+    text may be a stale statistic or may be a historical reference, which
+    TalkingToad cannot reliably tell apart.
+
+# ── files at the site root ───────────────────────────────────────
+LLMS_TXT_MISSING:
+  basis: citation
+  source: llmstxt.org
+  source_type: industry
+  url: https://llmstxt.org/
+  claim: llms.txt is a published proposal for a root file describing a site's content to language models.
+  threshold_note: A proposal, not a standard. No engine operator has committed to reading it, so absence is reported as an option, not a defect.
+LLMS_TXT_INVALID:
+  basis: citation
+  source: llmstxt.org
+  source_type: industry
+  url: https://llmstxt.org/
+  claim: The proposal defines the file's expected structure, against which a malformed file can be identified.
+AI_TXT_MISSING:
+  basis: heuristic
+  rationale: >-
+    Our judgement, and weak. ai.txt is one of several competing proposals for
+    declaring AI usage preferences, adopted by no major engine. Reported for
+    completeness and scored near zero; robots.txt is the mechanism that
+    actually works today.
