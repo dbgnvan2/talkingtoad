@@ -432,6 +432,28 @@ async def _filter_for_domain(store, target_url: str, issue_dicts: list[dict]) ->
     return kept, report
 
 
+async def _filter_issue_models_for_domain(store, target_url: str, issues: list):
+    """Apply the domain filter to Issue MODELS, for the export paths.
+
+    The owner asked for "a report of what shows on the screen — not something
+    different", so every export goes through the same rule engine the results
+    list uses. Returns (kept, caveat_note|None); the note is provenance, not
+    content — a PDF leaves the building and its reader is usually not the
+    operator who set the filter.
+    """
+    from api.services.domain_filter import (filter_issue_models,
+                                            filter_caveat_note,
+                                            normalise_filter_domain)
+    try:
+        rules = await store.get_domain_filters(target_url)
+    except Exception as exc:  # an export must never fail because of a filter
+        logger.warning("export_filter_load_failed", extra={"error": str(exc)})
+        return issues, None
+    kept, report = filter_issue_models(issues, rules)
+    report["domain"] = normalise_filter_domain(target_url)
+    return kept, filter_caveat_note(report)
+
+
 def _rescan_is_conclusive(status_code: int) -> bool:
     """Is this rescan evidence about the page's issues, or just a failed read?
 
@@ -2059,6 +2081,9 @@ async def export_csv_full(
         return _err("JOB_NOT_FOUND", "No crawl job found with the given ID.", 404)
 
     issues = await store.get_all_issues(job_id)
+    # F1 — the exports show what the screen shows. Same rule engine as
+    # the results list, so the two cannot describe different sites.
+    issues, _ = await _filter_issue_models_for_domain(store, job.target_url, issues)
     from urllib.parse import urlparse
     domain = urlparse(job.target_url).netloc.replace("www.", "")
     return _csv_response(issues, filename=f"TalkingToad-Audit-{domain}.csv")
@@ -2102,6 +2127,9 @@ async def export_pdf_report(
         # Continue with job settings as fallback
 
     issues = await store.get_all_issues(job_id)
+    # F1 — the exports show what the screen shows. Same rule engine as
+    # the results list, so the two cannot describe different sites.
+    issues, _filter_note = await _filter_issue_models_for_domain(store, job.target_url, issues)
     summary = await store.get_summary(job_id)
 
     # Fetch top 10 pages for the report
@@ -2193,7 +2221,7 @@ async def export_pdf_report(
             "include_pages": include_pages
         })
         pdf_bytes = await generate_pdf_report(
-            job, issues, summary,
+            job, issues, summary, filter_note=_filter_note,
             include_help=include_help,
             include_pages=include_pages,
             top_pages=top_pages_data,
@@ -2232,6 +2260,9 @@ async def export_excel_report(
         return _err("JOB_NOT_FOUND", "No crawl job found with the given ID.", 404)
 
     issues = await store.get_all_issues(job_id)
+    # F1 — the exports show what the screen shows. Same rule engine as
+    # the results list, so the two cannot describe different sites.
+    issues, _filter_note = await _filter_issue_models_for_domain(store, job.target_url, issues)
     summary = await store.get_summary(job_id)
 
     # Fetch image data for the report
@@ -2266,6 +2297,7 @@ async def export_excel_report(
             performance=performance,
             priority_pages=priority_pages,
             prevalence=prevalence,
+            filter_note=_filter_note,
         )
         return StreamingResponse(
             io.BytesIO(excel_bytes),
@@ -2296,6 +2328,8 @@ async def export_csv_category(
         return _err("JOB_NOT_FOUND", "No crawl job found with the given ID.", 404)
 
     issues, _ = await store.get_issues(job_id, category=category, limit=10_000)
+    # F1 — same filter as the on-screen category view.
+    issues, _ = await _filter_issue_models_for_domain(store, job.target_url, issues)
     from urllib.parse import urlparse as _up
     cat_domain = _up(job.target_url).netloc.replace("www.", "")
     return _csv_response(issues, filename=f"TalkingToad-Audit-{cat_domain}-{category}.csv")

@@ -38,6 +38,27 @@ class TalkingToadReport(FPDF):
         if not text: return ""
         return str(text).encode('latin-1', 'replace').decode('latin-1')
 
+    # The PDF is Latin-1 (CLAUDE.md, Reporting), so any non-Latin-1 character
+    # reaching fpdf raises UnicodeEncodeError and takes the whole export to a
+    # 500. Cleaning was left to each call site and 36 of them skipped it —
+    # including `_render_priority_pages_section`, whose no-GSC-data blurb
+    # contains an em dash and therefore broke the PDF for every site without
+    # Search Console, which is the default for a nonprofit. Cleaning here
+    # instead of at 36 call sites means a new call cannot reintroduce it.
+    # Guarded by tests/test_pdf_latin1_safety.py.
+    def cell(self, *args, **kwargs):
+        return super().cell(*self._clean_args(args), **self._clean_kwargs(kwargs))
+
+    def multi_cell(self, *args, **kwargs):
+        return super().multi_cell(*self._clean_args(args), **self._clean_kwargs(kwargs))
+
+    def _clean_args(self, args):
+        return tuple(self.clean_text(a) if isinstance(a, str) else a for a in args)
+
+    def _clean_kwargs(self, kwargs):
+        return {k: (self.clean_text(v) if k in ("text", "txt") and isinstance(v, str) else v)
+                for k, v in kwargs.items()}
+
     def header(self):
         if self.page_no() > 1:
             self.set_font('helvetica', 'I', 8)
@@ -850,6 +871,7 @@ def _render_wp_audit_section(pdf, audit: dict | None) -> None:
 
 
 def _render_caveats_section(pdf, job, summary, *, performance, image_summary,
+                            filter_note=None,
                             prevalence, performance_failed: bool = False,
                             offsite: dict | None = None) -> None:
     """What was covered, what every cap dropped, and what was NOT checked (E7.2).
@@ -909,6 +931,12 @@ def _render_caveats_section(pdf, job, summary, *, performance, image_summary,
     _analysis_note = analysis_coverage_note(job)   # C2
     if _analysis_note:
         limits.append(_analysis_note)
+    # F1 — this report shows the on-screen (filtered) list. Say so, in the
+    # section a reader already scans for what the audit did not cover. The
+    # reader of a forwarded PDF is usually not the operator who set the
+    # filter, and 123 of 170 codes are `info`.
+    if filter_note:
+        limits.append(filter_note)
     if limits:
         _para("Limits reached during this crawl", bold=True, color=COLOR_GRAY_800, size=12)
         for line in limits:
@@ -1042,6 +1070,7 @@ async def generate_pdf_report(
     priority_pages: list[dict] | None = None,
     prevalence: list | None = None,
     performance_failed: bool = False,
+    filter_note: str | None = None,
     include_blueprints: bool = False,
     offsite: dict | None = None,
 ) -> bytes:
@@ -1602,6 +1631,7 @@ async def generate_pdf_report(
     # was NOT checked will assume the audit was complete.
     _render_caveats_section(
         pdf, job, summary,
+        filter_note=filter_note,
         performance=performance,
         image_summary=image_summary,
         prevalence=prevalence,

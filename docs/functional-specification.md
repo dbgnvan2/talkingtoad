@@ -1206,9 +1206,22 @@ a one-click *show again*. The disclosure renders **above** the empty/non-empty
 branch, so a filter that hides everything still explains itself rather than
 producing a bare "No issues found in this category."
 
-**Not applied to** the health score, the summary counts, or the PDF/Excel
-exports. A report that silently omits findings is a document someone forwards
-to a funder; filtered exports would need their own decision.
+**The exports match the screen.** The owner's decision: *"I want the ability to
+send a report of what shows on the screen — not something different."* All four
+export paths (`/export/csv`, `/export/csv/{category}`, `/export/pdf`,
+`/export/excel`) apply the same rules through the same engine —
+`filter_issue_models()` and `apply_domain_filter()` share `_partition()`, so the
+list and the report cannot come to describe different sites.
+
+A filtered report **says so**. `filter_caveat_note()` renders one sentence into
+the PDF's *Limits reached during this crawl* section and cell `D6` of the Excel
+Summary sheet, naming each rule and its count. That is provenance, not different
+content: the person who opens a forwarded report is usually not the operator who
+set the filter, and with 123 of 170 codes at `info` a filtered report can omit
+most findings while looking complete. The note is absent when nothing was
+hidden, so it stays a signal.
+
+**Still not applied to** the health score or the summary counts.
 → `tests/test_domain_issue_filter.py`,
   `frontend/src/components/__tests__/CategoryPanelFilter.test.jsx`.
 

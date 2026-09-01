@@ -17,6 +17,7 @@ def generate_excel_report(
     priority_pages: list[dict] | None = None,
     prevalence: list | None = None,
     priority_pages_for_roadmap: list[dict] | None = None,
+    filter_note: str | None = None,
 ) -> bytes:
     """Generate a multi-sheet Excel workbook from crawl data."""
     wb = Workbook()
@@ -70,6 +71,12 @@ def generate_excel_report(
     if _analysis_note:
         ws_summary["D5"] = _analysis_note
         ws_summary["D5"].font = label_font
+    # F1 — this workbook shows the on-screen (filtered) list. Stated beside the
+    # other coverage notes, because the person who opens the file is often not
+    # the one who set the filter.
+    if filter_note:
+        ws_summary["D6"] = filter_note
+        ws_summary["D6"].font = label_font
 
     # Category totals table
     ws_summary["A9"] = "Issues by Category"

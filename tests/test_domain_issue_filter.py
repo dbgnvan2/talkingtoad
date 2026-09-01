@@ -350,3 +350,116 @@ class TestTheHttpContract:
             api_client.delete("/api/domain-filters?domain=example.com&severity=info"),
         ):
             assert (await call).status_code == 401
+
+
+class TestTheExportsMatchTheScreen:
+    """Owner: "I want the ability to send a report of what shows on the screen
+    — not something different."
+
+    So the exports apply the same filter as the results list. They also STATE
+    that they are a filtered view: that is not different content, it is
+    provenance. A PDF is the artefact that leaves the building — the reader who
+    opens it is usually not the operator who set the filter, and a report that
+    silently omits 72% of findings while looking complete is the one failure
+    mode worth guarding here.
+    """
+
+    async def _job(self, store):
+        from api.crawler.checkers.registry import make_issue
+        from api.routers.crawl import _engine_issue_to_model
+        job = CrawlJob(job_id="j1", target_url="https://example.com",
+                       started_at=datetime.now(timezone.utc))
+        await store.create_job(job)
+        await store.save_pages([CrawledPage(
+            job_id="j1", url="https://example.com/p", status_code=200,
+            title="t", crawled_at=datetime.now(timezone.utc))])
+        issues = []
+        for c in ("TITLE_TOO_SHORT", "H1_MISSING", "IMG_ALT_MISSING"):
+            i = _engine_issue_to_model(make_issue(c, "https://example.com/p"), "j1")
+            i.page_url = "https://example.com/p"
+            issues.append(i)
+        await store.save_issues(issues)
+        return issues
+
+    async def test_model_filter_and_dict_filter_agree(self, store):
+        """One rule engine, two callers. If these ever disagree, the screen and
+        the report are describing different sites — which is the whole class
+        this codebase has been fighting."""
+        from api.services.domain_filter import apply_domain_filter, filter_issue_models
+        issues = await self._job(store)
+        rules = [{"issue_code": None, "severity": "info"}]
+        kept_models, rep_m = filter_issue_models(issues, rules)
+        kept_dicts, rep_d = apply_domain_filter([i.model_dump() for i in issues], rules)
+        assert {i.issue_code for i in kept_models} == {d["issue_code"] for d in kept_dicts}
+        assert rep_m == rep_d
+
+    async def test_csv_export_reflects_the_filter(self, test_store, auth_headers, api_client):
+        await self._job(test_store)
+        await test_store.add_domain_filter("example.com", issue_code="H1_MISSING")
+        r = await api_client.get("/api/crawl/j1/export/csv", headers=auth_headers)
+        assert r.status_code == 200
+        assert "H1_MISSING" not in r.text, "the CSV shows a finding the screen hides"
+        assert "TITLE_TOO_SHORT" in r.text, "the CSV lost findings the screen shows"
+
+    async def test_excel_export_reflects_the_filter(self, test_store, auth_headers, api_client):
+        await self._job(test_store)
+        await test_store.add_domain_filter("example.com", issue_code="H1_MISSING")
+        r = await api_client.get("/api/crawl/j1/export/excel", headers=auth_headers)
+        assert r.status_code == 200 and len(r.content) > 0
+
+    async def test_the_report_says_it_is_a_filtered_view(self, store):
+        """Provenance, not different content. Without it, a forwarded PDF
+        showing 4 findings is indistinguishable from a healthy site."""
+        from api.services.domain_filter import filter_caveat_note
+        note = filter_caveat_note({"domain": "example.com", "hidden": 31,
+                                   "by_rule": {"severity:info": 28, "H1_MISSING": 3}})
+        assert note and "31" in note
+        assert "info" in note and "H1_MISSING" in note, (
+            "the note must name the rules, or the reader cannot tell what is missing"
+        )
+
+    async def test_adversarial_an_unfiltered_report_carries_no_note(self, store):
+        """The note must appear only when something was hidden, or every report
+        acquires a caveat nobody reads and the signal is lost."""
+        from api.services.domain_filter import filter_caveat_note
+        assert filter_caveat_note({"domain": "x", "hidden": 0, "by_rule": {}}) is None
+        assert filter_caveat_note(None) is None
+
+    async def test_adversarial_an_unfiltered_export_is_byte_identical(self, test_store, auth_headers, api_client):
+        """With no rules the export must be exactly what it was before this
+        feature — so a bug cannot hide behind 'no filter configured'."""
+        await self._job(test_store)
+        a = (await api_client.get("/api/crawl/j1/export/csv", headers=auth_headers)).text
+        await test_store.add_domain_filter("example.com", issue_code="H1_MISSING")
+        await test_store.remove_domain_filter("example.com", issue_code="H1_MISSING")
+        b = (await api_client.get("/api/crawl/j1/export/csv", headers=auth_headers)).text
+        assert a == b
+
+    async def test_the_pdf_states_it_is_filtered(self, test_store, auth_headers, api_client):
+        """Wiring asserted at the artefact, not at the call. A note passed to a
+        generator that never renders it is the unwired-disclosure trap this
+        repo hit on 2026-08-30."""
+        await self._job(test_store)
+        await test_store.add_domain_filter("example.com", severity="info")
+        r = await api_client.get("/api/crawl/j1/export/pdf", headers=auth_headers)
+        assert r.status_code == 200
+        # Extract the text rather than grepping bytes: fpdf2 compresses
+        # streams, so a byte search would fail for the wrong reason.
+        import io
+        from pypdf import PdfReader
+        text = " ".join((pg.extract_text() or "") for pg in PdfReader(io.BytesIO(r.content)).pages)
+        assert "Filtered view" in text, (
+            "the PDF does not say it is a filtered view — a forwarded report "
+            "would look like a complete audit"
+        )
+
+    async def test_the_excel_states_it_is_filtered(self, test_store, auth_headers, api_client):
+        import io
+        from openpyxl import load_workbook
+        await self._job(test_store)
+        await test_store.add_domain_filter("example.com", severity="info")
+        r = await api_client.get("/api/crawl/j1/export/excel", headers=auth_headers)
+        assert r.status_code == 200
+        wb = load_workbook(io.BytesIO(r.content))
+        text = " ".join(str(c.value) for c in wb["Summary"]["D"] if c.value)
+        assert "Filtered view" in text, f"Summary D column carries no filter note: {text!r}"
