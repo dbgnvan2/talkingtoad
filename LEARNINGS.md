@@ -58,11 +58,20 @@
 
 ## Open risks (found by review, not yet bitten)
 
-- **The "blank robots/sitemap panels in production" symptom has no confirmed cause.** It was
-  attributed to Redis divergence on 2026-08-31 and that diagnosis was wrong — Upstash was never
-  configured, so the Redis store never ran. Deleting the Redis store (2026-08-31, Cycle 3) does
-  **not** resolve it. If the symptom recurs, start from the SQLite path and the panel's own
-  `.catch`, not from a store-divergence hypothesis.
+- **RESOLVED — the "blank robots/sitemap panels in production" symptom never happened.** Closed
+  2026-08-31 after investigation, and the way it closed matters more than the result. The symptom
+  was **never observed**: the entry that reported it says so in its own words — *"Found by a parity
+  assertion, not by looking."* A parity test showed the Redis summary lacked `robots_txt` and
+  `sitemap`; the session then wrote the consequence that *would* follow — "rendered correctly in
+  development and blank in production" — **in the past tense, as though observed**. Production never
+  ran Redis, so the consequence never occurred. Verified positively rather than assumed: a real
+  round trip through `SQLiteJobStore` returns
+  `robots_txt={'found': True, 'rules': [...]}` and `sitemap={'found': True, 'url': ..., 'url_count': 42}`,
+  because `get_summary` reads those columns directly from `crawl_jobs` and never goes through
+  `_row_to_job`. The path that has always run was always correct.
+  **The lesson is about this file, not about panels:** a predicted consequence written in the past
+  tense becomes an established fact on the next read, and it was cited as one for weeks. Write
+  "would render blank" for a consequence you reasoned to, and "rendered blank" only for one you saw.
 
 - **New fetches must route through `is_ssrf_safe()`.** Any Phase-2/3 outbound call (PageSpeed
   Insights, render-comparison, competitor crawl, GA4) is a fresh chance to bypass SSRF — wire it in.
@@ -113,6 +122,14 @@
 ## Fix log
 
 Newest first. Format: **Issue → Root cause → What would have caught it → Fix → Pattern.**
+
+- **2026-08-31 — chased a production bug that never existed, because a predicted consequence had been written down in the past tense.**
+  - *Issue:* the 2026-08-31 "four backlog fixes" entry states that the sitemap and robots panels *"rendered correctly in development and blank in production"*, attributing it to the Redis summary missing `robots_txt` and `sitemap`. Cycle 3 established the owner had never configured Upstash, so Redis never ran — which left an apparently real production symptom with its only explanation removed. I logged it as an open risk and came back to it.
+  - *There was no symptom.* The entry says so itself, one sentence later: *"Found by a parity assertion, not by looking."* A parity test had shown Redis's summary lacked two keys `CategoryPanel.jsx` reads. The session then wrote down the consequence that **would** follow — in the **past tense**, as a thing that had happened. Nobody ever saw a blank panel.
+  - *Verified positively rather than assumed:* a real round trip through `SQLiteJobStore` returns `robots_txt={'found': True, 'rules': [...]}` and `sitemap={'found': True, 'url': ..., 'url_count': 42}`. `get_summary` reads those five columns straight from `crawl_jobs` and never goes through `_row_to_job`, which is exactly why the SQLite path never had the defect the Redis path did. The path that has always run was always correct.
+  - *What would have caught it:* reading the sentence after the claim. It was self-refuting in place, and I quoted the paragraph twice in this session before noticing.
+  - *Cost:* the false symptom was carried forward as established fact in three of my own reports and shaped the priority order of a whole cycle. Cheap here; expensive if it had sent someone debugging a live system.
+  - *Pattern:* **tense as an evidence marker.** A consequence you reasoned to and a consequence you observed are different claims, and a fix log that renders both as plain past tense converts the first into the second on the next read. Write "would render blank" for what you inferred; reserve "rendered blank" for what you saw. Same discipline as the session's other rule — **query the artifact before theorising** — applied to the record rather than the code.
 
 - **2026-08-31 — CI's first run found five tests that had been making live Gemini calls, passing because the mock patched a name the code never looks at.**
   - *Issue:* the first CI run went red on both interpreters. Root cause on the runner: `ProviderAuthError: No AI credentials available`. Five tests in `test_rewriter_integration.py` and `test_rewrite_url_integration.py` passed locally **only because `.env` supplies `GEMINI_API_KEY`** — and `api/main.py` calls `load_dotenv()`, so clearing the shell environment does not reproduce it. A clean `git archive` export does.
