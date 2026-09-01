@@ -22,6 +22,11 @@ TalkingToad helps you identify technical SEO issues on your website and — for 
   confirms a fix without re-crawling, and reports what it found — resolved, still
   present, newly found, or *not re-checked* for the checks that need a whole-site crawl.
   It never marks a finding fixed on the strength of a check it could not run.
+- **Rescan:** Every finished scan on the home page has a **Rescan** button that re-runs it
+  with the settings it was originally run with — page limit, analysis toggles, ignored
+  headings, content-type scope, GSC priority file. Nothing to re-enter, and the score
+  stays comparable to the previous run: a scan re-run under different settings shows a
+  delta that is partly a change in what was measured, not in the site.
 - **Professional Reporting:** Export results as tabbed Excel workbooks or professional PDF audits.
 
 ---

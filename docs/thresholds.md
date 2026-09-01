@@ -122,6 +122,27 @@ impossible.
 | `FAQ_ANSWERS_NOT_IN_HTML` fire condition | ≥ 2 missing **and** ≥ 50% of FAQ answers | `api/crawler/checkers/ai_readiness.py` `_run_geo_checks` |
 | FAQ question detection | accordion/`<details>`/heading titles ending in `?` | `api/crawler/parser.py` `_extract_faq_blocks` |
 
+## Stacked-link card detection (E6 / E6.1, 2026-09-01)
+
+All values live in `api/config/link_patterns.json` (rule 9: editorial config,
+not code constants). These decide what counts as a *card* — the container
+requirement is what stops `LINK_STACKED_DUPLICATE` from meaning "any URL linked
+twice anywhere on the page". See functional-specification §4.15 E6.1.
+
+| Threshold | Value | Source |
+|---|---|---|
+| Minimum anchors to form a group | 2 | `link_patterns.json` `min_group_size` |
+| Max navigational links a card may hold | 15 | `link_patterns.json` `max_card_links` |
+| Max share of page text a card may hold | 0.5 | `link_patterns.json` `max_card_text_fraction` |
+| Min page text before the text-share guard applies | 500 chars | `link_patterns.json` `min_page_text_for_fraction` |
+| `<article>` counts as a card when the page holds | ≥ 2 articles | `api/crawler/parser.py` `_is_card_container` |
+| Tags that are never a card | `main`, `body`, `html`, `role="main"` | `api/crawler/parser.py` `_NEVER_CARD_TAGS` |
+| Class-pattern match mode | equals, or prefix + `-`/`_` | `api/crawler/parser.py` `_class_matches_pattern` |
+
+> The text-share guard is deliberately inert below `min_page_text_for_fraction`:
+> a ratio over a tiny denominator carries no information, and a one-card stub is
+> legitimately most of its own text.
+
 ## Content extraction windows (ParsedPage)
 
 These are the pre-computed text buffers every GEO check reads from.

@@ -27,7 +27,8 @@ This file tracks infrastructure improvements, testing gaps, and future features 
 - [ ] **WP Integration Tests:** Build test suite that runs against the `/test-page/` on livingsystems.ca to catch real-world issues (URL resolution, entity encoding, heading changes).
 
 ## 🟡 Medium Priority: UX & Polish
-- [ ] **Rescan All Pages:** Add button to re-check all pages in an existing crawl without re-crawling from scratch.
+- [ ] **Rescan All Pages:** Add button to re-check all pages in an existing crawl without re-crawling from scratch. (Distinct from the 2026-09-01 **Rescan** button, which re-runs the whole crawl with the original settings; this one would re-check stored pages in place.)
+- [ ] **Concurrent-crawl politeness guard:** nothing stops two crawls of the same domain running at once — from the main form or from two Rescan clicks — which halves the effective `crawl_delay_ms` against a nonprofit's server. Deliberately out of scope for the Rescan item (2026-09-01): `/start` has always permitted it, so guarding only the rescan path would be a partial fix in the wrong place. The fix belongs in `_launch_crawl`, which both doorways now share.
 - [ ] **Persistent Settings:** Save the user's preferred PDF export options (Help Text ON/OFF) in localStorage.
 - [ ] **Real-time Log Streaming:** Instead of just a progress bar, show a "Live Console" during the crawl for power users.
 

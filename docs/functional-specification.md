@@ -140,6 +140,59 @@ and acceptance criteria for the journey as a whole.
   suppress-children so no code is deleted); see §4.0.1 for the full R5 scoring behavior.
 - The Summary tab loads within 2 seconds of crawl completion.
 
+### Journey A2 — Re-run a past scan (Rescan, 2026-09-01)
+
+**Goal:** User has fixed things and wants to check whether they cleared,
+without re-entering the URL and re-selecting every setting from memory.
+
+**Steps:**
+1. On the home page, the **Recent crawls** list shows each past scan.
+2. Each **finished** scan (`complete` / `failed` / `cancelled`) carries a
+   **Rescan** button immediately left of *View Results*. A **running** scan
+   shows *View Progress* only — there is nothing to re-run yet.
+3. User clicks **Rescan**.
+4. **Observable:** the button reads "Starting…" and is disabled — that row
+   only; the other rows stay usable.
+5. **Observable:** browser navigates to `/progress/<new_job_id>` (or straight
+   to `/results/<new_job_id>` when the source was a single-page scan, which
+   runs synchronously).
+
+**Behaviour:** `POST /api/crawl/{job_id}/rescan` loads the source job,
+re-validates its URL, and re-launches it with the settings it was originally
+run with — max pages, crawl delay, image size limit, analysis toggles, the
+suppress-H1 list and banner rule, any partial content-type scope, and the
+stored GSC priority seed (so a GSC-ordered scan keeps its ordering without the
+user re-uploading the file).
+
+**Acceptance criteria:**
+- A rescan creates a **new** job and never mutates the source one. The previous
+  scan is what `/{job_id}/comparison` measures the new one against, so a re-run
+  under different settings would produce a health-score delta that reads as site
+  improvement but is partly a change of measuring instrument.
+- A **single-page** scan rescans as a single page. `/scan-page` records
+  `single_page=True` in its settings from 2026-09-01; jobs created before that
+  are recognised by the `orphan_detection.status == "skipped_single_page"`
+  marker `/scan-page` has always written. Without both arms, a one-page audit
+  rescans as a full-site crawl of up to 500 pages — returning a well-formed 202
+  while doing it.
+- A single-page rescan runs **unauthenticated**. Whether the original was an
+  authenticated draft scan is not recorded on the job.
+- The stored URL is re-validated through `is_ssrf_safe()` on every rescan. SSRF
+  safety is a property of *now*: a stored URL is caller-supplied input that has
+  been sitting in a database, and the host may have been re-pointed since.
+- A partial (`content_scope.mode == "types"`) scan **re-resolves** its URL
+  allowlist against the live site, so a rescan picks up pages added since; it
+  returns 422 `SCOPE_EMPTY` if the selection now resolves to nothing.
+- Rescanning a `queued` or `running` job returns 409 `CRAWL_IN_PROGRESS`; an
+  unknown job returns 404 `JOB_NOT_FOUND`.
+- `/start` and `/{job_id}/rescan` share **one** launch path (`_launch_crawl`)
+  and the **same** `CRAWL_START_LIMIT` rate limit. A second unrated doorway into
+  the crawl launcher is a bypass of an existing control, not a new feature —
+  enforced by `test_architecture_constraints::
+  test_every_crawl_launching_endpoint_is_rate_limited`.
+- A failed rescan shows an inline error on that row, does not navigate, and does
+  not reload the list — it must not look like it consumed the scan it came from.
+
 ### Journey B — Review and triage issues
 
 **Goal:** User wants to understand and prioritize the issues found.
@@ -1431,6 +1484,44 @@ defect is charged once. `docs/issue-codes.md` records that TalkingToad measures
 accessible **name**, not visible text — a third-party tool reporting a much
 higher "links without anchor text" count is measuring something else.
 → `tests/test_stacked_links.py`.
+
+**E6.1 — what counts as a card (2026-09-01).** Owner-reported: *"this link is
+duplicated, supposedly, but I can't find it."* They were right. `_is_card_container`
+matched card-class patterns as **substrings**, and `"entry"` matched WordPress's
+`hentry` — which `post_class()` puts on the wrapper of essentially every
+WordPress page. `<main>` therefore qualified as a card, every anchor on the page
+landed in one bucket, and E6 degenerated into *"any URL linked twice anywhere on
+the page"*: the precise failure the container requirement exists to prevent.
+**28 of 31 findings (90%) on livingsystems.ca were false**, and because
+containers are de-duplicated, a page-level match also **suppressed** the genuine
+card-level groups inside it.
+
+Three guards now decide what a card is, structural ones first because class
+patterns are editorial strings the next theme will always defeat:
+
+1. **Never the page's main content region** — `<main>`, `<body>`, `<html>`, or
+   `role="main"`, whatever classes they carry.
+2. **Bounded** — at most `max_card_links` navigational links, and less than
+   `max_card_text_fraction` of the page's body text. The text-share guard applies
+   only above `min_page_text_for_fraction`: below that there is no surrounding
+   page for a card to be half of, and a one-card stub is legitimately most of its
+   own text.
+3. **Token-boundary class matching** — a pattern matches a class that equals it,
+   or starts with it followed by `-` or `_`. `entry` matches `entry-card`, never
+   `hentry`; `elementor-post` matches `elementor-post__card`, never the
+   `elementor-posts` grid. Page-level classes that legitimately survive this
+   (`entry-content`, `entry-title`, `site-main`, …) are listed in
+   `non_card_classes`.
+
+`<article>` counts as a card only when the page holds **2 or more** of them: on a
+listing it is a card, on a single-post template it wraps the whole post.
+
+Evidence now names the container each group was grouped by (`container_tag` /
+`container_class`). Both fields were stored from the day E6 shipped and rendered
+nowhere, so the only way to see that `<main>` was being called a card was to open
+the SQLite database by hand — which is how the defect survived a user report.
+→ `tests/test_stacked_links.py`, `tests/test_stacked_links_config.py`,
+`tests/test_issue_evidence.py::TestStackedLinkContainerIsNamed`.
 
 ### 4.16 Issue evidence — WHICH element is wrong (EV, 2026-08-29)
 

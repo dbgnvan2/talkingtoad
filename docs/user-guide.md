@@ -25,6 +25,24 @@ To check one specific page without crawling the whole site, paste its full URL i
 
 This is useful for verifying that a fix worked without running a full re-crawl.
 
+### Re-running a scan (Rescan)
+
+Under **Recent crawls** on the home page, each finished scan has a **Rescan**
+button next to *View Results*. One click re-runs that scan **with the same
+settings it was run with the first time** — the same page limit, crawl delay,
+analysis tick-boxes, ignored headings, content-type selection, and GSC priority
+file if you attached one. You don't need to re-enter anything.
+
+This is the normal way to check whether your fixes worked. Because the re-run
+uses the original settings, its score is directly comparable to the previous
+one — a scan re-run with different settings can show a score change that is
+really just a change in what was measured.
+
+The new scan is saved as a **new** entry; your previous scan is kept, which is
+what the before-and-after comparison uses. A scan that is still running shows
+*View Progress* instead — there is nothing to re-run until it finishes. A
+single-page scan re-runs as a single page.
+
 ### Attaching a GSC priority file (optional)
 
 If you use the companion **GSC reporting app**, it produces a `priority_pages.json` listing your
