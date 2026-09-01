@@ -1,0 +1,73 @@
+name: tests
+
+# Until 2026-08-31 the suite had only ever run on one developer's machine, on a
+# Python and a dependency set that were not the ones that ship. The result was
+# 3,426 passing tests over an application that could not import in its own
+# container. This workflow exists so "green" means green somewhere reproducible.
+#
+# 3.11 is the Dockerfile pin -- what ships. 3.14 is what development runs.
+# Both must pass: a divergence in either direction is the bug class this guards.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    strategy:
+      # Do not stop the 3.14 leg because 3.11 failed, or vice versa. Knowing
+      # whether a failure is version-specific is most of the diagnosis.
+      fail-fast: false
+      matrix:
+        include:
+          - python-version: "3.11"
+            label: ships (Dockerfile pin)
+          - python-version: "3.14"
+            label: development
+    name: pytest ${{ matrix.python-version }} — ${{ matrix.label }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      # requirements.txt and nothing else: the same resolution the Docker build
+      # performs. Installing extras here would reintroduce the gap this closes.
+      - name: Install pinned dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      # Cheap, and it fails loudly on the class that started this: an
+      # unimported annotation raises NameError at import on < 3.14 only.
+      - name: The app must import
+        run: python -c "import api.main; print('api.main imported OK')"
+
+      # --strict-markers so a typo'd marker is an error rather than a silent
+      # deselection (pytest.ini declares `integration`).
+      - name: Run tests
+        run: pytest tests/ -q --strict-markers
+
+      # A run that collects nothing exits 0 and looks identical to a pass. That
+      # false-green shape has bitten this repo before (2026-08-09, a pass-count
+      # scrape that matched the tail of a failing line), so assert the suite is
+      # the size we expect rather than trusting the exit code alone.
+      - name: Guard against a vacuous green run
+        run: |
+          COUNT=$(pytest tests/ --collect-only -q 2>/dev/null | tail -1 | grep -oE '^[0-9]+')
+          echo "collected: ${COUNT:-0}"
+          if [ "${COUNT:-0}" -lt 3000 ]; then
+            echo "::error::Only ${COUNT:-0} tests collected; expected 3000+. A collection"
+            echo "::error::failure exits 0 and is indistinguishable from a pass."
+            exit 1
+          fi

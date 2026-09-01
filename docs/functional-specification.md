@@ -1137,13 +1137,38 @@ an import sweep**: a sweep passes on 3.14 and is blind to the entire annotation
 class, so it would have certified this app healthy on the morning it could not
 boot. All 124 modules now import under 3.11 with pinned requirements.
 
-**Still open (not this item):** 28 tests fail under the pinned dependency set.
-`requirements.txt` pins `fastapi~=0.115.0` while development runs 0.136; under
-0.115, `from __future__ import annotations` makes `background_tasks:
-BackgroundTasks` an unresolvable string, so FastAPI treats it as a required
-query parameter and `POST /api/crawl/start` returns 422. Fourteen of eighteen
-pins are violated by the dev venv. Tracked for the CI cycle.
+**Closed by D4.** The 28 remaining failures were one class: `requirements.txt`
+pinned `fastapi~=0.115.0` while development ran 0.136, and under 0.115
+`from __future__ import annotations` left `background_tasks: BackgroundTasks`
+an unresolvable string, so FastAPI treated it as a required query parameter and
+`POST /api/crawl/start` returned 422.
 → `tests/test_shipping_runtime_imports.py`.
+
+**D4 — the declared environment is the tested environment, and CI runs both.**
+`requirements.txt` and the working venv were two descriptions of one contract
+with nothing comparing them: **14 of 18 pins were violated**. The 14 are
+realigned to the versions the code is developed against (notably fastapi
+0.115→0.136, Pillow 10→12, pypdf 4→6, pytest 8→9, pytest-asyncio 0.23→1.3); the
+five that already passed are untouched, since a bulk regenerate would have
+loosened `python-multipart~=0.0.9` to `~=0.0.0`.
+
+`tests/test_declared_environment.py` fails when the installed set stops
+satisfying the file, so upgrading a package without updating its pin is red on
+the developer's own machine rather than in production.
+
+`.github/workflows/tests.yml` runs the suite on a matrix of **3.11** (the
+Dockerfile pin — what ships) and **3.14** (development), installing
+`requirements.txt` and nothing else, which is the resolution the Docker build
+performs. A separate step asserts `import api.main`, and a final step fails the
+run if fewer than 3,000 tests are collected — a collection failure exits 0 and
+is otherwise indistinguishable from a pass.
+
+Verified: exit 0 on both interpreters (3,442 collected on 3.14; 3,422 on 3.11,
+the difference being the GSC tests, which skip without the optional google-*
+packages). The workflow's execution on GitHub Actions is unverified until the
+first push — every command it runs was verified locally on both interpreters,
+but no runner was available here.
+→ `tests/test_declared_environment.py`, `.github/workflows/tests.yml`.
 
 **E2 — broken-link source attribution.** `external_targets_seen` and
 `discovered_from.setdefault` retained only the first page linking to each broken

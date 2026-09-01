@@ -254,6 +254,8 @@ by Claude Code); `LEARNINGS.md` holds the TalkingToad-specific risks and history
 - **Reporting:** Letter format, 1-inch margins, Latin-1-safe text cleaning.
 - **Issue codes — source of truth:** `api/crawler/checkers/registry.py` (`_CATALOGUE`, `_ISSUE_SCORING`, `_AI_READINESS_CONFIDENCE`). `issue_checker.py` is only a facade — do not add codes there. `frontend/src/data/issueHelp.js` and `docs/issue-codes.md` must stay in sync with the registry — the parity tests will fail otherwise.
 - **CI guards:** endpoint-coverage test, issue-codes.md generator-sync test, dead-code allowlist. Do not bypass; fix the underlying drift.
+- **CI runs the pinned set on two interpreters** (`.github/workflows/tests.yml`): **3.11**, the `Dockerfile` pin — what ships — and **3.14**, what development runs. Both must pass. It installs `requirements.txt` and nothing else, so a dependency the code needs but does not declare fails there.
+- **`requirements.txt` is a tested contract, not a wish list.** `tests/test_declared_environment.py` fails when the installed set stops satisfying it. Update the pin when you upgrade a package; do not silence the test.
 
 ---
 
