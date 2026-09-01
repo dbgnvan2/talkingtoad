@@ -31,6 +31,61 @@ This file tracks infrastructure improvements, testing gaps, and future features 
 - [ ] **Persistent Settings:** Save the user's preferred PDF export options (Help Text ON/OFF) in localStorage.
 - [ ] **Real-time Log Streaming:** Instead of just a progress bar, show a "Live Console" during the crawl for power users.
 
+### From the 2026-09-01 D5/D6 /csdp sweep (3 cold passes: correctness, security, test-quality)
+
+Three independent cold reviews of `origin/main..HEAD`. The high and medium
+findings were fixed in the same cycle (see LEARNINGS.md). Deferred, with the
+reason:
+
+- [ ] **🔴 The rate limits are not bounds — the limiter key is attacker-controlled.**
+  `Dockerfile:70` runs uvicorn with `--forwarded-allow-ips=*`. On the pinned
+  `uvicorn~=0.46.0` that sets `always_trust`, so
+  `_TrustedHosts.get_trusted_client_address` returns the **first, entirely
+  client-supplied** `X-Forwarded-For` entry, which `get_remote_address` then
+  hands to slowapi. A token-holder sending `X-Forwarded-For: 10.0.0.<n>` with an
+  incrementing `n` lands in a fresh bucket every request, so **no rate limit in
+  the app ever fires** — including `CRAWL_START_LIMIT` (10/hour), the expensive
+  one, and the new `DETAILS_LIMIT`.
+  **Not fixed here because the correct value is Railway's proxy CIDR**, which
+  this session cannot determine; guessing it would either break the deployment
+  or silently keep the hole. Owner decision: set `--forwarded-allow-ips` to
+  Railway's ingress range, or put the limiter behind a key function that does
+  not trust the header. Until then, treat every documented per-hour limit as
+  advisory — `docs/thresholds.md` records them as bounds.
+
+- [ ] **`still_present` in Fix Focus has no third state for "not checked".**
+  `/fix-focus/verify-page` derives `present_codes` from `rescan["by_category"]`,
+  which now contains the carried-over `needs_full_crawl` issues, so
+  `apply_verify` writes `STATUS_STILL_PRESENT` for codes the re-scan never
+  evaluated. This is a **net improvement** — before D5 those codes were absent
+  from `by_category` and were marked `STATUS_VERIFIED`, a persisted false
+  clearance — but the label now over-claims in the other direction: the snapshot
+  says the scan "currently sees" a code it did not look for. Needs a third
+  status (`not_checked`) in the Fix Focus model, which is a schema change to a
+  persisted snapshot and so its own item.
+
+- [ ] **`rechecked` is a field no consumer reads.** `_issue_dict` on the rescan
+  response carries `rechecked: true|false` and `docs/api.md` documents it as
+  contract, but `grep -rn "rechecked" frontend/src` outside `__tests__` returns
+  zero hits — the panel renders the carried-over disclosure from
+  `carried_over_codes` instead. Either wire it into the per-issue row or delete
+  it and the doc line. Recorded rather than left silent, per the D2 precedent.
+
+- [ ] **`CLAUDE.md` points at a directory that does not exist.** Line 246 calls
+  `~/.claude/standards/learnings.md` "auto-loaded by Claude Code", and line 321
+  tells the reader to "read the relevant file from `~/.claude/standards/`"
+  before starting work, listing four files. **`~/.claude/standards/` is not
+  present on this machine.** So a documented, load-bearing prerequisite has been
+  unmet for every session that followed the rulebook. Either restore the files
+  or drop both references; leaving an instruction that cannot be followed
+  teaches readers to skip instructions.
+
+- [ ] **No rate limit anywhere in the repo has a test.** `tests/conftest.py`
+  sets `RATE_LIMIT_ENABLED=false`, so slowapi returns before evaluating and the
+  decorator is never exercised. Pre-existing and repo-wide, surfaced because
+  D6's own rationale calls `/page-details` "a fetch amplifier". A single test
+  that re-enables the limiter and asserts a 429 would cover the class.
+
 ### From the 2026-08-30 IM1/V1/SSRF /csdp sweep (4 cold passes: failure-pattern, correctness, security, test-quality)
 
 Four independent cold reviews of `6fd86e4..HEAD`. 12 + 14 + 9 + 9 findings; the

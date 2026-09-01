@@ -1205,6 +1205,16 @@ one event in two dialects. `resolved`/`added` remain row-count deltas and are a
 different claim from the code sets — three `IMG_ALT_MISSING` rows reduced to one
 is `resolved: 2` with `resolved_codes: []`.
 
+**A page that is GONE is not a page that was repaired — and not a page that was
+carried over either.** `_rescan_is_conclusive` treats 404/410 as conclusive
+precisely because the page's old findings no longer apply, so the carry-over is
+skipped there and those codes resolve normally. Without that exception an
+unpublished page kept `ORPHAN_PAGE` and `TITLE_DUPLICATE` charging its health
+score indefinitely, clearable only by a full crawl, and the panel printed "Not
+re-checked: Orphan page" beside a 404 — which also partly undid E1, whose rule
+is that an error page is not content. 403/429 still carry over: there the fetch
+taught us nothing, which is a different fact from "the page is gone".
+
 **Accepted trade-off, recorded rather than hidden:** carrying a finding over can
 leave one standing that a full crawl would now clear. That is the recoverable
 error. A silent false clearance is not: it is acted on, and the ledger write
@@ -1280,6 +1290,50 @@ concurrent requests, so one caller lifting it could uncap another's render or
 truncate one mid-flight. A parameter cannot race.
 
 Rate limited at `DETAILS_LIMIT` (60/hour) — it fetches the live page per click.
+**That limit is not currently a bound**: the deployment runs uvicorn with
+`--forwarded-allow-ips=*`, so the limiter's key is the client-supplied
+`X-Forwarded-For`. Recorded in `TODO.md`; the fix needs the platform's proxy
+range and is the owner's call.
+
+**External links are not re-checked here.** `_fetch_and_check_page` takes
+`check_external_links`, and this endpoint passes `False`. Left on, one click
+cost up to `_EXTERNAL_LINK_CAP_PER_PAGE` (50) outbound requests to third-party
+hosts, and the panel calls the endpoint once per issue code — eight open
+findings meant eight page fetches and up to 400 external requests, to answer a
+question the parse already holds.
+
+**"Not evaluated" is a first-class answer.** A code that was *not checked* must
+never be reported by omission, because the panel renders an absent code as
+"this finding is no longer on the page" — a green all-clear. Three cases produce
+it: the page is gone (404/410), the code needs a full crawl, or it is a link
+code this endpoint deliberately skips. Each travels as an entry with
+`evaluated: false` and a reason. This is the E1.2/D5 rule reaching its third
+door, and the reason the rule is now stated as *absence is never a pass* rather
+than as a per-branch fix.
+
+**Row counts are rows.** `evidence_summary()` returns `(lines, total, rendered)`
+because `lines` also holds one heading per key and an "… and N more" line, so
+`total > len(lines)` under-reports truncation by exactly that overhead — at the
+default cap of 10 an issue with 11 or 12 captured rows compared equal to its own
+total and looked complete, and the button offering the rest never appeared.
+`items_shown` / `evidence_rows` carry the true rendered-row count to every
+consumer.
+
+**The suppression rule tests content, not presence.** A hand-rolled block in
+`IssueCard` suppresses the generic one only when its `extra` key has rows: `[]`
+is truthy in JavaScript, so a presence test hid the details for
+`IMG_ALT_MISSING` when the crawler emitted `img_missing_alt_srcs: []` — exactly
+the case where reading the page live is the answer — and for a sitemap-only
+broken link. `img_missing_alt_srcs` was also removed from the list entirely: it
+has no in-card block, only a panel that renders after the operator clicks Fix.
+
+**The shared fetch path now refuses redirects before following them.**
+`_fetch_and_check_page` used `make_client()`, which follows a hop and lets
+`fetch_page` reject it afterwards — so a public host 302-ing to
+`169.254.169.254` had that request issued. It now uses
+`make_ssrf_guarded_client()`, which validates the `Location` header first, as
+CLAUDE.md's "blocked at start *and* on every redirect hop" requires. This fixes
+`/rescan-url` and `/scan-page` as well; the defect was inherited, not introduced.
 → `tests/test_page_details_endpoint.py`,
 `frontend/src/pages/__tests__/PageAuditEvidence.test.jsx`.
 

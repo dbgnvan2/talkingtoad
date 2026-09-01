@@ -141,6 +141,47 @@ After the 2026-07 severity recalibration, most issues now surface as **Info** �
 
 The **Page Priority** panel ranks the crawled pages so you know which ones to work on first. When you're done reviewing the ranked list, click **Hide** to collapse it and clear the table; re-opening the panel re-ranks the pages honestly from the current crawl. (The button used to read "Refresh" but only re-displayed the same crawl's numbers without re-scanning — "Hide" makes what it does clear.)
 
+### Page Audit — seeing what is wrong, and checking your fix
+
+Click **Inspect →** on any page to open the **Page Audit** panel: every finding for
+that one page, with the tools to act on it.
+
+**Which items are the problem.** A finding like *"25 external links open in a new
+tab without rel=noopener"* names the page but not the links. Expand **Details** on
+any finding and TalkingToad lists the actual offending items — the links by anchor
+text and address, the images without alt text, the schema fields that do not match
+the page. When it is showing part of a longer list it says so ("Showing 10 of 25")
+rather than letting a short list look complete.
+
+For findings where the page itself is the problem — a missing title, no `H1` —
+Details says exactly that, so an empty list is never mistaken for "nothing wrong".
+
+**Get full details** re-reads the page as it is right now and shows everything the
+check recorded, instead of what was stored during the crawl. Nothing is saved: it
+is a look, not a re-scan. Useful when you are part-way through fixing a page and
+want to see what is still there.
+
+**Re-check this page** (the ↻ button) re-fetches the page and runs the checks
+again, so you can confirm a fix without re-crawling the whole site. It then tells
+you what it found:
+
+- **No longer found** — the finding is gone. This is the confirmation you wanted.
+- **Still present** — the check ran and the problem is still there.
+- **Newly found** — fixing one thing revealed another.
+- **Not re-checked** — some checks compare your page against the *rest* of the
+  site (duplicate titles, orphan pages, sitemap membership). A single-page
+  re-check cannot evaluate those, so it leaves them exactly as they were and
+  names them. They are not passes, and they are not failures — they are unread.
+  Run a full crawl to have them checked.
+
+If the page cannot be read — a 403 from bot protection, or a 429 because you have
+been re-checking quickly — the panel says so and changes nothing. It will never
+mark a finding fixed because it failed to look at the page.
+
+> **Tip:** to work through a list of fixes and tick them off as you confirm each
+> one, use the **Fix Focus** checklist and its per-page **Verify page** button
+> instead. Same underlying check; it keeps the running list for you.
+
 ### llms.txt validation
 
 If your site publishes an `/llms.txt` file, TalkingToad now validates it against the **llmstxt.org specification** rather than stricter invented rules. Only a top-level `# Title` heading is required for the file to be considered valid — a summary, section links, and the number of links are all **optional**, and there is no cap on how many links you may list. A standard plugin-generated file (for example one produced by Yoast) will validate cleanly. A soft-404 or non-Markdown body is still flagged.

@@ -16,6 +16,12 @@ TalkingToad helps you identify technical SEO issues on your website and — for 
   site, so the results show what that site's team actually acts on. Findings are hidden,
   never deleted, and the health score is deliberately unchanged so filtering cannot
   flatter a site. Exported reports match the screen and state that they are a filtered view.
+- **Page Audit — named items and a real re-check:** Every finding lists the actual
+  offending items (which links, which images, which schema fields), with a **Get full
+  details** button that re-reads the page live and stores nothing. **Re-check this page**
+  confirms a fix without re-crawling, and reports what it found — resolved, still
+  present, newly found, or *not re-checked* for the checks that need a whole-site crawl.
+  It never marks a finding fixed on the strength of a check it could not run.
 - **Professional Reporting:** Export results as tabbed Excel workbooks or professional PDF audits.
 
 ---
