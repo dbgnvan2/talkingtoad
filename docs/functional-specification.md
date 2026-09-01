@@ -1104,10 +1104,10 @@ false disclosure is worse than a missing one.
 because of the code path* and *suppressed because pre-publication* are different
 claims, and merging them would let one justify the other.
 
-**Not yet rendered.** No frontend surface reads `checks_not_run`; the field is in
-the API contract only. Recorded here rather than described as integrated —
-shipping a disclosure nothing displays is the unwired-disclosure failure of
-2026-08-30.
+**Rendered as of D5 (2026-09-01).** The Page Audit panel names carried-over
+codes under `checks_not_run_reason` after a re-check. The paragraph this
+replaces recorded the field as un-rendered, which was the correct thing to
+record at the time and the reason D5 exists.
 → `tests/test_single_page_scan_discloses_inert_checks.py`.
 
 **D3 — the app must import on the Python and dependency set it ships on.** The
@@ -1169,6 +1169,55 @@ packages). The workflow's execution on GitHub Actions is unverified until the
 first push — every command it runs was verified locally on both interpreters,
 but no runner was available here.
 → `tests/test_declared_environment.py`, `.github/workflows/tests.yml`.
+
+**D5 — a re-check reports what it checked, and cannot clear what it did not.**
+The ↻ control on the Page Audit panel re-fetches the live page with cache
+bypass and re-runs the checkers. It had two defects, one silent and one wrong.
+
+*Silent:* `handleRefresh` discarded the entire response — counts, resolved
+codes, `checks_not_run`, and the E1.2 `caveat` explaining that a blocked page
+had not been checked at all. Failures reached `console.error` only. A re-check
+that cleared a finding, one that changed nothing, and one that failed outright
+all rendered identically, which is exactly how the control was reported: *"it
+just reloads."* The button's own label said **"Refresh page data"**.
+
+*Wrong:* `resolved_codes` was `old_codes - new_codes` with no gate, and
+`delete_issues_for_url` deletes every row for the URL. The 24 codes flagged
+`needs_full_crawl` cannot be produced on this path — so each was deleted,
+dropped from the results list and the health score, and written to the
+fixed-issues ledger as resolved, **on the strength of a check that never ran**.
+Measured against the endpoint: a page carrying `TITLE_DUPLICATE` and
+`ORPHAN_PAGE` returned both in `resolved_codes` *and* both in `checks_not_run`
+— one payload making two incompatible claims, three lines apart.
+
+This is E1.2's reasoning applied to a second case. E1.2 gated on the **fetch**
+telling us nothing; nothing gated on the **check** not running, which fails on
+a perfectly successful 200. The registry knew, computed the answer, and
+serialised it, and the function ignored it: **a disclosure is not a control.**
+
+The gate reads `needs_full_crawl` off the registry — never a list in the router
+(P19). Such findings are now *carried over*: re-saved after the delete, so they
+stay in the store, the results list and the score; returned in `by_category`
+with `rechecked: false`; named in `carried_over_codes`; and never resolved or
+ledgered. The response also gains `still_present_codes` and `newly_found_codes`,
+sharing vocabulary with `/fix-focus/verify-page` so two surfaces do not describe
+one event in two dialects. `resolved`/`added` remain row-count deltas and are a
+different claim from the code sets — three `IMG_ALT_MISSING` rows reduced to one
+is `resolved: 2` with `resolved_codes: []`.
+
+**Accepted trade-off, recorded rather than hidden:** carrying a finding over can
+leave one standing that a full crawl would now clear. That is the recoverable
+error. A silent false clearance is not: it is acted on, and the ledger write
+survives re-running. The panel names what it did not check and points to the
+full crawl.
+
+The panel now renders the outcome above the page detail — resolved / still
+present / newly found, the `caveat` verbatim when the page was unreadable, and a
+red banner plus a toast on failure. A re-check that resolved nothing must not
+render as success; the post-WP-fix auto-rescan reports through the same banner.
+The label is now **"Re-check this page"**.
+→ `tests/test_rescan_reports_what_it_checked.py`,
+`frontend/src/pages/__tests__/PageAuditRecheck.test.jsx`.
 
 **F1 — per-domain issue filter.** For one site, hide selected issue codes and/or
 every finding of a given severity, so the results list shows what that site's

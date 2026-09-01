@@ -1442,8 +1442,17 @@ async def rescan_url(
             "resolved": 0,
             "added": 0,
             "resolved_codes": [],
+            # Present-and-empty rather than absent: a consumer must not have to
+            # branch on which shape of this response it received. Nothing was
+            # evaluated, so every stored finding is carried over unchecked.
+            "still_present_codes": [],
+            "newly_found_codes": [],
+            "carried_over_codes": sorted(old_codes),
             "total_issues": existing,
-            "by_category": {k: [_issue_dict(i) for i in v] for k, v in old_by_cat.items()},
+            "by_category": {
+                k: [_issue_dict(i) | {"rechecked": False} for i in v]
+                for k, v in old_by_cat.items()
+            },
             "caveat": (
                 f"The page could not be read (HTTP {result.status_code}), so "
                 "nothing was re-checked and no finding was marked fixed. "
@@ -1465,23 +1474,69 @@ async def rescan_url(
         updated_page.page_id = crawled_page.page_id
     await store.save_pages([updated_page])
 
+    # D5 — a re-check may not clear what it could not check.
+    #
+    # This path never calls check_cross_page and passes sitemap_urls=None, so
+    # the codes flagged needs_full_crawl cannot be produced here (the flag is
+    # AST-bound to the checkers by test_single_page_scan_discloses_inert_checks).
+    # Without this gate they were deleted, dropped from the health score, AND
+    # written to the fixed-issues ledger on every re-check — the same response
+    # naming them in `checks_not_run` while reporting them resolved.
+    #
+    # E1.2 gated on the FETCH telling us nothing. Nothing gated on the CHECK
+    # not running, which fails on a perfectly successful 200.
+    #
+    # Derived from the registry, never listed here: a literal copy would
+    # recreate the hand-mirrored enumeration D2 exists to prevent (P19).
+    # Spec:  docs/functional-specification.md (D5)
+    # Tests: tests/test_rescan_reports_what_it_checked.py
+    unrunnable: set[str] = set(_checks_a_single_page_scan_cannot_run())
+    carried_over = [
+        issue
+        for issues in old_by_cat.values()
+        for issue in issues
+        if issue.issue_code in unrunnable
+    ]
+
     # Replace stored issues for this URL.
     # Two passes: (1) issues with page_url = url (metadata, heading, etc.)
     #             (2) broken-link issues stored with page_url = dead_url but
     #                 extra.source_url = url — these are missed by pass 1.
     old_count = await store.delete_issues_for_url(job_id, url)
     old_count += await store.delete_broken_link_issues_for_source(job_id, url)
-    await store.save_issues(new_issues)
+    # Carried-over findings are re-saved so they stay in the results list and
+    # keep charging the health score. Retaining one a full crawl would now
+    # clear is the recoverable error; silently clearing one is not, and the
+    # ledger write cannot be undone by re-running.
+    await store.save_issues(new_issues + carried_over)
 
-    # Record which issue codes were resolved (present before, gone after)
+    # Record which issue codes were resolved (present before, gone after, and
+    # actually evaluated). Nothing enters the ledger without a check behind it.
     new_codes: set[str] = {i.issue_code for i in new_issues}
-    resolved_codes = sorted(old_codes - new_codes)
+    resolved_codes = sorted((old_codes - new_codes) - unrunnable)
     if resolved_codes:
         await store.record_fixed_issues(job_id, url, resolved_codes)
 
+    # Code-level outcomes. Deliberately the same vocabulary as
+    # /fix-focus/verify-page (verified / still_present / newly_found): two
+    # surfaces reporting the same event must not invent two dialects for it.
+    # These are NOT the count deltas below — three IMG_ALT_MISSING rows reduced
+    # to one is `resolved: 2` with `resolved_codes: []`. Both true, different
+    # questions.
+    still_present_codes = sorted((old_codes & new_codes) - unrunnable)
+    newly_found_codes = sorted(new_codes - old_codes)
+    carried_over_codes = sorted({i.issue_code for i in carried_over})
+
     by_category: dict[str, list] = {}
     for issue in new_issues:
-        by_category.setdefault(issue.category, []).append(_issue_dict(issue))
+        by_category.setdefault(issue.category, []).append(
+            _issue_dict(issue) | {"rechecked": True})
+    # Carried-over findings travel in the response too. Kept in the database
+    # but dropped from the payload, they would be invisible to the panel —
+    # the same failure by a quieter route.
+    for issue in carried_over:
+        by_category.setdefault(issue.category, []).append(
+            _issue_dict(issue) | {"rechecked": False})
     # Apply exempt filter to the response (issues were stored without exemption filtering)
     by_category = {
         cat: _apply_exempt_anchors(issues, exempt_urls)
@@ -1516,6 +1571,11 @@ async def rescan_url(
         "resolved": max(0, old_count - filtered_count),
         "added": max(0, filtered_count - old_count),
         "resolved_codes": resolved_codes,
+        "still_present_codes": still_present_codes,
+        "newly_found_codes": newly_found_codes,
+        # D5 — findings kept without being evaluated. Named so the panel can
+        # show them as "not re-checked" rather than as a pass or a clearance.
+        "carried_over_codes": carried_over_codes,
         "total_issues": filtered_count,
         "page_data": rescan_page_data,
         "by_category": by_category,

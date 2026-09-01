@@ -289,19 +289,136 @@ function SeverityStatCard({ label, value, severity, onClick }) {
   )
 }
 
-function PageFocusPanel({ jobId, pageUrl, onClose, onRescan }) {
+// D5 — a code's friendly name, falling back to the raw code. The banner names
+// findings the operator recognises from the issue list, not bare identifiers.
+function codeLabel(code) {
+  return getIssueHelp(code)?.title || code
+}
+
+/**
+ * D5 — what the re-check found.
+ *
+ * The endpoint has always returned this; nothing rendered it, so a re-check
+ * that cleared a finding looked exactly like one that changed nothing, and a
+ * blocked page (403/429 — returned as HTTP 200 with a caveat) looked like a
+ * plain reload. That is what "it just reloads" was.
+ *
+ * Rule this must not break: a re-check that resolved nothing must never read
+ * as success. No green, no tick, no "done" — only what is still there.
+ *
+ * Spec: docs/functional-specification.md (D5)
+ */
+export function RecheckResultBanner({ result, onDismiss }) {
+  if (!result) return null
+
+  const shell = (tone, children) => (
+    <div className={`mb-4 rounded-xl border p-4 text-sm ${tone}`} role="status" aria-live="polite">
+      <div className="flex justify-between items-start gap-3">
+        <div className="min-w-0 space-y-1">{children}</div>
+        <button
+          onClick={onDismiss}
+          className="flex-shrink-0 text-lg leading-none opacity-50 hover:opacity-100"
+          aria-label="Dismiss re-check result"
+        >&times;</button>
+      </div>
+    </div>
+  )
+
+  if (result.kind === 'failed') {
+    return shell('bg-red-50 border-red-200 text-red-800', (
+      <>
+        <p className="font-bold">Re-check failed</p>
+        <p>{result.message}</p>
+        <p className="text-xs opacity-80">Nothing was changed. The findings below are from the last successful check.</p>
+      </>
+    ))
+  }
+
+  if (result.kind === 'unreadable') {
+    return shell('bg-amber-50 border-amber-200 text-amber-900', (
+      <>
+        <p className="font-bold">The page could not be read — nothing was re-checked</p>
+        <p>{result.caveat}</p>
+      </>
+    ))
+  }
+
+  const resolved = result.resolved_codes || []
+  const stillPresent = result.still_present_codes || []
+  const newlyFound = result.newly_found_codes || []
+  const carriedOver = result.carried_over_codes || []
+
+  return shell('bg-white border-gray-200 text-gray-700', (
+    <>
+      <p className="font-bold text-gray-800">Re-checked this page</p>
+      {resolved.length > 0 && (
+        <p className="text-green-700">
+          <span className="font-semibold">No longer found:</span>{' '}
+          {resolved.map(codeLabel).join(', ')}
+        </p>
+      )}
+      {stillPresent.length > 0 && (
+        <p>
+          <span className="font-semibold">Still present:</span>{' '}
+          {stillPresent.length} finding{stillPresent.length === 1 ? '' : 's'} — {stillPresent.map(codeLabel).join(', ')}
+        </p>
+      )}
+      {newlyFound.length > 0 && (
+        <p>
+          <span className="font-semibold">Newly found:</span>{' '}
+          {newlyFound.map(codeLabel).join(', ')}
+        </p>
+      )}
+      {resolved.length === 0 && stillPresent.length === 0 && newlyFound.length === 0 && (
+        <p>No findings on this page were affected.</p>
+      )}
+      {carriedOver.length > 0 && (
+        <div className="mt-2 pt-2 border-t border-gray-200 text-amber-900">
+          <p>
+            <span className="font-semibold">Not re-checked:</span>{' '}
+            {carriedOver.map(codeLabel).join(', ')}
+          </p>
+          <p className="text-xs opacity-90">
+            {result.checks_not_run_reason ||
+              'These checks compare this page against the rest of the site, so a single-page re-check cannot evaluate them. They have been kept as they were — run a full crawl to have them checked.'}
+          </p>
+        </div>
+      )}
+    </>
+  ))
+}
+
+// D5 — one place that turns a rescan response into banner state, so the ↻
+// button and the post-WP-fix auto-rescan report the same event the same way.
+export function toRecheckResult(res) {
+  if (res?.page_unreadable) return { kind: 'unreadable', ...res }
+  return { kind: 'checked', ...res }
+}
+
+export function PageFocusPanel({ jobId, pageUrl, onClose, onRescan }) {
+  const toast = useToast()
   const [refreshing, setRefreshing] = useState(false)
   const [refreshKey, setRefreshKey] = useState(0)
   const [showSettings, setShowSettings] = useState(false)
+  const [recheck, setRecheck] = useState(null)
+
+  // A result describes one URL. Carrying it to the next page would attribute
+  // findings to a page that was never re-checked.
+  useEffect(() => { setRecheck(null) }, [pageUrl])
 
   async function handleRefresh() {
     setRefreshing(true)
     try {
-      await rescanUrl(jobId, pageUrl)
+      const res = await rescanUrl(jobId, pageUrl)
+      setRecheck(toRecheckResult(res))
       setRefreshKey(k => k + 1)
       onRescan?.()
     } catch (err) {
-      console.error('Rescan failed:', err)
+      // Was console.error only: a 404, an expired token or a network error
+      // spun the glyph and re-rendered the same data — indistinguishable from
+      // the reload the owner reported.
+      setRecheck({ kind: 'failed', message: err.message || 'Could not re-check this page.' })
+      toast.error('Re-check failed: ' + (err.message || 'unknown error'))
     } finally {
       setRefreshing(false)
     }
@@ -326,12 +443,15 @@ function PageFocusPanel({ jobId, pageUrl, onClose, onRescan }) {
               >
                 ⚙
               </button>
+              {/* D5 — was "Refresh page data". The control re-fetches the live
+                  page and re-runs the checks; a label promising a reload is why
+                  it was read as one. */}
               <button
                 onClick={handleRefresh}
                 disabled={refreshing}
                 className="w-10 h-10 flex items-center justify-center rounded-full bg-green-50 text-green-600 hover:bg-green-100 transition-all disabled:opacity-50"
-                title="Refresh page data"
-                aria-label="Refresh page data"
+                title="Re-check this page"
+                aria-label="Re-check this page"
               >
                 <span className={refreshing ? 'animate-spin' : ''}>↻</span>
               </button>
@@ -353,7 +473,14 @@ function PageFocusPanel({ jobId, pageUrl, onClose, onRescan }) {
           )}
         </div>
         <div className="flex-1 overflow-y-auto p-6 scrollbar-thin">
-          <PageDetail key={refreshKey} jobId={jobId} pageUrl={pageUrl} onRescan={onRescan} />
+          <RecheckResultBanner result={recheck} onDismiss={() => setRecheck(null)} />
+          <PageDetail
+            key={refreshKey}
+            jobId={jobId}
+            pageUrl={pageUrl}
+            onRescan={onRescan}
+            onRecheckResult={setRecheck}
+          />
         </div>
       </div>
     </div>
@@ -561,7 +688,7 @@ function SettingsToolbar({ jobId, pageUrl, onUpdate }) {
   )
 }
 
-function PageDetail({ jobId, pageUrl, onRescan }) {
+function PageDetail({ jobId, pageUrl, onRescan, onRecheckResult }) {
   const toast = useToast()
   const [data, setData] = useState(null)
   const [openFixCode, setOpenFixCode] = useState(null)
@@ -575,19 +702,25 @@ function PageDetail({ jobId, pageUrl, onRescan }) {
     getPageIssues(jobId, pageUrl).then(setData).catch(() => {})
   }, [jobId, pageUrl])
 
-  // After a WP fix, rescan the page to update issues in the database
+  // After a WP fix, rescan the page to update issues in the database.
+  // D5 — reports through the same banner as the ↻ button: one action, one
+  // vocabulary, whichever control triggered it.
   const rescanAfterFix = useCallback(async () => {
     setRescanning(true)
     try {
-      await rescanUrl(jobId, pageUrl)
+      const res = await rescanUrl(jobId, pageUrl)
+      onRecheckResult?.(toRecheckResult(res))
       load()
       onRescan?.()
     } catch (err) {
-      console.error('Auto-rescan after fix failed:', err)
+      onRecheckResult?.({
+        kind: 'failed',
+        message: err.message || 'Could not re-check this page after the fix.',
+      })
     } finally {
       setRescanning(false)
     }
-  }, [jobId, pageUrl, load, onRescan])
+  }, [jobId, pageUrl, load, onRescan, onRecheckResult])
 
   useEffect(() => { load() }, [load])
 
