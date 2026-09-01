@@ -24,6 +24,15 @@ def client(monkeypatch):
     app.dependency_overrides.clear()
 
 
+# Patch target note (2026-08-31): api/routers/advisor.py:28 does
+# `from api.services.rewriter import rewrite_page`, binding the name in the
+# ROUTER's namespace. Patching "api.services.rewriter.rewrite_page" therefore
+# replaces nothing the endpoint looks at, the real function runs, and with a
+# GEMINI_API_KEY present in a developer's .env it makes a LIVE Gemini call —
+# the test then asserts the shape of a real API response and passes for the
+# wrong reason. Patch where the name is USED, not where it is defined.
+
+
 class TestRewriteUrlEndpoint:
     """Test POST /api/ai/rewrite-url endpoint."""
 
@@ -211,7 +220,7 @@ class TestRewriteUrlFrontendContract:
     def test_frontend_assumes_stopped_by_limit_is_boolean(self, client):
         """Frontend assumes stopped_by_limit is a boolean, not string or int."""
         with patch("api.services.advisor._fetch_page") as mock_fetch:
-            with patch("api.services.rewriter.rewrite_page") as mock_rewrite:
+            with patch("api.routers.advisor.rewrite_page") as mock_rewrite:
                 mock_fetch.return_value = "<p>Content</p>"
                 mock_rewrite.return_value = RewriterResult(
                     rewrite="Result",

@@ -95,6 +95,15 @@ def mock_store():
     app.dependency_overrides.pop(advisor_get_store, None)
 
 
+# Patch target note (2026-08-31): api/routers/advisor.py:28 does
+# `from api.services.rewriter import rewrite_page`, binding the name in the
+# ROUTER's namespace. Patching "api.services.rewriter.rewrite_page" therefore
+# replaces nothing the endpoint looks at, the real function runs, and with a
+# GEMINI_API_KEY present in a developer's .env it makes a LIVE Gemini call —
+# the test then asserts the shape of a real API response and passes for the
+# wrong reason. Patch where the name is USED, not where it is defined.
+
+
 class TestGetPagesEndpointSchema:
     """Verify /api/crawl/{job_id}/pages response schema."""
 
@@ -146,7 +155,7 @@ class TestRewriterEndpoint:
             "prompt": "Rewrite for clarity."
         }
 
-        with patch("api.services.rewriter.rewrite_page") as mock_rewrite:
+        with patch("api.routers.advisor.rewrite_page") as mock_rewrite:
             mock_rewrite.return_value = RewriterResult(
                 rewrite="This content has been rewritten for clarity.",
                 stopped_by_limit=False
@@ -162,13 +171,24 @@ class TestRewriterEndpoint:
             assert isinstance(data["stopped_by_limit"], bool)
 
     def test_rewriter_token_limit_flag_exists_in_response(self, client):
-        """Verify rewriter response always includes stopped_by_limit flag."""
+        """Verify rewriter response always includes stopped_by_limit flag.
+
+        This test had NO mock until 2026-08-31, so it made a live Gemini call
+        on every run for anyone with a key in .env — asserting the shape of a
+        real API response, at real cost, in a test not marked `integration`.
+        It failed the moment CI ran it on a clean checkout. It is a contract
+        test about the response shape and needs no provider at all.
+        """
         payload = {
             "content": "Content to rewrite.",
             "prompt": "Rewrite for clarity."
         }
 
-        response = client.post("/api/ai/rewriter", json=payload)
+        with patch("api.routers.advisor.rewrite_page") as mock_rewrite:
+            mock_rewrite.return_value = RewriterResult(
+                rewrite="Rewritten.", stopped_by_limit=False
+            )
+            response = client.post("/api/ai/rewriter", json=payload)
         assert response.status_code == 200
 
         data = response.json()
@@ -227,7 +247,7 @@ class TestRewriteFlowIntegration:
         content = "<h1>Original Page</h1><p>This is the original content.</p>"
         prompt = "Rewrite for AI retrieval quality."
 
-        with patch("api.services.rewriter.rewrite_page") as mock_rewrite:
+        with patch("api.routers.advisor.rewrite_page") as mock_rewrite:
             mock_rewrite.return_value = RewriterResult(
                 rewrite="<h1>Original Page</h1><p>Rewritten for better AI retrieval.</p>",
                 stopped_by_limit=False
@@ -314,7 +334,7 @@ class TestFrontendAssumptions:
 
     def test_frontend_assumes_rewriter_returns_rewrite_field(self, client):
         """Frontend assumes rewriter response has 'rewrite' field."""
-        with patch("api.services.rewriter.rewrite_page") as mock_rewrite:
+        with patch("api.routers.advisor.rewrite_page") as mock_rewrite:
             mock_rewrite.return_value = RewriterResult(
                 rewrite="Rewritten content",
                 stopped_by_limit=False
