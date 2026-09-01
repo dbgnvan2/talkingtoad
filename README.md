@@ -12,6 +12,10 @@ TalkingToad helps you identify technical SEO issues on your website and — for 
 - **FAQ / GEO Schema Generator:** Generates ready-to-paste Schema.org FAQPage JSON-LD from a page's Q&A to improve AI/GEO visibility.
 - **Image Intelligence:** Vision-AI powered image analysis and automatic optimization.
 - **Search Console Integration:** Optional Google Search Console link (app-wide, one-time OAuth) blends real search performance into the priority ranking; a built-in Connections panel tests AI-provider and GSC connectivity.
+- **Per-Site Issue Filter:** Hide issue codes — or every `info`-level finding — for one
+  site, so the results show what that site's team actually acts on. Findings are hidden,
+  never deleted, and the health score is deliberately unchanged so filtering cannot
+  flatter a site. Exported reports match the screen and state that they are a filtered view.
 - **Professional Reporting:** Export results as tabbed Excel workbooks or professional PDF audits.
 
 ---
@@ -46,4 +50,4 @@ If you are a developer looking to contribute or deploy TalkingToad:
 ---
 
 **GitHub:** [https://github.com/dbgnvan2/talkingtoad](https://github.com/dbgnvan2/talkingtoad)  
-**Last Updated:** 2026-06-14
+**Last Updated:** 2026-09-01

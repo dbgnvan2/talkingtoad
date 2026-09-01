@@ -105,9 +105,14 @@ high and medium ones were fixed in the same cycle (see LEARNINGS.md). Deferred:
   the hand-written list it replaced (which missed two codes) but still not the class it
   names. Nothing validates that a `threshold_published_by_source: true` is justified; it
   is a self-certification that suppresses the guard.
-- [x] **`health_score_basis` has no Redis contract test** — done 2026-08-31. Added, and the key-set parity assertion it enabled found that Redis omitted `robots_txt` and `sitemap` entirely, which `CategoryPanel.jsx` reads — those panels rendered blank in production and correct in development. Both keys added. Was: `redis_store.py` carries its
-  own copy of the summary payload; only the SQLite path is asserted, and production runs
-  Redis. The image-summary key set IS compared across both.
+- [x] **`health_score_basis` has no Redis contract test** — **superseded 2026-08-31.** The
+  Redis store was deleted; there is one backend, so there is nothing to compare. Two claims
+  in the original entry were wrong and are corrected here rather than left to be re-read as
+  fact: production never ran Redis (Upstash was never configured — `get_job_store()` has
+  always returned SQLite), and the sitemap/robots panels never "rendered blank in
+  production". That symptom was a consequence *reasoned to* from a missing key and written
+  down in the past tense; nobody observed it. Verified: a real round trip through
+  `SQLiteJobStore` returns both payloads correctly. See LEARNINGS.md, 2026-08-31.
 - [x] **`_render_authority`'s final branch is an unguarded `else`** — done 2026-08-31. Now branches on `heuristic` explicitly and raises `ValueError` naming the code and the valid values. Was:
   (`scripts/generate_issue_codes_doc.py`): an unrecognised `basis` renders as "our own
   judgement" and raises `KeyError` with no rationale. Unreachable today (schema tests
@@ -196,10 +201,10 @@ CLN4 strictly improved the matched case):
   last-writer-wins — the later write clobbers the earlier. Fix Focus is a per-job,
   single-user worklist so impact is low; if it ever matters, re-read+merge inside a short
   transaction or scope the write to the single item.
-- [ ] **Latent (adjacent, not Fix Focus):** `geo_report` / `executive_summary` are still not
-  round-tripped on Redis (`_mapping_to_job` doesn't read them back). The dict-serialisation
-  half is now fixed for the shared `update_job` path, but these two fields aren't in the
-  Redis job mapping. Add them alongside `fix_focus` when convenient.
+- [x] **Latent (adjacent, not Fix Focus): `geo_report` / `executive_summary` not round-tripped
+  on Redis** — **resolved by deletion 2026-08-31.** `_mapping_to_job` never read them back.
+  It was two of **ten** write-only fields, all found when the store was inventoried before
+  being removed. Worth noting that this defect sat in the backlog rather than being unknown.
 
 ### From the 2026-08-13 Fix Focus Summary-placement sweep (learning-qa; low, benign)
 - [ ] **Double-generate on first Summary view (benign):** the Summary now mounts both
@@ -253,6 +258,32 @@ CLN4 strictly improved the matched case):
   which job uploaded it. So a new no-upload scan of a site can surface GSC metrics a *prior* job
   uploaded. Consistent with the "ledger = history" design + the panel's lag disclaimer, but the
   Page Priority GSC columns are not scoped to the current audit. Decide if that's intended.
+
+### From the 2026-08-31 bug-class-elimination arc (5 cycles + 3 cold sweeps + the domain filter)
+
+- [ ] **`checks_not_run` reaches no UI.** `/scan-page` and the rescan declare the 24 codes a
+  single-page scan cannot produce, and no frontend surface renders it. Recorded as unwired in
+  the functional spec rather than described as integrated. Wiring it needs the owner's
+  explicit go-ahead per CLAUDE.md's GUI rule.
+- [ ] **The single-page path still cannot RUN those 24 checks.** Cycle 2 made the gap honest,
+  not smaller. Actually running them (fetching the sitemap, building a link graph for one
+  page) changes what a single-page scan costs and means, and needs its own spec.
+- [ ] **`~/.claude/standards/` does not exist on this machine.** `CLAUDE.md` and `LEARNINGS.md`
+  both point at a P1–P32 generic pattern catalogue there. Only the inline checklist in
+  `LEARNINGS.md` survives.
+- [ ] **`page_size_limit_kb` is defined twice** — `engine.py:237` and `issue_checker.py`'s
+  default, both `300`. No behavioural difference today; two homes for one number, and
+  `docs/thresholds.md` is supposed to own it.
+- [ ] **The health score and summary counts are deliberately NOT filtered** by the per-domain
+  filter, while the lists and exports are. That asymmetry is intentional — filtering must not
+  let anyone improve a grade by hiding findings — but it means a filtered report shows few
+  findings beside an unfiltered score. Revisit if it reads as a contradiction to users.
+- [ ] **CI does not build the Docker image.** It runs the suite on 3.11 with pinned
+  requirements, which is most of the gap, but the image also installs Playwright, so the
+  JS-render path is not exercised anywhere.
+- [ ] **`cryptography` is pinned to `~=48.0.0`** to match the dev venv; 50.x is current. It is
+  a security-sensitive library and the pin was chosen to match what the suite was verified
+  against, not by audit.
 
 ## ✅ Completed
 
