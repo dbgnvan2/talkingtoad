@@ -82,8 +82,8 @@ WordPress sites — applies one-click fixes directly via the WP REST API.
 - **Backend:** Railway-hosted FastAPI container, port 8000 in dev
 - **Local dev:** `./talkingtoad.sh server` + `./talkingtoad.sh frontend`
   in separate terminals
-- **Data store:** SQLite (dev), Upstash Redis (optional prod), or
-  Railway-mounted SQLite volume
+- **Data store:** SQLite everywhere — a local file in development, a
+  Railway-mounted volume in production
 
 ---
 
@@ -309,7 +309,7 @@ High-level inventory. Each row maps to detailed sections later.
 |---|---|---|---|
 | Async crawl engine | Crawls up to 500 pages with rate limiting + robots.txt respect | ✅ Shipped | §4 |
 | Scan content-type scoping | Partial scan by Pages / Posts / category / Custom Post Types via REST or typed sitemaps | ✅ Shipped | §4.9 |
-| 142 issue codes | 140+ SEO and AI-readiness issue checks | ✅ Shipped | §4 |
+| 170 issue codes | 170 SEO and AI-readiness issue checks | ✅ Shipped | §4 |
 | Cross-page duplicate detection | Title / meta / title+meta duplicates across pages | ✅ Shipped | §4 |
 | Confidence labelling | All 60 AI-readiness codes labelled Established/Reasonable-proxy/Heuristic | ✅ Shipped | §4.6 |
 | GSC OAuth integration | OAuth flow to pull performance metrics (clicks/impressions) | ✅ Shipped | §4.8 |
@@ -1856,7 +1856,7 @@ traffic or revenue. A cap that did not bite is not mentioned.
 
 - Backend container (Railway, Fly.io, Render, or self-hosted Docker).
 - Frontend on Vercel; proxies `/api/*` to backend.
-- SQLite (dev) or Upstash Redis (optional prod).
+- SQLite everywhere (Railway-mounted volume in production).
 - Health check endpoint returns `{"status": "ok", "version": "2.6.0"}`.
 
 ### 8.6 Stabilization & adversarial hardening (Cycles J-U, v2.6 M9.1)

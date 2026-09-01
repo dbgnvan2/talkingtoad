@@ -58,7 +58,7 @@ is remediation and AI-readiness, not crawl breadth.
 | **Core job**             | Audit, explain, prioritise AND fix                | Audit & extract data (read-only)                      |
 | **Output style**         | Plain English, health score, ranked fixes         | Dense data tables for expert interpretation           |
 | **Fixes your site?**     | Yes — writes to WordPress (Yoast/Rank Math)       | No — never modifies the site                          |
-| **Checks**               | \~142 issue codes (60 AI-readiness)               | 300+ issues, warnings & opportunities                 |
+| **Checks**               | \~170 issue codes (60 AI-readiness)               | 300+ issues, warnings & opportunities                 |
 | **JavaScript rendering** | No (static HTML; optional Playwright for 1 check) | Yes — full headless Chromium                          |
 | **Scale**                | \~500 pages default (adjustable)                  | Unlimited (disk-based storage engine)                 |
 | **AI / GEO focus**       | Core product pillar                               | Generic custom-prompt add-on                          |

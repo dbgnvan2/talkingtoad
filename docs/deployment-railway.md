@@ -56,10 +56,6 @@ work normally.
    | `ALLOWED_ORIGINS` | **yes** | `https://talkingtoad.vercel.app` | Comma-separated. **Must not be `*`** in production (M0.8 P3 fail-closed). |
    | `DATABASE_URL` | optional | `sqlite:///data/talkingtoad.db` | SQLite path (a bare path also works). Unset → `SQLITE_PATH`. |
    | `SQLITE_PATH` | optional | `/data/talkingtoad.db` | For SQLite mode; needs a Railway volume mounted at the parent path. |
-
-   > The Redis job store was removed on 2026-08-31. Setting `UPSTASH_REDIS_REST_URL`
-   > or `UPSTASH_REDIS_REST_TOKEN` now raises at startup rather than silently starting
-   > on SQLite and writing your data somewhere you did not configure.
    | `GEMINI_API_KEY` | optional | `AIza...` | For AI features. Either Gemini or OpenAI is required for AI features to work. |
    | `OPENAI_API_KEY` | optional | `sk-...` | OpenAI is preferred when both are set. |
    | `LOG_LEVEL` | optional | `INFO` | DEBUG / INFO / WARNING / ERROR. Default INFO. |
@@ -67,6 +63,10 @@ work normally.
    | `MAX_PAGES_PER_CRAWL` | optional | `500` | Default 500. |
    | `RATE_LIMIT_ENABLED` | optional | `true` | Default true. Set false only for dev. |
    | `RAILWAY_ENVIRONMENT` | auto | `production` | Set by Railway itself. Triggers M0.8 production safety checks. |
+
+   > The Redis job store was removed on 2026-08-31. Setting `UPSTASH_REDIS_REST_URL`
+   > or `UPSTASH_REDIS_REST_TOKEN` now raises at startup rather than silently starting
+   > on SQLite and writing your data somewhere you did not configure.
 
 3. **Add persistent storage** (if using SQLite):
    - Settings → Volumes → "Add Volume" → mount path `/data`.

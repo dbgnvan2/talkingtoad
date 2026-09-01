@@ -193,7 +193,7 @@ Any results tab can be exported as a CSV file for sharing with a developer or fi
 | PDF Parser | pypdf |
 | Image Processing | Pillow |
 | AI Analysis | Google Gemini / OpenAI |
-| Data Store | SQLite (dev) / Upstash Redis (prod) |
+| Data Store | SQLite (dev and prod) |
 | Hosting | Vercel (frontend SPA + Python serverless) |
 | Auth | Bearer token (`Authorization: Bearer <token>`) |
 

@@ -22,8 +22,9 @@ last_updated: 2026-06-01
 
 ### Storage
 
-- **Production (Upstash Redis)**: Encrypted tokens stored as JSON blobs with key prefix `gsc_tokens:{site_url}`.
-- **Local dev (SQLite)**: Encrypted tokens stored in `gsc_credentials` table.
+- **SQLite (all environments)**: Encrypted tokens stored in the `gsc_credentials` table.
+  An Upstash-Redis store, which held them as JSON blobs under `gsc_tokens:{site_url}`,
+  was removed on 2026-08-31; no token has ever been stored there in this deployment.
 - **Fallback**: If `AI_CREDS_ENCRYPTION_KEY` is not set, tokens are stored as raw JSON **only** when the request comes from `localhost` (checked via `request.client.host`). This is an insecure-transport gate for development convenience.
 
 ### Token Refresh

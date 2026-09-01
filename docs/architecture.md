@@ -37,10 +37,12 @@ Crawl jobs run asynchronously. The user submits a URL and receives a `job_id`. T
 
 ### Data store abstraction
 
-All job/result persistence uses a pluggable architecture with a Protocol-based interface:
+All job/result persistence goes through a single store. A `JobStore` Protocol and a
+second Upstash-Redis implementation existed until 2026-08-31; both were removed — the
+Protocol annotated nothing and had drifted to 46 methods against SQLite's 60.
 
 **Architecture (v1.9.4+):**
-- **`api/services/job_store_base.py`** (~430 lines): Defines `JobStore` Protocol with 50+ method signatures, database `SCHEMA` constant, and helper functions for health scoring
+- **`api/services/job_store_base.py`**: database `SCHEMA` constant and helper functions for health scoring
 - **`api/services/sqlite_store.py`** (~1,466 lines): `SQLiteJobStore` implementation for local development (async lifecycle, full CRUD, health scoring, fix management, verified links, image analysis, GEO configuration)
 - **`api/services/job_store.py`** (~50 lines): Factory function `get_job_store()` that selects backend based on environment:
   1. Raises if `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN` are set — the Redis

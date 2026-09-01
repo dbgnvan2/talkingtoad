@@ -186,3 +186,72 @@ class TestTheDefaultIsUnchanged:
         # and the endpoint's Query default
         q = inspect.signature(scan_single_page).parameters["authenticated"].default
         assert getattr(q, "default", q) is False
+
+
+class TestTheSessionCookieDoesNotLeaveTheSite:
+    """The credentials are a live WordPress admin session. They must reach the
+    site they belong to and nowhere else.
+
+    `_validate_wp_domain_for_url` pins the URL the operator supplies, but
+    `make_ssrf_guarded_client` follows redirects and its guard rejects private
+    IPs, not foreign hosts — a public redirect is allowed by design. Link
+    cloakers, affiliate plugins and outbound-link trackers (`/go/…`,
+    `/recommends/…`) are ubiquitous on WordPress and every one of them 301s
+    off-domain. Until 2026-08-31 the cookies were attached with no domain, and
+    an unscoped cookie matches every host, so scanning such a URL with the
+    draft-scan option shipped the owner's admin session to a third party — over
+    plain HTTP too, because flattening the jar to name/value pairs also drops
+    the Secure flag.
+    """
+
+    async def test_d1_cookie_is_not_sent_to_a_redirect_target_off_domain(
+            self, store, monkeypatch, tmp_path):
+        _patch_wp_login(monkeypatch, tmp_path)
+        seen: dict[str, str | None] = {}
+
+        def _handler(request):
+            seen[str(request.url)] = request.headers.get("cookie")
+            if request.url.host == "e.test":
+                # what a link-cloaking plugin does
+                return httpx.Response(302, headers={"location": "https://evil.test/steal"})
+            return httpx.Response(200, text=DRAFT_HTML,
+                                  headers={"content-type": "text/html"})
+
+        with respx.mock(assert_all_mocked=False, assert_all_called=False) as rx:
+            rx.route(host="e.test").mock(side_effect=_handler)
+            rx.route(host="evil.test").mock(side_effect=_handler)
+            rx.route().mock(return_value=httpx.Response(200, text="ok"))
+            await _fetch_and_check_page(
+                url=DRAFT, job_id="j", store=store, base_url=BASE,
+                authenticated=True)
+
+        leaked = {u: c for u, c in seen.items()
+                  if "evil.test" in u and c and "wordpress_logged_in" in c}
+        assert not leaked, (
+            f"the WordPress admin session cookie was sent off-domain: {leaked}"
+        )
+
+    async def test_d1_cookie_is_still_sent_to_the_site_itself(
+            self, store, monkeypatch, tmp_path):
+        """The inverse, so a fix cannot succeed by simply dropping the cookie —
+        that would break the feature while turning the test above green."""
+        _patch_wp_login(monkeypatch, tmp_path)
+        seen: dict[str, str | None] = {}
+
+        def _handler(request):
+            seen[str(request.url)] = request.headers.get("cookie")
+            return httpx.Response(200, text=DRAFT_HTML,
+                                  headers={"content-type": "text/html"})
+
+        with respx.mock(assert_all_mocked=False, assert_all_called=False) as rx:
+            rx.route(host="e.test").mock(side_effect=_handler)
+            rx.route().mock(return_value=httpx.Response(200, text="ok"))
+            await _fetch_and_check_page(
+                url=DRAFT, job_id="j", store=store, base_url=BASE,
+                authenticated=True)
+
+        sent = [c for u, c in seen.items() if "e.test" in u and c]
+        assert any("wordpress_logged_in" in c for c in sent), (
+            "the session cookie no longer reaches the site it belongs to — "
+            f"the draft scan cannot work. Saw: {seen}"
+        )

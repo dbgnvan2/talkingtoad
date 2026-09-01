@@ -24,6 +24,7 @@ from dataclasses import dataclass, field
 from pathlib import Path as _PathLib
 from datetime import datetime, timezone
 from typing import Any
+from urllib.parse import urlparse
 from uuid import uuid4
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Query, Request
@@ -439,9 +440,23 @@ async def _fetch_page_as_logged_in_user(url: str, *, bypass_cache: bool = False)
         await wp.login()
         cookies = {c.name: c.value for c in wp._client.cookies.jar}
 
+    # Scope every cookie to the host the credentials belong to. `set(name,
+    # value)` with no domain produces a cookie whose domain is "", and
+    # http.cookiejar's domain_return_ok does `req_host.endswith(domain)` —
+    # which is true for EVERY host. The client follows redirects and the SSRF
+    # guard rejects private IPs, not foreign ones, so a public redirect is
+    # allowed by design: a link cloaker or affiliate plugin (`/go/…`,
+    # `/recommends/…`) 301ing off-domain would have shipped the owner's live
+    # WordPress admin session to a third party, over plain HTTP too, since
+    # flattening the jar to name/value pairs also drops the Secure flag.
+    # _validate_wp_domain_for_url pins the URL the operator supplies; nothing
+    # pinned where it redirects. SSRF protection is about the destination IP
+    # and says nothing about credential scope.
+    # Tests: TestTheSessionCookieDoesNotLeaveTheSite (both directions).
+    creds_host = urlparse(url).hostname
     async with make_ssrf_guarded_client() as client:
         for name, value in cookies.items():
-            client.cookies.set(name, value)
+            client.cookies.set(name, value, creds_host)
         return await fetch_page(
             url, client, timeout=_RESCAN_TIMEOUT, bypass_cache=bypass_cache,
         )

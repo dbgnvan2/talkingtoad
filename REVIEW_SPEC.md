@@ -111,10 +111,11 @@ This document defines what a thorough code review of the TalkingToad codebase sh
 - [ ] Background tasks (`background_tasks.add_task`) — do they run on Vercel?
 - [ ] File uploads (image optimization) — serverless file system limits?
 
-### Redis (Production Store)
-- [ ] `RedisJobStore` — are all new methods implemented (not just stubs)?
-- [ ] `update_issue_extra`, `get_ignored_image_patterns`, etc. — Redis equivalents?
-- [ ] Are all new DB tables (`ignored_image_patterns`, job columns) mirrored in Redis?
+### Store (SQLite — the only backend since 2026-08-31)
+- [ ] New job fields: are they in `create_job`'s column list AND `update_job`'s `_ALLOWED`?
+      A field set on the model but absent from the INSERT is silently dropped.
+- [ ] New DB tables: is the schema in `job_store_base.SCHEMA`, and does an existing
+      database get them (the schema runs `CREATE TABLE IF NOT EXISTS` at init)?
 
 ### Configuration
 - [ ] Environment variables — are all required vars documented?

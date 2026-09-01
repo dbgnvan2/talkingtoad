@@ -1,7 +1,7 @@
 """
 Job store protocol and shared utilities.
 
-Defines the JobStore interface that all implementations (SQLite, Redis) must follow,
+Defines the JobStore interface that the SQLite store implements,
 plus shared helper functions and database schema.
 """
 
