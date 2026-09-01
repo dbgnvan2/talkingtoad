@@ -6,49 +6,11 @@ import SeverityBadge from './SeverityBadge.jsx'
 import IssueHelpPanel from './IssueHelpPanel.jsx'
 import Spinner from './Spinner.jsx'
 
-/**
- * "What to look for" — the offending elements for one issue.
- *
- * The lines are rendered SERVER-side (api/services/issue_evidence.py) and shipped
- * on every issue as `evidence`. Deliberately not re-implemented here: a second
- * copy of a 15-shape renderer in another language is a drift waiting to happen
- * (P19), and this way the panel, the PDF and the Excel export cannot disagree.
- */
-export function IssueEvidence({ evidence, evidenceTotal }) {
-  if (!Array.isArray(evidence) || evidence.length === 0) return null
-  return (
-    <div className="mb-6 p-4 bg-amber-50 border border-amber-200 rounded-xl">
-      <h4 className="text-[10px] font-black text-amber-800 uppercase tracking-widest mb-2">
-        What to look for
-      </h4>
-      <ul className="space-y-1">
-        {evidence.map((line, idx) => {
-          const indented = line.startsWith('  ')
-          const text = line.trim()
-          const isHeading = !indented && text.endsWith(':')
-          return (
-            <li
-              key={`${text}-${idx}`}
-              className={
-                isHeading
-                  ? 'text-xs font-bold text-amber-900 mt-2 first:mt-0'
-                  : `text-xs text-gray-800 break-all ${indented ? 'pl-4 font-mono' : ''}`
-              }
-            >
-              {text}
-            </li>
-          )
-        })}
-      </ul>
-      {evidenceTotal > evidence.length && (
-        <p className="text-[11px] text-amber-800 mt-2">
-          Showing {evidence.length} of {evidenceTotal}. The full list is in the
-          spreadsheet export.
-        </p>
-      )}
-    </div>
-  )
-}
+// D6 — the implementation moved to the shared module so the Page Audit panel
+// can render it too. Re-exported here because existing importers and tests
+// reference CategoryPanel's named export.
+import { IssueEvidence } from './IssueEvidence.jsx'
+export { IssueEvidence }
 
 export default function CategoryPanel({ jobId, category, domain, onPageClick, onShowHelp, onSummaryRefresh, focusIssueCode = null }) {
   const toast = useToast()

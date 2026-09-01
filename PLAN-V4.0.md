@@ -136,6 +136,8 @@ per-cycle** — every new feature now ships its explainer. Two shapes are repres
 > pass as "bring the ~120 pre-2026-05 codes up to the M3.1 entry shape," not "write all
 > from scratch."
 >
+> | **D6 — the Page Audit names the offending items (2026-09-01)** | *No new codes* — V4's **good vs bad, concrete** applied to the operator's own page. "25 external links open in a new tab without rel=noopener" is a diagnosis; *these twenty-five links, by anchor text and href* is something a nonprofit staffer can act on without knowing what `rel=noopener` means. The evidence had existed since 2026-08-29 and reached one screen only. Now on both, plus a live "Get full details" read that stores nothing — and, in the V4 spirit, it states what it still cannot show (`truncated_at_capture`) and distinguishes "nothing to list" from "nothing recorded" (`evidence_basis`), so a short list never reads as a complete one and an empty one never reads as clean. | ✅ (rendered on every issue; the per-code explainers for these codes remain v4 content-pass work) |
+>
 > **And one shape the tally did not have until D5:** every row above explains a
 > *finding*. D4 explains an *action* — what a button did, what it could not do, and
 > what its silence meant. Verification controls need V4 treatment as much as codes do,

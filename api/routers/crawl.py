@@ -47,7 +47,9 @@ from api.models.page import CrawledPage
 from api.services.auth import require_auth
 from api.services.error_responses import _err
 from api.services.job_store import SQLiteJobStore
-from api.services.rate_limiter import CRAWL_START_LIMIT, EXPORT_LIMIT, AI_ANALYSIS_LIMIT, limiter
+from api.services.rate_limiter import (
+    CRAWL_START_LIMIT, EXPORT_LIMIT, AI_ANALYSIS_LIMIT, DETAILS_LIMIT, limiter,
+)
 from api.services.report_generator import generate_pdf_report
 from api.services.excel_generator import generate_excel_report
 from api.crawler.checkers.registry import FIX_FOCUS_MIN_IMPACT
@@ -1587,6 +1589,140 @@ async def rescan_url(
     }
 
 
+_CAPTURE_CAP_NOTE = (
+    "The crawler records a limited number of examples per finding, so this list "
+    "can be shorter than the total. The total is what the page actually has."
+)
+
+
+def _details_for_issues(issues, *, only_code: str | None) -> list[dict]:
+    """Render one entry per issue code, with every captured row.
+
+    D6 — uses the SHARED renderer with the row cap lifted. A second formatter
+    here would drift from the one the panel, the PDF and the Excel all use,
+    which is the P19 issue_evidence.py was written to prevent.
+    """
+    from api.services.issue_evidence import (
+        PAGE_IS_THE_EVIDENCE, UNCAPPED, evidence_lines,
+    )
+
+    out: list[dict] = []
+    for issue in issues:
+        code = issue.code if hasattr(issue, "code") else issue.issue_code
+        if only_code and code != only_code:
+            continue
+        extra = getattr(issue, "extra", None)
+        try:
+            lines, total = evidence_lines(code, extra, row_cap=UNCAPPED)
+        except Exception:  # noqa: BLE001 — detail must never 500 the panel
+            logger.warning("details_evidence_failed", extra={"code": code}, exc_info=True)
+            lines, total = [], 0
+        out.append({
+            "issue_code": code,
+            "description": getattr(issue, "description", ""),
+            "items": lines,
+            "items_total": total,
+            "evidence_basis": "page" if code in PAGE_IS_THE_EVIDENCE else "items",
+            # True when the CRAWL kept fewer rows than the page has. Lifting the
+            # render cap cannot recover those: capture truncation is scattered
+            # literal slices across the checkers, not one constant. Stated
+            # rather than papered over — a list that is short for a reason the
+            # reader cannot see is the failure this whole feature exists to fix.
+            "truncated_at_capture": total > len(lines),
+        })
+    return out
+
+
+@router.get("/{job_id}/page-details", response_model=None)
+@limiter.limit(DETAILS_LIMIT)
+async def get_page_details(
+    request: Request,
+    job_id: str,
+    url: str = Query(..., description="The crawled page URL to read in full"),
+    code: str | None = Query(
+        None,
+        description="Limit the answer to this issue code. Omit for every issue on the page.",
+    ),
+    store=Depends(get_store),
+) -> dict | JSONResponse:
+    """D6 — the offending items for a page, read LIVE and stored nowhere.
+
+    Answers "which links / images / fields are the problem", uncapped by the
+    10-row render limit the list endpoints use, and from the page as it is right
+    now rather than as it was at crawl time — which is what an operator part-way
+    through fixing it actually wants.
+
+    Writes nothing. This is the one read-only path through
+    `_fetch_and_check_page`; `tests/test_page_details_endpoint.py` snapshots the
+    store either side and requires it unchanged.
+
+    Spec:  docs/functional-specification.md (D6)
+    """
+    try:
+        url = normalise_url(url)
+    except ValueError as e:
+        logger.debug(f"Could not normalize URL {url}: {e}")
+
+    job = await store.get_job(job_id)
+    if job is None:
+        return _err("JOB_NOT_FOUND", "No crawl job found with the given ID.", 404)
+
+    crawled_page, old_by_cat = await store.get_page_issues_by_url(job_id, url)
+    if crawled_page is None:
+        return _err("PAGE_NOT_FOUND", f"No crawled page found with URL: {url}", 404)
+
+    suppress_h1s: list[str] = job.settings.suppress_h1_strings if job.settings else []
+    check = await _fetch_and_check_page(
+        url=url,
+        job_id=job_id,
+        base_url=job.target_url,
+        store=store,
+        suppress_h1_strings=suppress_h1s,
+        suppress_banner_h1=True,
+        bypass_cache=True,
+    )
+    if isinstance(check, JSONResponse):
+        return check
+
+    status_code = check.fetch_result.status_code
+
+    # E1.2 / D5, third application. A page we could not read tells us nothing
+    # about what is on it now. Fall back to the stored evidence, but LABEL it —
+    # answering "what is on my page right now" with crawl-time data because the
+    # fetch failed is the same false positive D5 removed, wearing a fresh coat.
+    if not _rescan_is_conclusive(status_code):
+        stored = [i for issues in old_by_cat.values() for i in issues]
+        return {
+            "url": url,
+            "status_code": status_code,
+            "source": "stored",
+            "page_unreadable": True,
+            "captured_at": crawled_page.crawled_at.isoformat()
+            if getattr(crawled_page, "crawled_at", None) else None,
+            "details": _details_for_issues(stored, only_code=code),
+            "caveat": (
+                f"The page could not be read (HTTP {status_code}), so these are "
+                "the items recorded during the last crawl, not what is on the "
+                "page now. A 403 or 429 is usually bot protection or rate "
+                "limiting rather than a change to the page."
+            ),
+            "capture_cap_note": _CAPTURE_CAP_NOTE,
+        }
+
+    return {
+        "url": url,
+        "status_code": status_code,
+        "source": "live",
+        "page_unreadable": False,
+        "details": _details_for_issues(check.issues, only_code=code),
+        "capture_cap_note": _CAPTURE_CAP_NOTE,
+        # D5 — the same disclosure a rescan carries. A live read of one page
+        # cannot evaluate these, so their absence here is not a pass.
+        "checks_not_run": _checks_a_single_page_scan_cannot_run(),
+        "checks_not_run_reason": _CHECKS_NOT_RUN_REASON,
+    }
+
+
 @router.post("/scan-page", response_model=None)
 async def scan_single_page(
     url: str = Query(..., description="The page URL to fetch and analyse"),
@@ -2526,15 +2662,29 @@ def _issue_dict(issue: Issue) -> dict:
 
 
 def _evidence_fields(issue_code: str, extra: dict | None) -> dict:
-    """`evidence` / `evidence_total` for one issue. Never raises."""
+    """`evidence` / `evidence_total` / `evidence_basis` for one issue. Never raises.
+
+    D6 — `evidence_basis` distinguishes the two ways an evidence list can be
+    empty, which look identical on the wire and mean opposite things:
+
+      "page"  — the finding IS the page (TITLE_MISSING and 29 siblings). There is
+                nothing to name, and a panel must say so.
+      "items" — this code names items, and none were recorded here. An empty
+                render then means "not captured", never "nothing wrong".
+
+    Derived from PAGE_IS_THE_EVIDENCE rather than mirrored in JS: a 30-code copy
+    in the frontend is the hand-mirrored enumeration this module exists to avoid
+    (P19), and it would go stale the first time a code joins the set.
+    """
     try:
-        from api.services.issue_evidence import evidence_lines
+        from api.services.issue_evidence import PAGE_IS_THE_EVIDENCE, evidence_lines
 
         lines, total = evidence_lines(issue_code, extra)
+        basis = "page" if issue_code in PAGE_IS_THE_EVIDENCE else "items"
     except Exception:  # noqa: BLE001 — evidence must never break a list endpoint
         logger.warning("issue_evidence_failed", extra={"code": issue_code}, exc_info=True)
-        return {"evidence": [], "evidence_total": 0}
-    return {"evidence": lines, "evidence_total": total}
+        return {"evidence": [], "evidence_total": 0, "evidence_basis": "items"}
+    return {"evidence": lines, "evidence_total": total, "evidence_basis": basis}
 
 
 @router.get("/{job_id}/images", response_model=None)

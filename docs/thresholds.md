@@ -229,7 +229,8 @@ Matrix): 180-day technical-improvement staleness and 20% traffic-decay drop.
 | Roadmap items shown per phase | 12 | `api/services/remediation.py` `build_roadmap(limit_per_phase=...)` |
 | Stacked-link group minimum size | 2 | `api/config/link_patterns.json` `min_group_size` |
 | Evidence rows stored per issue | 20 | `TT_EVIDENCE_CAP` env, `api/crawler/checkers/security.py` |
-| Evidence rows rendered in the PDF | 10 | `TT_EVIDENCE_ROW_CAP` env, `api/services/issue_evidence.py` |
+| Evidence rows rendered in the lists and the PDF | 10 | `TT_EVIDENCE_ROW_CAP` env, `api/services/issue_evidence.py`. Overridable per call via `evidence_lines(row_cap=…)`; `/page-details` and the Excel export pass `UNCAPPED` (D6). The **stored** cap above is NOT lifted by either — `truncated_at_capture` declares when it bit. |
+| Live page-details requests | 60/hour | `DETAILS_LIMIT`, `api/services/rate_limiter.py` — `/page-details` fetches the live page per click (D6) |
 | CWV pages measured (default / max) | 10 / 25 | `api/config/web_vitals.json` |
 | CWV poor band — LCP / INP / CLS | 4000ms / 500ms / 0.25 | `api/config/web_vitals.json` (Google's own boundaries) |
 | CWV minimum request interval | 1.1s | `api/config/web_vitals.json` — 0.91 req/s, under both published limits: PSI 100 queries/100s (the binding one) and CrUX 150/min |

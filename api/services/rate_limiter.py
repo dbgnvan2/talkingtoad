@@ -25,3 +25,8 @@ limiter = Limiter(key_func=get_remote_address, enabled=_enabled)
 CRAWL_START_LIMIT = "10/hour" if _enabled else "10000/hour"
 EXPORT_LIMIT = "30/hour" if _enabled else "10000/hour"
 AI_ANALYSIS_LIMIT = "60/hour" if _enabled else "10000/hour"
+# D6 — /page-details fetches the live page on every click, so it is a fetch
+# amplifier pointed at the operator's own site. Matched to AI_ANALYSIS_LIMIT:
+# an operator-initiated single-page fetch, cheaper than an AI call and far
+# cheaper than a crawl.
+DETAILS_LIMIT = "60/hour" if _enabled else "10000/hour"

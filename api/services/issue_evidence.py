@@ -38,6 +38,11 @@ import os
 # complete.
 EVIDENCE_ROW_CAP = int(os.getenv("TT_EVIDENCE_ROW_CAP", "10"))
 
+# Render every captured row. Not "no limit" — the crawl's own capture caps still
+# bound what reached `extra`, which is why callers using this must still report
+# `total` alongside (see D6).
+UNCAPPED = 10**6
+
 # Keys that are pure measurements. The description already states them; repeating
 # "count: 6" under a finding that says "6 links" is noise, not evidence.
 _NOISE_KEYS = frozenset({
@@ -146,14 +151,25 @@ def _row_to_line(row: dict) -> str | None:
     return None
 
 
-def evidence_lines(issue_code: str, extra: dict | None) -> tuple[list[str], int]:
+def evidence_lines(
+    issue_code: str, extra: dict | None, *, row_cap: int | None = None
+) -> tuple[list[str], int]:
     """Return ``(lines, total)`` — readable evidence, and how many rows exist.
 
     ``total`` exceeds ``len(lines)`` when the list was capped; every caller must
     disclose that rather than presenting the visible rows as the whole set.
+
+    ``row_cap`` overrides :data:`EVIDENCE_ROW_CAP` for this call only. Passed
+    explicitly rather than by swapping the module global, which is what
+    ``evidence_for_excel`` used to do: under the async endpoints added by D6
+    that global is shared by concurrent requests, so one caller lifting it could
+    silently uncap another's render, or restore it mid-flight and truncate one.
+    A parameter cannot race.
     """
     if not extra or not isinstance(extra, dict):
         return [], 0
+
+    cap = EVIDENCE_ROW_CAP if row_cap is None else row_cap
 
     lines: list[str] = []
     total = 0
@@ -173,7 +189,7 @@ def evidence_lines(issue_code: str, extra: dict | None) -> tuple[list[str], int]
         declared_total = extra.get(f"{key}_total")
         row_total = int(declared_total) if isinstance(declared_total, int) else len(rendered)
         total += row_total
-        head = rendered[:EVIDENCE_ROW_CAP]
+        head = rendered[:cap]
         lines.append(f"{_label(key)}:")
         lines.extend(f"  {line}" for line in head)
         if row_total > len(head):
@@ -215,13 +231,7 @@ def evidence_for_excel(issue_code: str, extra: dict | None) -> str:
     """
     if not extra or not isinstance(extra, dict):
         return ""
-    global EVIDENCE_ROW_CAP
-    previous = EVIDENCE_ROW_CAP
-    EVIDENCE_ROW_CAP = 10**6
-    try:
-        lines, _total = evidence_lines(issue_code, extra)
-    finally:
-        EVIDENCE_ROW_CAP = previous
+    lines, _total = evidence_lines(issue_code, extra, row_cap=UNCAPPED)
     return "\n".join(lines)
 
 

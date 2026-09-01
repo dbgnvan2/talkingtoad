@@ -19,6 +19,7 @@ import SummaryPanel from '../components/SummaryPanel.jsx'
 import OrphanedImagesPanel from '../components/OrphanedImagesPanel.jsx'
 import OrphanedPagesPanel from '../components/OrphanedPagesPanel.jsx'
 import CategoryHelpModal from '../components/CategoryHelpModal.jsx'
+import { IssueDetails } from '../components/IssueEvidence.jsx'
 import { useTheme } from '../contexts/ThemeContext.jsx'
 import { useToast } from '../contexts/ToastContext.jsx'
 
@@ -42,6 +43,17 @@ import {
 } from '../api.js'
 
 const IMAGE_FIXABLE_CODES = new Set(['IMG_OVERSIZED', 'IMG_ALT_MISSING'])
+
+// D6 — `extra` keys that IssueCard already renders itself, in richer, code-specific
+// form (the empty-anchor fix table, the broken-link source list, the size
+// breakdown). Where one of these is present the hand-rolled block wins and the
+// generic evidence block is suppressed, so a finding never lists its items twice.
+// Keyed on what is actually rendered rather than on a list of issue codes: the
+// codes change, the render conditions are the truth.
+const HAND_ROLLED_EVIDENCE_KEYS = [
+  'empty_anchors', 'empty_anchor_hrefs', 'duplicate_urls', 'breakdown',
+  'mismatched_fields', 'occurrence_urls', 'img_missing_alt_srcs',
+]
 
 const AI_TEXT_SUGGESTION_CODES = new Set([
   // Title / meta
@@ -1273,6 +1285,13 @@ export function IssueCard({ issue: iss, jobId, pageUrl, isOpen, onToggleFix, onF
 
       <p className="text-gray-500 leading-relaxed mb-1" style={getFontClass('bodySize')}>{iss.description}</p>
       <p className="font-bold text-green-600 italic" style={getFontClass('bodySize')}>Recommendation: {iss.recommendation}</p>
+
+      {/* D6 — which items are the problem. The payload has carried this on every
+          issue since 2026-08-29; this panel rendered none of it, which is what
+          "doesn't report what links are the problem" was. */}
+      {!HAND_ROLLED_EVIDENCE_KEYS.some(k => iss.extra?.[k]) && (
+        <IssueDetails jobId={jobId} pageUrl={pageUrl} issue={iss} />
+      )}
 
       {/* Special display for Empty Anchor issues */}
       {isEmptyAnchor && (iss.extra?.empty_anchors || iss.extra?.empty_anchor_hrefs) && (

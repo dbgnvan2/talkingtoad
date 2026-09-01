@@ -1219,6 +1219,70 @@ The label is now **"Re-check this page"**.
 → `tests/test_rescan_reports_what_it_checked.py`,
 `frontend/src/pages/__tests__/PageAuditRecheck.test.jsx`.
 
+**D6 — the Page Audit names the offending items, and can read the page live.**
+A finding that says *"25 external links open in a new tab without
+rel=noopener"* names the page and not the links, which leaves the operator to
+re-audit the page by hand — most of the work the tool exists to save.
+
+The evidence was never missing. `security.py` records the actual hrefs,
+`issue_evidence.py` renders them, and `_issue_dict` attaches `evidence` /
+`evidence_total` to **every** issue including on `/page-issues`. `CategoryPanel`
+has rendered it since 2026-08-29 through an `IssueEvidence` component.
+**`IssueCard` — the Page Audit panel — rendered none of it**, hand-rolling ~14
+per-code `extra` lookups instead; `unsafe_links`, `mixed_content_items` and
+`internal_nofollow_links` were never among them. The renderer existed, was
+correct, was used elsewhere in the same app, and the second screen was never
+connected to it.
+
+Third instance of one class — `images_measured` (2026-08-30), `checks_not_run`
+(D5), `evidence` (here): the backend computes the honest answer and a surface
+renders none of it. No backend test could see this one, because every EV test
+asserts the payload and the payload was right the whole time.
+
+`IssueEvidence` now lives in a shared module and the Page Audit renders it under
+a per-issue **Details** disclosure. Where a hand-rolled block already lists the
+same `extra` keys in richer form, it wins and the generic block is suppressed —
+keyed on the render conditions, not on a list of codes.
+
+**Two bounds, measured.** A page with 25 unsafe links: 25 parsed, **20** kept in
+`extra` (scattered literal slices across the checkers), **10** rendered
+(`EVIDENCE_ROW_CAP`). `evidence_total` correctly reported 25 throughout, so the
+disclosure was honest — it simply reached no screen.
+
+`GET /{job_id}/page-details?url=…[&code=…]` answers *"which ones, right now"*.
+It reuses `_fetch_and_check_page` — one hardened SSRF-guarded fetch path, no
+second crawler — lifts the **render** cap so every captured row is returned, and
+**writes nothing**. It is the only read-only path through that function, and a
+test snapshots the store either side to keep it so.
+
+It does **not** lift the capture cap. That is not achievable generically: capture
+truncation is scattered `[:3]`/`[:5]`/`[:10]`/`[:20]` slices, and `extra` keys do
+not match `ParsedPage` field names (`unsafe_links` vs
+`unsafe_cross_origin_links`), so reaching the full list needs the per-code table
+`issue_evidence.py` exists to avoid (P19). Uncapping one code while its siblings
+silently stop at 10 under the same heading would be worse than a stated bound, so
+the bound is uniform and `truncated_at_capture` declares it.
+
+`evidence_basis` (`"page"` | `"items"`) separates the two ways an evidence list
+can be empty, which look identical on the wire and mean opposite things: the 30
+`PAGE_IS_THE_EVIDENCE` codes have nothing to name, and everything else has
+nothing *recorded*. An empty box would read as *nothing wrong here* for both.
+Derived server-side; a 30-code copy in JS would go stale on the next addition.
+
+**A blocked page returns stored items, labelled `source: "stored"` with a
+caveat** — never blended with live. Third application of the E1.2/D5 rule:
+answering *"what is on my page now"* with crawl-time data because the fetch
+failed is the same false positive in a fresh coat.
+
+`evidence_lines()` now takes `row_cap` as a parameter. `evidence_for_excel` had
+been swapping a module global; under an async endpoint that global is shared by
+concurrent requests, so one caller lifting it could uncap another's render or
+truncate one mid-flight. A parameter cannot race.
+
+Rate limited at `DETAILS_LIMIT` (60/hour) — it fetches the live page per click.
+→ `tests/test_page_details_endpoint.py`,
+`frontend/src/pages/__tests__/PageAuditEvidence.test.jsx`.
+
 **F1 — per-domain issue filter.** For one site, hide selected issue codes and/or
 every finding of a given severity, so the results list shows what that site's
 operator cares about. Three properties define it:

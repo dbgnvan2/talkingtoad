@@ -162,6 +162,17 @@ export async function rescanUrl(jobId, url) {
   return checkResponse(res)
 }
 
+// D6 — the offending items for a page, read live and stored nowhere.
+// Omit `code` for every issue on the page; supply it for one.
+export async function getPageDetails(jobId, pageUrl, code) {
+  const params = new URLSearchParams({ url: pageUrl })
+  if (code) params.set('code', code)
+  const res = await fetch(`/api/crawl/${jobId}/page-details?${params}`, {
+    headers: authHeaders(),
+  })
+  return checkResponse(res)
+}
+
 export async function markFixed(jobId, pageUrl, codes) {
   const params = new URLSearchParams({ url: pageUrl, codes: codes.join(',') })
   const res = await fetch(`/api/crawl/${jobId}/mark-fixed?${params}`, {
