@@ -140,3 +140,68 @@ describe('Home — Rescan button', () => {
     expect(within(second).getByRole('button', { name: /rescan/i })).not.toBeDisabled()
   })
 })
+
+describe('Home — Rescan, 2026-09-01 sweep findings', () => {
+  beforeEach(() => {
+    global.fetch.mockReset()
+    mockNavigate.mockReset()
+    localStorage.clear()
+  })
+
+  it('F6: clicking a second row does not re-enable the first row mid-flight', async () => {
+    const other = { ...FINISHED, job_id: 'job-two', target_url: 'https://other.org' }
+    global.fetch.mockImplementation((url) => {
+      if (String(url).includes('/rescan')) return new Promise(() => {})   // never resolves
+      if (String(url).includes('/api/crawl/recent')) return mockFetchResponse([FINISHED, other])
+      return mockFetchResponse({})
+    })
+    renderWithProviders(<Home />)
+    const first = await waitFor(() => rowFor('livingsystems.ca'))
+    const second = rowFor('other.org')
+
+    fireEvent.click(within(first).getByRole('button', { name: /rescan/i }))
+    await waitFor(() =>
+      expect(within(first).getByRole('button', { name: /starting/i })).toBeDisabled())
+
+    fireEvent.click(within(second).getByRole('button', { name: /rescan/i }))
+    await waitFor(() =>
+      expect(within(second).getByRole('button', { name: /starting/i })).toBeDisabled())
+
+    // With a single in-flight id, this reverted to "Rescan" while row one's
+    // POST was still outstanding — one click from a duplicate crawl.
+    expect(within(first).queryByRole('button', { name: /^rescan$/i })).not.toBeInTheDocument()
+    expect(within(first).getByRole('button', { name: /starting/i })).toBeDisabled()
+  })
+
+  it('F6: one row failing does not re-enable another row still in flight', async () => {
+    const other = { ...FINISHED, job_id: 'job-two', target_url: 'https://other.org' }
+    global.fetch.mockImplementation((url) => {
+      const u = String(url)
+      if (u.includes('/job-done/rescan')) return mockFetchResponse({}, 500)
+      if (u.includes('/job-two/rescan')) return new Promise(() => {})
+      if (u.includes('/api/crawl/recent')) return mockFetchResponse([FINISHED, other])
+      return mockFetchResponse({})
+    })
+    renderWithProviders(<Home />)
+    const first = await waitFor(() => rowFor('livingsystems.ca'))
+    const second = rowFor('other.org')
+
+    fireEvent.click(within(second).getByRole('button', { name: /rescan/i }))
+    fireEvent.click(within(first).getByRole('button', { name: /rescan/i }))
+
+    // Row one fails and re-enables; row two is still outstanding and must not.
+    await waitFor(() =>
+      expect(within(first).getByRole('button', { name: /^rescan$/i })).not.toBeDisabled())
+    expect(within(second).getByRole('button', { name: /starting/i })).toBeDisabled()
+  })
+
+  it('F7: a queued job offers View Progress, not Rescan', async () => {
+    // 'queued' is the status a new CrawlJob actually starts in, and the
+    // endpoint 409s on it. The row previously offered the dead click.
+    mockApi({ recent: [{ ...RUNNING, status: 'queued' }] })
+    renderWithProviders(<Home />)
+    const row = await waitFor(() => rowFor('example.org'))
+    expect(within(row).getByRole('button', { name: /view progress/i })).toBeInTheDocument()
+    expect(within(row).queryByRole('button', { name: /rescan/i })).not.toBeInTheDocument()
+  })
+})

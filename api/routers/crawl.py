@@ -1133,14 +1133,26 @@ def _is_single_page_job(job: CrawlJob) -> bool:
     server, from a button on a row that says "1 page", returning 202 and
     looking entirely successful.
 
-    So the settings flag is checked FIRST (new jobs describe themselves), and
-    the orphan-detection marker `/scan-page` has always written is the fallback
-    for every job that predates the fix.
+    Three arms, newest evidence first, because no one of them covers the whole
+    history:
+
+    1. ``settings.single_page`` — jobs from 2026-09-01 describe themselves.
+    2. The ``orphan_detection`` marker ``/scan-page`` writes — but only since
+       2026-08-29, so it does NOT cover "every job that predates the fix"
+       (an earlier version of this docstring claimed it did; measured against
+       the owner's database, 49 of 167 jobs had neither field).
+    3. ``pages_total == 1`` — the last resort for jobs older than the marker.
+       A genuine whole-site crawl of a one-page site also matches, and rescans
+       as a page scan rather than a crawl. That direction is the safe one: it
+       skips sitemap seeding on a site with one page, versus launching a
+       500-page crawl of a third party from a row labelled "1 page".
     """
     if job.settings and job.settings.single_page:
         return True
     marker = job.orphan_detection if isinstance(job.orphan_detection, dict) else {}
-    return marker.get("status") == "skipped_single_page"
+    if marker.get("status") == "skipped_single_page":
+        return True
+    return job.pages_total == 1
 
 
 @router.post("/{job_id}/rescan", status_code=202, response_model=None)
@@ -1183,19 +1195,26 @@ async def rescan_job(
         return err
 
     if _is_single_page_job(job):
-        # Same in-process delegation `verify-page` uses for `rescan_url`.
-        # `authenticated` is passed EXPLICITLY: called in-process rather than
-        # through FastAPI, an omitted `Query(False)` default arrives as a Query
-        # OBJECT, which is truthy — the rescan would silently sign in to
-        # WordPress and audit drafts. Unauthenticated is also the right answer:
-        # whether the original was a draft scan is not recorded on the job, and
-        # guessing would audit a draft as though it were live.
-        result = await scan_single_page(
-            url=target_url, authenticated=False, store=store
+        # Calls the shared helper, not the endpoint: a route handler's
+        # `Query(False)` default arrives as a truthy Query OBJECT when invoked
+        # in-process, which would silently sign in to WordPress and audit
+        # drafts. Unauthenticated is also the right answer here — whether the
+        # original was a draft scan is not recorded on the job.
+        result = await _run_single_page_scan(
+            url=target_url, authenticated=False, store=store,
+            # The whole point of a rescan: run it the way the source ran.
+            reuse_settings=job.settings or CrawlSettings(),
+            # A rescan is asked "did my fix land", so it must not answer from a
+            # cached copy of the page — same reason /rescan-url bypasses.
+            bypass_cache=True,
         )
         if isinstance(result, JSONResponse):
             return result
         return {
+            # Spread first so the scan's own disclosures (checks_not_run and
+            # its reason — the 24 codes this path cannot run) survive; the
+            # rescan's keys below still win. Absence is never a pass.
+            **result,
             "job_id": result["job_id"],
             "source_job_id": job_id,
             "mode": "single_page",
@@ -2013,6 +2032,37 @@ async def scan_single_page(
     The caller can navigate straight to /results/{job_id} — no polling needed
     because the scan runs synchronously before this endpoint returns.
     """
+    return await _run_single_page_scan(
+        url=url, authenticated=authenticated, store=store
+    )
+
+
+async def _run_single_page_scan(
+    *,
+    url: str,
+    authenticated: bool,
+    store,
+    reuse_settings: CrawlSettings | None = None,
+    bypass_cache: bool = False,
+) -> dict | JSONResponse:
+    """The single-page scan itself — shared by ``/scan-page`` and a rescan.
+
+    Spec:  docs/pending/2026-09-01_rescan-from-home.md#R2
+    Tests: tests/test_rescan_job.py
+
+    A plain function, NOT the endpoint, because FastAPI adopts any plainly
+    defaulted argument on a route handler into its HTTP signature: adding
+    ``bypass_cache`` to `scan_single_page` silently published
+    ``/scan-page?bypass_cache=true`` as a public query parameter.
+
+    ``reuse_settings`` is what makes a rescan reproduce the original scan.
+    Without it this path re-derived suppression from "the most recent completed
+    job for this ORIGIN", which for a page URL is almost never the source job —
+    measured, it dropped ``suppress_h1_strings`` and inverted
+    ``suppress_banner_h1``, so an unchanged page reported H1 findings its first
+    scan had suppressed and the before/after showed a regression that had not
+    happened.
+    """
     from urllib.parse import urlparse
 
     if not url or not url.startswith(("http://", "https://")):
@@ -2037,7 +2087,11 @@ async def scan_single_page(
         # full-site crawl from a one-page audit. `single_page` is read only when
         # building EngineCrawlSettings at crawl start, never in scoring or
         # reporting, so recording it changes nothing else.
-        settings=CrawlSettings(single_page=True),
+        #
+        # A rescan carries the SOURCE job's settings through, so the new job's
+        # record says what it actually ran with rather than defaults.
+        settings=(reuse_settings.model_copy(update={"single_page": True})
+                  if reuse_settings else CrawlSettings(single_page=True)),
     )
     await store.create_job(job)
     job_id = job.job_id
@@ -2050,20 +2104,26 @@ async def scan_single_page(
         "status": "skipped_single_page", "pages_analysed": 1,
         "pages_out_of_scope": 0, "archives_skipped": False})
 
-    # Inherit suppress_h1_strings and suppress_banner_h1 from the most recent
-    # completed job for this origin so that theme-injected headings stay suppressed
-    # in ad-hoc single-page scans.
-    suppress_h1s: list[str] = []
-    suppress_banner: bool = True
-    try:
-        recent = await store.list_recent_jobs(limit=20)
-        for rj in recent:
-            if rj.target_url.rstrip("/") == origin.rstrip("/") and rj.settings:
-                suppress_h1s = rj.settings.suppress_h1_strings or []
-                suppress_banner = rj.settings.suppress_banner_h1
-                break
-    except Exception as e:
-        logger.warning(f"Could not load recent jobs for inheriting settings: {e}")
+    # Suppression settings. A rescan supplies the SOURCE job's — an exact
+    # answer, so the origin lookup below (a guess, and for a page URL usually
+    # the wrong job) must not override it.
+    if reuse_settings is not None:
+        suppress_h1s = reuse_settings.suppress_h1_strings or []
+        suppress_banner = reuse_settings.suppress_banner_h1
+    else:
+        # Ad-hoc scan: inherit from the most recent completed job for this
+        # origin so theme-injected headings stay suppressed.
+        suppress_h1s = []
+        suppress_banner = True
+        try:
+            recent = await store.list_recent_jobs(limit=20)
+            for rj in recent:
+                if rj.target_url.rstrip("/") == origin.rstrip("/") and rj.settings:
+                    suppress_h1s = rj.settings.suppress_h1_strings or []
+                    suppress_banner = rj.settings.suppress_banner_h1
+                    break
+        except Exception as e:
+            logger.warning(f"Could not load recent jobs for inheriting settings: {e}")
 
     # ── Fetch, parse, check issues (shared logic) ─────────────────────
     check = await _fetch_and_check_page(
@@ -2073,7 +2133,7 @@ async def scan_single_page(
         store=store,
         suppress_h1_strings=suppress_h1s,
         suppress_banner_h1=suppress_banner,
-        bypass_cache=False,
+        bypass_cache=bypass_cache,
         authenticated=authenticated,
     )
     if isinstance(check, JSONResponse):

@@ -25,6 +25,12 @@ from api.routers.crawl import _is_single_page_job
 BASE = "https://example.com"
 
 
+async def store_create(store, job: CrawlJob) -> CrawlJob:
+    """Create a job exactly as given — no defaults applied on top."""
+    await store.create_job(job)
+    return job
+
+
 async def _finished_job(store, **kw) -> CrawlJob:
     """A completed crawl job, as the home page's Recent list would show it."""
     job = CrawlJob(target_url=kw.pop("target_url", BASE), status="complete",
@@ -149,7 +155,7 @@ class TestSinglePageProvenance:
             test_store, target_url=f"{BASE}/one-page", pages_crawled=1,
             settings=CrawlSettings(single_page=True),
         )
-        with patch("api.routers.crawl.scan_single_page") as scan:
+        with patch("api.routers.crawl._run_single_page_scan") as scan:
             scan.return_value = {"job_id": "new-single"}
             r = await api_client.post(
                 f"/api/crawl/{job.job_id}/rescan", headers=auth_headers)
@@ -174,7 +180,7 @@ class TestSinglePageProvenance:
             orphan_detection={"status": "skipped_single_page", "pages_analysed": 1,
                               "pages_out_of_scope": 0, "archives_skipped": False},
         )
-        with patch("api.routers.crawl.scan_single_page") as scan:
+        with patch("api.routers.crawl._run_single_page_scan") as scan:
             scan.return_value = {"job_id": "new-legacy"}
             r = await api_client.post(
                 f"/api/crawl/{job.job_id}/rescan", headers=auth_headers)
@@ -193,7 +199,7 @@ class TestSinglePageProvenance:
             test_store, target_url=f"{BASE}/p", pages_crawled=1,
             settings=CrawlSettings(single_page=True),
         )
-        with patch("api.routers.crawl.scan_single_page") as scan:
+        with patch("api.routers.crawl._run_single_page_scan") as scan:
             scan.return_value = {"job_id": "x"}
             await api_client.post(f"/api/crawl/{job.job_id}/rescan", headers=auth_headers)
 
@@ -308,3 +314,139 @@ class TestPrioritySeedCarriesOver:
         await api_client.post(f"/api/crawl/{job.job_id}/rescan", headers=auth_headers)
         engine_settings = no_crawl.call_args.args[2]
         assert engine_settings.priority_urls == [f"{BASE}/priority"]
+
+
+# ── 2026-09-01 sweep findings (F1, F2, F8) ────────────────────────────────
+
+
+class TestSweepFindings:
+    @pytest.mark.asyncio
+    async def test_job_older_than_the_orphan_marker_is_still_single_page(
+        self, api_client, auth_headers, test_store, no_crawl
+    ):
+        """F1: the orphan marker only exists from 2026-08-29, so it does NOT
+        cover 'every job that predates the fix' — measured against the owner's
+        database, 49 of 167 jobs carried neither field. Those fall through to a
+        500-page crawl of a third-party site from a row labelled '1 page'."""
+        job = CrawlJob(target_url=f"{BASE}/ancient-page", status="complete",
+                       pages_crawled=1, pages_total=1,
+                       settings=CrawlSettings(single_page=False))
+        await store_create(test_store, job)          # no settings flag, no marker
+        assert job.orphan_detection is None
+
+        with patch("api.routers.crawl._run_single_page_scan") as scan:
+            scan.return_value = {"job_id": "new-ancient"}
+            r = await api_client.post(
+                f"/api/crawl/{job.job_id}/rescan", headers=auth_headers)
+
+        assert not no_crawl.called, "a pre-marker one-page job must not become a crawl"
+        assert r.json()["mode"] == "single_page"
+
+    @pytest.mark.asyncio
+    async def test_a_multi_page_crawl_is_never_mistaken_for_a_page_scan(
+        self, api_client, auth_headers, test_store, no_crawl
+    ):
+        """The other side of F1's third arm — it keys on pages_total == 1."""
+        job = CrawlJob(target_url=BASE, status="complete",
+                       pages_crawled=48, pages_total=48)
+        await store_create(test_store, job)
+        r = await api_client.post(f"/api/crawl/{job.job_id}/rescan", headers=auth_headers)
+        assert r.json()["mode"] == "crawl"
+        assert no_crawl.called
+
+    @pytest.mark.asyncio
+    async def test_single_page_rescan_reuses_the_source_suppression_settings(
+        self, api_client, auth_headers, test_store, no_crawl
+    ):
+        """F2: this path re-derived suppression from 'the most recent completed
+        job for this ORIGIN', which for a page URL is almost never the source
+        job. Measured, it DROPPED suppress_h1_strings and INVERTED
+        suppress_banner_h1 — so an unchanged page reported H1 findings its first
+        scan had suppressed, and the before/after the button exists to enable
+        showed a regression that had not happened."""
+        job = await _finished_job(
+            test_store, target_url=f"{BASE}/about", pages_crawled=1,
+            settings=CrawlSettings(single_page=True,
+                                   suppress_h1_strings=["Living Systems Counselling"],
+                                   suppress_banner_h1=False),
+        )
+        with patch("api.routers.crawl._fetch_and_check_page") as fetch:
+            from fastapi.responses import JSONResponse
+            fetch.return_value = JSONResponse(status_code=502, content={})
+            await api_client.post(f"/api/crawl/{job.job_id}/rescan", headers=auth_headers)
+
+        kw = fetch.call_args.kwargs
+        assert kw["suppress_h1_strings"] == ["Living Systems Counselling"]
+        assert kw["suppress_banner_h1"] is False
+        assert kw["bypass_cache"] is True, "'did my fix land' must not read a cached page"
+
+    @pytest.mark.asyncio
+    async def test_the_new_single_page_job_records_the_reused_settings(
+        self, api_client, auth_headers, test_store, no_crawl
+    ):
+        """F2, the record half: the new job must say what it ran with."""
+        job = await _finished_job(
+            test_store, target_url=f"{BASE}/about", pages_crawled=1,
+            settings=CrawlSettings(single_page=True, img_size_limit_kb=42,
+                                   suppress_h1_strings=["Banner"]),
+        )
+        with patch("api.routers.crawl._fetch_and_check_page") as fetch:
+            from fastapi.responses import JSONResponse
+            fetch.return_value = JSONResponse(status_code=502, content={})
+            await api_client.post(f"/api/crawl/{job.job_id}/rescan", headers=auth_headers)
+
+        new = next(j for j in await test_store.list_recent_jobs(limit=10)
+                   if j.job_id != job.job_id and j.target_url.endswith("/about"))
+        assert new.settings.suppress_h1_strings == ["Banner"]
+        assert new.settings.img_size_limit_kb == 42
+        assert new.settings.single_page is True
+
+    @pytest.mark.asyncio
+    async def test_ad_hoc_scan_page_still_inherits_from_the_origin(
+        self, api_client, auth_headers, test_store
+    ):
+        """The reuse path must not break the ad-hoc /scan-page inheritance."""
+        await _finished_job(test_store, target_url=BASE, settings=CrawlSettings(
+            suppress_h1_strings=["Site Banner"], suppress_banner_h1=False))
+
+        with patch("api.routers.crawl._fetch_and_check_page") as fetch:
+            from fastapi.responses import JSONResponse
+            fetch.return_value = JSONResponse(status_code=502, content={})
+            await api_client.post(
+                f"/api/crawl/scan-page?url={BASE}/adhoc", headers=auth_headers)
+
+        assert fetch.call_args.kwargs["suppress_h1_strings"] == ["Site Banner"]
+        assert fetch.call_args.kwargs["bypass_cache"] is False
+
+    @pytest.mark.asyncio
+    async def test_scan_page_http_contract_is_unchanged(self):
+        """F2's fix adds two in-process-only parameters. If FastAPI adopted them
+        into the HTTP signature, `reuse_settings` would become a request BODY
+        and every existing caller would break."""
+        from api.main import app
+
+        route = next(r for r in app.routes
+                     if getattr(r, "path", None) == "/api/crawl/scan-page")
+        params = {f.name for f in route.dependant.query_params}
+        assert params == {"url", "authenticated"}, params
+        assert route.body_field is None, "scan-page must take no request body"
+
+    @pytest.mark.asyncio
+    async def test_single_page_rescan_keeps_the_checks_not_run_disclosure(
+        self, api_client, auth_headers, test_store, no_crawl
+    ):
+        """F8: the rescan built a fresh 5-key dict and dropped the 24-code
+        'this path cannot run these checks' disclosure the scan returned.
+        Absence is never a pass (LEARNINGS, three times)."""
+        job = await _finished_job(
+            test_store, target_url=f"{BASE}/p", pages_crawled=1,
+            settings=CrawlSettings(single_page=True))
+        with patch("api.routers.crawl._run_single_page_scan") as scan:
+            scan.return_value = {"job_id": "x", "checks_not_run": ["ORPHAN_PAGE"],
+                                 "checks_not_run_reason": "single-page scan"}
+            body = (await api_client.post(
+                f"/api/crawl/{job.job_id}/rescan", headers=auth_headers)).json()
+
+        assert body["checks_not_run"] == ["ORPHAN_PAGE"]
+        assert body["checks_not_run_reason"] == "single-page scan"
+        assert body["mode"] == "single_page", "and the rescan's own keys still win"

@@ -43,10 +43,21 @@ export default function Home() {
   const [selectedTypes, setSelectedTypes] = useState({})  // { typeKey: true }
   const [selectedCats, setSelectedCats] = useState({})    // { categoryId: true }
   const [recentJobs, setRecentJobs] = useState([])
-  // Rescan state is keyed BY JOB, not a single flag: one row's in-flight
-  // rescan must not disable the other rows' buttons.
-  const [rescanningId, setRescanningId] = useState(null)
+  // Keyed BY JOB, not a single id. With one id, clicking a second row cleared
+  // the first row's flag while its request was still outstanding — the button
+  // reverted to "Rescan", one click away from a duplicate crawl of the same
+  // site. A Set tracks every request actually in flight.
+  const [rescanningIds, setRescanningIds] = useState(() => new Set())
   const [rescanErrors, setRescanErrors] = useState({})
+
+  function setRescanning(jobId, active) {
+    setRescanningIds(prev => {
+      const next = new Set(prev)
+      if (active) next.add(jobId)
+      else next.delete(jobId)
+      return next
+    })
+  }
   const [singleUrl, setSingleUrl] = useState('')
   const [singleLoading, setSingleLoading] = useState(false)
   const [singleError, setSingleError] = useState(null)
@@ -81,7 +92,7 @@ export default function Home() {
   }, [])
 
   async function handleRescan(jobId) {
-    setRescanningId(jobId)
+    setRescanning(jobId, true)
     setRescanErrors(prev => ({ ...prev, [jobId]: null }))
     try {
       const data = await rescanJob(jobId)
@@ -94,7 +105,7 @@ export default function Home() {
       // No navigation and no list reload on failure: a failed rescan must not
       // look like it consumed the scan it was launched from.
       setRescanErrors(prev => ({ ...prev, [jobId]: err.message || 'Rescan failed' }))
-      setRescanningId(null)
+      setRescanning(jobId, false)
     }
   }
 
@@ -206,12 +217,17 @@ export default function Home() {
             </p>
             <ul className="divide-y divide-gray-100">
               {recentJobs.map(job => {
-                const isRunning = job.status === 'running' || job.status === 'pending'
+                // 'queued' is the status a new CrawlJob actually starts in;
+                // 'pending' is not a value this backend produces. Without it a
+                // just-launched scan showed "Rescan" and "View Results", and
+                // the rescan 409s.
+                const isRunning = job.status === 'running' || job.status === 'queued'
+                  || job.status === 'pending'
                 const statusColor = job.status === 'complete' ? 'text-green-600'
                   : job.status === 'failed' ? 'text-red-500'
                   : job.status === 'cancelled' ? 'text-gray-400'
                   : 'text-amber-500'
-                const rescanning = rescanningId === job.job_id
+                const rescanning = rescanningIds.has(job.job_id)
                 const rescanError = rescanErrors[job.job_id]
                 return (
                   <li key={job.job_id} className="px-4 py-2.5 hover:bg-gray-50">

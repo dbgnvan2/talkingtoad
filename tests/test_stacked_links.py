@@ -415,3 +415,93 @@ class TestClassMatchingIsTokenBounded:
             "</div>"
         )
         assert _groups(html) == []
+
+
+# ── 2026-09-01 sweep findings (F3, F4, F5) ─────────────────────────────────
+#
+# A cold review of the fix above found that the new guards, plus two patterns
+# inherited from the original E6 config, produced FALSE NEGATIVES on the exact
+# markup the check exists for. A fix to an over-firing check that quietly stops
+# it firing at all is not a fix; these are the shapes that prove it still does.
+
+
+class TestSweepFalseNegatives:
+    def test_long_card_beside_a_short_one_is_still_reported(self):
+        """F3: on a two-item listing, a card with a long description can hold
+        >50% of the page's text. It was dropped while its identical sibling was
+        reported — two of the same defect, one row. A page holding several card
+        candidates is a listing, and no one of them is 'the page'.
+        """
+        long_desc = "A long description for this card. " * 24
+        html = (
+            "<html><body><header>Site header</header><ul>"
+            f'<li class="jet-listing-grid__item"><a href="/a">Overlay</a>'
+            f'<a href="/a">Title</a><p>{long_desc}</p></li>'
+            '<li class="jet-listing-grid__item"><a href="/b">Overlay</a>'
+            "<a href=\"/b\">Title</a><p>Short.</p></li>"
+            "</ul><footer>Footer</footer></body></html>"
+        )
+        hrefs = sorted(g["href"] for g in _groups(html))
+        assert hrefs == ["https://example.com/a", "https://example.com/b"]
+
+    def test_default_wordpress_block_theme_query_loop_is_detected(self):
+        """F4: `wp-block-post` matches `wp-block-post-title` token-bounded, so
+        the walk stopped at the TITLE (one link) and the whole default block
+        theme — the most common card grid on the web — reported nothing.
+
+        `hentry` sits on the query-loop ITEM as well as the single-post
+        wrapper, so it must not be denied outright either.
+        """
+        html = _page(
+            '<ul class="wp-block-post-template">'
+            '  <li class="wp-block-post post-12 hentry">'
+            '    <figure class="wp-block-post-featured-image">'
+            '        <a href="/story-a/"><img src="a.jpg" alt="A"></a></figure>'
+            '    <h2 class="wp-block-post-title"><a href="/story-a/">Story A</a></h2>'
+            "  </li></ul>"
+        )
+        groups = _groups(html)
+        assert len(groups) == 1
+        assert groups[0]["count"] == 2
+        assert "wp-block-post" in groups[0]["container_class"]
+
+    def test_elementor_posts_widget_reports_one_group_not_two(self):
+        """F4: `elementor-post` matches the inner `elementor-post__text`, so one
+        defect was reported TWICE, with two different counts."""
+        html = _page(
+            '<div class="elementor-posts">'
+            '  <article class="elementor-post">'
+            '    <a class="elementor-post__thumbnail__link" href="/story-a/">img</a>'
+            '    <div class="elementor-post__text">'
+            '      <h3 class="elementor-post__title"><a href="/story-a/">A</a></h3>'
+            '      <a class="elementor-post__read-more" href="/story-a/">Read more</a>'
+            "    </div></article>"
+            '  <article class="elementor-post"><a href="/b">B</a></article></div>'
+        )
+        groups = _groups(html)
+        assert len(groups) == 1, "one card, one row"
+        assert groups[0]["container_tag"] == "article"
+        assert groups[0]["count"] == 3
+
+    def test_thin_page_wrapper_is_not_a_card(self):
+        """F5: the text-share guard is inert below the page-text floor, so an
+        81-char contact page whose wrapper matched a card pattern was a false
+        positive. Fixed at the root: the bare `entry` pattern is gone, because
+        every WordPress `entry-*` wrapper class is page-level."""
+        html = (
+            '<html><body><div class="entry-wrap">'
+            '<a href="/contact-form">Contact us</a>'
+            '<a href="/contact-form">Enquiry form</a>'
+            "</div></body></html>"
+        )
+        assert _groups(html) == []
+
+    def test_the_original_regression_is_still_silent(self):
+        """None of the above may reopen the bug this all started with."""
+        html = _page(
+            f'<main class="{_WP_MAIN}">'
+            '  <div class="x"><a href="/training/application-seminar/">A</a></div>'
+            '  <div class="x"><a href="/training/application-seminar/">B</a></div>'
+            "</main>"
+        )
+        assert _groups(html) == []

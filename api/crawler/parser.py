@@ -1468,6 +1468,52 @@ def _navigational_links(tag) -> list:
     return out
 
 
+def _looks_like_card(
+    tag,
+    card_classes: set[str],
+    card_tags: set[str],
+    non_card_classes: set[str] = frozenset(),
+    *,
+    article_count: int = 0,
+) -> bool:
+    """Does *tag* look like a card BY NAME — tag, class, denylist only?
+
+    Split out from `_is_card_container` so the candidate count can be taken
+    without recursing: the structural size guards need to know how many
+    candidates the page holds, and asking that question cannot itself depend on
+    the answer.
+    """
+    name = getattr(tag, "name", None)
+    if not name:
+        return False
+
+    # S1: never the page's main content region.
+    if name in _NEVER_CARD_TAGS:
+        return False
+    if (tag.get("role") or "").strip().casefold() == "main":
+        return False
+
+    classes = tag.get("class") or []
+    if isinstance(classes, str):
+        classes = classes.split()
+    folded = [c.casefold() for c in classes]
+
+    # Page-level wrappers and card INNER elements that survive token-boundary
+    # matching — "entry-content" legitimately starts with "entry-", and
+    # "wp-block-post-title" with "wp-block-post". Left unlisted, the walk halts
+    # at a card's own title block: a default WordPress block theme reported
+    # ZERO stacked links, and the Elementor Posts widget reported each defect
+    # twice with two different counts.
+    if any(_class_matches_pattern(c, p) for c in folded for p in non_card_classes):
+        return False
+
+    if name in card_tags:
+        # S3: <article> is a card on a LISTING; on a single-post template it
+        # wraps the whole post. Two or more articles means a listing.
+        return article_count >= 2 if name == "article" else True
+    return any(_class_matches_pattern(c, p) for c in folded for p in card_classes)
+
+
 def _is_card_container(
     tag,
     card_classes: set[str],
@@ -1476,6 +1522,7 @@ def _is_card_container(
     *,
     page_text_len: int = 0,
     article_count: int = 0,
+    card_candidate_count: int = 0,
     max_card_links: int = 15,
     max_card_text_fraction: float = 0.5,
     min_page_text_for_fraction: int = 500,
@@ -1489,49 +1536,28 @@ def _is_card_container(
     them, so the structural guards (S1) come first and do the load-bearing
     work; the class/tag patterns only decide which of the survivors is a card.
     """
-    name = getattr(tag, "name", None)
-    if not name:
-        return False
-
-    # ── S1: never the page's main content region ─────────────────────────
-    if name in _NEVER_CARD_TAGS:
-        return False
-    if (tag.get("role") or "").strip().casefold() == "main":
-        return False
-
-    classes = tag.get("class") or []
-    if isinstance(classes, str):
-        classes = classes.split()
-    folded = [c.casefold() for c in classes]
-
-    # Explicit page-level wrappers that survive token-boundary matching
-    # ("entry-content" legitimately starts with "entry-").
-    if any(_class_matches_pattern(c, p) for c in folded for p in non_card_classes):
-        return False
-
-    # ── Which survivors look like a card ─────────────────────────────────
-    matched = False
-    if name in card_tags:
-        # S3: <article> is a card on a LISTING; on a single-post template it
-        # wraps the whole post. Two or more articles means a listing.
-        matched = article_count >= 2 if name == "article" else True
-    if not matched:
-        matched = any(
-            _class_matches_pattern(c, p) for c in folded for p in card_classes
-        )
-    if not matched:
+    if not _looks_like_card(tag, card_classes, card_tags, non_card_classes,
+                            article_count=article_count):
         return False
 
     # ── S1 (cont.): a card is bounded ────────────────────────────────────
     # Run only on candidates, so the walk stays cheap on ordinary markup.
     if len(_navigational_links(tag)) > max_card_links:
         return False
-    # The text-share guard needs a page to be a share OF. Below
-    # `min_page_text_for_fraction` there is no surrounding page for a card to be
-    # half of — a one-card stub is legitimately most of its own text, and
-    # rejecting it would suppress a true finding to satisfy a ratio that carries
-    # no information at that size.
-    if page_text_len >= min_page_text_for_fraction:
+    # The text-share guard needs a page to be a share OF, and it only means
+    # anything when this container is the page's ONLY card candidate.
+    #
+    # Two ways it misfires otherwise, both measured:
+    #  - below `min_page_text_for_fraction` there is no surrounding page for a
+    #    card to be half of, and a one-card stub is legitimately most of its own
+    #    text;
+    #  - on a two-item listing where one card carries a long description and the
+    #    other a short one, the long card can hold >50% of the page's text and be
+    #    silently dropped while its identical sibling is reported. A page holding
+    #    SEVERAL card candidates is a listing, and none of them is the page —
+    #    the same reasoning as the 2+ `<article>` rule above.
+    only_candidate = card_candidate_count <= 1
+    if only_candidate and page_text_len >= min_page_text_for_fraction:
         own_text = len(tag.get_text(" ", strip=True))
         if own_text >= max_card_text_fraction * page_text_len:
             return False
@@ -1572,6 +1598,15 @@ def _find_stacked_links(soup: BeautifulSoup, page_url: str = "") -> list[dict]:
     body = soup.body or soup
     page_text_len = len(body.get_text(" ", strip=True))
     article_count = len(soup.find_all("article"))
+    # How many containers on this page look like a card by name. Several means
+    # a listing, and no single one of them is "the page" — so the text-share
+    # guard stands down (a long card beside a short one can hold >50% of a
+    # two-item listing's text and is still a card).
+    card_candidate_count = sum(
+        1 for el in body.find_all(True)
+        if _looks_like_card(el, card_classes, card_tags, non_card_classes,
+                            article_count=article_count)
+    )
 
     groups: list[dict] = []
     seen_containers: set[int] = set()
@@ -1584,6 +1619,7 @@ def _find_stacked_links(soup: BeautifulSoup, page_url: str = "") -> list[dict]:
                 parent, card_classes, card_tags, non_card_classes,
                 page_text_len=page_text_len,
                 article_count=article_count,
+                card_candidate_count=card_candidate_count,
                 max_card_links=max_card_links,
                 max_card_text_fraction=max_card_text_fraction,
                 min_page_text_for_fraction=min_page_text_for_fraction,

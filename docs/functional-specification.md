@@ -1514,7 +1514,21 @@ patterns are editorial strings the next theme will always defeat:
    `non_card_classes`.
 
 `<article>` counts as a card only when the page holds **2 or more** of them: on a
-listing it is a card, on a single-post template it wraps the whole post.
+listing it is a card, on a single-post template it wraps the whole post. The
+text-share guard likewise stands down when the page holds several card
+candidates — that is a listing, and no one of them is the page.
+
+`non_card_classes` carries card **inner elements** as well as page wrappers. A
+cold review found that `wp-block-post` matches `wp-block-post-title`
+token-bounded, so the upward walk halted at a card's own title block: the
+default WordPress block theme — the most common card grid on the web — reported
+**zero** stacked links, and the Elementor Posts widget reported each defect
+twice with two different counts. The same review found the bare `entry` pattern
+was never safe: every WordPress `entry-*` wrapper class is page-level, so it is
+replaced by the specific `entry-card` / `entry-item`. `hentry` is deliberately
+**not** denied — it sits on the query-loop item as well as the single-post
+wrapper, and denying it would trade the original false positives for false
+negatives on the check's most common shape.
 
 Evidence now names the container each group was grouped by (`container_tag` /
 `container_class`). Both fields were stored from the day E6 shipped and rendered

@@ -136,12 +136,16 @@ twice anywhere on the page". See functional-specification §4.15 E6.1.
 | Max share of page text a card may hold | 0.5 | `link_patterns.json` `max_card_text_fraction` |
 | Min page text before the text-share guard applies | 500 chars | `link_patterns.json` `min_page_text_for_fraction` |
 | `<article>` counts as a card when the page holds | ≥ 2 articles | `api/crawler/parser.py` `_is_card_container` |
+| Text-share guard applies only when the page holds | 1 card candidate | `api/crawler/parser.py` `_is_card_container` |
 | Tags that are never a card | `main`, `body`, `html`, `role="main"` | `api/crawler/parser.py` `_NEVER_CARD_TAGS` |
 | Class-pattern match mode | equals, or prefix + `-`/`_` | `api/crawler/parser.py` `_class_matches_pattern` |
 
-> The text-share guard is deliberately inert below `min_page_text_for_fraction`:
-> a ratio over a tiny denominator carries no information, and a one-card stub is
-> legitimately most of its own text.
+> The text-share guard is deliberately inert in two cases, both measured. Below
+> `min_page_text_for_fraction` a ratio over a tiny denominator carries no
+> information, and a one-card stub is legitimately most of its own text. And on
+> a page holding **several** card candidates — a listing — no one of them is
+> "the page": a long card beside a short one can hold >50% of a two-item
+> listing's text and was being dropped while its identical sibling was reported.
 
 ## Content extraction windows (ParsedPage)
 
