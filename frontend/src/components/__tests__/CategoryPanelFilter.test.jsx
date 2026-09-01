@@ -96,3 +96,47 @@ describe('CategoryPanel — domain issue filter', () => {
     expect(note).toHaveTextContent('12')
   })
 })
+
+describe('CategoryPanel — undoing a filter rule', () => {
+  beforeEach(() => { global.fetch.mockReset() })
+
+  it('the "show again" control DELETEs the rule it names', async () => {
+    // Gap found by a cold sweep: the add path was covered, the remove path
+    // was not, so a broken undo button would have shipped silently.
+    mockOk(FILTERED)
+    const user = userEvent.setup()
+    renderWithProviders(
+      <CategoryPanel jobId="j1" category={CATEGORY} domain="x.org" />)
+
+    await user.click(await screen.findByTestId('unfilter-severity:info'))
+
+    await waitFor(() => {
+      const del = global.fetch.mock.calls.find(
+        ([url, opts]) => String(url).includes('/api/domain-filters') && opts?.method === 'DELETE')
+      expect(del, 'no DELETE to /api/domain-filters was made').toBeTruthy()
+      const url = String(del[0])
+      expect(url).toContain('severity=info')
+      expect(url).toContain('domain=x.org')
+      // A severity rule must NOT be sent as an issue_code — CategoryPanel
+      // slices the "severity:" prefix, and getting that wrong would 404.
+      expect(url).not.toContain('issue_code')
+    })
+  })
+
+  it('the per-code "show again" control sends issue_code, not severity', async () => {
+    mockOk(FILTERED)
+    const user = userEvent.setup()
+    renderWithProviders(
+      <CategoryPanel jobId="j1" category={CATEGORY} domain="x.org" />)
+
+    await user.click(await screen.findByTestId('unfilter-H1_MISSING'))
+
+    await waitFor(() => {
+      const del = global.fetch.mock.calls.find(
+        ([url, opts]) => String(url).includes('/api/domain-filters') && opts?.method === 'DELETE')
+      expect(del).toBeTruthy()
+      expect(String(del[0])).toContain('issue_code=H1_MISSING')
+      expect(String(del[0])).not.toContain('severity=')
+    })
+  })
+})

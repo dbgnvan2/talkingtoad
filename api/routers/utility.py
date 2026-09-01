@@ -254,6 +254,14 @@ def _validate_filter_rule(body: "DomainFilterRequest") -> JSONResponse | None:
     """
     from api.crawler.checkers.registry import _CATALOGUE
 
+    from api.services.domain_filter import normalise_filter_domain
+    if not normalise_filter_domain(body.domain):
+        return _err(
+            "INVALID_DOMAIN",
+            f"{body.domain!r} does not name a host. A rule stored under an "
+            "empty key can never fire.",
+            422,
+        )
     has_code = bool(body.issue_code)
     has_sev = bool(body.severity)
     if has_code == has_sev:

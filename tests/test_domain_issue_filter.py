@@ -160,13 +160,52 @@ class TestTheFilterCannotFlatterTheSite:
         before = (await store.get_summary("j1"))["health_score"]
         await store.add_domain_filter("example.com", severity="info")
         after = (await store.get_summary("j1"))["health_score"]
+        # Liveness: if a catalogue severity ever changes, this test would
+        # otherwise become a comparison of two identical numbers over a filter
+        # that hid nothing.
+        from api.services.domain_filter import apply_domain_filter
+        _, _rep = apply_domain_filter([i.model_dump() for i in issues],
+                                      [{"issue_code": None, "severity": "info"}])
+        assert _rep["hidden"] > 0, "the fixture no longer exercises the filter"
         assert before == after, (
             f"the filter moved the health score {before} -> {after}. Hiding "
             "findings must never improve a grade."
         )
 
+    async def test_adversarial_more_rules_never_keeps_more(self, store):
+        """Real monotonicity: across RULE SETS, not against a function's own
+        input. `len(kept) <= len(issues)` was a tautology — it stayed green
+        both when the filter hid nothing and when it hid everything, because
+        no code path can add items."""
+        from api.services.domain_filter import apply_domain_filter
+        from api.crawler.checkers.registry import make_issue
+        from api.routers.crawl import _engine_issue_to_model
+        issues = [_engine_issue_to_model(make_issue(c, "https://example.com/p"), "j1").model_dump()
+                  for c in ("TITLE_TOO_SHORT", "H1_MISSING", "IMG_ALT_MISSING")]
+        none_, _ = apply_domain_filter(issues, [])
+        one, _ = apply_domain_filter(issues, [{"issue_code": "H1_MISSING", "severity": None}])
+        two, _ = apply_domain_filter(issues, [{"issue_code": "H1_MISSING", "severity": None},
+                                              {"issue_code": None, "severity": "info"}])
+        assert len(none_) >= len(one) >= len(two)
+        assert len(two) < len(none_), "the rule sets are not actually different"
+
+    async def test_the_severity_rule_key_format_is_pinned(self, store):
+        """`by_rule` keys are a contract. CategoryPanel.jsx does
+        `rule.startsWith('severity:')` and `rule.slice(9)` to build the undo
+        button, and filter_caveat_note parses the same shape. Changing the key
+        to a bare "severity" broke both and left all 3520 tests green, because
+        every existing assertion checked truthiness, or the CODE path only, or
+        hand-built the dict instead of getting it from the engine."""
+        from api.services.domain_filter import apply_domain_filter
+        from api.crawler.checkers.registry import make_issue
+        from api.routers.crawl import _engine_issue_to_model
+        issues = [_engine_issue_to_model(make_issue(c, "https://example.com/p"), "j1").model_dump()
+                  for c in ("TITLE_TOO_SHORT", "IMG_ALT_MISSING")]
+        _, report = apply_domain_filter(issues, [{"issue_code": None, "severity": "info"}])
+        assert report["by_rule"] == {"severity:info": 2}, report["by_rule"]
+
     async def test_adversarial_a_filter_never_increases_the_finding_count(self, store):
-        """Monotonicity: filtering can only remove."""
+        """Kept as a cheap sanity bound; the real property is the test above."""
         from api.services.domain_filter import apply_domain_filter
         from api.crawler.checkers.registry import make_issue
         from api.routers.crawl import _engine_issue_to_model
@@ -387,7 +426,10 @@ class TestTheExportsMatchTheScreen:
         this codebase has been fighting."""
         from api.services.domain_filter import apply_domain_filter, filter_issue_models
         issues = await self._job(store)
-        rules = [{"issue_code": None, "severity": "info"}]
+        # Both rule kinds: with severity only, a divergence in the CODE path
+        # went unnoticed here and was caught elsewhere by luck.
+        rules = [{"issue_code": None, "severity": "info"},
+                 {"issue_code": "H1_MISSING", "severity": None}]
         kept_models, rep_m = filter_issue_models(issues, rules)
         kept_dicts, rep_d = apply_domain_filter([i.model_dump() for i in issues], rules)
         assert {i.issue_code for i in kept_models} == {d["issue_code"] for d in kept_dicts}
@@ -402,10 +444,40 @@ class TestTheExportsMatchTheScreen:
         assert "TITLE_TOO_SHORT" in r.text, "the CSV lost findings the screen shows"
 
     async def test_excel_export_reflects_the_filter(self, test_store, auth_headers, api_client):
+        """Asserts the LIST, not the status code. The original body was
+        `status_code == 200 and len(content) > 0`, which stayed green when the
+        workbook was handed the full unfiltered set while still printing the
+        "Filtered view" caveat — a disclosure that was actively false, with
+        nothing red anywhere in 3520 tests."""
+        import io
+        from openpyxl import load_workbook
         await self._job(test_store)
         await test_store.add_domain_filter("example.com", issue_code="H1_MISSING")
         r = await api_client.get("/api/crawl/j1/export/excel", headers=auth_headers)
-        assert r.status_code == 200 and len(r.content) > 0
+        assert r.status_code == 200
+        wb = load_workbook(io.BytesIO(r.content))
+        # Exclude the caveat cell: it NAMES the hidden rule on purpose, which
+        # is the whole point of the disclosure. Everything else must not.
+        body = " ".join(str(c.value) for ws in wb.worksheets
+                        for row in ws.iter_rows() for c in row
+                        if c.value and not str(c.value).startswith("Filtered view"))
+        assert "H1_MISSING" not in body, "the workbook lists a finding the screen hides"
+        assert "TITLE_TOO_SHORT" in body, "the workbook lost findings the screen shows"
+
+    async def test_pdf_export_reflects_the_filter(self, test_store, auth_headers, api_client):
+        """The same for the PDF. Nothing pinned its list either."""
+        import io
+        from pypdf import PdfReader
+        await self._job(test_store)
+        await test_store.add_domain_filter("example.com", issue_code="H1_MISSING")
+        r = await api_client.get("/api/crawl/j1/export/pdf", headers=auth_headers)
+        assert r.status_code == 200
+        text = " ".join((pg.extract_text() or "")
+                        for pg in PdfReader(io.BytesIO(r.content)).pages)
+        # Same exclusion: the caveat names the rule deliberately.
+        body = text.replace("Filtered view", "").split("H1_MISSING (")[0] \
+            if "Filtered view" in text else text
+        assert "H1_MISSING" not in body, "the PDF lists a finding the screen hides"
 
     async def test_the_report_says_it_is_a_filtered_view(self, store):
         """Provenance, not different content. Without it, a forwarded PDF
@@ -428,12 +500,17 @@ class TestTheExportsMatchTheScreen:
     async def test_adversarial_an_unfiltered_export_is_byte_identical(self, test_store, auth_headers, api_client):
         """With no rules the export must be exactly what it was before this
         feature — so a bug cannot hide behind 'no filter configured'."""
-        await self._job(test_store)
+        seeded = {i.issue_code for i in await self._job(test_store)}
         a = (await api_client.get("/api/crawl/j1/export/csv", headers=auth_headers)).text
+        # The real property: with no rules, EVERY seeded finding is present.
+        # Comparing two post-feature exports to each other (the original form)
+        # let a no-rules bug hit both sides equally and stay green.
+        for code in seeded:
+            assert code in a, f"{code} missing from an unfiltered export"
         await test_store.add_domain_filter("example.com", issue_code="H1_MISSING")
         await test_store.remove_domain_filter("example.com", issue_code="H1_MISSING")
         b = (await api_client.get("/api/crawl/j1/export/csv", headers=auth_headers)).text
-        assert a == b
+        assert a == b, "add-then-remove did not return the export to its original state"
 
     async def test_the_pdf_states_it_is_filtered(self, test_store, auth_headers, api_client):
         """Wiring asserted at the artefact, not at the call. A note passed to a
@@ -463,3 +540,119 @@ class TestTheExportsMatchTheScreen:
         wb = load_workbook(io.BytesIO(r.content))
         text = " ".join(str(c.value) for c in wb["Summary"]["D"] if c.value)
         assert "Filtered view" in text, f"Summary D column carries no filter note: {text!r}"
+
+
+class TestTheFilterHidesRowsWithoutRewritingFacts:
+    """A cold sweep found the filter flipping factual claims in the exports.
+
+    Root cause, one mistake with several faces: the router filtered the
+    `issues` variable, and that variable feeds DERIVED FACTS as well as the
+    rendered list. Hiding a row is presentational; deciding "this site has an
+    llms.txt" from the presence of a row is not. Same shape as the 2026-08-29
+    `occurrences` bug — one field doing two jobs.
+    """
+
+    async def _job(self, store, codes):
+        from api.crawler.checkers.registry import make_issue
+        from api.routers.crawl import _engine_issue_to_model
+        job = CrawlJob(job_id="j1", target_url="https://example.com",
+                       started_at=datetime.now(timezone.utc))
+        await store.create_job(job)
+        await store.save_pages([CrawledPage(
+            job_id="j1", url="https://example.com/p", status_code=200,
+            title="t", crawled_at=datetime.now(timezone.utc))])
+        out = []
+        for c in codes:
+            i = _engine_issue_to_model(make_issue(c, "https://example.com/p"), "j1")
+            i.page_url = "https://example.com/p"
+            out.append(i)
+        await store.save_issues(out)
+        return out
+
+    async def test_d1_filtering_info_does_not_claim_llms_txt_exists(
+            self, test_store, auth_headers, api_client):
+        """LLMS_TXT_MISSING is `info`. Hiding it must not make the report say a
+        file was FOUND — that is a fabricated positive in a document that
+        leaves the building, and no caveat on another sheet repairs it."""
+        import io
+        from openpyxl import load_workbook
+        await self._job(test_store, ["LLMS_TXT_MISSING", "H1_MISSING"])
+        await test_store.add_domain_filter("example.com", severity="info")
+        r = await api_client.get("/api/crawl/j1/export/excel", headers=auth_headers)
+        wb = load_workbook(io.BytesIO(r.content))
+        if "AI Readiness" in wb.sheetnames:
+            status = " ".join(str(c.value) for row in wb["AI Readiness"].iter_rows()
+                              for c in row if c.value)
+            assert "FOUND" not in status or "MISSING" in status, (
+                f"the workbook asserts llms.txt was FOUND because the finding "
+                f"was filtered out: {status[:200]}"
+            )
+
+    async def test_d3_the_filter_is_applied_before_pagination(self, test_store):
+        """Filtering the already-sliced page yields empty pages behind a live
+        pager, a per-page `hidden` count, and a screen that disagrees with the
+        export about the same filter."""
+        from api.routers.crawl import get_results
+        await self._job(test_store, ["H1_MISSING"] * 60)
+        await test_store.add_domain_filter("example.com", issue_code="H1_MISSING")
+        r1 = await get_results(job_id="j1", page=1, limit=50, severity=None, store=test_store)
+        assert r1["pagination"]["total_issues"] == 0, (
+            f"the pager still advertises hidden rows: {r1['pagination']}"
+        )
+        assert r1["filtered"]["hidden"] == 60, (
+            f"`hidden` is per-page, so the banner under-reports: {r1['filtered']}"
+        )
+
+    async def test_d4_quick_wins_are_filtered_too(self, test_store):
+        """A quick win the reader cannot find anywhere in the list on the same
+        screen is worse than no quick win."""
+        from api.routers.crawl import get_results
+        await self._job(test_store, ["H1_MISSING", "TITLE_TOO_SHORT"])
+        await test_store.add_domain_filter("example.com", issue_code="H1_MISSING")
+        r = await get_results(job_id="j1", page=1, limit=50, severity=None, store=test_store)
+        assert "H1_MISSING" not in {q["issue_code"] for q in r.get("quick_wins", [])}, (
+            "a filtered code is still offered as a quick win"
+        )
+
+    async def test_adversarial_an_unfiltered_job_is_unaffected_by_all_of_this(self, test_store):
+        """Every fix above must be a no-op when no rules exist."""
+        from api.routers.crawl import get_results
+        await self._job(test_store, ["H1_MISSING", "TITLE_TOO_SHORT"])
+        r = await get_results(job_id="j1", page=1, limit=50, severity=None, store=test_store)
+        assert r["pagination"]["total_issues"] == 2
+        assert r["filtered"]["hidden"] == 0
+        assert len(r["issues"]) == 2
+
+
+class TestDomainNormalisationHoles:
+    @pytest.mark.parametrize("given,expected", [
+        ("example.com?utm=1", "example.com"),
+        ("example.com#frag", "example.com"),
+        ("https://example.com?utm=1", "example.com"),
+    ])
+    def test_d5_query_and_fragment_are_stripped_without_a_scheme(self, given, expected):
+        """The UI derives its domain by stripping only the scheme, so it takes
+        the no-scheme branch. A rule stored under `example.com` was never found
+        when the read path asked for `example.com?utm=1` — 200 OK, nothing
+        happens, which is the exact failure the function exists to prevent."""
+        from api.services.domain_filter import normalise_filter_domain
+        assert normalise_filter_domain(given) == expected
+
+    @pytest.mark.parametrize("given,expected", [
+        ("[::1]", "[::1]"),
+        ("[2001:db8::1]:8080", "[2001:db8::1]"),
+    ])
+    def test_d5_ipv6_literals_do_not_collapse_to_one_key(self, given, expected):
+        """`[2001:db8::1]` and `[::1]` both became `"["` on the port split, so
+        two different hosts shared one rule set."""
+        from api.services.domain_filter import normalise_filter_domain
+        assert normalise_filter_domain(given) == expected
+
+    async def test_d5_an_empty_or_pathological_domain_is_rejected(self, store):
+        """A rule that normalises to nothing can never fire, and accepting it
+        is the same defect the unknown-code 404 exists to prevent."""
+        from api.routers.utility import add_domain_filter, DomainFilterRequest
+        for bad in ("", "   ", "/foo/bar", "https://"):
+            resp = await add_domain_filter(
+                DomainFilterRequest(domain=bad, severity="info"), store=store)
+            assert getattr(resp, "status_code", 200) == 422, f"{bad!r} was accepted"

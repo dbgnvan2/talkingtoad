@@ -454,6 +454,46 @@ async def _filter_issue_models_for_domain(store, target_url: str, issues: list):
     return kept, filter_caveat_note(report)
 
 
+async def _paginate_filtered(store, job, *, severity=None, category=None,
+                             page: int, limit: int, exempt_urls):
+    """Fetch, filter, THEN slice. Returns (page_dicts, total, filtered_report).
+
+    The filter must run before pagination, not after. Filtering the already-
+    sliced page produced: empty pages behind a live pager (60 findings, one
+    rule, `limit=50` → page 1 shows nothing while the pager advertises two
+    pages); a per-page `hidden` count, so the banner said 50 when 60 were
+    hidden and said something different on every page; and a screen that
+    disagreed with the export, which counts over the whole job — falsifying
+    the whole point of sharing one rule engine.
+
+    When the domain has no rules this defers to the store's own pagination, so
+    the common path keeps its SQL LIMIT/OFFSET.
+    """
+    rules = []
+    try:
+        rules = await store.get_domain_filters(job.target_url)
+    except Exception as exc:
+        logger.warning("domain_filter_load_failed", extra={"error": str(exc)})
+
+    if not rules:
+        issues, total = await store.get_issues(
+            job_id=job.job_id, severity=severity, category=category,
+            page=page, limit=limit)
+        dicts = _apply_exempt_anchors([_issue_dict(i) for i in issues], exempt_urls)
+        from api.services.domain_filter import normalise_filter_domain
+        return dicts, total, {"hidden": 0, "by_rule": {},
+                              "domain": normalise_filter_domain(job.target_url)}
+
+    # Rules exist: the kept set cannot be known without seeing every row.
+    all_issues, _ = await store.get_issues(
+        job_id=job.job_id, severity=severity, category=category,
+        page=1, limit=100_000)
+    dicts = _apply_exempt_anchors([_issue_dict(i) for i in all_issues], exempt_urls)
+    kept, report = await _filter_for_domain(store, job.target_url, dicts)
+    start = (page - 1) * limit
+    return kept[start:start + limit], len(kept), report
+
+
 def _rescan_is_conclusive(status_code: int) -> bool:
     """Is this rescan evidence about the page's issues, or just a failed read?
 
@@ -701,6 +741,36 @@ async def _prevalence_for(store, job_id: str) -> list:
     except Exception as exc:  # noqa: BLE001
         logger.warning("prevalence_unavailable", extra={"job_id": job_id, "error": str(exc)})
         return []
+
+async def _prevalence_for_display(store, job, job_id: str) -> list:
+    """Prevalence rows with the domain filter applied.
+
+    Prevalence NAMES CODES as findings, so it follows the same rule as the
+    lists: a code that appears in the Prevalence sheet but nowhere else in the
+    workbook is the "quick win you cannot find" problem in another costume.
+    Distinct from the llms.txt status and the off-site joins, which state facts
+    about the SITE and therefore reason from the unfiltered set.
+    """
+    rows = await _prevalence_for(store, job_id)
+    if not rows:
+        return rows
+    try:
+        from api.services.domain_filter import _rule_sets
+        rules = await store.get_domain_filters(job.target_url)
+        if not rules:
+            return rows
+        codes, severities = _rule_sets(rules)
+        # The field is `code`, not `issue_code` (api/services/prevalence.py:41).
+        # Using the wrong name made getattr return None for every row, so the
+        # filter matched nothing and silently did nothing — the shape of bug
+        # this whole exercise is about.
+        return [r for r in rows
+                if getattr(r, "code", None) not in codes
+                and getattr(r, "severity", None) not in severities]
+    except Exception as exc:  # never fail an export over a filter
+        logger.warning("prevalence_filter_failed", extra={"error": str(exc)})
+        return rows
+
 
 
 def _with_prevalence(summary: dict, prevalences: list) -> dict:
@@ -1088,12 +1158,11 @@ async def get_results(
     if job is None:
         return _err("JOB_NOT_FOUND", "No crawl job found with the given ID.", 404)
 
-    issues, total = await store.get_issues(job_id, severity=severity, page=page, limit=limit)
     exempt_urls = await store.get_exempt_anchor_url_set()
-    issue_dicts = _apply_exempt_anchors([_issue_dict(i) for i in issues], exempt_urls)
-    issue_dicts, filtered = await _filter_for_domain(store, job.target_url, issue_dicts)
+    issue_dicts, total, filtered = await _paginate_filtered(
+        store, job, severity=severity, page=page, limit=limit, exempt_urls=exempt_urls)
     summary = await store.get_summary(job_id)
-    total_pages = max(1, math.ceil(total / limit))
+    total_pages = max(1, math.ceil(total / limit)) if total else 1
 
     # R5.4 — Quick-Wins list: every issue satisfying impact>=4 AND effort<=1,
     # independent of the paginated `issues` slice and of priority ordering. The
@@ -1103,10 +1172,13 @@ async def get_results(
     quick_wins = _apply_exempt_anchors(
         [_issue_dict(i) for i in all_issues if i.quick_win], exempt_urls
     )
+    # A quick win the reader cannot find anywhere in the list on the same
+    # screen is worse than no quick win at all.
+    quick_wins, _ = await _filter_for_domain(store, job.target_url, quick_wins)
 
     # E4 — the prevalence lens alongside per-page severity. Scoring is untouched;
     # this only tells the reader how much of the estate one defect touches.
-    summary = _with_prevalence(summary, await _prevalence_for(store, job_id))
+    summary = _with_prevalence(summary, await _prevalence_for_display(store, job, job_id))
 
     return {
         "job_id": job_id,
@@ -2081,8 +2153,12 @@ async def export_csv_full(
         return _err("JOB_NOT_FOUND", "No crawl job found with the given ID.", 404)
 
     issues = await store.get_all_issues(job_id)
-    # F1 — the exports show what the screen shows. Same rule engine as
-    # the results list, so the two cannot describe different sites.
+    # F1 — the exports show what the screen shows. Same rule engine as the
+    # results list, so the two cannot describe different sites. `issues` below
+    # is what gets LISTED; `_unfiltered_issues` is what the document REASONS
+    # FROM. Hiding a row is presentational — deriving a FACT about the site
+    # from the absence of a row is not.
+    _unfiltered_issues = list(issues)
     issues, _ = await _filter_issue_models_for_domain(store, job.target_url, issues)
     from urllib.parse import urlparse
     domain = urlparse(job.target_url).netloc.replace("www.", "")
@@ -2127,8 +2203,12 @@ async def export_pdf_report(
         # Continue with job settings as fallback
 
     issues = await store.get_all_issues(job_id)
-    # F1 — the exports show what the screen shows. Same rule engine as
-    # the results list, so the two cannot describe different sites.
+    # F1 — the exports show what the screen shows. Same rule engine as the
+    # results list, so the two cannot describe different sites. `issues` below
+    # is what gets LISTED; `_unfiltered_issues` is what the document REASONS
+    # FROM. Hiding a row is presentational — deriving a FACT about the site
+    # from the absence of a row is not.
+    _unfiltered_issues = list(issues)
     issues, _filter_note = await _filter_issue_models_for_domain(store, job.target_url, issues)
     summary = await store.get_summary(job_id)
 
@@ -2167,7 +2247,7 @@ async def export_pdf_report(
         logger.warning("page_priority_unavailable_for_report",
                        extra={"job_id": job_id, "error": str(exc)})
 
-    prevalence = await _prevalence_for(store, job_id)
+    prevalence = await _prevalence_for_display(store, job, job_id)
     summary = _with_prevalence(summary, prevalence)
 
     # D1 — off-site authority joined to the crawl. None when the producer
@@ -2177,12 +2257,18 @@ async def export_pdf_report(
         from api.services.offsite import build_offsite, to_dict as _offsite_dict
 
         if job.offsite_links:
+            # D2 — a FACT about the site, not a list of rows. Every
+            # BROKEN_LINK_* code is `info`, and offsite.py `continue`s on a
+            # broken match, so dropping one does not merely hide it: the page
+            # is RE-CLASSIFIED into earned_authority_poor_health, while the
+            # same PDF still prints "Broken Links: 1" from the unfiltered
+            # summary and contradicts itself.
             broken = {
-                i.page_url for i in issues
+                i.page_url for i in _unfiltered_issues
                 if i.issue_code.startswith("BROKEN_LINK_") and i.page_url
             }
             orphans = {
-                i.page_url for i in issues
+                i.page_url for i in _unfiltered_issues
                 if i.issue_code == "ORPHAN_PAGE" and i.page_url
             }
             offsite = _offsite_dict(build_offsite(
@@ -2222,6 +2308,7 @@ async def export_pdf_report(
         })
         pdf_bytes = await generate_pdf_report(
             job, issues, summary, filter_note=_filter_note,
+            all_issues=_unfiltered_issues,
             include_help=include_help,
             include_pages=include_pages,
             top_pages=top_pages_data,
@@ -2260,8 +2347,12 @@ async def export_excel_report(
         return _err("JOB_NOT_FOUND", "No crawl job found with the given ID.", 404)
 
     issues = await store.get_all_issues(job_id)
-    # F1 — the exports show what the screen shows. Same rule engine as
-    # the results list, so the two cannot describe different sites.
+    # F1 — the exports show what the screen shows. Same rule engine as the
+    # results list, so the two cannot describe different sites. `issues` below
+    # is what gets LISTED; `_unfiltered_issues` is what the document REASONS
+    # FROM. Hiding a row is presentational — deriving a FACT about the site
+    # from the absence of a row is not.
+    _unfiltered_issues = list(issues)
     issues, _filter_note = await _filter_issue_models_for_domain(store, job.target_url, issues)
     summary = await store.get_summary(job_id)
 
@@ -2284,7 +2375,7 @@ async def export_excel_report(
         logger.warning("page_priority_unavailable_for_excel",
                        extra={"job_id": job_id, "error": str(exc)})
 
-    prevalence = await _prevalence_for(store, job_id)
+    prevalence = await _prevalence_for_display(store, job, job_id)
     summary = _with_prevalence(summary, prevalence)
 
     try:
@@ -2298,6 +2389,7 @@ async def export_excel_report(
             priority_pages=priority_pages,
             prevalence=prevalence,
             filter_note=_filter_note,
+            all_issues=_unfiltered_issues,
         )
         return StreamingResponse(
             io.BytesIO(excel_bytes),

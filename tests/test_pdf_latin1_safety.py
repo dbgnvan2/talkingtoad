@@ -65,13 +65,36 @@ class TestTheGuardIsRealAndNarrow:
         assert pdf.clean_text("Plain ASCII, 100% intact.") == "Plain ASCII, 100% intact."
 
     def test_adversarial_the_cleaner_is_actually_reached_by_cell(self):
-        """Pins that the OVERRIDE is what protects us, not luck: with cleaning
-        removed, the em-dash case raises. Proven by calling fpdf's own
-        implementation directly, which is what the override bypasses."""
+        """Pins that OUR override is what protects us.
+
+        The first version built a raw `fpdf.FPDF` and asserted it raised —
+        which tests fpdf, not TalkingToad. Deleting TalkingToadReport.cell and
+        .multi_cell turned 21 of 25 tests in this file red and left that one
+        green. This version drives our own class and asserts the cleaning
+        actually happened, with a narrowed exception type so an unrelated
+        signature change cannot masquerade as protection.
+        """
+        pdf = TalkingToadReport()
+        # The override must transform the text, not merely pass it through.
+        assert pdf.clean_text("em — dash") != "em — dash"
+        assert pdf.clean_text("em — dash").encode("latin-1")   # now encodable
+
+        pdf.add_page()
+        pdf.set_font("helvetica", "", 10)
+        # And the override must be on the class we actually use, not inherited
+        # unchanged from fpdf.
+        assert TalkingToadReport.multi_cell is not __import__("fpdf").FPDF.multi_cell
+        assert TalkingToadReport.cell is not __import__("fpdf").FPDF.cell
+
+    def test_adversarial_raw_fpdf_still_fails_on_the_same_input(self):
+        """The control: unprotected fpdf genuinely cannot take this text, so
+        the protection above is doing real work."""
         from fpdf import FPDF
+        from fpdf.errors import FPDFUnicodeEncodingException
         raw = FPDF(orientation="P", unit="mm", format="Letter")
         raw.add_page()
         raw.set_font("helvetica", "", 10)
-        with pytest.raises(Exception):
+        # Named exactly: a bare `Exception` would let an unrelated signature
+        # change (a TypeError) masquerade as the protection working.
+        with pytest.raises(FPDFUnicodeEncodingException):
             raw.multi_cell(100, 5, "an em dash — here")
-            raw.output()

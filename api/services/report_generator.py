@@ -1071,9 +1071,15 @@ async def generate_pdf_report(
     prevalence: list | None = None,
     performance_failed: bool = False,
     filter_note: str | None = None,
+    all_issues: list[Issue] | None = None,
     include_blueprints: bool = False,
     offsite: dict | None = None,
 ) -> bytes:
+    # `issues` is what gets LISTED (filtered for this domain, if rules exist).
+    # `_all_issues` is what the report REASONS FROM — llms.txt presence and the
+    # off-site joins are facts about the site, not rows in a list. Defaults to
+    # `issues`, so an unfiltered caller is unaffected.
+    _all_issues = issues if all_issues is None else all_issues
     pdf = TalkingToadReport()
     pdf.alias_nb_pages()
     
@@ -1335,7 +1341,11 @@ async def generate_pdf_report(
     pdf.set_text_color(*COLOR_GRAY_800)
     pdf.cell(W, 8, "Status of live /llms.txt file:", new_x="LMARGIN", new_y="NEXT")
     
-    existing_issue = next((i for i in issues if i.issue_code == "LLMS_TXT_MISSING"), None)
+    # F1 — derived from the UNFILTERED set. Hiding a row is
+    # presentational; deciding a FACT about the site from the absence
+    # of a row is not. LLMS_TXT_MISSING is `info`, so the headline
+    # 'hide all info' rule made this assert the opposite of the truth.
+    existing_issue = next((i for i in _all_issues if i.issue_code == "LLMS_TXT_MISSING"), None)
     pdf.set_x(25.4)
     if existing_issue:
         pdf.set_font('helvetica', 'B', 10)

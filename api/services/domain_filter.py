@@ -22,6 +22,7 @@ Tests: tests/test_domain_issue_filter.py
 
 from __future__ import annotations
 
+import re
 from urllib.parse import urlparse
 
 # A rule is {"issue_code": str|None, "severity": str|None} with exactly one set.
@@ -40,12 +41,28 @@ def normalise_filter_domain(value: str) -> str:
     if not v:
         return ""
     if "//" in v:
-        v = urlparse(v).netloc or v
+        # No `or v` fallback: when a URL has no netloc the input names no host,
+        # and falling back to the raw string turned "https://" into the host
+        # "https" — a rule stored under a key nothing will ever look up.
+        v = urlparse(v).netloc
     else:
-        # `example.com/path` with no scheme — urlparse would call it all a path
-        v = v.split("/", 1)[0]
+        # No scheme: urlparse would call the whole thing a path. Strip the
+        # path, query and fragment by hand. The UI takes this branch — it
+        # derives its domain by removing only the scheme — so omitting `?`
+        # and `#` here meant a rule stored under `example.com` was never found
+        # when the read path asked for `example.com?utm=1`. 200 OK, and
+        # nothing happened: exactly the failure this function exists to stop.
+        v = re.split(r"[/?#]", v, maxsplit=1)[0]
     v = v.split("@")[-1]          # strip any credentials
-    v = v.split(":", 1)[0]        # strip the port
+    # Strip the port WITHOUT destroying an IPv6 literal. Splitting on the first
+    # ":" turned `[2001:db8::1]` into `"[2001"` and `[::1]` into `"["`, so two
+    # different hosts collapsed onto one rule set.
+    if v.startswith("["):
+        close = v.find("]")
+        if close != -1:
+            v = v[: close + 1]
+    else:
+        v = v.split(":", 1)[0]
     v = v.lower().strip(".")
     if v.startswith("www."):
         v = v[4:]

@@ -18,8 +18,15 @@ def generate_excel_report(
     prevalence: list | None = None,
     priority_pages_for_roadmap: list[dict] | None = None,
     filter_note: str | None = None,
+    all_issues: list[Issue] | None = None,
 ) -> bytes:
-    """Generate a multi-sheet Excel workbook from crawl data."""
+    """Generate a multi-sheet Excel workbook from crawl data.
+
+    `issues` is what gets LISTED (filtered for this domain, if rules exist).
+    `all_issues` is what the workbook REASONS FROM — defaults to `issues`, so
+    an unfiltered caller is unaffected.
+    """
+    all_issues = issues if all_issues is None else all_issues
     wb = Workbook()
     
     # ── Summary Sheet ──────────────────────────────────────────────────────
@@ -105,8 +112,11 @@ def generate_excel_report(
     ws_ai["A3"] = "Live /llms.txt status:"
     ws_ai["A3"].font = label_font
     
-    # Check if we have LLMS_TXT_MISSING in issues
-    is_missing = any(i.issue_code == "LLMS_TXT_MISSING" for i in issues)
+    # F1 — derived from the UNFILTERED set. Hiding a row is
+    # presentational; deciding a FACT about the site from the absence
+    # of a row is not. LLMS_TXT_MISSING is `info`, so the headline
+    # 'hide all info' rule made this assert the opposite of the truth.
+    is_missing = any(i.issue_code == "LLMS_TXT_MISSING" for i in all_issues)
     ws_ai["B3"] = "MISSING" if is_missing else "FOUND"
     
     ws_ai["A5"] = "Proposed /llms.txt Content:"
