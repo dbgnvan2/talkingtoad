@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useCrawl } from '../hooks/useCrawl.js'
-import { getRecentJobs, scanPage, discoverScope } from '../api.js'
+import { getRecentJobs, scanPage, discoverScope, rescanJob } from '../api.js'
 
 const ANALYSIS_TOGGLES = [
   { key: 'link_integrity', label: 'Link Integrity',  desc: 'Broken links, redirects, and status codes' },
@@ -43,6 +43,10 @@ export default function Home() {
   const [selectedTypes, setSelectedTypes] = useState({})  // { typeKey: true }
   const [selectedCats, setSelectedCats] = useState({})    // { categoryId: true }
   const [recentJobs, setRecentJobs] = useState([])
+  // Rescan state is keyed BY JOB, not a single flag: one row's in-flight
+  // rescan must not disable the other rows' buttons.
+  const [rescanningId, setRescanningId] = useState(null)
+  const [rescanErrors, setRescanErrors] = useState({})
   const [singleUrl, setSingleUrl] = useState('')
   const [singleLoading, setSingleLoading] = useState(false)
   const [singleError, setSingleError] = useState(null)
@@ -75,6 +79,24 @@ export default function Home() {
       .then(jobs => setRecentJobs(jobs))
       .catch(() => {})
   }, [])
+
+  async function handleRescan(jobId) {
+    setRescanningId(jobId)
+    setRescanErrors(prev => ({ ...prev, [jobId]: null }))
+    try {
+      const data = await rescanJob(jobId)
+      // A single-page rescan runs synchronously and is already complete;
+      // a crawl has only been queued, so it goes to the progress page.
+      navigate(data.mode === 'single_page'
+        ? `/results/${data.job_id}`
+        : `/progress/${data.job_id}`)
+    } catch (err) {
+      // No navigation and no list reload on failure: a failed rescan must not
+      // look like it consumed the scan it was launched from.
+      setRescanErrors(prev => ({ ...prev, [jobId]: err.message || 'Rescan failed' }))
+      setRescanningId(null)
+    }
+  }
 
   function toggleAnalysis(key) {
     setAnalyses(prev => ({ ...prev, [key]: !prev[key] }))
@@ -189,8 +211,11 @@ export default function Home() {
                   : job.status === 'failed' ? 'text-red-500'
                   : job.status === 'cancelled' ? 'text-gray-400'
                   : 'text-amber-500'
+                const rescanning = rescanningId === job.job_id
+                const rescanError = rescanErrors[job.job_id]
                 return (
-                  <li key={job.job_id} className="flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50">
+                  <li key={job.job_id} className="px-4 py-2.5 hover:bg-gray-50">
+                   <div className="flex items-center gap-3">
                     <div className="flex-1 min-w-0">
                       <p className="text-sm text-gray-800 truncate font-mono" title={job.target_url}>
                         {job.target_url.replace(/^https?:\/\//, '')}
@@ -207,6 +232,19 @@ export default function Home() {
                         )}
                       </div>
                     </div>
+                    {/* A running scan has nothing to re-run yet — the endpoint
+                        returns 409 for it, so don't offer the dead click. */}
+                    {!isRunning && (
+                      <button
+                        type="button"
+                        onClick={() => handleRescan(job.job_id)}
+                        disabled={rescanning}
+                        title="Re-run this scan with the same settings"
+                        className="flex-shrink-0 text-xs font-medium px-3 py-1.5 rounded-lg border border-gray-300 bg-white text-gray-700 hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                      >
+                        {rescanning ? 'Starting…' : 'Rescan'}
+                      </button>
+                    )}
                     <button
                       type="button"
                       onClick={() => navigate(isRunning ? `/progress/${job.job_id}` : `/results/${job.job_id}`)}
@@ -214,6 +252,12 @@ export default function Home() {
                     >
                       {isRunning ? 'View Progress' : 'View Results'}
                     </button>
+                   </div>
+                   {rescanError && (
+                     <p className="mt-1.5 text-xs text-red-600 bg-red-50 border border-red-200 rounded px-2 py-1">
+                       {rescanError}
+                     </p>
+                   )}
                   </li>
                 )
               })}

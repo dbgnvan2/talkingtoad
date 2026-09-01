@@ -673,3 +673,51 @@ class TestSectionHelp:
     def test_section_help_exported_as_default(self):
         text = self._load_section_help()
         assert "export default sectionHelp" in text, "sectionHelp.js must export default sectionHelp"
+
+
+def test_every_crawl_launching_endpoint_is_rate_limited():
+    """CRITICAL: every doorway into the crawl launcher carries the SAME limit.
+
+    Why this matters: `/start` has been rate-limited since it shipped, because
+    starting a crawl spends the user's bandwidth and hammers a third party's
+    server. `/{job_id}/rescan` (2026-09-01) is a second doorway into the same
+    launcher — an unlimited one would not be a new feature, it would be a
+    bypass of an existing control, and nothing about the response would say so.
+
+    Asserted structurally rather than by firing 11 requests: the limit is
+    "10/hour" in production and "10000/hour" under test, so a behavioural test
+    would pass on an endpoint carrying no decorator at all.
+
+    Spec: docs/pending/2026-09-01_rescan-from-home.md#R1
+    """
+    import ast
+
+    path = os.path.join(os.path.dirname(__file__), "..", "api", "routers", "crawl.py")
+    tree = ast.parse(open(path, encoding="utf-8").read())
+
+    # Endpoints that queue a crawl or a page fetch against a third-party server.
+    must_be_limited = {"start_crawl", "rescan_job", "discover_scope_endpoint"}
+    found: dict[str, list[str]] = {}
+
+    for node in ast.walk(tree):
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        if node.name not in must_be_limited:
+            continue
+        found[node.name] = [
+            ast.unparse(d) for d in node.decorator_list if "limiter.limit" in ast.unparse(d)
+        ]
+
+    missing = sorted(must_be_limited - set(found))
+    assert not missing, f"endpoint(s) not found in crawl.py: {missing}"
+
+    unlimited = sorted(name for name, decs in found.items() if not decs)
+    assert not unlimited, (
+        f"crawl-launching endpoint(s) with no rate limit: {unlimited}. "
+        f"Every doorway into the launcher must carry @limiter.limit."
+    )
+
+    limits = {name: decs[0] for name, decs in found.items()}
+    assert all("CRAWL_START_LIMIT" in d for d in limits.values()), (
+        f"crawl-launching endpoints must share CRAWL_START_LIMIT, got: {limits}"
+    )

@@ -196,6 +196,20 @@ export async function getRecentJobs(limit = 10) {
   return checkResponse(res)
 }
 
+// Re-run a past scan with the settings it was originally run with. Creates a
+// NEW job and leaves the source scan intact — the old scan is what the
+// comparison view measures the new one against.
+// Returns { job_id, source_job_id, mode: 'crawl'|'single_page', status, poll_url }.
+// `mode` decides where the caller navigates: a single-page rescan runs
+// synchronously and is already finished when this resolves.
+export async function rescanJob(jobId) {
+  const res = await fetch(`/api/crawl/${jobId}/rescan`, {
+    method: 'POST',
+    headers: authHeaders(),
+  })
+  return checkResponse(res)
+}
+
 export async function getPredefinedCodes() {
   const res = await fetch('/api/fixes/predefined-codes', { headers: authHeaders() })
   return checkResponse(res)

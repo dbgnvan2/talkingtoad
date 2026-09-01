@@ -961,28 +961,33 @@ async def discover_scope_endpoint(
     return result
 
 
-@router.post("/start", status_code=202, response_model=None)
-@limiter.limit(CRAWL_START_LIMIT)
-async def start_crawl(
-    request: Request,
-    body: dict,
+async def _launch_crawl(
+    *,
+    target_url: str,
+    settings: CrawlSettings,
+    sitemap_url: str | None,
+    priority_seed: dict | None,
+    store: SQLiteJobStore,
     background_tasks: BackgroundTasks,
-    store: SQLiteJobStore = Depends(get_store),
-) -> dict:
-    """Submit a new crawl job (spec §6.4 POST /api/crawl/start)."""
-    target_url, err = _normalise_and_validate_target(body.get("target_url", ""))
-    if err is not None:
-        return err
+) -> dict | JSONResponse:
+    """Resolve scope, create the job, and queue the background crawl.
 
-    sitemap_url = body.get("sitemap_url")
-    settings_data: dict = body.get("settings") or {}
-    settings = CrawlSettings(**{k: v for k, v in settings_data.items() if v is not None})
+    Purpose: give ``/start`` and ``/{job_id}/rescan`` ONE launch path. Two
+             hand-maintained copies of a crawl launcher is the shape that lets
+             a scope guard, a rate limit or a seed warning exist on one doorway
+             and not the other.
+    Spec:    docs/pending/2026-09-01_rescan-from-home.md#R1
+    Tests:   tests/test_rescan_job.py, tests/test_crawl_scope.py
+
+    ``priority_seed`` is already parsed and domain-guarded by the caller —
+    ``/start`` parses an upload, a rescan reuses the stored one.
+    """
+    scope_notes: list[str] = []
 
     # Partial scan: resolve the content-type selection into an authoritative URL
     # allowlist now, so a bad/empty selection fails fast with a clear message
     # rather than silently running a full crawl (P2/P6).
     scope_urls: set[str] | None = None
-    scope_notes: list[str] = []
     if settings.content_scope.mode == "types":
         cs = settings.content_scope
         if not cs.type_keys and not cs.category_ids:
@@ -1004,17 +1009,11 @@ async def start_crawl(
             extra={"target_url": target_url, "in_scope": len(scope_urls), "notes": scope_notes},
         )
 
-    # GSC priority upload (U1/U2, optional): the browser sends the parsed
-    # priority_pages.json object in the body as `gsc_priority`. Domain-guarded; a
-    # wrong-site/malformed file fails fast rather than silently seeding nothing.
-    priority_seed: dict | None = None
+    # GSC priority seed (U1/U2, optional), already parsed and domain-guarded by
+    # the caller. A rescan reuses the seed stored on the source job, so the
+    # crawl ordering carries over without re-uploading the file.
     priority_urls: list[str] | None = None
-    gsc_priority = body.get("gsc_priority")
-    if gsc_priority:
-        try:
-            priority_seed = parse_priority_upload(gsc_priority, target_url)
-        except PriorityUploadError as e:
-            return _err("INVALID_PRIORITY_FILE", str(e), 422)
+    if priority_seed:
         priority_urls = seed_urls(priority_seed)
         held = priority_seed["held_out_offdomain"] + priority_seed["held_out_blank"]
         note = f"GSC priority: seeded {priority_seed['used']} of {priority_seed['total']} pages"
@@ -1082,6 +1081,143 @@ async def start_crawl(
     if scope_notes:
         resp["scope_notes"] = scope_notes
     return resp
+
+
+@router.post("/start", status_code=202, response_model=None)
+@limiter.limit(CRAWL_START_LIMIT)
+async def start_crawl(
+    request: Request,
+    body: dict,
+    background_tasks: BackgroundTasks,
+    store: SQLiteJobStore = Depends(get_store),
+) -> dict:
+    """Submit a new crawl job (spec §6.4 POST /api/crawl/start)."""
+    target_url, err = _normalise_and_validate_target(body.get("target_url", ""))
+    if err is not None:
+        return err
+
+    settings_data: dict = body.get("settings") or {}
+    settings = CrawlSettings(**{k: v for k, v in settings_data.items() if v is not None})
+
+    # GSC priority upload (U1/U2, optional): the browser sends the parsed
+    # priority_pages.json object in the body as `gsc_priority`. Domain-guarded; a
+    # wrong-site/malformed file fails fast rather than silently seeding nothing.
+    priority_seed: dict | None = None
+    gsc_priority = body.get("gsc_priority")
+    if gsc_priority:
+        try:
+            priority_seed = parse_priority_upload(gsc_priority, target_url)
+        except PriorityUploadError as e:
+            return _err("INVALID_PRIORITY_FILE", str(e), 422)
+
+    return await _launch_crawl(
+        target_url=target_url,
+        settings=settings,
+        sitemap_url=body.get("sitemap_url"),
+        priority_seed=priority_seed,
+        store=store,
+        background_tasks=background_tasks,
+    )
+
+
+def _is_single_page_job(job: CrawlJob) -> bool:
+    """Did this job scan exactly one page, rather than crawl a site?
+
+    Spec:  docs/pending/2026-09-01_rescan-from-home.md#R2
+    Tests: tests/test_rescan_job.py
+
+    ``/scan-page`` created its job with DEFAULT ``CrawlSettings`` until
+    2026-09-01, so ``single_page`` reads False on a job that scanned one page.
+    Trusting that field alone would rescan every single-page audit already in
+    the database as a full-site crawl — up to 500 pages against the user's
+    server, from a button on a row that says "1 page", returning 202 and
+    looking entirely successful.
+
+    So the settings flag is checked FIRST (new jobs describe themselves), and
+    the orphan-detection marker `/scan-page` has always written is the fallback
+    for every job that predates the fix.
+    """
+    if job.settings and job.settings.single_page:
+        return True
+    marker = job.orphan_detection if isinstance(job.orphan_detection, dict) else {}
+    return marker.get("status") == "skipped_single_page"
+
+
+@router.post("/{job_id}/rescan", status_code=202, response_model=None)
+@limiter.limit(CRAWL_START_LIMIT)
+async def rescan_job(
+    request: Request,
+    job_id: str,
+    background_tasks: BackgroundTasks,
+    store: SQLiteJobStore = Depends(get_store),
+) -> dict | JSONResponse:
+    """Re-run a past scan with the settings it was originally run with.
+
+    Spec:  docs/pending/2026-09-01_rescan-from-home.md#R1
+    Tests: tests/test_rescan_job.py
+
+    Creates a NEW job and never touches the source one: the previous scan is
+    what ``/{job_id}/comparison`` measures the new one against, so overwriting
+    it would destroy the very thing a rescan is usually run to produce.
+
+    Carries the same rate limit as ``/start`` — a second unrated doorway into
+    the crawl launcher is a bypass of an existing control, not a new feature.
+    """
+    job = await store.get_job(job_id)
+    if job is None:
+        return _err("JOB_NOT_FOUND", "No crawl job found with the given ID.", 404)
+
+    if job.status in ("queued", "running"):
+        return _err(
+            "CRAWL_IN_PROGRESS",
+            "This scan is still running. Wait for it to finish, or cancel it, before rescanning.",
+            409,
+        )
+
+    # Re-validate the STORED url. SSRF safety is a property of now, not of when
+    # the URL was first accepted: the host may have been re-pointed at a private
+    # address since. A stored URL is caller-supplied input that has been sitting
+    # in a database.
+    target_url, err = _normalise_and_validate_target(job.target_url)
+    if err is not None:
+        return err
+
+    if _is_single_page_job(job):
+        # Same in-process delegation `verify-page` uses for `rescan_url`.
+        # `authenticated` is passed EXPLICITLY: called in-process rather than
+        # through FastAPI, an omitted `Query(False)` default arrives as a Query
+        # OBJECT, which is truthy — the rescan would silently sign in to
+        # WordPress and audit drafts. Unauthenticated is also the right answer:
+        # whether the original was a draft scan is not recorded on the job, and
+        # guessing would audit a draft as though it were live.
+        result = await scan_single_page(
+            url=target_url, authenticated=False, store=store
+        )
+        if isinstance(result, JSONResponse):
+            return result
+        return {
+            "job_id": result["job_id"],
+            "source_job_id": job_id,
+            "mode": "single_page",
+            "status": "complete",
+            "poll_url": f"/api/crawl/{result['job_id']}/status",
+        }
+
+    launched = await _launch_crawl(
+        target_url=target_url,
+        settings=job.settings or CrawlSettings(),
+        sitemap_url=job.sitemap_url,
+        priority_seed=job.priority_seed,
+        store=store,
+        background_tasks=background_tasks,
+    )
+    if isinstance(launched, JSONResponse):
+        return launched
+
+    logger.info("crawl_rescanned",
+                extra={"job_id": launched["job_id"], "source_job_id": job_id,
+                       "target_url": target_url})
+    return {**launched, "source_job_id": job_id, "mode": "crawl"}
 
 
 @router.get("/{job_id}", response_model=None)
@@ -1895,6 +2031,13 @@ async def scan_single_page(
         status="running",
         pages_crawled=0,
         pages_total=1,
+        # R2 (2026-09-01) — record HOW this job ran. Until this line, a
+        # single-page scan stored `single_page=False`, so anything reading the
+        # settings back to reproduce the job (the Rescan button) would launch a
+        # full-site crawl from a one-page audit. `single_page` is read only when
+        # building EngineCrawlSettings at crawl start, never in scoring or
+        # reporting, so recording it changes nothing else.
+        settings=CrawlSettings(single_page=True),
     )
     await store.create_job(job)
     job_id = job.job_id
