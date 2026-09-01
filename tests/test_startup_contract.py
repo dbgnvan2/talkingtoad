@@ -48,6 +48,8 @@ _UVICORN = re.compile(r"uvicorn\s+([A-Za-z_][\w.]*:[A-Za-z_]\w*)")
 # A `cd <dir> &&` prefix on the same line changes the working directory the
 # command is documented to run from.
 _CD_PREFIX = re.compile(r"cd\s+([\w./-]+)\s*&&")
+# `cd api` alone on a line, inside a fenced block.
+_BARE_CD = re.compile(r"^\s*(?:\$\s*)?cd\s+([\w./-]+)\s*$")
 
 
 def _documented_commands() -> list[tuple[str, str, str]]:
@@ -56,14 +58,28 @@ def _documented_commands() -> list[tuple[str, str, str]]:
     for label, path in _SOURCES.items():
         if not path.exists():
             pytest.fail(f"Documented-startup source is missing: {path.relative_to(REPO)}")
+        pending_cd: str | None = None
         for line in path.read_text(encoding="utf-8").splitlines():
+            # A `cd` on its OWN line changes the working directory for the
+            # commands that follow it in the same block. The first version of
+            # this only looked for `cd x &&` on the same line, so
+            #     cd api
+            #     uvicorn api.main:app
+            # passed while being unrunnable.
+            bare = _BARE_CD.match(line)
+            if bare:
+                pending_cd = bare.group(1)
+                continue
+            if not line.strip() or line.strip().startswith("```"):
+                pending_cd = None          # block boundary ends the cd's scope
             m = _UVICORN.search(line)
             if not m:
                 continue
             cd = _CD_PREFIX.search(line[: m.start()])
             # The Dockerfile's WORKDIR /app is the repo root (the build COPYs the
             # repo into /app), so its commands run from the root like the rest.
-            found.append((label, cd.group(1) if cd else ".", m.group(1)))
+            cwd = cd.group(1) if cd else (pending_cd or ".")
+            found.append((label, cwd, m.group(1)))
     return found
 
 

@@ -18,6 +18,7 @@ from unittest import mock
 import httpx
 import pytest
 import respx
+from fastapi.responses import JSONResponse
 
 from api.routers.crawl import (_PREPUBLICATION_NOISE_CODES,
                                _fetch_and_check_page, scan_single_page)
@@ -118,7 +119,8 @@ class TestAuthenticatedScan:
             res = await _fetch_and_check_page(
                 url=DRAFT, job_id="j", store=store, base_url=BASE,
                 authenticated=True)
-        assert not isinstance(res, object.__class__), "unexpected error response"
+        # `object.__class__` is `type`, so the original form here never fired.
+        assert not isinstance(res, JSONResponse), f"unexpected error response: {res}"
         assert res.page.title == "A New Team Member Page Awaiting Review", (
             "the authenticated fetch did not read the draft")
 

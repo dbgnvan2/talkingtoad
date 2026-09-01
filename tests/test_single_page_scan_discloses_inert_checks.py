@@ -89,18 +89,11 @@ def _cross_page_emitted_codes() -> set[str]:
     return codes
 
 
-def _codes_emitted_outside_cross_page() -> set[str]:
-    """Codes some checker OTHER than cross_page.py can emit.
-
-    check_page runs every one of those modules on the single-page path, so a
-    code appearing here is reachable there even if cross_page emits it too.
-    """
-    codes = set()
-    for path in (REPO / "api" / "crawler").rglob("*.py"):
-        if path.name == "cross_page.py":
-            continue
-        tree = ast.parse(path.read_text(encoding="utf-8"))
-        for node in ast.walk(tree):
+def _emitted_by(paths) -> dict[str, set[str]]:
+    """Map issue code -> the files that can emit it."""
+    out: dict[str, set[str]] = {}
+    for path in paths:
+        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
             if (
                 isinstance(node, ast.Call)
                 and isinstance(node.func, ast.Name)
@@ -109,25 +102,55 @@ def _codes_emitted_outside_cross_page() -> set[str]:
                 and isinstance(node.args[0], ast.Constant)
                 and isinstance(node.args[0].value, str)
             ):
-                codes.add(node.args[0].value)
-    return codes
+                out.setdefault(node.args[0].value, set()).add(path.name)
+    return out
+
+
+# Guarded off on the single-page path despite living in a module that DOES run
+# there: NOT_IN_SITEMAP needs `sitemap_urls is not None` and the router passes
+# None; HIGH_CRAWL_DEPTH needs `crawl_depth is not None` and parse_page leaves
+# it None on this path.
+_GUARDED_OFF = {"NOT_IN_SITEMAP", "HIGH_CRAWL_DEPTH"}
+
+
+def _single_page_modules() -> list[Path]:
+    """Everything the single-page path can actually execute.
+
+    Includes api/routers/crawl.py, which runs its OWN external-link pass and
+    emits EXTERNAL_LINK_SKIPPED / EXTERNAL_LINK_TIMEOUT. Leaving the router out
+    would have declared those two un-run when the endpoint can raise them.
+    Excludes engine.py, which is the full-crawl driver — an earlier version of
+    this walked all of api/crawler/ INCLUDING engine.py and therefore treated
+    ten crawl-only codes as reachable here, under-reporting the disclosure
+    while its reason string told the operator the list was complete.
+    """
+    checkers = [q for q in (REPO / "api" / "crawler" / "checkers").glob("*.py")
+                if q.name != "cross_page.py"]
+    return checkers + [REPO / "api" / "crawler" / "issue_checker.py",
+                       REPO / "api" / "routers" / "crawl.py"]
+
+
+def _cross_page_emitted_codes() -> set[str]:
+    return set(_emitted_by([CROSS_PAGE]))
+
+
+def _codes_reachable_on_the_single_page_path() -> set[str]:
+    return set(_emitted_by(_single_page_modules())) - _GUARDED_OFF
 
 
 def _expected_unreachable() -> set[str]:
     """Codes a single-page scan genuinely cannot produce.
 
-    NOT "everything cross_page emits" -- that rule was wrong and this test
-    caught it. CANONICAL_MISSING is emitted by cross_page.py AND by
-    metadata.py, and metadata.py runs on the single-page path, so declaring it
-    un-run would tell the operator to go run a full crawl for a check that had
-    already been performed. A false disclosure is worse than a missing one.
-
-    NOT_IN_SITEMAP is the mirror case: its only emitter (issue_checker.py) sits
-    behind `if sitemap_urls is not None`, and the router passes None, so it is
-    unreachable despite living on a module that does run.
+    NOT "everything cross_page emits" -- that rule was wrong twice. Once
+    because CANONICAL_MISSING is emitted by cross_page.py AND metadata.py, and
+    metadata.py runs here, so declaring it un-run would send the operator to
+    run a full crawl for a check already performed. And once because the
+    crawl-only codes in engine.py were missing entirely.
     """
-    reachable = _codes_emitted_outside_cross_page() - {"NOT_IN_SITEMAP"}
-    return (_cross_page_emitted_codes() | {"NOT_IN_SITEMAP"}) - reachable
+    engine = set(_emitted_by([REPO / "api" / "crawler" / "engine.py"]))
+    candidates = _cross_page_emitted_codes() | engine | _GUARDED_OFF
+    return {c for c in candidates - _codes_reachable_on_the_single_page_path()
+            if c in _CATALOGUE}
 
 
 def _flagged() -> set[str]:
@@ -208,8 +231,14 @@ class TestTheScanSaysWhatItDidNotDo:
             "an unauthenticated scan suppressed nothing; saying it did would "
             "misdescribe why these checks are missing"
         )
-        assert set(_PREPUBLICATION_NOISE_CODES) != set(resp["checks_not_run"]), (
-            "the two sets are being conflated"
+        # An inequality between a 3-element and a 14-element set proves
+        # nothing. What must hold is that the two answer different questions:
+        # NOINDEX_META is meaningless before publication but IS reachable on
+        # this path, so it must never appear in checks_not_run.
+        assert "NOINDEX_META" in _PREPUBLICATION_NOISE_CODES
+        assert "NOINDEX_META" not in resp["checks_not_run"], (
+            "a code that this scan CAN report is being declared un-run — the "
+            "pre-publication set and the unreachable set are being conflated"
         )
 
 
@@ -226,7 +255,7 @@ class TestTheDisclosureDoesNotOverclaim:
         single-page path. Flagging it was a false claim, caught by asking which
         codes the flagged set contains that some other checker can also raise.
         """
-        overclaimed = _flagged() & (_codes_emitted_outside_cross_page() - {"NOT_IN_SITEMAP"})
+        overclaimed = _flagged() & (_codes_reachable_on_the_single_page_path())
         assert not overclaimed, (
             f"declared un-run, but another checker on the single-page path can "
             f"raise them: {sorted(overclaimed)}"
@@ -236,4 +265,39 @@ class TestTheDisclosureDoesNotOverclaim:
         """Pins the specific regression rather than only the general rule, so a
         future change to the derivation cannot quietly re-introduce it."""
         assert "CANONICAL_MISSING" not in _flagged()
-        assert "CANONICAL_MISSING" in _codes_emitted_outside_cross_page()
+        assert "CANONICAL_MISSING" in _codes_reachable_on_the_single_page_path()
+
+
+class TestTheRescanPathDisclosesToo:
+    """The rescan endpoint runs the same single-page path, so the same codes
+    are unreachable — and there the omission is worse: `resolved` can read as
+    "these are now fixed" when the check simply never ran.
+
+    That copy of the disclosure had no test; deleting it left the suite green
+    while deleting the /scan-page copy turned three red.
+    """
+
+    async def test_rescan_declares_checks_it_did_not_run(self, store):
+        from datetime import datetime, timezone
+        from api.models.job import CrawlJob
+        from api.models.page import CrawledPage
+        from api.routers.crawl import rescan_url
+        from api.crawler.normaliser import normalise_url
+
+        job = CrawlJob(job_id="j1", target_url=BASE,
+                       started_at=datetime.now(timezone.utc))
+        await store.create_job(job)
+        await store.save_pages([CrawledPage(
+            job_id="j1", url=normalise_url(PAGE), status_code=200, title="t",
+            crawled_at=datetime.now(timezone.utc))])
+
+        with respx.mock(assert_all_mocked=False, assert_all_called=False) as rx:
+            rx.get(PAGE).mock(return_value=httpx.Response(
+                200, text=CLEAN_HTML, headers={"content-type": "text/html"}))
+            rx.route().mock(return_value=httpx.Response(200, text="ok"))
+            resp = await rescan_url(job_id="j1", url=PAGE, store=store)
+
+        assert set(resp["checks_not_run"]) == _flagged(), (
+            "the rescan response does not declare the checks it could not run"
+        )
+        assert resp.get("checks_not_run_reason")

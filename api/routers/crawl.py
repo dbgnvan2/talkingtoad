@@ -172,6 +172,11 @@ class _PageCheckResult:
     fetch_result: Any                       # raw FetchResult from fetcher
     issues: list[Issue] = field(default_factory=list)   # Pydantic Issue models
     exempt_urls: set[str] = field(default_factory=set)  # for exempt anchor filtering
+    # E1.2 — the fetch returned >= 400 and issue_for_status produced nothing,
+    # i.e. we could not read the page and have no finding to show for it.
+    # Without this the caller sees an empty issue list and cannot tell a
+    # blocked page from a clean one (P2).
+    page_unreadable: bool = False
 
 
 async def _fetch_and_check_page(
@@ -286,6 +291,11 @@ async def _fetch_and_check_page(
             fetch_result=result,
             issues=err_issues,
             exempt_urls=exempt_urls,
+            # E1.2 — issue_for_status covers 404, 410, 503 and 5xx only. Every
+            # other 4xx (401, 403, 405, 429, 451 …) yields None, so without
+            # this flag a Cloudflare-blocked or rate-limited page is returned
+            # with zero issues and reads as clean.
+            page_unreadable=not err_issues,
         )
 
     eng_issues = check_page(
@@ -396,6 +406,29 @@ _CHECKS_NOT_RUN_REASON = (
     "not evaluate them. Their absence from the findings is not a pass — run a "
     "full crawl to have them checked."
 )
+
+
+def _rescan_is_conclusive(status_code: int) -> bool:
+    """Is this rescan evidence about the page's issues, or just a failed read?
+
+    A rescan deletes the URL's stored issues and writes the difference to the
+    fixed-issues ledger. That is only sound when the fetch actually told us
+    something about the page:
+
+      - 2xx/3xx: we read it. Whatever is gone is genuinely fixed.
+      - 404/410: the page is gone. Its old findings genuinely no longer apply.
+      - anything else >= 400 (401, 403, 405, 429, 451, 5xx) and status 0:
+        we learned nothing. Treating "no issues found" as "all issues fixed"
+        writes a transient block into the ledger as a permanent positive (P1),
+        which is the one outcome the operator cannot undo by re-running.
+
+    E1.2 — tests/test_error_pages_not_audited.py.
+    """
+    if status_code == 0:
+        return False
+    if status_code in (404, 410):
+        return True
+    return status_code < 400
 
 
 def _checks_a_single_page_scan_cannot_run() -> list[str]:
@@ -1260,6 +1293,41 @@ async def rescan_url(
     new_issues = check.issues
     exempt_urls = check.exempt_urls
 
+    # E1.2 — bail out before ANY write when the fetch told us nothing.
+    # issue_for_status covers 404/410/503/5xx; every other 4xx yields None, so
+    # a Cloudflare block (403) or a rate limit (429) produced an empty issue
+    # list. Continuing past here did two irreversible things: it overwrote the
+    # stored page record with the ERROR page's parse (losing the real title,
+    # H1 and word count), and it deleted the URL's findings and wrote them to
+    # the fixed-issues ledger as RESOLVED. A transient block became a
+    # permanent positive in data the operator acts on (P1), silently (P2).
+    if not _rescan_is_conclusive(result.status_code):
+        existing = sum(len(v) for v in old_by_cat.values())
+        logger.warning(
+            "rescan_inconclusive",
+            extra={"job_id": job_id, "url": url, "status": result.status_code},
+        )
+        return {
+            "url": url,
+            "status_code": result.status_code,
+            "page_unreadable": True,
+            "old_count": existing,
+            "new_count": existing,
+            "resolved": 0,
+            "added": 0,
+            "resolved_codes": [],
+            "total_issues": existing,
+            "by_category": {k: [_issue_dict(i) for i in v] for k, v in old_by_cat.items()},
+            "caveat": (
+                f"The page could not be read (HTTP {result.status_code}), so "
+                "nothing was re-checked and no finding was marked fixed. "
+                "Stored results are unchanged. A 403 or 429 is usually bot "
+                "protection or rate limiting rather than a change to the page."
+            ),
+            "checks_not_run": _checks_a_single_page_scan_cannot_run(),
+            "checks_not_run_reason": _CHECKS_NOT_RUN_REASON,
+        }
+
     # Update the stored page record with fresh data from the rescan.
     # crawl_depth is preserved from the original record (single-page rescan has no depth context).
     updated_page = _engine_page_to_model(page, job_id)
@@ -1445,7 +1513,18 @@ async def scan_single_page(
     from api.crawler.image_analyzer import analyze_batch as analyze_images
 
     all_images: list[ImageInfo] = []
-    if page.image_data:
+    # E1.3 — the E1 guard lives in _fetch_and_check_page, and this endpoint
+    # continued past it using `check.page`, which on a 4xx is the parsed ERROR
+    # TEMPLATE. A 404 page carrying two <img> tags therefore stored
+    # IMG_ALT_MISSING / IMG_ALT_GENERIC / IMG_ALT_TOO_SHORT against a URL that
+    # does not exist, and counted them in the response — the same defect E1
+    # was written to remove, one layer up. The functional spec claimed the path
+    # "returns the BROKEN_LINK_* finding alone for any response >= 400"; that
+    # was true of the helper, not of this endpoint.
+    if result.status_code >= 400:
+        logger.info("scan_page_images_skipped_error_page",
+                    extra={"url": url, "status": result.status_code})
+    elif page.image_data:
         # IM1 — measure pixel dimensions here too. Without this pass
         # IMG_OVERSCALED / IMG_NO_SRCSET / IMG_DUPLICATE_CONTENT /
         # IMG_SLOW_LOAD / IMG_POOR_COMPRESSION are silently dead on the

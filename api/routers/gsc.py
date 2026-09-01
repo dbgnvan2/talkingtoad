@@ -207,6 +207,10 @@ async def gsc_callback(
     if not stored:
         raise HTTPException(status_code=400, detail="Invalid state parameter")
 
+    # Every other GSC route guards first; this one did not, so on a
+    # deployment without google-* it raised GoogleLibrariesUnavailable as
+    # a 500 instead of the documented 503.
+    _require_gsc_configured()
     flow = build_flow(state=state)
     flow.code_verifier = stored["code_verifier"]
 

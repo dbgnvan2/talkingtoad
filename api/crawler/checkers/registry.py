@@ -869,6 +869,7 @@ _CATALOGUE: dict[str, _IssueSpec] = {
     ),
     # ── Redirects ─────────────────────────────────────────────────────────
     "REDIRECT_LOOP": _IssueSpec(
+        needs_full_crawl=True,
         category="redirect", severity="critical",
         description="Redirect loop detected",
         recommendation="Fix the redirect configuration immediately. This page cannot load and is invisible to search engines.",
@@ -922,6 +923,7 @@ _CATALOGUE: dict[str, _IssueSpec] = {
     ),
     # ── Crawlability ──────────────────────────────────────────────────────
     "PAGE_TIMEOUT": _IssueSpec(
+        needs_full_crawl=True,
         category="crawlability", severity="warning",
         description="Page did not respond within the timeout period",
         recommendation="Check the page manually. A persistent timeout may indicate a slow server, "
@@ -930,6 +932,7 @@ _CATALOGUE: dict[str, _IssueSpec] = {
         fixability="developer_needed",
     ),
     "LOGIN_REDIRECT": _IssueSpec(
+        needs_full_crawl=True,
         category="crawlability", severity="info",
         description="Page redirects to a login screen",
         recommendation="This page requires a login to access. The crawler cannot audit it. Review manually if needed.",
@@ -937,6 +940,7 @@ _CATALOGUE: dict[str, _IssueSpec] = {
         fixability="developer_needed",
     ),
     "ROBOTS_BLOCKED": _IssueSpec(
+        needs_full_crawl=True,
         category="crawlability", severity="critical",
         description="Page blocked by robots.txt",
         recommendation="Check whether this page should be blocked. If not, update your robots.txt file.",
@@ -1001,6 +1005,7 @@ _CATALOGUE: dict[str, _IssueSpec] = {
         fixability="developer_needed",
     ),
     "HIGH_CRAWL_DEPTH": _IssueSpec(
+        needs_full_crawl=True,
         category="crawlability", severity="warning",
         description="Page is more than 4 clicks from the homepage",
         recommendation="Improve internal linking so this page can be reached in 3 clicks or fewer from the homepage.",
@@ -1064,6 +1069,7 @@ _CATALOGUE: dict[str, _IssueSpec] = {
         fixability="developer_needed",
     ),
     "WWW_CANONICALIZATION": _IssueSpec(
+        needs_full_crawl=True,
         category="security", severity="warning", scope="site",
         description="Both www and non-www versions of the site resolve without redirecting to each other",
         recommendation="Configure a 301 redirect so one version (www or non-www) redirects to the other. This consolidates link equity and avoids duplicate content.",
@@ -1340,6 +1346,7 @@ _CATALOGUE: dict[str, _IssueSpec] = {
         fixability="wp_fixable",
     ),
     "HTTPS_REDIRECT_MISSING": _IssueSpec(
+        needs_full_crawl=True,
         category="security", severity="warning", scope="site",
         description="HTTP version of the site does not redirect to HTTPS",
         recommendation="Configure a server-side 301 redirect from http:// to https:// for all URLs on your domain. "
@@ -1359,6 +1366,7 @@ _CATALOGUE: dict[str, _IssueSpec] = {
     ),
     # ── AI Readiness ──────────────────────────────────────────────────────
     "LLMS_TXT_MISSING": _IssueSpec(
+        needs_full_crawl=True,
         category="ai_readiness", severity="info",
         description="No llms.txt found at root",
         recommendation="Create an /llms.txt file to help LLMs and AI agents (Gemini, Perplexity) "
@@ -1367,6 +1375,7 @@ _CATALOGUE: dict[str, _IssueSpec] = {
         fixability="content_edit",
     ),
     "LLMS_TXT_INVALID": _IssueSpec(
+        needs_full_crawl=True,
         category="ai_readiness", severity="info",
         description="/llms.txt format is invalid",
         recommendation="Per llmstxt.org, the only required element is a Markdown '# Title' H1 heading; "
@@ -1816,6 +1825,7 @@ _CATALOGUE: dict[str, _IssueSpec] = {
         fixability="content_edit",
     ),
     "AI_TXT_MISSING": _IssueSpec(
+        needs_full_crawl=True,
         category="ai_readiness", severity="info",
         description="No /ai.txt file found at site root",
         recommendation="Consider creating /ai.txt to declare AI usage policies and content permissions. "

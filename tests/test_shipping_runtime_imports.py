@@ -73,17 +73,49 @@ def _has_future_annotations(tree: ast.Module) -> bool:
 
 
 def _bound_names(tree: ast.Module) -> set[str]:
-    """Names the module defines or imports anywhere."""
+    """Names bound at MODULE SCOPE and available when annotations evaluate.
+
+    Deliberately not `ast.walk`. An earlier version walked the whole tree, so
+    any binding anywhere counted, and two live routes back to the bug slipped
+    through — both proven to leave the check green while the module raised
+    NameError on 3.11:
+
+      - `if TYPE_CHECKING: from x import Y` — exactly what a type checker
+        tells you to do with an annotation-only import, and False at runtime.
+      - a function-local import — which is the very remedy applied to
+        gsc_client.py in the same commit as this file.
+
+    Function bodies are skipped for the same reason: a name bound inside a
+    function is not available when a module-level def evaluates its
+    annotations. `try/except ImportError` at module level DOES bind, so it is
+    walked.
+    """
     names: set[str] = set()
-    for node in ast.walk(tree):
-        if isinstance(node, (ast.Import, ast.ImportFrom)):
-            names.update((a.asname or a.name).split(".")[0] for a in node.names)
-        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
-            names.add(node.name)
-        elif isinstance(node, ast.Assign):
-            names.update(t.id for t in node.targets if isinstance(t, ast.Name))
-        elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
-            names.add(node.target.id)
+
+    def visit(body):
+        for node in body:
+            if isinstance(node, (ast.Import, ast.ImportFrom)):
+                names.update((a.asname or a.name).split(".")[0] for a in node.names)
+            elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                names.add(node.name)          # the name, NOT the body
+            elif isinstance(node, ast.Assign):
+                names.update(x.id for x in node.targets if isinstance(x, ast.Name))
+            elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+                names.add(node.target.id)
+            elif isinstance(node, ast.If):
+                if _is_type_checking_guard(node.test):
+                    visit(node.orelse)        # the body never runs
+                else:
+                    visit(node.body)
+                    visit(node.orelse)
+            elif isinstance(node, ast.Try):
+                visit(node.body)
+                visit(node.orelse)
+                visit(node.finalbody)
+                for h in node.handlers:
+                    visit(h.body)
+
+    visit(tree.body)
     return names
 
 
@@ -174,10 +206,15 @@ class TestAnnotationsResolveAtImportTime:
         assert _unresolved_annotation_names(p) == set()
 
 
-class TestTheAppOnlyNeedsDeclaredDependencies:
-    def _closure_third_party(self) -> dict[str, set[str]]:
-        """Top-level third-party packages imported AT IMPORT TIME by anything
-        api.main pulls in."""
+def _walk_import_closure() -> tuple[dict[str, set[str]], set[str]]:
+    """Walk api.main's import closure ONCE and return (third_party, modules_seen).
+
+    Both tests below consume this. An earlier version had the coverage guard
+    re-implement the walk in its own body, so the guard passed over a broken
+    walk -- it was checking its own copy, not the one under test. Returning
+    both values from a single traversal makes that impossible.
+    """
+    if True:
         files = _modules()
         seen: set[str] = set()
         queue = ["api.main"]
@@ -198,7 +235,12 @@ class TestTheAppOnlyNeedsDeclaredDependencies:
             for top in _module_level_import_roots(tree):
                 if top not in STDLIB and not top.startswith("api"):
                     third.setdefault(top, set()).add(mod)
-        return third
+    return third, seen
+
+
+class TestTheAppOnlyNeedsDeclaredDependencies:
+    def _closure_third_party(self) -> dict[str, set[str]]:
+        return _walk_import_closure()[0]
 
     def test_importing_the_app_needs_only_declared_dependencies(self):
         declared = _declared_importable_names()
@@ -218,30 +260,21 @@ class TestTheAppOnlyNeedsDeclaredDependencies:
         )
 
     def test_the_closure_actually_reaches_the_routers(self):
-        """Guards the guard: the first version of this walk queued `api.routers`
-        for `from api.routers import gsc` and never reached the module with the
-        undeclared import, so it reported a clean result over the live bug."""
-        files = _modules()
-        seen: set[str] = set()
-        queue = ["api.main"]
-        while queue:
-            mod = queue.pop()
-            if mod in seen or mod not in files:
-                continue
-            seen.add(mod)
-            tree = ast.parse(files[mod].read_text(encoding="utf-8"))
-            for n in ast.walk(tree):
-                if isinstance(n, ast.ImportFrom) and n.module and n.module.startswith("api"):
-                    queue.append(n.module)
-                    queue.extend(f"{n.module}.{a.name}" for a in n.names)
-                elif isinstance(n, ast.Import):
-                    queue.extend(a.name for a in n.names if a.name.startswith("api"))
+        """Guards the guard, by consuming the SAME walk the test above uses.
+
+        The first version of this walk queued `api.routers` for
+        `from api.routers import gsc` and never reached the module with the
+        undeclared import, reporting a clean result over the live bug. An
+        earlier version of THIS test re-implemented the walk correctly in its
+        own body, so it stayed green while the real one was broken -- it was
+        asserting about its own copy.
+        """
+        _, seen = _walk_import_closure()
         assert "api.services.gsc_client" in seen, (
-            "the import closure no longer reaches gsc_client — the dependency "
+            "the import closure no longer reaches gsc_client -- the dependency "
             "check above is blind to whatever else it now misses"
         )
         assert len(seen) > 100, f"closure suspiciously small: {len(seen)} modules"
-
 
 def _module_level_import_roots(tree: ast.Module) -> list[str]:
     """Top-level package names imported in the module body.
@@ -342,3 +375,43 @@ class TestTheDependencyCheckDiscriminates:
         the dependency genuinely optional."""
         tree = ast.parse("def f():\n    import nonexistent_pkg\n    return nonexistent_pkg\n")
         assert "nonexistent_pkg" not in _module_level_import_roots(tree)
+
+
+class TestTheAnnotationCheckHasNoEscapeHatches:
+    """Both of these left the check green while the module raised NameError on
+    the pinned 3.11. They are the two routes a well-meaning change takes.
+    """
+
+    def test_adversarial_a_type_checking_only_import_does_not_satisfy_an_annotation(self, tmp_path):
+        """What a type checker tells you to do with an annotation-only import.
+        TYPE_CHECKING is False at runtime, so the name is absent when a
+        module-level def evaluates its annotations."""
+        p = tmp_path / "a.py"
+        p.write_text(
+            "from typing import TYPE_CHECKING\n"
+            "if TYPE_CHECKING:\n    from decimal import Decimal\n"
+            "def f(x: Decimal) -> None: ...\n"
+        )
+        assert _unresolved_annotation_names(p) == {"Decimal"}
+
+    def test_adversarial_a_function_local_import_does_not_satisfy_an_annotation(self, tmp_path):
+        """The exact remedy applied to gsc_client.py in the same commit as this
+        file — correct there, and not a substitute for a module-level import
+        when a module-level annotation needs the name."""
+        p = tmp_path / "b.py"
+        p.write_text(
+            "def _lazy():\n    from decimal import Decimal\n    return Decimal\n"
+            "def f(x: Decimal) -> None: ...\n"
+        )
+        assert _unresolved_annotation_names(p) == {"Decimal"}
+
+    def test_adversarial_a_module_level_try_import_does_satisfy_it(self, tmp_path):
+        """The inverse: `try: import x / except ImportError:` DOES run at
+        import, so it must NOT be flagged, or the check pushes people to
+        silence it."""
+        p = tmp_path / "c.py"
+        p.write_text(
+            "try:\n    from decimal import Decimal\nexcept ImportError:\n    Decimal = None\n"
+            "def f(x: Decimal) -> None: ...\n"
+        )
+        assert _unresolved_annotation_names(p) == set()

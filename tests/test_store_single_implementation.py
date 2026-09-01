@@ -49,8 +49,19 @@ class TestNoSecondImplementation:
         for path in _py_files():
             tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
             for node in ast.walk(tree):
-                if isinstance(node, ast.ImportFrom) and "redis_store" in (node.module or ""):
+                if isinstance(node, ast.ImportFrom) and (
+                    "redis_store" in (node.module or "")
+                    # `from api.services import redis_store` puts it in names,
+                    # not in module — the earlier version checked only module
+                    # and let this form through.
+                    or any("redis_store" in a.name for a in node.names)
+                ):
                     offenders.append(f"{path.relative_to(REPO)}:{node.lineno} imports redis_store")
+                elif isinstance(node, ast.ClassDef) and node.name == "RedisJobStore":
+                    # A resurrection under a new filename is a ClassDef, which
+                    # is neither a Name nor an Attribute, so the checks below
+                    # would not see it.
+                    offenders.append(f"{path.relative_to(REPO)}:{node.lineno} redefines RedisJobStore")
                 elif isinstance(node, ast.Import):
                     for alias in node.names:
                         if "redis_store" in alias.name:

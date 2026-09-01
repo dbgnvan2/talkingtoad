@@ -12,6 +12,8 @@ import os
 import time
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import importlib.util
+
 import pytest
 
 # GSC is opt-in and local-only: google-* is in neither requirements.txt nor the
@@ -20,7 +22,17 @@ import pytest
 # skip, rather than fail and make the shipping-config test run look broken.
 # api.services.gsc_client itself imports google lazily and degrades to a 503,
 # which is covered by tests/test_shipping_runtime_imports.py.
-pytest.importorskip("googleapiclient", reason="optional google-* packages not installed")
+# A module-level importorskip here was WRONG: it skipped the whole file when
+# google-* was absent, including TestOptInGuarantee — the tests that assert
+# every GSC endpoint returns 503 when GSC cannot run. Those need no Google
+# library at all, and the environment where they are skipped (CI, which
+# installs requirements.txt only) is precisely the one where the 503 matters.
+# Proven: gutting the 503 raise and running with googleapiclient unimportable
+# left the suite green. The skip is now per-class, on the classes that
+# genuinely drive the Google client.
+_HAS_GOOGLE = importlib.util.find_spec("googleapiclient") is not None
+requires_google = pytest.mark.skipif(
+    not _HAS_GOOGLE, reason="optional google-* packages not installed")
 
 from httpx import ASGITransport, AsyncClient
 
@@ -81,6 +93,7 @@ async def gsc_store():
 # ── gsc_client unit tests ────────────────────────────────────────────────────
 
 
+@requires_google
 class TestFetchPagePerformance:
     @pytest.mark.asyncio
     async def test_parses_response(self):
@@ -185,6 +198,7 @@ class TestFetchPagePerformance:
         assert mock_query.execute.call_count == 1
 
 
+@requires_google
 class TestListProperties:
     def test_returns_properties(self):
         """Mock sites().list() -> parsed list."""
@@ -245,6 +259,7 @@ class TestOptInGuarantee:
 # ── OAuth endpoint tests ─────────────────────────────────────────────────────
 
 
+@requires_google
 class TestGscConnect:
     @pytest.mark.asyncio
     async def test_302_redirect_when_configured(self, gsc_client, gsc_env):
@@ -287,6 +302,7 @@ class TestGscConnect:
         assert kwargs.get("prompt") == "select_account consent"
 
 
+@requires_google
 class TestGscCallback:
     @pytest.mark.asyncio
     async def test_exchange_and_store(self, gsc_client, gsc_env):
@@ -368,6 +384,7 @@ class TestGscCallback:
         assert resp.status_code == 400
 
 
+@requires_google
 class TestGscStatus:
     @pytest.mark.asyncio
     async def test_not_connected_when_no_creds(self, gsc_client, gsc_env):
@@ -462,6 +479,7 @@ class TestGscStatus:
         assert isinstance(data["properties"], list)
 
 
+@requires_google
 class TestGscDisconnect:
     @pytest.mark.asyncio
     async def test_disconnect_clears_creds(self, gsc_client, gsc_env):
@@ -479,6 +497,7 @@ class TestGscDisconnect:
 # ── Ingest endpoint tests ────────────────────────────────────────────────────
 
 
+@requires_google
 class TestGscIngest:
     @pytest.mark.asyncio
     async def test_ingest_writes_records(self, gsc_client, gsc_env, gsc_store):
@@ -633,6 +652,7 @@ class TestGscIngest:
 # ── Performance endpoint tests (M6.4 surfacing) ──────────────────────────────
 
 
+@requires_google
 class TestGscPerformance:
     @pytest.mark.asyncio
     async def test_returns_records_and_review_flag(self, gsc_client, gsc_env, gsc_store):
@@ -720,6 +740,7 @@ class TestGscPerformance:
 # ── Auth tests ────────────────────────────────────────────────────────────────
 
 
+@requires_google
 class TestAuth:
     @pytest.mark.asyncio
     async def test_401_without_auth(self, gsc_env, monkeypatch):

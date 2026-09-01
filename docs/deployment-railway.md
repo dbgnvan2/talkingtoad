@@ -106,8 +106,9 @@ Railway. From the Vercel dashboard:
 Local dev still uses uvicorn directly — Docker is for production:
 
 ```bash
-# Backend (port 8000)
-cd /Users/davemini/ProjectsMini1/TalkingToad
+# Backend (port 8000) — from the repo root. api/main.py imports absolutely
+# (`from api.routers import ...`), so the repo root must be the working
+# directory or the import fails before the server binds.
 source venv/bin/activate
 uvicorn api.main:app --reload --port 8000
 

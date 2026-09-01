@@ -45,6 +45,25 @@ def _installed(req: Requirement) -> str | None:
         return None
 
 
+def _violations(reqs: list[Requirement]) -> list[str]:
+    """The comparison under test. Extracted so the adversarial cases below
+    exercise THIS function rather than re-deriving it.
+
+    The previous adversarial tests built their own Requirement and called
+    `.specifier.contains()` inline, so they asserted only that `packaging`
+    works — neutralising the real comparison left them green, which is exactly
+    the failure their own docstring described.
+    """
+    out = []
+    for req in reqs:
+        inst = _installed(req)
+        if inst is None:
+            continue  # reported separately
+        if not req.specifier.contains(inst, prereleases=True):
+            out.append(f"  {req.name}: pinned {req.specifier}, installed {inst}")
+    return out
+
+
 class TestDeclaredMatchesInstalled:
     def test_every_requirement_is_installed(self):
         """Guards the guard: the version check below can only compare packages
@@ -59,13 +78,7 @@ class TestDeclaredMatchesInstalled:
     def test_installed_versions_satisfy_requirements(self):
         """The environment the tests run in must be the one requirements.txt
         describes — otherwise a green suite says nothing about what ships."""
-        violations = []
-        for req in _requirements():
-            inst = _installed(req)
-            if inst is None:
-                continue  # reported by the test above
-            if not req.specifier.contains(inst, prereleases=True):
-                violations.append(f"  {req.name}: pinned {req.specifier}, installed {inst}")
+        violations = _violations(_requirements())
         assert not violations, (
             "Installed versions do not satisfy requirements.txt. The Docker "
             "image installs the pinned set, so these tests are not exercising "
@@ -82,25 +95,21 @@ class TestDeclaredMatchesInstalled:
 
 
 class TestTheCheckCanFail:
-    @pytest.mark.parametrize(
-        "spec",
-        ["fastapi==0.0.1", "pytest<1.0"],
-    )
-    def test_adversarial_a_violated_pin_is_detected(self, spec):
-        """An impossible pin must be reported. Without this the comparison
-        could be inverted, or `contains()` misused, and the suite would stay
-        green over any amount of drift."""
-        req = Requirement(spec)
-        inst = _installed(req)
-        assert inst is not None, "package not installed; test cannot discriminate"
-        assert not req.specifier.contains(inst, prereleases=True), (
-            f"{spec} unexpectedly matched installed {inst} — the version "
-            "comparison is not discriminating"
+    """These drive the real `_violations`, so neutralising it turns them red."""
+
+    @pytest.mark.parametrize("spec", ["fastapi==0.0.1", "pytest<1.0"])
+    def test_adversarial_a_violated_pin_is_reported(self, spec):
+        assert _violations([Requirement(spec)]), (
+            f"{spec} is impossible for the installed version, and the "
+            "comparison did not report it"
         )
 
     def test_adversarial_a_satisfied_pin_is_not_reported(self):
-        """The inverse: the check must not flag a pin that genuinely holds, or
-        it would be permanently red and get deleted."""
-        inst = version("fastapi")
-        req = Requirement(f"fastapi=={inst}")
-        assert req.specifier.contains(inst, prereleases=True)
+        """The inverse: a pin that genuinely holds must not be flagged, or the
+        check would be permanently red and get deleted."""
+        assert _violations([Requirement(f"fastapi=={version('fastapi')}")]) == []
+
+    def test_adversarial_an_uninstallable_name_is_not_silently_a_violation(self):
+        """A package that cannot be found is reported by
+        test_every_requirement_is_installed, not swallowed here as a pass."""
+        assert _violations([Requirement("definitely-not-a-real-package>=1")]) == []

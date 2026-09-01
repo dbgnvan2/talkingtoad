@@ -74,7 +74,12 @@ def _google() -> None:
         from google_auth_oauthlib.flow import Flow as _Flow
         from googleapiclient.discovery import build as _build
         from googleapiclient.errors import HttpError as _HttpError
-    except ModuleNotFoundError as exc:  # pragma: no cover - needs the lib absent
+    except ImportError as exc:  # pragma: no cover - needs the lib absent
+        # ImportError, not just ModuleNotFoundError: a partially broken
+        # install (a symbol renamed or moved in a future googleapiclient)
+        # raises the parent class and would otherwise escape as a 500,
+        # breaking the stated 'same 503 for an absent library as for an
+        # absent setting' contract.
         raise GoogleLibrariesUnavailable(
             "Google Search Console support needs google-api-python-client, "
             "google-auth-oauthlib and google-auth, which are not installed. "
