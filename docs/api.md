@@ -761,3 +761,26 @@ Response:
 - **Multi-tenant AI key management**: per-customer API keys, Customer Settings UI, Identity Model — not implemented. See [`TODO-MULTITENANT.md`](TODO-MULTITENANT.md).
 - **GSC frontend panel (React)**: backend complete (M6.1 + M6.4), React UI deferred.
 - **SERP Discovery**: separate repository. See [`PARKED-SERP-DISCOVERY.md`](PARKED-SERP-DISCOVERY.md).
+
+
+## Per-domain issue filter (F1)
+
+Presentational only — hides findings from the results lists and **never** changes
+the health score.
+
+| Method | Path | Body / Query | Notes |
+|---|---|---|---|
+| GET | `/api/domain-filters` | `?domain=` | Returns `{domain, rules[]}`; domain is normalised server-side. |
+| POST | `/api/domain-filters` | `{domain, issue_code}` **or** `{domain, severity}` | Exactly one of the two → 422 otherwise. Unknown code → 404, unknown severity → 422. |
+| DELETE | `/api/domain-filters` | `?domain=&issue_code=` or `&severity=` | No-op if the rule is absent. |
+
+`GET /api/crawl/{job_id}/results` and `/results/{category}` additionally return:
+
+```json
+"filtered": {"domain": "example.com", "hidden": 31,
+             "by_rule": {"severity:info": 28, "H1_MISSING": 3}}
+```
+
+Always present, `hidden: 0` when no rules apply. Consumers must render it: 123 of
+170 codes are `info`, so a severity rule removes most findings and a shorter list
+would otherwise read as a healthier site.

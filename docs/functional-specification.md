@@ -1170,6 +1170,48 @@ first push — every command it runs was verified locally on both interpreters,
 but no runner was available here.
 → `tests/test_declared_environment.py`, `.github/workflows/tests.yml`.
 
+**F1 — per-domain issue filter.** For one site, hide selected issue codes and/or
+every finding of a given severity, so the results list shows what that site's
+operator cares about. Three properties define it:
+
+1. **It hides, it does not delete.** Checks still run and every finding is still
+   stored; the filter applies at read time in `/results` and
+   `/results/{category}`. Toggling a code back on needs no re-crawl.
+2. **It never changes the health score.** The score is computed by the store
+   from the unfiltered set. This is the whole reason the rules live in
+   `domain_issue_filters` and not in `suppressed_issue_codes`, which feeds
+   `compute_impact_health()` and changes scoring *by design*. One table meaning
+   two things depending on whether a column is NULL is how the two get confused
+   and a presentational filter starts moving someone's grade.
+3. **It always declares what it removed.** Every filtered response carries
+   `filtered: {domain, hidden, by_rule}`. **123 of the 170 catalogue codes are
+   `info`**, so the severity rule hides roughly 72% of findings — a list that
+   simply came back shorter would read as a cleaner site (P31/P24).
+
+Rules are `{domain, issue_code}` or `{domain, severity}`, exactly one of the
+two. Domains are normalised (`normalise_filter_domain`: lowercase, strip scheme,
+port, credentials and a leading `www.`) so `https://WWW.Example.COM:443/` and
+`example.com` cannot address two rule sets that each look empty. Unknown codes
+are rejected with 404 and unknown severities with 422 — a rule that can never
+fire is indistinguishable, to the operator, from one that fires and finds
+nothing. A stale rule naming a since-deleted code is **inert**, never a
+wildcard.
+
+`GET|POST|DELETE /api/domain-filters`, behind `require_auth` like every other
+utility route.
+
+**UI:** `CategoryPanel.jsx` — a **Filter out** control on each code group, and
+an amber disclosure above the list naming every active rule with its count and
+a one-click *show again*. The disclosure renders **above** the empty/non-empty
+branch, so a filter that hides everything still explains itself rather than
+producing a bare "No issues found in this category."
+
+**Not applied to** the health score, the summary counts, or the PDF/Excel
+exports. A report that silently omits findings is a document someone forwards
+to a funder; filtered exports would need their own decision.
+→ `tests/test_domain_issue_filter.py`,
+  `frontend/src/components/__tests__/CategoryPanelFilter.test.jsx`.
+
 **E2 — broken-link source attribution.** `external_targets_seen` and
 `discovered_from.setdefault` retained only the first page linking to each broken
 target, so 120 broken internal links reported as 10. `external_target_sources`

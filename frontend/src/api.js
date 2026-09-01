@@ -300,6 +300,38 @@ export async function getSuppressedCodes() {
   return checkResponse(res)
 }
 
+// ── F1: per-domain issue filter ────────────────────────────────────────────
+// Presentational only — hides findings from the results lists and never
+// changes the health score. Distinct from the suppressed codes below, which
+// change scoring by design.
+
+export async function getDomainFilters(domain) {
+  const res = await fetch(`/api/domain-filters?domain=${encodeURIComponent(domain)}`, {
+    headers: authHeaders(),
+  })
+  return checkResponse(res)
+}
+
+export async function addDomainFilter(domain, { issueCode, severity } = {}) {
+  const res = await fetch('/api/domain-filters', {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify({ domain, issue_code: issueCode ?? null, severity: severity ?? null }),
+  })
+  return checkResponse(res)
+}
+
+export async function removeDomainFilter(domain, { issueCode, severity } = {}) {
+  const params = new URLSearchParams({ domain })
+  if (issueCode) params.set('issue_code', issueCode)
+  if (severity) params.set('severity', severity)
+  const res = await fetch(`/api/domain-filters?${params}`, {
+    method: 'DELETE',
+    headers: authHeaders(),
+  })
+  return checkResponse(res)
+}
+
 export async function addSuppressedCode(code) {
   const res = await fetch('/api/suppressed-codes', {
     method: 'POST',

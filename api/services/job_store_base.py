@@ -693,6 +693,25 @@ CREATE TABLE IF NOT EXISTS fixed_issues (
     FOREIGN KEY (job_id) REFERENCES crawl_jobs(job_id)
 );
 
+-- F1: per-domain, PRESENTATIONAL issue filter. Deliberately separate from
+-- suppressed_issue_codes above, which feeds compute_impact_health() and
+-- changes the score by design. One table meaning two things depending on
+-- whether a column is NULL is how the two get confused and a presentational
+-- filter starts moving someone's grade.
+-- Exactly one of issue_code / severity is set per row.
+CREATE TABLE IF NOT EXISTS domain_issue_filters (
+    domain       TEXT NOT NULL,
+    issue_code   TEXT,
+    severity     TEXT,
+    created_at   TEXT NOT NULL DEFAULT (datetime('now'))
+);
+-- A PRIMARY KEY over these three columns does NOT dedupe: SQLite treats NULLs
+-- as distinct in a key, so every row here has a NULL in one of the two rule
+-- columns and `INSERT OR IGNORE` would insert the same rule endlessly. The
+-- expression index gives the intended uniqueness.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_domain_issue_filters_unique
+    ON domain_issue_filters (domain, COALESCE(issue_code, ''), COALESCE(severity, ''));
+
 CREATE TABLE IF NOT EXISTS suppressed_issue_codes (
     issue_code   TEXT PRIMARY KEY,
     suppressed_at TEXT NOT NULL DEFAULT (datetime('now'))

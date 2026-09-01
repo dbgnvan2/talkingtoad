@@ -8,6 +8,7 @@ import logging
 import httpx
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import JSONResponse
+from api.services.error_responses import _err
 from pydantic import BaseModel
 
 from api.crawler.fetcher import is_ssrf_safe
@@ -228,6 +229,103 @@ async def unsuppress_code(
     """Remove an issue code from the suppressed list."""
     await store.remove_suppressed_code(code.strip().upper())
     return {"code": code.strip().upper(), "status": "unsuppressed"}
+
+
+# ── F1: per-domain issue filter ────────────────────────────────────────────
+#
+# PRESENTATIONAL ONLY. This hides findings from the results lists; it never
+# touches the health score. That is the whole difference from the suppressed
+# codes above, which change scoring by design — see docs/functional-specification.md (F1).
+
+
+class DomainFilterRequest(BaseModel):
+    domain: str
+    issue_code: str | None = None
+    severity: str | None = None
+
+
+def _validate_filter_rule(body: "DomainFilterRequest") -> JSONResponse | None:
+    """Reject rules that cannot do what the operator expects.
+
+    An unknown code accepted silently is a filter that never fires, and the
+    operator has no way to tell that from a filter that fires and finds
+    nothing. The severity allowlist is derived from the catalogue rather than
+    written out, so it cannot drift away from the real severities.
+    """
+    from api.crawler.checkers.registry import _CATALOGUE
+
+    has_code = bool(body.issue_code)
+    has_sev = bool(body.severity)
+    if has_code == has_sev:
+        return _err(
+            "INVALID_RULE",
+            "A filter rule must name exactly one of issue_code or severity.",
+            422,
+        )
+    if has_code and body.issue_code.strip().upper() not in _CATALOGUE:
+        return _err(
+            "UNKNOWN_ISSUE_CODE",
+            f"No such issue code: {body.issue_code}. A filter naming a code "
+            "that does not exist would never fire.",
+            404,
+        )
+    if has_sev:
+        valid = {s.severity for s in _CATALOGUE.values()}
+        if body.severity.strip().lower() not in valid:
+            return _err(
+                "UNKNOWN_SEVERITY",
+                f"No such severity: {body.severity}. Valid: {sorted(valid)}.",
+                422,
+            )
+    return None
+
+
+@router.get("/domain-filters")
+async def list_domain_filters(
+    domain: str = Query(..., description="Site host or URL; normalised server-side"),
+    store=Depends(get_store),
+) -> dict:
+    """Return the filter rules for one domain."""
+    from api.services.domain_filter import normalise_filter_domain
+    return {
+        "domain": normalise_filter_domain(domain),
+        "rules": await store.get_domain_filters(domain),
+    }
+
+
+@router.post("/domain-filters", response_model=None)
+async def add_domain_filter(
+    body: DomainFilterRequest, store=Depends(get_store)
+) -> dict | JSONResponse:
+    """Add one filter rule for a domain. Hides findings; never changes the score."""
+    err = _validate_filter_rule(body)
+    if err is not None:
+        return err
+    code = body.issue_code.strip().upper() if body.issue_code else None
+    sev = body.severity.strip().lower() if body.severity else None
+    await store.add_domain_filter(body.domain, issue_code=code, severity=sev)
+    from api.services.domain_filter import normalise_filter_domain
+    return {"domain": normalise_filter_domain(body.domain),
+            "issue_code": code, "severity": sev, "status": "filtered"}
+
+
+@router.delete("/domain-filters", response_model=None)
+async def remove_domain_filter(
+    domain: str = Query(...),
+    issue_code: str | None = Query(None),
+    severity: str | None = Query(None),
+    store=Depends(get_store),
+) -> dict | JSONResponse:
+    """Remove one filter rule."""
+    code = issue_code.strip().upper() if issue_code else None
+    sev = severity.strip().lower() if severity else None
+    if bool(code) == bool(sev):
+        return _err("INVALID_RULE",
+                    "Name exactly one of issue_code or severity.", 422)
+    await store.remove_domain_filter(domain, issue_code=code, severity=sev)
+    from api.services.domain_filter import normalise_filter_domain
+    return {"domain": normalise_filter_domain(domain),
+            "issue_code": code, "severity": sev, "status": "unfiltered"}
 
 
 # ── Exempt anchor URLs ─────────────────────────────────────────────────────

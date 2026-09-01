@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react'
 import { useToast } from '../contexts/ToastContext.jsx'
-import { getResultsByCategory, verifyBrokenLinks, markBrokenLinkFixed, getOrphanedMedia, authHeaders } from '../api.js'
+import { getResultsByCategory, verifyBrokenLinks, markBrokenLinkFixed, getOrphanedMedia, authHeaders, addDomainFilter, removeDomainFilter } from '../api.js'
 import { FIXABLE_LINK_CODES } from './FixBrokenLinkPanel.jsx'
 import SeverityBadge from './SeverityBadge.jsx'
 import IssueHelpPanel from './IssueHelpPanel.jsx'
@@ -60,6 +60,25 @@ export default function CategoryPanel({ jobId, category, domain, onPageClick, on
   const [markedFixed, setMarkedFixed] = useState(new Set())
   const [orphanedMedia, setOrphanedMedia] = useState(null)
   const [loadingOrphans, setLoadingOrphans] = useState(false)
+  const [filterBusy, setFilterBusy] = useState(null)
+
+  // F1 — add or remove a filter rule for THIS domain, then reload so the list
+  // and the disclosure move together. Both come from the same response, so
+  // they can never disagree about what was hidden.
+  async function applyFilterRule(rule, { remove = false } = {}) {
+    const key = rule.issueCode || `severity:${rule.severity}`
+    setFilterBusy(key)
+    try {
+      if (remove) await removeDomainFilter(domain, rule)
+      else await addDomainFilter(domain, rule)
+      setData(await getResultsByCategory(jobId, category.key))
+      onSummaryRefresh?.()
+    } catch (e) {
+      toast?.error?.(`Could not update the filter: ${e.message || e}`)
+    } finally {
+      setFilterBusy(null)
+    }
+  }
 
   useEffect(() => {
     setData(null)
@@ -390,6 +409,37 @@ export default function CategoryPanel({ jobId, category, domain, onPageClick, on
         </div>
       )}
 
+      {data?.filtered?.hidden > 0 && (
+        <div
+          data-testid="filter-disclosure"
+          className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 px-5 py-4"
+        >
+          <p className="text-sm font-bold text-amber-900">
+            {data.filtered.hidden} finding{data.filtered.hidden === 1 ? '' : 's'} hidden by this site&apos;s filter
+          </p>
+          <p className="text-xs text-amber-800 mt-1">
+            Still recorded, and still counted in the health score — only hidden from this list.
+          </p>
+          <div className="flex flex-wrap gap-2 mt-3">
+            {Object.entries(data.filtered.by_rule || {}).map(([rule, count]) => {
+              const isSeverity = rule.startsWith('severity:')
+              const payload = isSeverity ? { severity: rule.slice(9) } : { issueCode: rule }
+              return (
+                <button
+                  key={rule}
+                  data-testid={`unfilter-${rule}`}
+                  disabled={filterBusy === rule}
+                  onClick={() => applyFilterRule(payload, { remove: true })}
+                  className="text-xs font-bold px-3 py-1.5 rounded-full bg-white border border-amber-300 text-amber-900 hover:bg-amber-100 disabled:opacity-50"
+                >
+                  {isSeverity ? `all ${rule.slice(9)}` : rule} ({count}) — show again
+                </button>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
       {Object.values(groups).length === 0 ? (
         <div className="py-12 bg-white rounded-2xl border border-gray-100 text-center text-gray-400 font-medium font-serif italic">No issues found in this category.</div>
       ) : (
@@ -408,6 +458,20 @@ export default function CategoryPanel({ jobId, category, domain, onPageClick, on
               </div>
               <span className="text-gray-600 text-xl font-black">{expandedCode === group.issue_code ? '▲' : '▼'}</span>
             </button>
+
+            {/* F1 — hide this code for this domain. Outside the expand button
+                so clicking it cannot also toggle the group open. */}
+            <div className="px-6 -mt-3 pb-3">
+              <button
+                data-testid={`filter-out-${group.issue_code}`}
+                disabled={filterBusy === group.issue_code}
+                onClick={() => applyFilterRule({ issueCode: group.issue_code })}
+                className="text-[11px] font-bold uppercase tracking-widest text-gray-400 hover:text-gray-700 disabled:opacity-50"
+                title={`Stop showing ${group.issue_code} for ${domain}. The finding is kept and still counts toward the health score.`}
+              >
+                Filter out
+              </button>
+            </div>
 
             {expandedCode === group.issue_code && (
               <div className="px-6 pb-6 border-t border-gray-50 pt-6 space-y-8">

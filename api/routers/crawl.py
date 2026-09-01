@@ -408,6 +408,30 @@ _CHECKS_NOT_RUN_REASON = (
 )
 
 
+async def _filter_for_domain(store, target_url: str, issue_dicts: list[dict]) -> tuple[list[dict], dict]:
+    """Apply the domain's presentational filter and return (kept, report).
+
+    F1 — hides findings from the results LIST only. The health score is
+    computed by the store from the unfiltered set and is deliberately not
+    touched here: LEARNINGS records that suppressing ORPHAN_PAGE *raised* the
+    score, and a per-domain filter is a far easier lever to pull.
+
+    The report always travels with the response. 123 of the 170 catalogue codes
+    are `info`, so the severity rule hides roughly 72% of findings — a list
+    that simply came back shorter would read as a cleaner site (P31/P24).
+    """
+    from api.services.domain_filter import apply_domain_filter
+    try:
+        rules = await store.get_domain_filters(target_url)
+    except Exception as exc:  # a filter must never take the results page down
+        logger.warning("domain_filter_load_failed", extra={"error": str(exc)})
+        return issue_dicts, {"hidden": 0, "by_rule": {}, "unavailable": True}
+    kept, report = apply_domain_filter(issue_dicts, rules)
+    from api.services.domain_filter import normalise_filter_domain
+    report["domain"] = normalise_filter_domain(target_url)
+    return kept, report
+
+
 def _rescan_is_conclusive(status_code: int) -> bool:
     """Is this rescan evidence about the page's issues, or just a failed read?
 
@@ -1045,6 +1069,7 @@ async def get_results(
     issues, total = await store.get_issues(job_id, severity=severity, page=page, limit=limit)
     exempt_urls = await store.get_exempt_anchor_url_set()
     issue_dicts = _apply_exempt_anchors([_issue_dict(i) for i in issues], exempt_urls)
+    issue_dicts, filtered = await _filter_for_domain(store, job.target_url, issue_dicts)
     summary = await store.get_summary(job_id)
     total_pages = max(1, math.ceil(total / limit))
 
@@ -1070,6 +1095,9 @@ async def get_results(
         # R5.6 — scoring-model version stamp for this audit (None on legacy
         # audits saved before the field existed).
         "scoring_model_version": job.scoring_model_version,
+        # F1 — what the domain filter removed. Always present, so a shorter
+        # list can never be mistaken for a cleaner site.
+        "filtered": filtered,
     }
 
 
@@ -1097,6 +1125,7 @@ async def get_results_by_category(
     issues, total = await store.get_issues(job_id, category=category, severity=severity, page=page, limit=limit)
     exempt_urls = await store.get_exempt_anchor_url_set()
     issue_dicts = _apply_exempt_anchors([_issue_dict(i) for i in issues], exempt_urls)
+    issue_dicts, filtered = await _filter_for_domain(store, job.target_url, issue_dicts)
     summary = await store.get_summary(job_id)
     total_pages = max(1, math.ceil(total / limit))
 
@@ -1105,6 +1134,9 @@ async def get_results_by_category(
         "summary": summary,
         "pagination": {"page": page, "limit": limit, "total_issues": total, "total_pages": total_pages},
         "issues": issue_dicts,
+        # F1 — what the domain filter removed. Always present, so a shorter
+        # list can never be mistaken for a cleaner site.
+        "filtered": filtered,
     }
 
 

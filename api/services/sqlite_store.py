@@ -960,6 +960,53 @@ class SQLiteJobStore:
 
     # ── Suppressed issue codes ─────────────────────────────────────────────
 
+    # ── F1: per-domain issue filter (presentational; never affects scoring) ──
+
+    async def get_domain_filters(self, domain: str) -> list[dict]:
+        """Return this domain's filter rules. Domain is normalised first, so
+        every spelling of a site addresses one rule set."""
+        from api.services.domain_filter import normalise_filter_domain
+        db = self._db
+        assert db is not None
+        async with db.execute(
+            "SELECT issue_code, severity FROM domain_issue_filters "
+            "WHERE domain = ? ORDER BY created_at",
+            (normalise_filter_domain(domain),),
+        ) as cursor:
+            rows = await cursor.fetchall()
+        return [{"issue_code": r[0], "severity": r[1]} for r in rows]
+
+    async def add_domain_filter(
+        self, domain: str, *, issue_code: str | None = None,
+        severity: str | None = None,
+    ) -> None:
+        """Add one rule (no-op if identical). Exactly one of issue_code /
+        severity is expected; the router validates that before calling."""
+        from api.services.domain_filter import normalise_filter_domain
+        db = self._db
+        assert db is not None
+        await db.execute(
+            "INSERT OR IGNORE INTO domain_issue_filters (domain, issue_code, severity) "
+            "VALUES (?, ?, ?)",
+            (normalise_filter_domain(domain), issue_code, severity),
+        )
+        await db.commit()
+
+    async def remove_domain_filter(
+        self, domain: str, *, issue_code: str | None = None,
+        severity: str | None = None,
+    ) -> None:
+        """Remove one rule (no-op if absent)."""
+        from api.services.domain_filter import normalise_filter_domain
+        db = self._db
+        assert db is not None
+        await db.execute(
+            "DELETE FROM domain_issue_filters WHERE domain = ? "
+            "AND issue_code IS ? AND severity IS ?",
+            (normalise_filter_domain(domain), issue_code, severity),
+        )
+        await db.commit()
+
     async def get_suppressed_codes(self) -> list[str]:
         """Return all issue codes suppressed from the health score (global, not per-job)."""
         db = self._db
