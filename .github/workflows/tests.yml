@@ -33,9 +33,9 @@ jobs:
             label: development
     name: pytest ${{ matrix.python-version }} — ${{ matrix.label }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python-version }}
           cache: pip
