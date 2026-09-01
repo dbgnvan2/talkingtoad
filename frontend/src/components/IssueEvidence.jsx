@@ -15,8 +15,11 @@ import { getPageDetails } from '../api.js'
  *
  * Spec: docs/functional-specification.md (D6)
  */
-export function IssueEvidence({ evidence, evidenceTotal, source, capNote }) {
+export function IssueEvidence({ evidence, evidenceTotal, evidenceRows, source, capNote }) {
   if (!Array.isArray(evidence) || evidence.length === 0) return null
+  // Rows, not lines — see the note in IssueDetails. Falls back to the line
+  // count when the caller has none, which is the pre-D6 behaviour.
+  const rows = Number.isInteger(evidenceRows) ? evidenceRows : evidence.length
   return (
     <div className="mb-6 p-4 bg-amber-50 border border-amber-200 rounded-xl">
       <h4 className="text-[10px] font-black text-amber-800 uppercase tracking-widest mb-2">
@@ -43,9 +46,9 @@ export function IssueEvidence({ evidence, evidenceTotal, source, capNote }) {
           )
         })}
       </ul>
-      {evidenceTotal > evidence.length && (
+      {evidenceTotal > rows && (
         <p className="text-[11px] text-amber-800 mt-2">
-          Showing {evidence.length} of {evidenceTotal}.{' '}
+          Showing {rows} of {evidenceTotal}.{' '}
           {capNote || 'The full list is in the spreadsheet export.'}
         </p>
       )}
@@ -91,6 +94,16 @@ export function IssueDetails({ jobId, pageUrl, issue }) {
   const basis = issue.evidence_basis || 'items'
   const stored = Array.isArray(issue.evidence) ? issue.evidence : []
   const storedTotal = issue.evidence_total || 0
+  // ROWS in `stored`, not stored.length: that array also holds one heading per
+  // key and an "... and N more" line. Comparing the row total against the line
+  // count under-reports truncation by that overhead — at the default cap of 10,
+  // an issue with 11 or 12 captured rows showed "... and 2 more" and offered no
+  // button to get them. Falls back to the line count for a payload predating
+  // `evidence_rows`, which is the old (wrong-but-harmless) behaviour rather
+  // than a crash.
+  const storedRows = Number.isInteger(issue.evidence_rows)
+    ? issue.evidence_rows
+    : stored.length
   // Offer the live read when the stored list is short of the truth, or when
   // nothing was captured for a code that names items. `jobId`/`pageUrl` are
   // required: IssueCard is also rendered standalone (tests, the category view)
@@ -99,7 +112,7 @@ export function IssueDetails({ jobId, pageUrl, issue }) {
   const canFetchMore =
     Boolean(jobId && pageUrl) &&
     basis !== 'page' &&
-    (storedTotal > stored.length || stored.length === 0)
+    (storedTotal > storedRows || stored.length === 0)
 
   async function fetchDetails() {
     setLoading(true)
@@ -107,9 +120,16 @@ export function IssueDetails({ jobId, pageUrl, issue }) {
     try {
       const res = await getPageDetails(jobId, pageUrl, issue.issue_code)
       const entry = (res.details || []).find(d => d.issue_code === issue.issue_code)
-      if (!entry) {
-        // The code is gone from the live page. That is a real answer, not an
-        // error, and it must not be reported as "no details available".
+      if (entry && entry.evaluated === false) {
+        // The check did not run — page gone, or a link check we deliberately
+        // skip. Absence of items here is not a clean result, and saying "no
+        // longer on the page" would be the false all-clear D5 removed.
+        setLive({ notEvaluated: true, reason: entry.not_evaluated_reason,
+                  source: res.source, caveat: res.caveat })
+      } else if (!entry) {
+        // Checked, and the finding is no longer there. A real answer — but only
+        // sound because an un-evaluated code arrives as an entry above rather
+        // than by being missing.
         setLive({ gone: true, source: res.source, caveat: res.caveat })
       } else {
         setLive({ ...entry, source: res.source, caveat: res.caveat,
@@ -122,8 +142,12 @@ export function IssueDetails({ jobId, pageUrl, issue }) {
     }
   }
 
-  const shown = live && !live.gone ? live.items : stored
-  const shownTotal = live && !live.gone ? live.items_total : storedTotal
+  const usingLive = live && !live.gone && !live.notEvaluated
+  const shown = usingLive ? live.items : stored
+  const shownTotal = usingLive ? live.items_total : storedTotal
+  const shownRows = usingLive
+    ? (Number.isInteger(live.items_shown) ? live.items_shown : live.items.length)
+    : storedRows
 
   return (
     <div className="mt-3">
@@ -152,16 +176,22 @@ export function IssueDetails({ jobId, pageUrl, issue }) {
               This finding is no longer on the page as it is now.
             </p>
           )}
+          {live?.notEvaluated && (
+            <p className="mb-2 p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-900">
+              <span className="font-bold">Not re-checked.</span> {live.reason}
+            </p>
+          )}
 
           {shown.length > 0 ? (
             <IssueEvidence
               evidence={shown}
               evidenceTotal={shownTotal}
+              evidenceRows={shownRows}
               source={live ? live.source : undefined}
               capNote={live?.capNote}
             />
           ) : (
-            !live?.gone && <NoItemsToList basis={basis} />
+            !live?.gone && !live?.notEvaluated && <NoItemsToList basis={basis} />
           )}
 
           {canFetchMore && !live && (

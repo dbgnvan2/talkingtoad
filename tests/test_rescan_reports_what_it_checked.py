@@ -248,3 +248,73 @@ class TestAdversarial:
         assert RUNNABLE_SEEDED not in await _stored_codes(store), (
             f"{RUNNABLE_SEEDED} was carried over although this path checks it "
             f"and the fresh page no longer has it")
+
+
+class TestAGonePageIsNotARepairedPage:
+    """404/410 is conclusive — the page is gone — which is NOT the same as
+    "these findings are fixed", and also not the same as the 403/429 case.
+
+    Found by the 2026-09-01 cold sweep. `_rescan_is_conclusive` returns True for
+    404/410 precisely because "the page is gone, its old findings genuinely no
+    longer apply", and the carry-over block then ran anyway. So an unpublished
+    page kept ORPHAN_PAGE and TITLE_DUPLICATE charging its health score forever,
+    clearable only by a full crawl, and the panel printed "Not re-checked:
+    Orphan page" beside a 404. It also partly undid E1, whose rule is that an
+    error page is not content.
+    """
+
+    NOT_FOUND = "<!DOCTYPE html><html><head><title>Not found</title></head>" \
+                "<body><h1>Page not found</h1></body></html>"
+
+    async def test_a_gone_page_does_not_carry_findings_over(self, store):
+        await _seed(store, DEFAULT_SEED)
+        res = await _recheck(store, status=404, body=self.NOT_FOUND)
+        assert res["carried_over_codes"] == [], (
+            f"a 404 carried {res['carried_over_codes']} over — findings kept "
+            f"alive for a page that no longer exists")
+
+    async def test_a_gone_pages_findings_are_not_left_in_the_store(self, store):
+        await _seed(store, DEFAULT_SEED)
+        await _recheck(store, status=404, body=self.NOT_FOUND)
+        remaining = await _stored_codes(store)
+        stuck = remaining & set(UNRUNNABLE_SEEDED)
+        assert not stuck, (
+            f"{sorted(stuck)} still charging the score for a deleted page")
+
+    async def test_a_403_still_carries_over(self, store):
+        """The mirror. A gate that skipped the carry-over for every non-200
+        would silently undo D5 — 403 must still keep its findings."""
+        await _seed(store, DEFAULT_SEED)
+        res = await _recheck(store, status=403, body="<html>blocked</html>")
+        assert res["page_unreadable"] is True
+        assert await _stored_codes(store) == set(UNRUNNABLE_SEEDED)
+
+
+class TestTheOutcomeSetsAreNotHardwiredEmpty:
+    """The sweep set `still_present_codes = []` and `newly_found_codes = []` and
+    the entire 3563-test suite stayed green: the partition test is a tautology
+    on empty sets, and the frontend guard renders the banner from a hand-written
+    prop, so neither half binds the other."""
+
+    async def test_a_code_that_is_still_there_is_named_still_present(self, store):
+        # THIN_CONTENT is runnable here and the served page is thin, so the
+        # re-check genuinely still finds it.
+        thin = ("<!DOCTYPE html><html lang='en'><head>"
+                "<title>An Entirely Reasonable About Page Title</title>"
+                "<meta name='description' content='"
+                + "A sufficiently long and unremarkable meta description. " * 3
+                + "'></head><body><h1>About Us</h1><p>tiny</p></body></html>")
+        await _seed(store, [("THIN_CONTENT", "ai_readiness")])
+        res = await _recheck(store, body=thin)
+        assert "THIN_CONTENT" in res["still_present_codes"], (
+            f"a finding the re-check can see and did see is missing from "
+            f"still_present_codes: {res['still_present_codes']}")
+        assert "THIN_CONTENT" not in res["resolved_codes"]
+
+    async def test_a_code_the_page_did_not_have_before_is_newly_found(self, store):
+        await _seed(store, [("THIN_CONTENT", "ai_readiness")])
+        res = await _recheck(store)
+        assert res["newly_found_codes"], (
+            "the clean page raises findings the seed did not have, so "
+            "newly_found_codes must not be empty")
+        assert "THIN_CONTENT" not in res["newly_found_codes"]

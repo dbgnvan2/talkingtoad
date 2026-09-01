@@ -191,6 +191,7 @@ async def _fetch_and_check_page(
     suppress_banner_h1: bool = True,
     bypass_cache: bool = False,
     authenticated: bool = False,
+    check_external_links: bool = True,
 ) -> _PageCheckResult | JSONResponse:
     """Fetch a URL, parse it, run issue checks and external link checks.
 
@@ -210,6 +211,14 @@ async def _fetch_and_check_page(
     suppress_h1_strings / suppress_banner_h1 : H1 suppression settings.
     bypass_cache : bool
         If True, send cache-bypass headers (used by rescan).
+    check_external_links : bool
+        If True (default) every external link on the page is fetched, up to
+        _EXTERNAL_LINK_CAP_PER_PAGE. That is 50 outbound requests to third-party
+        hosts per call. `/page-details` passes False: it answers "which items on
+        this page" from the parse, and re-verifying somebody else's links is not
+        that question. Callers that pass False MUST report the broken-link codes
+        as un-evaluated rather than absent (D6) — an unrun check that renders as
+        a clean result is the failure this repo keeps re-finding.
     """
     is_homepage = url.rstrip("/") == base_url.rstrip("/")
 
@@ -239,7 +248,15 @@ async def _fetch_and_check_page(
             )
     else:
         try:
-            async with make_client() as client:
+            # D6 sweep — was make_client(). fetch_page re-checks
+            # redirect_chain + final_url, but only AFTER httpx has followed the
+            # hop, so a public host 302-ing to 169.254.169.254 had that request
+            # issued and the response merely discarded. Blind SSRF. The guarded
+            # client refuses the Location header before following it, which is
+            # what CLAUDE.md's "blocked at start *and* on every redirect hop"
+            # actually requires. Inherited from the rescan/scan-page path this
+            # function has always served; fixed for all three at once.
+            async with make_ssrf_guarded_client() as client:
                 result = await fetch_page(
                     url, client, timeout=_RESCAN_TIMEOUT,
                     bypass_cache=bypass_cache,
@@ -316,9 +333,12 @@ async def _fetch_and_check_page(
     except Exception as e:
         logger.warning(f"Could not load verified links: {e}")
 
-    external_links = [lnk for lnk in (page.links or []) if not lnk.is_internal]
+    external_links = ([lnk for lnk in (page.links or []) if not lnk.is_internal]
+                      if check_external_links else [])
     ext_checked = 0
-    async with make_client() as ext_client:
+    # Same reasoning as above: an external link that redirects to an internal
+    # host must be refused at the Location header, not after the fetch.
+    async with make_ssrf_guarded_client() as ext_client:
         for lnk in external_links:
             if ext_checked >= _EXTERNAL_LINK_CAP_PER_PAGE:
                 break
@@ -1449,7 +1469,15 @@ async def rescan_url(
             # evaluated, so every stored finding is carried over unchecked.
             "still_present_codes": [],
             "newly_found_codes": [],
-            "carried_over_codes": sorted(old_codes),
+            # The same meaning as on the conclusive branch: findings kept
+            # because this path cannot evaluate them. It was sorted(old_codes),
+            # which also swept in the broken-link codes for this source URL and
+            # paired them with checks_not_run_reason ("only run during a full
+            # crawl") — false for those, and inconsistent with by_category and
+            # total_issues, which count only old_by_cat. The caveat already
+            # states the stronger fact that NOTHING was re-checked.
+            "carried_over_codes": sorted(old_codes & set(
+                _checks_a_single_page_scan_cannot_run())),
             "total_issues": existing,
             "by_category": {
                 k: [_issue_dict(i) | {"rechecked": False} for i in v]
@@ -1493,7 +1521,15 @@ async def rescan_url(
     # Spec:  docs/functional-specification.md (D5)
     # Tests: tests/test_rescan_reports_what_it_checked.py
     unrunnable: set[str] = set(_checks_a_single_page_scan_cannot_run())
-    carried_over = [
+    # ...except when the page is GONE. _rescan_is_conclusive treats 404/410 as
+    # conclusive precisely because "the page is gone, its old findings genuinely
+    # no longer apply" — so carrying findings over there would keep ORPHAN_PAGE
+    # and TITLE_DUPLICATE charging the health score for a page that no longer
+    # exists, clearable only by a full crawl, and would print "Not re-checked:
+    # Orphan page" beside a 404. It would also partly undo E1, whose rule is
+    # that an error page is not content. Carry over only what still exists.
+    page_is_gone = result.status_code in (404, 410)
+    carried_over = [] if page_is_gone else [
         issue
         for issues in old_by_cat.values()
         for issue in issues
@@ -1515,7 +1551,12 @@ async def rescan_url(
     # Record which issue codes were resolved (present before, gone after, and
     # actually evaluated). Nothing enters the ledger without a check behind it.
     new_codes: set[str] = {i.issue_code for i in new_issues}
-    resolved_codes = sorted((old_codes - new_codes) - unrunnable)
+    # When the page is gone its findings genuinely no longer apply — including
+    # the unrunnable ones, which is why `unrunnable` is not subtracted there.
+    resolved_codes = sorted(
+        (old_codes - new_codes) if page_is_gone
+        else ((old_codes - new_codes) - unrunnable)
+    )
     if resolved_codes:
         await store.record_fixed_issues(job_id, url, resolved_codes)
 
@@ -1603,34 +1644,68 @@ def _details_for_issues(issues, *, only_code: str | None) -> list[dict]:
     which is the P19 issue_evidence.py was written to prevent.
     """
     from api.services.issue_evidence import (
-        PAGE_IS_THE_EVIDENCE, UNCAPPED, evidence_lines,
+        PAGE_IS_THE_EVIDENCE, UNCAPPED, evidence_summary,
     )
 
     out: list[dict] = []
     for issue in issues:
-        code = issue.code if hasattr(issue, "code") else issue.issue_code
+        code = issue.issue_code
         if only_code and code != only_code:
             continue
         extra = getattr(issue, "extra", None)
         try:
-            lines, total = evidence_lines(code, extra, row_cap=UNCAPPED)
+            lines, total, rendered = evidence_summary(code, extra, row_cap=UNCAPPED)
         except Exception:  # noqa: BLE001 — detail must never 500 the panel
             logger.warning("details_evidence_failed", extra={"code": code}, exc_info=True)
-            lines, total = [], 0
+            lines, total, rendered = [], 0, 0
         out.append({
             "issue_code": code,
             "description": getattr(issue, "description", ""),
             "items": lines,
             "items_total": total,
+            # Evidence ROWS in `items`, not len(items): `items` also holds one
+            # heading per key and an "... and N more" line, so comparing against
+            # its length under-reports truncation by that overhead.
+            "items_shown": rendered,
             "evidence_basis": "page" if code in PAGE_IS_THE_EVIDENCE else "items",
             # True when the CRAWL kept fewer rows than the page has. Lifting the
             # render cap cannot recover those: capture truncation is scattered
             # literal slices across the checkers, not one constant. Stated
             # rather than papered over — a list that is short for a reason the
             # reader cannot see is the failure this whole feature exists to fix.
-            "truncated_at_capture": total > len(lines),
+            "truncated_at_capture": total > rendered,
+            # This entry came from a check that actually ran. Entries for checks
+            # that did NOT run are added by the caller with evaluated=False —
+            # the distinction the frontend needs before it may say a finding is
+            # gone. Absence must never be read as a pass.
+            "evaluated": True,
         })
     return out
+
+
+def _unevaluated_entries(codes, *, only_code: str | None, reason: str) -> list[dict]:
+    """Entries for codes this read could not evaluate. Never omitted.
+
+    D6 — a code that is simply MISSING from `details` is indistinguishable from
+    one that was checked and found gone, and the panel renders the latter as a
+    green all-clear. That is the E1.2/D5 failure arriving through a third door,
+    so an un-evaluated code travels with a reason instead of vanishing.
+    """
+    return [
+        {
+            "issue_code": code,
+            "description": "",
+            "items": [],
+            "items_total": 0,
+            "items_shown": 0,
+            "evidence_basis": "items",
+            "truncated_at_capture": False,
+            "evaluated": False,
+            "not_evaluated_reason": reason,
+        }
+        for code in sorted(codes)
+        if not only_code or code == only_code
+    ]
 
 
 @router.get("/{job_id}/page-details", response_model=None)
@@ -1680,23 +1755,37 @@ async def get_page_details(
         suppress_h1_strings=suppress_h1s,
         suppress_banner_h1=True,
         bypass_cache=True,
+        # Answering "which items on this page" needs the parse, not a re-audit
+        # of somebody else's links. Left on, every click cost up to
+        # _EXTERNAL_LINK_CAP_PER_PAGE (50) outbound third-party requests, and
+        # the panel calls this once per issue code. The broken-link codes are
+        # reported un-evaluated below rather than silently absent.
+        check_external_links=False,
     )
     if isinstance(check, JSONResponse):
         return check
 
     status_code = check.fetch_result.status_code
+    stored = [i for issues in old_by_cat.values() for i in issues]
+    stored_codes = {i.issue_code for i in stored}
+
+    # Codes this read could not speak to. Absence is not a pass, so each one
+    # travels as an entry with evaluated=False and a reason (D6).
+    unrunnable = set(_checks_a_single_page_scan_cannot_run())
+    link_codes = {c for c in stored_codes
+                  if c.startswith(("BROKEN_LINK", "EXTERNAL_LINK", "REDIRECT_"))}
 
     # E1.2 / D5, third application. A page we could not read tells us nothing
     # about what is on it now. Fall back to the stored evidence, but LABEL it —
     # answering "what is on my page right now" with crawl-time data because the
     # fetch failed is the same false positive D5 removed, wearing a fresh coat.
     if not _rescan_is_conclusive(status_code):
-        stored = [i for issues in old_by_cat.values() for i in issues]
         return {
             "url": url,
             "status_code": status_code,
             "source": "stored",
             "page_unreadable": True,
+            "page_gone": False,
             "captured_at": crawled_page.crawled_at.isoformat()
             if getattr(crawled_page, "crawled_at", None) else None,
             "details": _details_for_issues(stored, only_code=code),
@@ -1709,12 +1798,58 @@ async def get_page_details(
             "capture_cap_note": _CAPTURE_CAP_NOTE,
         }
 
+    # A 404/410 is conclusive — the page is genuinely gone — but that is NOT the
+    # same as "these findings are fixed". Without this branch the live read
+    # returned an empty `details` for every code except BROKEN_LINK_404, and the
+    # panel rendered each one as "no longer on the page as it is now" for a page
+    # that had been unpublished. Same shape as D5, arriving through the branch
+    # D5 did not cover.
+    if result_page_gone := status_code in (404, 410):
+        return {
+            "url": url,
+            "status_code": status_code,
+            "source": "live",
+            "page_unreadable": False,
+            "page_gone": result_page_gone,
+            "details": _details_for_issues(check.issues, only_code=code)
+            + _unevaluated_entries(
+                stored_codes - {i.issue_code for i in check.issues},
+                only_code=code,
+                reason=(
+                    f"The page returns HTTP {status_code} — it is gone, not "
+                    "fixed. These findings were not re-checked because there "
+                    "is no page left to check them against."
+                ),
+            ),
+            "caveat": (
+                f"This page returns HTTP {status_code}. Its findings were not "
+                "re-checked — a page that no longer exists is not a page that "
+                "was repaired."
+            ),
+            "capture_cap_note": _CAPTURE_CAP_NOTE,
+        }
+
     return {
         "url": url,
         "status_code": status_code,
         "source": "live",
         "page_unreadable": False,
-        "details": _details_for_issues(check.issues, only_code=code),
+        "page_gone": False,
+        "details": _details_for_issues(check.issues, only_code=code)
+        + _unevaluated_entries(
+            (stored_codes & unrunnable),
+            only_code=code,
+            reason=_CHECKS_NOT_RUN_REASON,
+        )
+        + _unevaluated_entries(
+            link_codes,
+            only_code=code,
+            reason=(
+                "Links to other sites are not re-checked here, because doing so "
+                "would fetch every one of them on every click. Use the broken-link "
+                "verification in the Broken Links category to re-check them."
+            ),
+        ),
         "capture_cap_note": _CAPTURE_CAP_NOTE,
         # D5 — the same disclosure a rescan carries. A live read of one page
         # cannot evaluate these, so their absence here is not a pass.
@@ -2677,14 +2812,25 @@ def _evidence_fields(issue_code: str, extra: dict | None) -> dict:
     (P19), and it would go stale the first time a code joins the set.
     """
     try:
-        from api.services.issue_evidence import PAGE_IS_THE_EVIDENCE, evidence_lines
+        from api.services.issue_evidence import PAGE_IS_THE_EVIDENCE, evidence_summary
 
-        lines, total = evidence_lines(issue_code, extra)
+        lines, total, rendered = evidence_summary(issue_code, extra)
         basis = "page" if issue_code in PAGE_IS_THE_EVIDENCE else "items"
     except Exception:  # noqa: BLE001 — evidence must never break a list endpoint
         logger.warning("issue_evidence_failed", extra={"code": issue_code}, exc_info=True)
-        return {"evidence": [], "evidence_total": 0, "evidence_basis": "items"}
-    return {"evidence": lines, "evidence_total": total, "evidence_basis": basis}
+        return {"evidence": [], "evidence_total": 0, "evidence_rows": 0,
+                "evidence_basis": "items"}
+    return {
+        "evidence": lines,
+        "evidence_total": total,
+        # Evidence ROWS in `evidence`, which is not len(evidence): that list
+        # also holds one heading per key and an "... and N more" line. A client
+        # comparing evidence_total against evidence.length under-reports
+        # truncation by that overhead — with the default cap of 10 an issue with
+        # 11 or 12 captured rows compares equal and looks complete (D6).
+        "evidence_rows": rendered,
+        "evidence_basis": basis,
+    }
 
 
 @router.get("/{job_id}/images", response_model=None)

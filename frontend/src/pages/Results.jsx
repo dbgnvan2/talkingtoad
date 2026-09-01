@@ -44,16 +44,43 @@ import {
 
 const IMAGE_FIXABLE_CODES = new Set(['IMG_OVERSIZED', 'IMG_ALT_MISSING'])
 
-// D6 — `extra` keys that IssueCard already renders itself, in richer, code-specific
-// form (the empty-anchor fix table, the broken-link source list, the size
-// breakdown). Where one of these is present the hand-rolled block wins and the
-// generic evidence block is suppressed, so a finding never lists its items twice.
-// Keyed on what is actually rendered rather than on a list of issue codes: the
-// codes change, the render conditions are the truth.
+// D6 — `extra` keys that IssueCard already renders itself, in richer,
+// code-specific form (the empty-anchor fix table, the broken-link source list,
+// the schema-mismatch list). Where one of these HAS CONTENT the hand-rolled
+// block wins and the generic evidence block is suppressed, so a finding never
+// lists its items twice.
+//
+// Two corrections from the 2026-09-01 cold sweep, both of which had silently
+// reintroduced the very bug D6 exists to fix:
+//
+//   * The test was presence (`iss.extra?.[k]`) while every hand-rolled block
+//     guards on `length > 0`. `[]` is TRUTHY in JS, so an empty array
+//     suppressed the generic block and nothing replaced it. IMG_ALT_MISSING
+//     emits `img_missing_alt_srcs: []` in exactly the branch where the crawler
+//     could not resolve the URLs — the one case where reading the page live is
+//     the answer, and the button was switched off. Same for a sitemap-only
+//     broken link, whose `occurrence_urls` is `[]`.
+//   * `img_missing_alt_srcs` had NO in-card block at all — its only uses feed
+//     ImageFixPanel, which renders only after the operator clicks Fix. So the
+//     highest-volume code showed no details in the normal reading flow.
+//     Removed. `breakdown` renders a KB table but drops the `diagnosis`
+//     sentence that the evidence module exists to surface, so it is no longer
+//     suppressed either.
+//
+// Keyed on what is actually rendered, which is the right principle; `hasRows`
+// below is what makes the implementation match it.
 const HAND_ROLLED_EVIDENCE_KEYS = [
-  'empty_anchors', 'empty_anchor_hrefs', 'duplicate_urls', 'breakdown',
-  'mismatched_fields', 'occurrence_urls', 'img_missing_alt_srcs',
+  'empty_anchors', 'empty_anchor_hrefs', 'duplicate_urls',
+  'mismatched_fields', 'occurrence_urls',
 ]
+
+// A hand-rolled block renders only when its key has CONTENT — every one of them
+// guards on `length > 0`, so presence alone is the wrong predicate.
+function hasHandRolledBlock(extra) {
+  if (!extra) return false
+  return HAND_ROLLED_EVIDENCE_KEYS.some(
+    k => Array.isArray(extra[k]) && extra[k].length > 0)
+}
 
 const AI_TEXT_SUGGESTION_CODES = new Set([
   // Title / meta
@@ -1289,7 +1316,7 @@ export function IssueCard({ issue: iss, jobId, pageUrl, isOpen, onToggleFix, onF
       {/* D6 — which items are the problem. The payload has carried this on every
           issue since 2026-08-29; this panel rendered none of it, which is what
           "doesn't report what links are the problem" was. */}
-      {!HAND_ROLLED_EVIDENCE_KEYS.some(k => iss.extra?.[k]) && (
+      {!hasHandRolledBlock(iss.extra) && (
         <IssueDetails jobId={jobId} pageUrl={pageUrl} issue={iss} />
       )}
 

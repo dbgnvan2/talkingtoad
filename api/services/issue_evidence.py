@@ -151,10 +151,16 @@ def _row_to_line(row: dict) -> str | None:
     return None
 
 
-def evidence_lines(
+def evidence_summary(
     issue_code: str, extra: dict | None, *, row_cap: int | None = None
-) -> tuple[list[str], int]:
-    """Return ``(lines, total)`` — readable evidence, and how many rows exist.
+) -> tuple[list[str], int, int]:
+    """Return ``(lines, total, rendered)``.
+
+    ``rendered`` is how many evidence ROWS are in ``lines`` — deliberately not
+    ``len(lines)``, which also counts one ``"<Label>:"`` heading per key and the
+    ``"... and N more"`` disclosure. Comparing ``total`` (rows) against
+    ``len(lines)`` under-reports truncation by exactly that overhead, so a
+    caller asking "was this cut short?" gets False for small real gaps (D6).
 
     ``total`` exceeds ``len(lines)`` when the list was capped; every caller must
     disclose that rather than presenting the visible rows as the whole set.
@@ -167,12 +173,13 @@ def evidence_lines(
     A parameter cannot race.
     """
     if not extra or not isinstance(extra, dict):
-        return [], 0
+        return [], 0, 0
 
     cap = EVIDENCE_ROW_CAP if row_cap is None else row_cap
 
     lines: list[str] = []
     total = 0
+    rendered_rows = 0
 
     # 1. Lists of dicts (links, fields, groups, examples) and lists of strings
     #    (headings, outlines, URL lists). Ordered so the most specific run first.
@@ -190,6 +197,7 @@ def evidence_lines(
         row_total = int(declared_total) if isinstance(declared_total, int) else len(rendered)
         total += row_total
         head = rendered[:cap]
+        rendered_rows += len(head)
         lines.append(f"{_label(key)}:")
         lines.extend(f"  {line}" for line in head)
         if row_total > len(head):
@@ -202,6 +210,7 @@ def evidence_lines(
         if isinstance(value, str) and value.strip():
             lines.append(_clip(value, 300))
             total += 1
+            rendered_rows += 1
 
     # 3. Short identifying scalars.
     scalars = [
@@ -212,6 +221,7 @@ def evidence_lines(
     if scalars:
         lines.extend(scalars)
         total += len(scalars)
+        rendered_rows += len(scalars)
 
     # 4. Page-text excerpts, quoted so they read as quotation, not as our prose.
     for key in _EXCERPT_KEYS:
@@ -219,7 +229,17 @@ def evidence_lines(
         if isinstance(value, str) and value.strip():
             lines.append(f'{_label(key)}: "{_clip(value, 220)}"')
             total += 1
+            rendered_rows += 1
 
+    return lines, total, rendered_rows
+
+
+def evidence_lines(
+    issue_code: str, extra: dict | None, *, row_cap: int | None = None
+) -> tuple[list[str], int]:
+    """``(lines, total)`` — the long-standing two-value shape, for the callers
+    that do not need the rendered-row count."""
+    lines, total, _rendered = evidence_summary(issue_code, extra, row_cap=row_cap)
     return lines, total
 
 

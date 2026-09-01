@@ -36,7 +36,7 @@ import respx
 from api.models.issue import Issue
 from api.models.job import CrawlJob
 from api.models.page import CrawledPage
-from api.routers.crawl import get_page_details
+from api.routers.crawl import _fetch_and_check_page, get_page_details
 from api.services.issue_evidence import EVIDENCE_ROW_CAP, PAGE_IS_THE_EVIDENCE
 from api.services.sqlite_store import SQLiteJobStore
 
@@ -63,9 +63,18 @@ HTML = (
 
 class _Req:
     """slowapi reads request.client / request.url; the limiter is disabled in
-    tests but the decorator still touches the object."""
+    tests but the decorator still touches the object.
+
+    NOTE the path below is deliberately NOT the real route. It used to read
+    "/api/crawl/j/page-details", and `tests/test_endpoint_coverage.py` -- the CI
+    guard whose entire job is catching un-wired endpoints -- regex-searches the
+    TEXT of the test files for each registered path. That literal satisfied the
+    guard without a single HTTP request ever being made, so deleting both route
+    decorators left the whole 3563-test suite green. The guard was handed the
+    string it looks for. Real coverage now comes from TestClientContract below.
+    """
     client = type("C", (), {"host": "test"})()
-    url = type("U", (), {"path": "/api/crawl/j/page-details"})()
+    url = type("U", (), {"path": "/unit-call-not-a-route"})()
     headers: dict = {}
     method = "GET"
     scope: dict = {"client": ("test", 0), "type": "http", "headers": []}
@@ -114,15 +123,33 @@ def _entry(res, code):
 
 
 async def _snapshot(store) -> dict:
-    """Everything the endpoint could plausibly disturb."""
-    _, by_cat = await store.get_page_issues_by_url("j", PAGE)
-    return {
-        "issues": sorted((i.issue_code, i.description) for v in by_cat.values() for i in v),
-        "fix_history": sorted((h["page_url"], h["issue_code"])
-                              for h in await store.get_fix_history("j")),
-        "page": (lambda p: (p.url, p.status_code, p.title))(
-            (await store.get_page_issues_by_url("j", PAGE))[0]),
-    }
+    """Every row of every table.
+
+    The first version of this hand-picked three page fields, two issue fields
+    and the fix ledger -- and the 2026-09-01 sweep proved it could not detect
+    the write it was named for. Inserting the verbatim `save_pages(...)` that
+    `rescan_url` performs left all 16 tests green, because the 37 fields it
+    changes were not among the three read back, and the seeded title and status
+    happened to match the live parse. `update_issue_extra` was invisible too --
+    which is the field the endpoint's own stored-fallback branch reads.
+
+    So: dump the database. A guard against "did anything change" must look at
+    everything, or it is a guard against "did the four things I thought of
+    change".
+    """
+    db = store._db
+    async with db.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' "
+        "AND name NOT LIKE 'sqlite_%' ORDER BY name"
+    ) as cur:
+        tables = [r[0] for r in await cur.fetchall()]
+    assert tables, "no tables found — the snapshot would be vacuously equal"
+    out: dict = {}
+    for table in tables:
+        async with db.execute(f"SELECT * FROM {table}") as cur:  # noqa: S608 — names from sqlite_master
+            rows = await cur.fetchall()
+        out[table] = sorted(repr(tuple(r)) for r in rows)
+    return out
 
 
 class TestItReturnsTheItems:
@@ -253,18 +280,40 @@ class TestAdversarial:
         """Guards the guard: consumes the real evidence_lines rather than
         mocking it, so a private formatter that drifts from the PDF/Excel/panel
         output turns this red."""
-        from api.services.issue_evidence import UNCAPPED, evidence_lines
+        from api.services.issue_evidence import UNCAPPED, evidence_summary
         await _seed(store)
+
+        # Capture the exact `extra` the live check produced, then require the
+        # endpoint's `items` to equal the shared renderer's output for it,
+        # ELEMENT FOR ELEMENT.
+        #
+        # The first version asserted `any(expected[-1] in ln for ln in items)` —
+        # one row's substring, which is defined by _row_to_line, not by
+        # evidence_lines. The sweep replaced the call with a private inline
+        # formatter that emitted no "<Label>:" heading, no "... and N more"
+        # disclosure and no _NOISE_KEYS filtering, and all 16 tests stayed
+        # green. Every structural difference was invisible to it.
+        with respx.mock(assert_all_mocked=False, assert_all_called=False) as rx:
+            rx.get(PAGE).mock(return_value=httpx.Response(
+                200, text=HTML, headers={"content-type": "text/html"}))
+            rx.route().mock(return_value=httpx.Response(200, text="ok"))
+            check = await _fetch_and_check_page(
+                url=PAGE, job_id="j", base_url=BASE, store=store,
+                check_external_links=False)
+        live = next(i for i in check.issues
+                    if i.issue_code == "UNSAFE_CROSS_ORIGIN_LINK")
+        expected, total, rendered = evidence_summary(
+            "UNSAFE_CROSS_ORIGIN_LINK", live.extra, row_cap=UNCAPPED)
+
         entry = _entry(await _details(store), "UNSAFE_CROSS_ORIGIN_LINK")
-        # Rebuild the same lines straight from the renderer on the same extra
-        # shape the checker produces, and require identical formatting.
-        sample = {"unsafe_links": [{"href": "https://ext0.example.com/x",
-                                    "text": "External 0"}],
-                  "unsafe_links_total": 1}
-        expected, _ = evidence_lines("UNSAFE_CROSS_ORIGIN_LINK", sample, row_cap=UNCAPPED)
-        assert any(expected[-1].strip() in ln for ln in entry["items"]), (
-            "the endpoint's line format differs from the shared renderer's — "
-            "two formatters now exist and will drift")
+        assert entry["items"] == expected, (
+            "the endpoint's items differ from the shared renderer's output — "
+            "a second formatter exists and will drift from the PDF, the Excel "
+            "export and CategoryPanel")
+        assert entry["items_total"] == total
+        assert entry["items_shown"] == rendered
+        # Structure the substring assertion could not see.
+        assert any(ln.endswith(":") for ln in entry["items"]), "no heading line"
 
 
 class TestTheRenderCapLiftIsRaceFree:
@@ -286,3 +335,300 @@ class TestTheRenderCapLiftIsRaceFree:
             "the module global moved — the cap is still being swapped, not passed")
         assert len(big) > len(small), "row_cap had no effect"
         assert len(small) <= before + 2, "the default render is no longer capped"
+
+
+class TestClientContract:
+    """Through the ASGI app, over HTTP, with a real Authorization header.
+
+    Every other test in this file calls `get_page_details(...)` as a plain
+    Python function. The 2026-09-01 sweep deleted BOTH route decorators and ran
+    the entire suite: 3563 passed. The endpoint was completely unregistered and
+    nothing went red -- including `test_endpoint_coverage.py`, which was
+    satisfied by a path literal inside the `_Req` stub above.
+
+    So nothing bound this endpoint to its URL, its auth, its query validation or
+    its error codes. These tests are that binding. If the route decorator is
+    removed, they 404.
+    """
+
+    async def _seed_app_store(self, test_store):
+        await test_store.create_job(CrawlJob(job_id="j", target_url=BASE))
+        await test_store.save_pages([CrawledPage(
+            job_id="j", url=PAGE, status_code=200, title="About")])
+        await test_store.save_issues([Issue(
+            job_id="j", page_url=PAGE, category="security", severity="warning",
+            issue_code="UNSAFE_CROSS_ORIGIN_LINK", description="seeded",
+            recommendation="add rel=noopener", impact=1,
+            extra={"unsafe_links": [{"href": "https://stored.example.com/a",
+                                     "text": "Stored"}],
+                   "unsafe_links_total": 1},
+        )])
+
+    async def test_the_route_is_registered_and_answers(self, api_client, auth_headers, test_store):
+        await self._seed_app_store(test_store)
+        with respx.mock(assert_all_mocked=False, assert_all_called=False) as rx:
+            rx.get(PAGE).mock(return_value=httpx.Response(
+                200, text=HTML, headers={"content-type": "text/html"}))
+            rx.route().mock(return_value=httpx.Response(200, text="ok"))
+            r = await api_client.get(
+                f"/api/crawl/j/page-details?url={PAGE}", headers=auth_headers)
+        assert r.status_code == 200, (
+            f"the route did not answer: {r.status_code} {r.text[:200]}")
+        body = r.json()
+        assert body["source"] == "live"
+        assert any(d["issue_code"] == "UNSAFE_CROSS_ORIGIN_LINK"
+                   for d in body["details"])
+
+    async def test_it_requires_auth(self, api_client, test_store):
+        await self._seed_app_store(test_store)
+        r = await api_client.get(f"/api/crawl/j/page-details?url={PAGE}")
+        assert r.status_code in (401, 403), (
+            f"the endpoint answered without a token: {r.status_code}")
+
+    async def test_a_missing_url_is_a_422_not_a_500(self, api_client, auth_headers, test_store):
+        await self._seed_app_store(test_store)
+        r = await api_client.get("/api/crawl/j/page-details", headers=auth_headers)
+        assert r.status_code == 422
+
+    async def test_an_unknown_job_is_404(self, api_client, auth_headers):
+        r = await api_client.get(
+            f"/api/crawl/nope/page-details?url={PAGE}", headers=auth_headers)
+        assert r.status_code == 404
+        assert r.json()["error"]["code"] == "JOB_NOT_FOUND"
+
+    async def test_an_uncrawled_url_is_404(self, api_client, auth_headers, test_store):
+        await self._seed_app_store(test_store)
+        r = await api_client.get(
+            f"/api/crawl/j/page-details?url={BASE}never-crawled",
+            headers=auth_headers)
+        assert r.status_code == 404
+        assert r.json()["error"]["code"] == "PAGE_NOT_FOUND"
+
+
+class TestAGonePageIsNotACleanPage:
+    """A 404 is conclusive, so this took the LIVE branch and returned details
+    containing only BROKEN_LINK_404. The panel then found no entry for the code
+    it asked about and rendered the green "This finding is no longer on the page
+    as it is now" — for a page that had been unpublished. Every stored finding
+    reported itself cleared. Same shape as D5, through the branch D5 did not
+    cover. Found by the 2026-09-01 cold sweep.
+    """
+
+    GONE = "<!DOCTYPE html><html><head><title>Not found</title></head>" \
+           "<body><h1>Page not found</h1></body></html>"
+
+    async def test_a_gone_page_says_so_and_does_not_omit_the_code(self, store):
+        await _seed(store)
+        res = await _details(store, code="UNSAFE_CROSS_ORIGIN_LINK",
+                             status=404, body=self.GONE)
+        assert res["page_gone"] is True
+        assert res["caveat"], "a 404 came back with no explanation"
+        entry = _entry(res, "UNSAFE_CROSS_ORIGIN_LINK")
+        assert entry["evaluated"] is False, (
+            "the code was reported as evaluated on a page that returns 404 — "
+            "the panel renders a missing/clean entry as 'no longer on the page'")
+        assert entry["not_evaluated_reason"]
+
+    async def test_a_live_200_still_marks_entries_evaluated(self, store):
+        """The mirror: a gate that marked everything un-evaluated would satisfy
+        the test above and destroy the feature."""
+        await _seed(store)
+        entry = _entry(await _details(store), "UNSAFE_CROSS_ORIGIN_LINK")
+        assert entry["evaluated"] is True
+
+
+class TestChecksThatDidNotRunAreNamed:
+    async def test_link_codes_are_reported_unevaluated_not_absent(self, store):
+        """External links are no longer re-checked here (one click used to cost
+        up to 50 outbound third-party requests). Their absence from the results
+        must therefore not read as 'fixed'."""
+        await store.create_job(CrawlJob(job_id="j", target_url=BASE))
+        await store.save_pages([CrawledPage(job_id="j", url=PAGE, status_code=200,
+                                            title="About")])
+        await store.save_issues([Issue(
+            job_id="j", page_url=PAGE, category="broken_link", severity="info",
+            issue_code="BROKEN_LINK_404", description="dead", recommendation="fix",
+            impact=2, extra={"target_url": "https://dead.example.com/x"})])
+        entry = _entry(await _details(store, code="BROKEN_LINK_404"),
+                       "BROKEN_LINK_404")
+        assert entry["evaluated"] is False
+        assert "not re-checked" in entry["not_evaluated_reason"].lower() or \
+               "not re-checked here" in entry["not_evaluated_reason"].lower()
+
+    async def test_a_full_crawl_only_code_is_reported_unevaluated(self, store):
+        await store.create_job(CrawlJob(job_id="j", target_url=BASE))
+        await store.save_pages([CrawledPage(job_id="j", url=PAGE, status_code=200,
+                                            title="About")])
+        await store.save_issues([Issue(
+            job_id="j", page_url=PAGE, category="metadata", severity="warning",
+            issue_code="TITLE_DUPLICATE", description="dup", recommendation="fix",
+            impact=5)])
+        entry = _entry(await _details(store, code="TITLE_DUPLICATE"), "TITLE_DUPLICATE")
+        assert entry["evaluated"] is False
+
+
+class TestTruncationArithmetic:
+    """`truncated_at_capture` compared evidence ROWS against rendered LINES.
+    `items` also holds one heading per key and an "... and N more" line, so the
+    flag read False whenever the real gap was smaller than that overhead. The
+    original test passed only because its fixture gap (25 vs 20) exceeded it —
+    the assertion was satisfied by an arithmetically wrong formula."""
+
+    async def test_a_small_capture_gap_is_still_flagged(self, store):
+        from api.routers.crawl import _details_for_issues
+
+        issue = Issue(
+            job_id="j", page_url=PAGE, category="security", severity="warning",
+            issue_code="UNSAFE_CROSS_ORIGIN_LINK", description="d",
+            recommendation="r", impact=1,
+            # 3 rows kept, 4 on the page: a gap of ONE, smaller than the
+            # heading + "and N more" overhead that the old formula counted.
+            extra={"unsafe_links": [{"href": f"https://x{i}.test/", "text": f"L{i}"}
+                                    for i in range(3)],
+                   "unsafe_links_total": 4},
+        )
+        entry = _details_for_issues([issue], only_code=None)[0]
+        assert entry["items_total"] == 4
+        assert entry["items_shown"] == 3
+        assert entry["truncated_at_capture"] is True, (
+            "a genuine capture gap of 1 was not flagged — the flag is "
+            "comparing rows against line count again")
+
+    async def test_an_untruncated_finding_is_not_flagged(self, store):
+        from api.routers.crawl import _details_for_issues
+
+        issue = Issue(
+            job_id="j", page_url=PAGE, category="security", severity="warning",
+            issue_code="UNSAFE_CROSS_ORIGIN_LINK", description="d",
+            recommendation="r", impact=1,
+            extra={"unsafe_links": [{"href": f"https://x{i}.test/", "text": f"L{i}"}
+                                    for i in range(3)],
+                   "unsafe_links_total": 3},
+        )
+        entry = _details_for_issues([issue], only_code=None)[0]
+        assert entry["truncated_at_capture"] is False
+
+
+class TestEvidenceBasisOnTheListEndpoint:
+    """`_evidence_fields` is what /page-issues returns and what the Page Audit
+    actually branches on — `basis !== 'page'` gates the "Get full details"
+    button and picks NoItemsToList's wording. The sweep set `basis = "items"`
+    unconditionally and the whole 3563-test suite stayed green, because
+    evidence_basis was asserted only for `_details_for_issues`, and the frontend
+    fixture hardcodes the value neither side actually produces.
+
+    Under that mutation all 30 PAGE_IS_THE_EVIDENCE codes render "No specific
+    items were recorded... Use Get full details" and offer a button that can
+    only ever return nothing — the misleading empty box D6 exists to remove.
+    """
+
+    def test_a_page_is_the_evidence_code_reports_basis_page(self):
+        from api.routers.crawl import _issue_dict
+
+        payload = _issue_dict(Issue(
+            job_id="j", page_url=PAGE, category="metadata", severity="info",
+            issue_code="TITLE_MISSING", description="d", recommendation="r"))
+        assert payload["evidence_basis"] == "page", (
+            "TITLE_MISSING is in PAGE_IS_THE_EVIDENCE; reporting 'items' makes "
+            "the panel offer a live read that cannot help and word the empty "
+            "state as 'nothing recorded'")
+
+    def test_an_item_naming_code_reports_basis_items(self):
+        from api.routers.crawl import _issue_dict
+
+        payload = _issue_dict(Issue(
+            job_id="j", page_url=PAGE, category="security", severity="warning",
+            issue_code="UNSAFE_CROSS_ORIGIN_LINK", description="d",
+            recommendation="r"))
+        assert payload["evidence_basis"] == "items"
+
+    def test_the_two_bases_are_actually_different(self):
+        """Guards the guard: both assertions above would pass if the field were
+        hardwired to whichever value each expects. This one fails if the
+        function returns a constant."""
+        from api.routers.crawl import _issue_dict
+
+        def basis(code, category):
+            return _issue_dict(Issue(
+                job_id="j", page_url=PAGE, category=category, severity="info",
+                issue_code=code, description="d", recommendation="r"))["evidence_basis"]
+
+        assert basis("TITLE_MISSING", "metadata") != basis(
+            "UNSAFE_CROSS_ORIGIN_LINK", "security")
+
+    def test_evidence_rows_counts_rows_not_lines(self):
+        """The frontend's "Get full details" gate reads this. If it were
+        len(evidence), an issue with 11-12 captured rows would compare equal to
+        its total and offer no button while printing "... and 2 more"."""
+        from api.routers.crawl import _issue_dict
+
+        payload = _issue_dict(Issue(
+            job_id="j", page_url=PAGE, category="security", severity="warning",
+            issue_code="UNSAFE_CROSS_ORIGIN_LINK", description="d",
+            recommendation="r",
+            extra={"unsafe_links": [{"href": f"https://x{i}.test/", "text": f"L{i}"}
+                                    for i in range(20)],
+                   "unsafe_links_total": 20}))
+        # 10 rows rendered (default cap) + 1 heading + 1 "... and N more" line.
+        assert payload["evidence_rows"] == 10
+        assert len(payload["evidence"]) == 12
+        assert payload["evidence_total"] == 20
+
+
+class TestTheSharedFetchPathBlocksRedirectsBeforeFollowing:
+    """`_fetch_and_check_page` — the shared body of `/page-details`,
+    `/rescan-url` and `/scan-page` — used `make_client()`.
+
+    `fetch_page` does re-check `redirect_chain + [final_url]`, but only AFTER
+    httpx has followed the hop, so a public host 302-ing to 169.254.169.254 had
+    that request ISSUED and the response merely discarded. Blind SSRF: side
+    effects fire, nothing is exfiltrated. CLAUDE.md requires private IPs blocked
+    "at start *and* on every redirect hop", and the repo already had
+    `make_ssrf_guarded_client()`, which refuses the Location header before
+    following it — used at six other call sites but not this one.
+
+    Found by the 2026-09-01 cold sweep as inherited, not introduced. Fixed for
+    all three endpoints at once, and pinned here so it cannot be swapped back.
+    """
+
+    async def test_a_redirect_to_an_internal_host_is_never_requested(self, store, monkeypatch):
+        from api.crawler import fetcher
+
+        await _seed(store)
+        requested: list[str] = []
+        monkeypatch.setattr(
+            fetcher, "is_ssrf_safe", lambda url: "169.254.169.254" not in str(url))
+
+        with respx.mock(assert_all_mocked=False, assert_all_called=False) as rx:
+            rx.get(PAGE).mock(return_value=httpx.Response(
+                302, headers={"location": "http://169.254.169.254/latest/meta-data/"}))
+
+            def _record(request):
+                requested.append(str(request.url))
+                return httpx.Response(200, text="SECRET", headers={"content-type": "text/html"})
+
+            rx.get("http://169.254.169.254/latest/meta-data/").mock(side_effect=_record)
+            rx.route().mock(return_value=httpx.Response(200, text="ok"))
+            res = await get_page_details(_Req(), "j", url=PAGE, code=None, store=store)
+
+        assert requested == [], (
+            f"the internal host was actually requested ({requested}) — the "
+            f"redirect was followed and only then rejected, which is the blind "
+            f"SSRF this path is supposed to refuse")
+        # And the endpoint degrades honestly rather than pretending it read the page.
+        if isinstance(res, dict):
+            assert res.get("source") != "live" or res.get("page_unreadable") is True
+
+    async def test_an_ordinary_redirect_still_works(self, store):
+        """The mirror: a guard that refused every redirect would pass the test
+        above and break every site that redirects to a canonical URL."""
+        await _seed(store)
+        with respx.mock(assert_all_mocked=False, assert_all_called=False) as rx:
+            rx.get(PAGE).mock(return_value=httpx.Response(
+                301, headers={"location": f"{BASE}about-us"}))
+            rx.get(f"{BASE}about-us").mock(return_value=httpx.Response(
+                200, text=HTML, headers={"content-type": "text/html"}))
+            rx.route().mock(return_value=httpx.Response(200, text="ok"))
+            res = await get_page_details(_Req(), "j", url=PAGE, code=None, store=store)
+        assert isinstance(res, dict)
+        assert res["source"] == "live", "a legitimate redirect was refused"
