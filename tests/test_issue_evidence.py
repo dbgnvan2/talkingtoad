@@ -509,3 +509,60 @@ class TestExemptAnchorsReachTheEvidence:
         issue = {"issue_code": "META_DESC_MISSING", "description": "d",
                  "extra": {}, "evidence": [], "evidence_total": 0}
         assert _apply_exempt_anchors([issue], {"https://x/drop"}) == [issue]
+
+
+class TestStackedLinkContainerIsNamed:
+    """S4 (2026-09-01) — the evidence must name what it called a card.
+
+    `container_tag`/`container_class` were stored on every stacked-link group
+    from the day the check shipped and rendered nowhere. When the check started
+    treating `<main>` as a card, the only way to see that was to open the
+    SQLite database by hand — which is how the defect survived a user report of
+    "this link is duplicated, but I can't find it".
+
+    Spec: docs/pending/2026-09-01_stacked-links-container-overmatch.md#S4
+    """
+
+    GROUP = {
+        "href": "https://livingsystems.ca/training/application-seminar/",
+        "count": 2,
+        "accessible_names": ["Application Seminar Learn more", "Application of Bowen"],
+        "container_tag": "li",
+        "container_class": "jet-listing-grid__item jet-listing-dynamic-post-12168",
+    }
+
+    def _line(self, group: dict) -> str:
+        from api.services.issue_evidence import _row_to_line
+
+        return _row_to_line(group)
+
+    def test_container_tag_and_class_are_rendered(self):
+        line = self._line(self.GROUP)
+        assert "li" in line
+        assert "jet-listing-grid__item" in line
+
+    def test_page_level_container_would_be_visible_on_screen(self):
+        """The regression, from the reader's side: had this been rendered, the
+        finding would have said `<main class="… hentry">` and named itself."""
+        line = self._line({**self.GROUP, "container_tag": "main",
+                           "container_class": "site-main post-350 page hentry"})
+        assert "main" in line and "hentry" in line
+
+    def test_group_without_a_container_still_renders(self):
+        """Legacy rows predate the container fields; they must not crash or
+        render a dangling 'in <>'."""
+        bare = {k: v for k, v in self.GROUP.items()
+                if k not in ("container_tag", "container_class")}
+        line = self._line(bare)
+        assert "application-seminar" in line
+        assert "in <" not in line
+
+    def test_container_with_no_class_renders_the_tag_alone(self):
+        line = self._line({**self.GROUP, "container_class": ""})
+        assert "in <li>" in line
+        assert 'class=""' not in line
+
+    def test_the_href_is_still_the_subject_of_the_line(self):
+        """Adding context must not bury the destination the finding is about."""
+        line = self._line(self.GROUP)
+        assert line.index("application-seminar") < line.index("jet-listing")

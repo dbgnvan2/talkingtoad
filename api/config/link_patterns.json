@@ -3,9 +3,18 @@
     "E6 — card-container patterns for stacked-link detection.",
     "Rule 9: these are page-builder-specific editorial strings, not logic.",
     "Add a class here when a builder wraps cards in a container TalkingToad",
-    "does not yet recognise. Spec: docs/pending/2026-08-29_E6-stacked-duplicate-links.md"
+    "does not yet recognise. Spec: docs/pending/2026-08-29_E6-stacked-duplicate-links.md",
+    "",
+    "MATCHING IS TOKEN-BOUNDED, NOT SUBSTRING (2026-09-01). A pattern matches a",
+    "class that equals it, or starts with it followed by '-' or '_'. 'entry'",
+    "matches 'entry-card', never WordPress's 'hentry' — a bare substring test",
+    "made <main class='... hentry'> a card and turned this check into 'any URL",
+    "linked twice anywhere on the page'. See",
+    "docs/pending/2026-09-01_stacked-links-container-overmatch.md",
+    "",
+    "Class patterns alone can never be trusted: the structural guards below are",
+    "what actually hold when the next theme invents a new name."
   ],
-
   "card_container_classes": [
     "card",
     "entry",
@@ -20,8 +29,22 @@
     "tile",
     "teaser"
   ],
-
-  "card_container_tags": ["li", "article"],
-
-  "min_group_size": 2
+  "card_container_tags": [
+    "li",
+    "article"
+  ],
+  "non_card_classes": [
+    "entry-content",
+    "entry-header",
+    "entry-title",
+    "site-main",
+    "site-content",
+    "elementor-location-single",
+    "elementor-location-archive",
+    "hentry"
+  ],
+  "min_group_size": 2,
+  "max_card_links": 15,
+  "max_card_text_fraction": 0.5,
+  "min_page_text_for_fraction": 500
 }

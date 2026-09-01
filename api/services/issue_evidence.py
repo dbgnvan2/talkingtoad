@@ -129,6 +129,16 @@ def _row_to_line(row: dict) -> str | None:
             tail.append(str(row["severity"]))
         if row.get("count"):
             tail.append(f"x{row['count']}")
+        # S4 (2026-09-01) — name the container a stacked-link group was grouped
+        # by. It was always stored and never shown, so when the check called
+        # <main> a card the only way to see it was to open the database. A
+        # future over-match must be visible on the screen that reports it.
+        if row.get("container_tag"):
+            container = f"<{row['container_tag']}"
+            css = (row.get("container_class") or "").strip()
+            if css:
+                container += f' class="{_clip(css, 60)}"'
+            tail.append(f"in {container}>")
         line = " -> ".join(bits) if len(bits) > 1 else bits[0]
         return _clip(f"{line}" + (f"  ({', '.join(tail)})" if tail else ""))
 

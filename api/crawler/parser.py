@@ -1411,7 +1411,19 @@ def _find_empty_anchors(soup: BeautifulSoup, page_url: str = "") -> list[dict]:
 # has a name; a screen-reader user hears the destination three times and a
 # crawler sees three links where the editor intended one.
 # Spec: docs/pending/2026-08-29_E6-stacked-duplicate-links.md
-_STACKED_CFG_KEYS = ("card_container_classes", "card_container_tags", "min_group_size")
+_STACKED_CFG_KEYS = (
+    "card_container_classes", "card_container_tags", "min_group_size",
+    "non_card_classes", "max_card_links", "max_card_text_fraction",
+    "min_page_text_for_fraction",
+)
+
+# S1 — tags that are NEVER a card, whatever classes they carry. The page's own
+# content region is not a bounded, repeating unit.
+_NEVER_CARD_TAGS = frozenset({"main", "body", "html"})
+
+# Separators a builder puts between a base class and its modifier
+# ("entry-card", "elementor-post__card"). Used for token-boundary matching.
+_CLASS_BOUNDARIES = ("-", "_")
 
 
 def _link_patterns_cfg() -> dict:
@@ -1420,18 +1432,110 @@ def _link_patterns_cfg() -> dict:
     return load_config("link_patterns", required_keys=_STACKED_CFG_KEYS)
 
 
-def _is_card_container(tag, card_classes: set[str], card_tags: set[str]) -> bool:
+def _class_matches_pattern(cls: str, pattern: str) -> bool:
+    """Token-boundary prefix match — NOT a bare substring test.
+
+    Purpose: `entry` must match `entry-card` and `entry__wrap` but never
+             WordPress's `hentry`, which `post_class()` puts on the wrapper of
+             essentially every WordPress page ever rendered.
+    Spec:    docs/pending/2026-09-01_stacked-links-container-overmatch.md#S2
+    Tests:   tests/test_stacked_links.py, tests/test_stacked_links_config.py
+
+    A bare ``pattern in cls`` made ``<main class="… hentry">`` qualify as a
+    card, so every anchor on the page landed in one bucket and E6 degenerated
+    into "any URL linked twice anywhere on the page" — the precise failure the
+    container requirement exists to prevent. 90% of the check's output on
+    livingsystems.ca was that failure.
+    """
+    if cls == pattern:
+        return True
+    if not cls.startswith(pattern):
+        return False
+    return cls[len(pattern)] in _CLASS_BOUNDARIES
+
+
+def _navigational_links(tag) -> list:
+    """Anchors inside *tag* that actually navigate somewhere.
+
+    Same exclusions as the grouping pass, so the link-budget guard counts the
+    same population the check would group.
+    """
+    out = []
+    for a in tag.find_all("a", href=True):
+        href = (a.get("href") or "").strip()
+        if href and not href.startswith(("#", "javascript:", "mailto:", "tel:", "data:")):
+            out.append(a)
+    return out
+
+
+def _is_card_container(
+    tag,
+    card_classes: set[str],
+    card_tags: set[str],
+    non_card_classes: set[str] = frozenset(),
+    *,
+    page_text_len: int = 0,
+    article_count: int = 0,
+    max_card_links: int = 15,
+    max_card_text_fraction: float = 0.5,
+    min_page_text_for_fraction: int = 500,
+) -> bool:
+    """Is *tag* a card — a bounded, repeating unit — rather than the page?
+
+    Spec:  docs/pending/2026-09-01_stacked-links-container-overmatch.md#S1
+    Tests: tests/test_stacked_links.py
+
+    Class patterns are editorial strings and the next theme will always defeat
+    them, so the structural guards (S1) come first and do the load-bearing
+    work; the class/tag patterns only decide which of the survivors is a card.
+    """
     name = getattr(tag, "name", None)
     if not name:
         return False
-    if name in card_tags:
-        return True
+
+    # ── S1: never the page's main content region ─────────────────────────
+    if name in _NEVER_CARD_TAGS:
+        return False
+    if (tag.get("role") or "").strip().casefold() == "main":
+        return False
+
     classes = tag.get("class") or []
     if isinstance(classes, str):
         classes = classes.split()
-    return any(
-        any(pattern in cls.casefold() for pattern in card_classes) for cls in classes
-    )
+    folded = [c.casefold() for c in classes]
+
+    # Explicit page-level wrappers that survive token-boundary matching
+    # ("entry-content" legitimately starts with "entry-").
+    if any(_class_matches_pattern(c, p) for c in folded for p in non_card_classes):
+        return False
+
+    # ── Which survivors look like a card ─────────────────────────────────
+    matched = False
+    if name in card_tags:
+        # S3: <article> is a card on a LISTING; on a single-post template it
+        # wraps the whole post. Two or more articles means a listing.
+        matched = article_count >= 2 if name == "article" else True
+    if not matched:
+        matched = any(
+            _class_matches_pattern(c, p) for c in folded for p in card_classes
+        )
+    if not matched:
+        return False
+
+    # ── S1 (cont.): a card is bounded ────────────────────────────────────
+    # Run only on candidates, so the walk stays cheap on ordinary markup.
+    if len(_navigational_links(tag)) > max_card_links:
+        return False
+    # The text-share guard needs a page to be a share OF. Below
+    # `min_page_text_for_fraction` there is no surrounding page for a card to be
+    # half of — a one-card stub is legitimately most of its own text, and
+    # rejecting it would suppress a true finding to satisfy a ratio that carries
+    # no information at that size.
+    if page_text_len >= min_page_text_for_fraction:
+        own_text = len(tag.get_text(" ", strip=True))
+        if own_text >= max_card_text_fraction * page_text_len:
+            return False
+    return True
 
 
 def _find_stacked_links(soup: BeautifulSoup, page_url: str = "") -> list[dict]:
@@ -1457,7 +1561,17 @@ def _find_stacked_links(soup: BeautifulSoup, page_url: str = "") -> list[dict]:
 
     card_classes = {c.casefold() for c in cfg["card_container_classes"]}
     card_tags = {t.casefold() for t in cfg["card_container_tags"]}
+    non_card_classes = {c.casefold() for c in cfg["non_card_classes"]}
     min_size = int(cfg["min_group_size"])
+    max_card_links = int(cfg["max_card_links"])
+    max_card_text_fraction = float(cfg["max_card_text_fraction"])
+    min_page_text_for_fraction = int(cfg["min_page_text_for_fraction"])
+
+    # Page context for the structural guards (S1/S3). Computed once: a card is
+    # judged relative to the page it sits in, not in isolation.
+    body = soup.body or soup
+    page_text_len = len(body.get_text(" ", strip=True))
+    article_count = len(soup.find_all("article"))
 
     groups: list[dict] = []
     seen_containers: set[int] = set()
@@ -1466,7 +1580,14 @@ def _find_stacked_links(soup: BeautifulSoup, page_url: str = "") -> list[dict]:
         # Walk up to the nearest container that looks like a card.
         container = None
         for parent in anchor.parents:
-            if _is_card_container(parent, card_classes, card_tags):
+            if _is_card_container(
+                parent, card_classes, card_tags, non_card_classes,
+                page_text_len=page_text_len,
+                article_count=article_count,
+                max_card_links=max_card_links,
+                max_card_text_fraction=max_card_text_fraction,
+                min_page_text_for_fraction=min_page_text_for_fraction,
+            ):
                 container = parent
                 break
         if container is None or id(container) in seen_containers:
