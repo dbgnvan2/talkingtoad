@@ -870,6 +870,15 @@ def _render_wp_audit_section(pdf, audit: dict | None) -> None:
     _block("Not inspected", audit.get("not_inspected") or [], COLOR_GRAY_500)
 
 
+def _info_notices_figure(summary: dict):
+    """The scored info count, with the excluded count when the level left any out."""
+    stored = summary.get("by_severity", {}).get("info", 0)
+    excluded = summary.get("info_excluded") or 0
+    if not excluded:
+        return stored
+    return f"{summary.get('info_scored', stored - excluded)} (+{excluded} excluded)"
+
+
 def _render_caveats_section(pdf, job, summary, *, performance, image_summary,
                             filter_note=None,
                             prevalence, performance_failed: bool = False,
@@ -1133,7 +1142,9 @@ async def generate_pdf_report(
         ("Total Issues Found", summary.get("total_issues", 0), COLOR_GRAY_800),
         ("Critical Issues", summary.get("by_severity", {}).get("critical", 0), COLOR_CRITICAL),
         ("Warnings", summary.get("by_severity", {}).get("warning", 0), COLOR_WARNING),
-        ("Info Notices", summary.get("by_severity", {}).get("info", 0), COLOR_INFO),
+        # Info detail (2026-09-01): the figure beside "Health Score" is the one
+        # the score counted; what the scan left out is stated in the same cell.
+        ("Info Notices", _info_notices_figure(summary), COLOR_INFO),
     ]
     
     # E4 — Site Hygiene sits beside Health, with its meaning stated. Health is

@@ -810,9 +810,10 @@ job, and named beside every number it changes. Summary shape and per-issue field
 | Surface | What changes |
 |---|---|
 | `GET /api/crawl/{job_id}/pages/issues?url=…` | `by_category` is filtered to the level; `info_filtered: {hidden, by_tier, info_detail}` added; `?info_detail=all` reveals. |
-| `GET /api/crawl/{job_id}/pages` | `citability_grade` follows the level. |
+| `GET /api/crawl/{job_id}/pages` | `citability_grade` follows the level; `issue_counts.total` / `.info` count the kept rows and `issue_counts.info_excluded` names what the level left out on that page (0 at `all`). `min_severity` still tests the stored severities. |
 | `GET /api/crawl/{job_id}/page-priority` | `health_score` / `citability_grade` per row follow the level. |
-| `GET …/export/pdf`, `…/export/excel` | Listed rows follow the level; the Scope & Caveats / Summary sheet carries "Scored at info detail '…': N info notices (…) excluded from this audit and from its health score by the scan setting." |
-| `GET …/export/csv`, `…/export/csv/{category}` | Rows follow the level (no caveat cell, as with F1). |
+| `GET …/export/pdf`, `…/export/excel` | Listed rows follow the level; the PDF Dashboard's "Info Notices" figure is the scored count with "(+N excluded)" beside it; the Scope & Caveats / Summary sheet carries "Scored at info detail '…': N info notices (…) excluded from this audit and from its health score by the scan setting." |
+| `GET …/export/csv`, `…/export/csv/{category}` | Rows follow the level; every row carries an `info_tier` column (`high` / `medium` / `low`, blank for warning/critical) so a scoped CSV can be told apart from a quieter site. No caveat row (as with F1). |
+| `POST /api/jobs/{job_id}/ai-citations` | The `AI_HIGH_VALUE_UNCITED` "healthy page" gate (page health ≥ 80) is computed at the job's level, like every other per-page grade. |
 | `GET /api/crawl/{job_id}/comparison` | Adds `comparable: bool`, `reason: string|null`, and `info_detail` on `current` / `previous`. `comparable: false` with `reason: "info_detail differs (notable vs all)"` when the two jobs were scanned at different levels; the delta is still returned. |
 | `POST /api/crawl/{job_id}/rescan` | The new job inherits `info_detail` with the other settings. |

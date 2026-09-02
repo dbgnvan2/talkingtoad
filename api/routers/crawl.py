@@ -86,7 +86,7 @@ _VALID_CATEGORIES: frozenset[str] = frozenset(
 _cancel_events: dict[str, asyncio.Event] = {}
 
 # CSV column order (spec §4.4)
-_CSV_FIELDS = ["url", "issue_code", "severity", "category", "phase", "description", "recommendation"]
+_CSV_FIELDS = ["url", "issue_code", "severity", "info_tier", "category", "phase", "description", "recommendation"]
 
 
 # ── Dependency injection ───────────────────────────────────────────────────
@@ -1479,7 +1479,8 @@ async def get_pages(
         return _err("JOB_NOT_FOUND", "No crawl job found with the given ID.", 404)
 
     pages, total_crawled = await store.get_pages_with_issue_counts(
-        job_id, min_severity=min_severity, page=page, limit=limit
+        job_id, min_severity=min_severity, page=page, limit=limit,
+        info_detail=job.settings.info_detail,
     )
     total_pages = max(1, math.ceil(total_crawled / limit))
 
@@ -3446,6 +3447,9 @@ def _csv_response(issues: list[Issue], filename: str) -> StreamingResponse:
                 "url": issue.page_url or "",
                 "issue_code": issue.issue_code,
                 "severity": issue.severity,
+                # Info detail (2026-09-01): the tier travels with the row, so a
+                # CSV scoped to `key` can be told apart from a quieter site.
+                "info_tier": issue.info_tier or "",
                 "category": issue.category,
                 "phase": "1" if issue.category in PHASE_1_CATEGORIES else "2",
                 "description": issue.description,

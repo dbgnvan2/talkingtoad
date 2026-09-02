@@ -130,7 +130,11 @@ async def ingest_ai_citations(
     today = datetime.now(timezone.utc).date()
     new_issues: list[Issue] = []
 
-    new_issues.extend(derive_citation_issues(pages, rows_by_url, today, job_id))
+    # Info detail (2026-09-01): the "healthy page" gate uses the same per-page
+    # model as every other surface, at the job's level, or a page the audit
+    # calls healthy is silently not eligible here (LEARNINGS open risk #2).
+    new_issues.extend(derive_citation_issues(
+        pages, rows_by_url, today, job_id, info_detail=job.settings.info_detail))
 
     # Remove any existing citation issues before saving new ones
     for page in pages:
@@ -150,7 +154,8 @@ async def ingest_ai_citations(
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-def derive_citation_issues(pages, rows_by_url: dict, today, job_id: str) -> list:
+def derive_citation_issues(pages, rows_by_url: dict, today, job_id: str,
+                           info_detail: str = "all") -> list:
     """Derive AI_CITED_PAGE / AI_HIGH_VALUE_UNCITED from ingested citation data.
 
     Purpose: a pure function so the two codes are testable without a store or an
@@ -176,7 +181,7 @@ def derive_citation_issues(pages, rows_by_url: dict, today, job_id: str) -> list
         elif page.ai_citation_count_30d == 0:
             # AI_HIGH_VALUE_UNCITED: only if page is healthy + content-rich + recent ingest
             norm_url = page.url.rstrip("/")
-            page_score = compute_page_health(rows_by_url.get(norm_url, []))
+            page_score = compute_page_health(rows_by_url.get(norm_url, []), info_detail=info_detail)
             word_count = page.word_count or 0
 
             if page_score >= 80 and word_count > 300 and page.ai_citation_last_updated:

@@ -33,6 +33,28 @@ This file tracks infrastructure improvements, testing gaps, and future features 
 - [ ] **Persistent Settings:** Save the user's preferred PDF export options (Help Text ON/OFF) in localStorage.
 - [ ] **Real-time Log Streaming:** Instead of just a progress bar, show a "Live Console" during the crawl for power users.
 
+### From the 2026-09-02 info-tiers /csdp sweep (1 cold pass; 5 findings, 3 fixed in-session)
+
+- [ ] **Category cards and PDF per-page rows show stored counts beside a scored score.** `SummaryPanel`
+  category tiles use `by_category` and the PDF Top-Pages table uses `get_pages_with_issue_counts`
+  rows' stored severities; at `notable`/`key`/`none` a tile can say "Metadata 6" over a panel of 4
+  rows plus a disclosure. Fixed for Total Issues ("found · N scored"), the Info card, By Page and the
+  PDF Dashboard figure. Either add `by_category_scored` to `get_summary` (same predicate, one SQL
+  `CASE`) or label the tiles "found". Test: tile at `none` reads the scored count or the word found.
+- [ ] **Prevalence tiers by today's catalogue, lists by stored impact (P8).** `_prevalence_for_display`
+  uses `derive_impact(code)` because prevalence rows carry no impact. After a recalibration across
+  the 2↔3 boundary an old job's prevalence table omits a row its list shows (or vice versa) and
+  `site_hygiene_score` moves. Fix: carry `max(stored impact)` per code out of `build_prevalence`.
+  Test: monkeypatch `_ISSUE_SCORING[code]` and assert prevalence agrees with the stored row.
+- [ ] **CSV has no caveat row.** `info_tier` column added; a trailing `# scored at info detail …`
+  comment row was not, because CSV consumers choke on comment rows. If a header-comment convention
+  is adopted for F1, adopt it here too.
+- [ ] **`/pages?min_severity=info` is level-blind.** It tests stored severities, so at `none` it
+  still returns pages whose only rows are excluded info. Low impact (the counts now say 0 kept);
+  fix by testing `issue_counts.info > 0` after the level.
+- [ ] **`/comparison` has no frontend consumer**, so `comparable: false` is unrendered. When a
+  compare view is built, strike the Health delta through with `reason`.
+
 ### From the 2026-09-01 D5/D6 /csdp sweep (3 cold passes: correctness, security, test-quality)
 
 Three independent cold reviews of `origin/main..HEAD`. The high and medium

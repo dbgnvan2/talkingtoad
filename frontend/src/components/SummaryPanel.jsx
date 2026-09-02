@@ -222,7 +222,8 @@ export default function SummaryPanel({ summary, domain, jobId, onCategoryClick, 
       {/* High-Level Stats */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <StatCard label="Pages Crawled" value={summary.pages_crawled} />
-        <StatCard label="Total Issues" value={summary.total_issues} />
+        <StatCard label="Total Issues" value={summary.total_issues}
+          sub={infoExcluded > 0 ? <span data-testid="total-found-vs-scored">found · {summary.total_issues - infoExcluded} scored</span> : null} />
         <SeverityStatCard
           label="Critical Issues"
           value={summary.by_severity?.critical || 0}
@@ -240,6 +241,9 @@ export default function SummaryPanel({ summary, domain, jobId, onCategoryClick, 
           value={infoScored}
           severity="info"
           onClick={() => onSeverityClick('info')}
+          // Stays clickable when everything was excluded: the reveal lives
+          // behind this click, and a `none` scan needs it most.
+          clickable={infoScored > 0 || infoExcluded > 0}
           sub={infoExcluded > 0 ? (
             <span data-testid="info-excluded">
               +{infoExcluded} excluded ({['low', 'medium', 'high']
@@ -317,7 +321,7 @@ export default function SummaryPanel({ summary, domain, jobId, onCategoryClick, 
   )
 }
 
-function SeverityStatCard({ label, value, severity, onClick, sub = null }) {
+function SeverityStatCard({ label, value, severity, onClick, sub = null, clickable = null }) {
   const { getFontClass } = useTheme()
   const colors = {
     critical: { text: 'text-red-600', hoverBorder: 'hover:border-red-400' },
@@ -329,8 +333,8 @@ function SeverityStatCard({ label, value, severity, onClick, sub = null }) {
   return (
     <button
       onClick={onClick}
-      disabled={value === 0}
-      className={`bg-white border border-gray-200 rounded-3xl p-6 text-center shadow-sm transition-all ${value > 0 ? `${c.hoverBorder} hover:shadow-md cursor-pointer` : 'opacity-60 cursor-default'}`}
+      disabled={!(clickable ?? value > 0)}
+      className={`bg-white border border-gray-200 rounded-3xl p-6 text-center shadow-sm transition-all ${(clickable ?? value > 0) ? `${c.hoverBorder} hover:shadow-md cursor-pointer` : 'opacity-60 cursor-default'}`}
     >
       <p className={`font-black uppercase tracking-widest mb-1 ${c.text}`} style={getFontClass('headingSize')}>{label}</p>
       <p className={`font-black ${c.text}`} style={{ ...getFontClass('badgeSize'), fontSize: `${getFontClass('badgeSize').fontSize.replace('px', '') * 2.5}px` }}>{value}</p>

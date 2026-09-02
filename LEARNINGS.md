@@ -68,10 +68,15 @@
   — the S1 score-basis lesson again; the contract test for that surface must assert the label.
   (2) a new scoring path that reconstructs `(code, impact, category)` rows and calls
   `compute_page_health` without passing the job's level — it will disagree with the site score by
-  page. `grep compute_page_health\|compute_citability_grade` when adding one. (3) `by_severity.info`
+  page. `grep compute_page_health\|compute_citability_grade` when adding one — the /csdp sweep of
+  the very change that introduced the setting found exactly this in `citations.py`, missed by the
+  author who had written the risk down an hour earlier. (3) `by_severity.info`
   is the stored count and `info_scored` the charged one; a UI that adds them, or shows the stored
-  count beside the scored score, double-counts or contradicts. (4) `/comparison` has no frontend
-  consumer today, so the `comparable` guard is unrendered until one exists.
+  count beside the scored score, double-counts or contradicts — the category cards and PDF per-page
+  rows still show stored counts (TODO). (4) `/comparison` has no frontend consumer today, so the
+  `comparable` guard is unrendered until one exists. (5) Prevalence rows tier by today's catalogue
+  (`derive_impact`) while lists tier by stored impact; after a recalibration across the 2↔3 boundary
+  an old job's prevalence table and its list can disagree by one code (TODO).
 
 - **RESOLVED — the "blank robots/sitemap panels in production" symptom never happened.** Closed
   2026-08-31 after investigation, and the way it closed matters more than the result. The symptom

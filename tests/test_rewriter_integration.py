@@ -69,7 +69,7 @@ def mock_store():
             return job
         return None
 
-    async def mock_get_pages(job_id, min_severity=None, page=1, limit=50):
+    async def mock_get_pages(job_id, min_severity=None, page=1, limit=50, info_detail="all"):
         if job_id == "test-job-123":
             return (pages, 2)
         return ([], 0)

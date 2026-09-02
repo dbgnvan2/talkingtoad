@@ -87,6 +87,19 @@ describe('SummaryPanel info detail', () => {
     expect(excluded).not.toHaveTextContent('Notable')
   })
 
+  it('the Info card stays clickable when the level excluded everything', async () => {
+    const onSeverityClick = vi.fn()
+    renderWithProviders(<SummaryPanel {...props} onSeverityClick={onSeverityClick} summary={{
+      ...base, info_detail: 'none', info_scored: 0, info_excluded: 5,
+      info_by_tier: { high: 1, medium: 2, low: 2 },
+    }} />)
+    const card = screen.getByTestId('info-excluded').closest('button')
+    expect(card).not.toBeDisabled()
+    await userEvent.click(card)
+    expect(onSeverityClick).toHaveBeenCalledWith('info')
+    expect(screen.getByTestId('total-found-vs-scored')).toHaveTextContent('1 scored')
+  })
+
   it('a legacy summary without the new fields still renders the stored info count', () => {
     renderWithProviders(<SummaryPanel {...props} summary={base} />)
     expect(screen.getByText('5')).toBeInTheDocument()

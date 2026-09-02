@@ -251,6 +251,42 @@ class TestPerPage:
         assert (await build_page_priority(test_store, "g1"))[0]["health_score"] == 100
 
 
+    async def test_page_counts_follow_the_level(self, api_client, auth_headers, test_store):
+        """Sweep finding: By Page listed a page as "5 issues" whose drawer showed one."""
+        await _job(test_store, info_detail="none")
+        body = (await api_client.get("/api/crawl/j1/pages", headers=auth_headers)).json()
+        counts = body["pages"][0]["issue_counts"]
+        assert counts == {"total": 1, "critical": 0, "warning": 1, "info": 0, "info_excluded": 4}
+        await _job(test_store, job_id="j2", info_detail="notable")
+        body = (await api_client.get("/api/crawl/j2/pages", headers=auth_headers)).json()
+        assert body["pages"][0]["issue_counts"] == {
+            "total": 3, "critical": 0, "warning": 1, "info": 2, "info_excluded": 2}
+
+    async def test_page_counts_unchanged_at_all(self, api_client, auth_headers, test_store):
+        await _job(test_store, info_detail="all")
+        body = (await api_client.get("/api/crawl/j1/pages", headers=auth_headers)).json()
+        assert body["pages"][0]["issue_counts"] == {
+            "total": 5, "critical": 0, "warning": 1, "info": 4, "info_excluded": 0}
+
+    async def test_citation_eligibility_uses_the_job_level(self):
+        """Sweep finding: the AI_HIGH_VALUE_UNCITED "healthy page" gate scored at
+        `all` whatever the job's level, so a page every surface called healthy
+        was silently ineligible."""
+        from datetime import date
+        from api.models.page import CrawledPage
+        from api.routers.citations import derive_citation_issues
+        page = CrawledPage(page_id="p1", job_id="j", url=PAGE, status_code=200, word_count=800,
+                           ai_citation_count_30d=0, ai_citation_last_updated="2026-08-20")
+        # 10 low-tier rows in one category (cap 20) + a warning: 79 at `all`, 96 at `notable`.
+        rows = [(f"L{n}", 1, "metadata") for n in range(17)] + [("W", 4, "heading")]
+        rows_by_url = {PAGE.rstrip("/"): rows}
+        today = date(2026, 9, 1)
+        at_all = derive_citation_issues([page], rows_by_url, today, "j")
+        at_notable = derive_citation_issues([page], rows_by_url, today, "j", info_detail="notable")
+        assert [i.issue_code for i in at_all] == []
+        assert [i.issue_code for i in at_notable] == ["AI_HIGH_VALUE_UNCITED"]
+
+
 # ── Exports ───────────────────────────────────────────────────────────────
 
 
@@ -260,6 +296,22 @@ class TestExports:
         r = await api_client.get("/api/crawl/j1/export/csv", headers=auth_headers)
         assert r.status_code == 200
         assert "IMG_ALT_MISSING" in r.text and "TITLE_TOO_SHORT" not in r.text
+
+    async def test_csv_carries_the_tier_column(self, api_client, auth_headers, test_store):
+        """Sweep finding: a CSV at `key` was just shorter, with nothing in the file saying so."""
+        import csv
+        await _job(test_store, info_detail="all")
+        r = await api_client.get("/api/crawl/j1/export/csv", headers=auth_headers)
+        rows = list(csv.DictReader(io.StringIO(r.text)))
+        tiers = {row["issue_code"]: row["info_tier"] for row in rows}
+        assert tiers["IMG_ALT_MISSING"] == "high" and tiers["TITLE_TOO_SHORT"] == "low"
+        assert tiers["H1_MISSING"] == ""
+
+    async def test_pdf_summary_table_shows_scored_beside_excluded(self):
+        from api.services.report_generator import _info_notices_figure
+        assert _info_notices_figure({"by_severity": {"info": 5}, "info_scored": 5, "info_excluded": 0}) == 5
+        assert _info_notices_figure({"by_severity": {"info": 5}, "info_scored": 2, "info_excluded": 3}) == "2 (+3 excluded)"
+        assert _info_notices_figure({"by_severity": {"info": 5}}) == 5  # legacy summary
 
     async def test_excel_export_caveat_when_info_excluded(self, api_client, auth_headers, test_store):
         from openpyxl import load_workbook

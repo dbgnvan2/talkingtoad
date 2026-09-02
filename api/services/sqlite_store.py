@@ -678,11 +678,17 @@ class SQLiteJobStore:
         min_severity: str | None = None,
         page: int = 1,
         limit: int = 50,
+        info_detail: str = "all",
     ) -> tuple[list[dict], int]:
         """Return crawled pages with aggregated issue counts, sorted by total issues desc.
 
         Each entry is a dict:
-          {url, status_code, issue_counts: {total, critical, warning, info}}
+          {url, status_code, issue_counts: {total, critical, warning, info, info_excluded}}
+
+        Info detail (2026-09-01): ``total`` and ``info`` count the rows the
+        scan's level keeps — the same rows the page's grade charges — and
+        ``info_excluded`` names what it left out, so By Page can never list a
+        page as "3 issues" whose drawer shows none.
 
         When *min_severity* is set, only pages that have at least one issue of
         that severity (or higher) are returned.
@@ -691,16 +697,26 @@ class SQLiteJobStore:
         _SEVERITY_RANK = {"critical": 1, "warning": 2, "info": 3}
         min_rank = _SEVERITY_RANK.get(min_severity, 4) if min_severity else 4
 
+        # An info row is "kept" when its stored impact clears the level's floor
+        # (registry.INFO_DETAIL_MIN_IMPACT); `none` keeps no info row. Same
+        # predicate as info_row_excluded, expressed in SQL.
+        from api.crawler.checkers.registry import INFO_DETAIL_MIN_IMPACT
+        floor = INFO_DETAIL_MIN_IMPACT.get(info_detail, 0)
+        kept_info = "0" if floor is None else f"COALESCE(i.impact, 0) >= {int(floor)}"
+
         # Aggregate issue counts per page URL for this job
         async with self._db.execute(
-            """
+            f"""
             SELECT
                 cp.url,
                 cp.status_code,
-                COUNT(i.issue_id)                                          AS total,
+                SUM(CASE WHEN i.issue_id IS NULL THEN 0
+                         WHEN i.severity = 'info' AND NOT ({kept_info}) THEN 0
+                         ELSE 1 END)                                       AS total,
                 SUM(CASE WHEN i.severity = 'critical' THEN 1 ELSE 0 END)  AS critical,
                 SUM(CASE WHEN i.severity = 'warning'  THEN 1 ELSE 0 END)  AS warning,
-                SUM(CASE WHEN i.severity = 'info'     THEN 1 ELSE 0 END)  AS info
+                SUM(CASE WHEN i.severity = 'info' AND ({kept_info}) THEN 1 ELSE 0 END) AS info,
+                SUM(CASE WHEN i.severity = 'info' AND NOT ({kept_info}) THEN 1 ELSE 0 END) AS info_excluded
             FROM crawled_pages cp
             LEFT JOIN issues i ON i.page_url = cp.url AND i.job_id = cp.job_id
             WHERE cp.job_id = ?
@@ -739,6 +755,7 @@ class SQLiteJobStore:
                     "critical": r["critical"] or 0,
                     "warning": r["warning"] or 0,
                     "info": r["info"] or 0,
+                    "info_excluded": r["info_excluded"] or 0,
                 },
             }
             for r in sliced

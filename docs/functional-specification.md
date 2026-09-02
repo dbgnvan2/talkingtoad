@@ -590,8 +590,12 @@ it changed* — it is a declared scope, not a hidden filter. The controls that k
    never changes the score. Revealed rows carry `scored: false` and render dimmed with "not counted in
    the health score". The Results page shows the level under the score ("scored at Notable and key
    only · 98 info notices excluded"), the Info card shows the scored count with the excluded count
-   beneath it, info badges read "info · Key / Notable / Low", and each category tab, the info severity
-   view and the Page Audit drawer carry a "Show excluded info" toggle or note.
+   beneath it (and stays clickable when everything was excluded — the reveal lives behind it),
+   "Total Issues" reads "found · N scored", info badges read "info · Key / Notable / Low", and each
+   category tab, the info severity view and the Page Audit drawer carry a "Show excluded info" toggle
+   or note. By Page's `issue_counts` count the kept rows with `info_excluded` beside them, so a page
+   is never listed as "5 issues" whose drawer shows one. The `AI_HIGH_VALUE_UNCITED` health gate and
+   the CSV (`info_tier` column) follow the level too.
 3. **Exports say it.** PDF and Excel carry "Scored at info detail 'notable': N info notices (…)
    excluded from this audit and from its health score by the scan setting" through the same caveat
    channel as F1; CSV is filtered the same way.
