@@ -130,3 +130,35 @@ def test_site_scope_other_pages_not_floored():
     rep = 100 - _imp("HTTP_PAGE")
     other = 100 - _imp("H1_MISSING")
     assert site == round((rep + other) / 2)
+
+
+def test_near_duplicate_cluster_is_charged_once_however_many_members():
+    """ND1 (2026-09-02) — the finding is now emitted on EVERY member of a
+    near-duplicate cluster so each page's audit names its partners. That
+    multiplies the stored ROWS, and the danger is that it multiplies the
+    DEDUCTION too: a 5-page cluster would cost five times what the same
+    duplication cost yesterday. `NEAR_DUPLICATE_BODY` is site-scoped, so R5.1's
+    representative election must still charge it exactly once.
+
+    Spec: docs/functional-specification.md §4.10 (ND1)
+    """
+    cluster = [f"https://x/dup{i}" for i in range(5)]
+    clean = [f"https://x/ok{i}" for i in range(5)]
+    pages = cluster + clean
+
+    # Before ND1: the row existed on the sorted-first member only.
+    one_row = {p: ([_row("NEAR_DUPLICATE_BODY")] if p == cluster[0] else []) for p in pages}
+    # After ND1: every member carries it.
+    every_member = {p: ([_row("NEAR_DUPLICATE_BODY")] if p in cluster else []) for p in pages}
+
+    before, _ = compute_impact_health(pages, one_row, dict(_NO_SEV))
+    after, _ = compute_impact_health(pages, every_member, dict(_NO_SEV))
+
+    assert after == before, (
+        "emitting the finding on every member changed the health score — "
+        "the site-scoped single deduction is not holding")
+
+    # And pin the value, so a scoring change cannot drift both sides together
+    # (P32: an oracle computed from the code under test proves nothing).
+    rep_score = 100 - _imp("NEAR_DUPLICATE_BODY")
+    assert after == round((rep_score + 100 * 9) / 10)

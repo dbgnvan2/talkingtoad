@@ -44,9 +44,12 @@ EXPECT = {
     "/faq-noschema.html": {"FAQ_SCHEMA_MISSING"},
     "/dup-a.html": {"TITLE_DUPLICATE", "META_DESC_DUPLICATE"},
     "/dup-b.html": {"TITLE_DUPLICATE", "META_DESC_DUPLICATE"},
-    # NEAR_DUPLICATE_BODY is site-scoped — emitted once on the cluster
-    # representative (sorted-first member = neardup-a.html), not on both.
+    # NEAR_DUPLICATE_BODY is site-scoped for SCORING (charged once per cluster,
+    # R5.1) but reported on EVERY member, so each page's own audit names the
+    # pages it duplicates (ND1, 2026-09-02). Both halves of the planted pair
+    # must therefore carry it.
     "/neardup-a.html": {"NEAR_DUPLICATE_BODY"},
+    "/neardup-b.html": {"NEAR_DUPLICATE_BODY"},
     "/entity-b.html": {"ENTITY_SAMEAS_MISSING"},
     "/URL_Uppercase.html": {"URL_UPPERCASE", "URL_HAS_UNDERSCORES"},
     "/has_underscores.html": {"URL_HAS_UNDERSCORES"},

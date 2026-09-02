@@ -24,6 +24,30 @@ class TestNormaliseUrl:
         result = normalise_url("https://example.com/")
         assert result in ("https://example.com/", "https://example.com")
 
+    # ── ND3 (2026-09-02): the bare origin IS the root ──────────────────────
+    # `https://livingsystems.ca` and `https://livingsystems.ca/` were two
+    # different normalised URLs, so the home page was crawled twice and reported
+    # as a near-duplicate of itself on every scan of that site.
+    # Spec: docs/functional-specification.md §4.10 (ND3)
+    def test_bare_origin_and_slashed_origin_normalise_identically(self):
+        assert normalise_url("https://example.com") == normalise_url("https://example.com/")
+
+    def test_bare_origin_becomes_root_path(self):
+        assert normalise_url("https://example.com") == "https://example.com/"
+
+    def test_bare_origin_with_query_keeps_the_root_path(self):
+        assert normalise_url("https://example.com?a=1") == "https://example.com/?a=1"
+
+    def test_bare_origin_with_fragment_becomes_root(self):
+        assert normalise_url("https://example.com#top") == "https://example.com/"
+
+    def test_deeper_paths_still_lose_their_trailing_slash(self):
+        """Adversarial: mapping "" → "/" must not become "keep every trailing
+        slash" — that would re-split /about and /about/ into two pages, the same
+        bug one level down."""
+        assert normalise_url("https://example.com/about/") == "https://example.com/about"
+        assert normalise_url("https://example.com/a/b/") == "https://example.com/a/b"
+
     def test_fragment_removed(self):
         assert normalise_url("https://example.com/page#section") == "https://example.com/page"
 
@@ -276,3 +300,75 @@ class TestIsWpNoisePath:
 
     def test_homepage_not_skipped(self):
         assert is_wp_noise_path("https://example.com/") is False
+
+
+# ── ND3 adversarial: the livingsystems.ca self-duplicate ────────────────────
+# The unit tests above prove the mapping. This one proves the consequence the
+# owner actually reported: a scan seeded at the BARE origin crawled the home
+# page twice — once as `https://site.ca`, once as `https://site.ca/` — and the
+# cross-page checker then reported the home page as a near-duplicate of itself
+# on every scan of that site. Asserting `normalise_url` alone cannot catch that
+# (P26: it would assert the code against itself); this drives the real engine.
+#
+# Spec:  docs/functional-specification.md §4.10 (ND3)
+class TestBareOriginCrawlsAsOnePage:
+    BASE_BARE = "https://example.com"          # note: no trailing slash
+    _ALLOW_ALL = "User-agent: *\nAllow: /\n"
+
+    @staticmethod
+    def _body(topic: str) -> str:
+        """~170 distinct words — clears the 150-word near-duplicate gate."""
+        return " ".join(f"{topic}{i}" for i in range(170))
+
+    def _page(self, topic: str) -> str:
+        return (
+            "<!DOCTYPE html><html lang='en'><head>"
+            f"<title>{topic.title()} Page With A Good Long Title Here</title>"
+            '<meta name="description" content="A description long enough to pass the checks here.">'
+            "</head><body><nav>"
+            # BOTH spellings of the home page, exactly as a real site links them:
+            # the logo goes to the bare origin, the menu item to the slashed one.
+            f'<a href="{self.BASE_BARE}">Logo</a> <a href="/">Home</a> '
+            '<a href="/about.html">About</a> <a href="/services.html">Services</a>'
+            f"</nav><main><h1>{topic.title()}</h1><p>{self._body(topic)}</p></main></body></html>"
+        )
+
+    def _mock_site(self, mock):
+        import httpx
+
+        html = {"": "welcome", "/about.html": "about", "/services.html": "services"}
+        mock.get(f"{self.BASE_BARE}/robots.txt").mock(
+            return_value=httpx.Response(200, text=self._ALLOW_ALL))
+        for path, topic in html.items():
+            mock.get(f"{self.BASE_BARE}{path or '/'}").mock(return_value=httpx.Response(
+                200, text=self._page(topic), headers={"content-type": "text/html"}))
+        # Everything else on the host (sitemap, llms.txt, ai.txt, favicon…) is absent.
+        mock.route(host="example.com").mock(return_value=httpx.Response(404))
+
+    async def test_the_bare_origin_and_its_slashed_twin_are_one_page(self):
+        import respx
+        from api.crawler.engine import CrawlSettings, run_crawl
+
+        with respx.mock:
+            self._mock_site(respx.mock)
+            res = await run_crawl("job-bare-origin", self.BASE_BARE,
+                                  CrawlSettings(crawl_delay_ms=0, max_pages=10))
+
+        urls = sorted(p.url for p in res.pages)
+        assert urls == ["https://example.com/", "https://example.com/about.html",
+                        "https://example.com/services.html"], (
+            f"the home page was crawled under two spellings: {urls}")
+
+    async def test_the_home_page_is_not_a_near_duplicate_of_itself(self):
+        import respx
+        from api.crawler.engine import CrawlSettings, run_crawl
+
+        with respx.mock:
+            self._mock_site(respx.mock)
+            res = await run_crawl("job-bare-origin-dup", self.BASE_BARE,
+                                  CrawlSettings(crawl_delay_ms=0, max_pages=10))
+
+        dups = [i for i in res.issues if i.code == "NEAR_DUPLICATE_BODY"]
+        assert not dups, (
+            "the home page is reported as a near-duplicate of itself: "
+            f"{[i.extra.get('members') for i in dups]}")

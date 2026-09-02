@@ -109,5 +109,7 @@ class TestEngineSeeding:
             result = await run_crawl("job-seed2", BASE, settings)
 
         # crawl still succeeds; the off-domain seed was skipped, nothing external crawled
-        assert any(p.url == BASE for p in result.pages)
+        # Slash-tolerant like the sibling above: ND3 (2026-09-02) normalises the
+        # bare origin to the root path, so the homepage is stored as `BASE + "/"`.
+        assert any(p.url.rstrip("/") == BASE.rstrip("/") for p in result.pages)
         assert not any("evil.example.org" in p.url for p in result.pages)

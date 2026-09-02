@@ -57,7 +57,9 @@ def normalise_url(url: str) -> str:
     2. Remove fragment identifier.
     3. Strip known tracking/session parameters.
     4. Rebuild sorted, stable query string from surviving params.
-    5. Strip trailing slash from path (root path "/" is kept).
+    5. Strip trailing slash from path (root path "/" is kept), and give an
+       EMPTY path the root "/" — ``https://site.ca`` and ``https://site.ca/``
+       are the same page (ND3).
 
     Returns the normalised URL string.
     Raises ``ValueError`` if *url* has no scheme or host.
@@ -79,6 +81,16 @@ def normalise_url(url: str) -> str:
     query = urlencode(surviving)
 
     path = parsed.path
+
+    # ND3 (2026-09-02): a bare origin has an EMPTY path, and the rule below left
+    # it alone — so `https://livingsystems.ca` and `https://livingsystems.ca/`
+    # normalised to two different URLs. The home page was crawled twice and the
+    # cross-page checker reported it as a near-duplicate of itself on every scan
+    # of that site. The origin IS the root.
+    # Spec:  docs/functional-specification.md §4.10 (ND3)
+    # Tests: tests/test_normaliser.py::TestBareOriginCrawlsAsOnePage
+    if not path:
+        path = "/"
 
     # Strip trailing slash unless path is bare root
     if path != "/" and path.endswith("/"):

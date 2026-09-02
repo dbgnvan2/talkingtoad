@@ -6,6 +6,13 @@ Codes: NEAR_DUPLICATE_BODY (site), BOILERPLATE_RATIO_HIGH (page)
 Adversarial guard FIRST (test_e2_2…): pages that share only nav/footer
 boilerplate must NOT be flagged as near-duplicates — boilerplate is stripped
 before the body comparison.
+
+ND1 (2026-09-02): the finding is emitted on EVERY member of a cluster, each row
+naming the other members in `extra.near_identical_to` and never itself. It was
+one row on the sorted-first member, so the other pages' own Page Audit said
+nothing and no row said which page it duplicated. The code stays site-scoped, so
+the health score is still charged once per cluster (R5.1) — `tests/test_site_scope.py`.
+Spec: docs/functional-specification.md §4.10 (ND1–ND3, folded 2026-09-02)
 """
 
 import pytest
@@ -63,8 +70,8 @@ class TestBoilerplateExcludedFromNearDup:
 
 class TestNearDuplicateBody:
     def test_e2_1_body_shingle(self):
-        """Two pages whose lead content is near-identical ⇒ one clustered
-        NEAR_DUPLICATE_BODY naming both members (third distinct page not flagged).
+        """Two pages whose lead content is near-identical ⇒ a NEAR_DUPLICATE_BODY
+        row on EACH of them, each naming the other (third distinct page not flagged).
 
         Realistic doorway-page pattern: same body, one differing location word."""
         dup = ("our grief counselling service supports you through loss with weekly sessions "
@@ -80,9 +87,16 @@ class TestNearDuplicateBody:
                 "coping strategies tailored to each person unique situation and goals " + FOOTER),
         ]
         issues = [i for i in check_cross_page(pages) if i.code == "NEAR_DUPLICATE_BODY"]
-        assert len(issues) == 1, "one issue per cluster, not per pair/page"
-        members = set(issues[0].extra.get("members") or [])
-        assert members == {"https://x.org/loc-vancouver", "https://x.org/loc-burnaby"}
+        cluster = {"https://x.org/loc-vancouver", "https://x.org/loc-burnaby"}
+        assert len(issues) == 2, "one row per cluster MEMBER, not one per cluster"
+        assert {i.page_url for i in issues} == cluster
+        # The distinct page is not dragged in by the cluster.
+        assert "https://x.org/anxiety" not in {i.page_url for i in issues}
+        for iss in issues:
+            assert set(iss.extra.get("members") or []) == cluster
+            partners = iss.extra.get("near_identical_to") or []
+            assert iss.page_url not in partners, "a page is never its own near-duplicate"
+            assert set(partners) == cluster - {iss.page_url}, "the row names its partners"
 
     def test_e2_3_config_threshold(self, monkeypatch):
         """Threshold is config-driven: a strict threshold that the pair no longer
@@ -132,9 +146,10 @@ class TestBoilerplateRatio:
 class TestClusterMonotonicity:
     def test_large_identical_cluster_still_flagged(self):
         """Regression (learning-qa finding): N identical pages must produce ONE
-        NEAR_DUPLICATE_BODY cluster of all N. Earlier boilerplate-subtraction
-        erased a cluster's shared content once it appeared on >=3 pages, hiding
-        exactly the most blatant duplication (anti-monotonic bug)."""
+        cluster of all N — now surfaced as N rows, one per member. Earlier
+        boilerplate-subtraction erased a cluster's shared content once it
+        appeared on >=3 pages, hiding exactly the most blatant duplication
+        (anti-monotonic bug)."""
         body = ("our grief counselling service supports you through loss with weekly sessions led "
                 "by a registered clinical counsellor in a safe confidential space where you can "
                 "process difficult emotions and rebuild a sense of meaning after bereavement here")
@@ -143,9 +158,15 @@ class TestClusterMonotonicity:
                          NAV + "tax clinic volunteers help low income families file returns each "
                          "spring with free confidential appointments booked online in advance " + FOOTER))
         issues = [i for i in check_cross_page(pages) if i.code == "NEAR_DUPLICATE_BODY"]
-        assert len(issues) == 1
-        members = set(issues[0].extra.get("members") or [])
-        assert members == {f"https://x.org/dup{i}" for i in range(5)}
+        cluster = {f"https://x.org/dup{i}" for i in range(5)}
+        assert len(issues) == 5, "every member of the cluster carries the finding"
+        assert {i.page_url for i in issues} == cluster
+        assert "https://x.org/distinct" not in {i.page_url for i in issues}
+        for iss in issues:
+            assert set(iss.extra.get("members") or []) == cluster, "members is the whole cluster"
+            partners = iss.extra.get("near_identical_to") or []
+            assert len(partners) == 4 and iss.page_url not in partners
+            assert set(partners) == cluster - {iss.page_url}
 
 
 class TestScale:
@@ -161,6 +182,37 @@ class TestScale:
         dup0 = pages[0].first_1500_words + " nearly identical tail"
         pages.append(_pp("https://x.org/dup0", dup0))
         issues = [i for i in check_cross_page(pages) if i.code == "NEAR_DUPLICATE_BODY"]
-        assert len(issues) == 1
-        members = set(issues[0].extra.get("members") or [])
-        assert members == {"https://x.org/p0", "https://x.org/dup0"}
+        cluster = {"https://x.org/p0", "https://x.org/dup0"}
+        assert len(issues) == 2, "the planted pair — and only it — is flagged, on both pages"
+        assert {i.page_url for i in issues} == cluster
+        for iss in issues:
+            assert set(iss.extra.get("members") or []) == cluster
+            assert set(iss.extra.get("near_identical_to") or []) == cluster - {iss.page_url}
+
+
+class TestTwoClustersDoNotCrossContaminate:
+    """Adversarial (ND1): with a row now emitted per member, the wrong-but-
+    plausible result is a row whose `near_identical_to` names pages from the
+    OTHER cluster — every page that has *some* duplicate lumped together. Two
+    independent pairs must stay two independent pairs."""
+
+    def test_each_row_names_only_its_own_cluster(self):
+        grief = ("our grief counselling service supports you through loss with weekly sessions "
+                 "led by a registered clinical counsellor in a safe confidential space where you "
+                 "can process difficult emotions and rebuild a sense of meaning after bereavement")
+        tax = ("our free tax clinic helps low income families file their returns each spring with "
+               "confidential appointments booked online in advance and volunteers trained by the "
+               "revenue agency who complete the paperwork with you from start to finish")
+        pages = [
+            _pp("https://x.org/grief-a", NAV + grief + " vancouver " + FOOTER),
+            _pp("https://x.org/grief-b", NAV + grief + " burnaby " + FOOTER),
+            _pp("https://x.org/tax-a", NAV + tax + " vancouver " + FOOTER),
+            _pp("https://x.org/tax-b", NAV + tax + " burnaby " + FOOTER),
+        ]
+        issues = [i for i in check_cross_page(pages) if i.code == "NEAR_DUPLICATE_BODY"]
+        assert len(issues) == 4, "two pairs, one row each per member"
+        by_url = {i.page_url: set(i.extra.get("near_identical_to") or []) for i in issues}
+        assert by_url["https://x.org/grief-a"] == {"https://x.org/grief-b"}
+        assert by_url["https://x.org/grief-b"] == {"https://x.org/grief-a"}
+        assert by_url["https://x.org/tax-a"] == {"https://x.org/tax-b"}
+        assert by_url["https://x.org/tax-b"] == {"https://x.org/tax-a"}

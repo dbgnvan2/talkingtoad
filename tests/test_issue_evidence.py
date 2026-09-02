@@ -237,6 +237,32 @@ class TestEvidenceLines:
         lines, _ = evidence_lines("X", {"some_internal_flag": True, "nested": {"a": 1}})
         assert lines == []
 
+    # ── ND2: NEAR_DUPLICATE_BODY names the partner pages ──────────────────
+    # Spec: docs/functional-specification.md §4.10 (ND2)
+    def test_ev_near_duplicate_names_the_partner_pages(self):
+        """The whole point of the finding: WHICH other page does this duplicate."""
+        lines, _ = evidence_lines("NEAR_DUPLICATE_BODY", {
+            "members": ["https://x/a", "https://x/b", "https://x/c"],
+            "near_identical_to": ["https://x/b", "https://x/c"],
+        })
+        assert any(line.startswith("Near-identical to:") for line in lines), lines
+        assert any("https://x/b" in line for line in lines)
+        assert any("https://x/c" in line for line in lines)
+
+    def test_ev_near_duplicate_does_not_print_the_member_list_as_well(self):
+        """Adversarial: `members` holds the same URLs plus this page's own. Left
+        renderable it prints the list twice and tells the reader their page
+        duplicates itself — the correct-looking-but-wrong render."""
+        lines, _ = evidence_lines("NEAR_DUPLICATE_BODY", {
+            "members": ["https://x/a", "https://x/b"],
+            "near_identical_to": ["https://x/b"],
+        })
+        assert not any("Members" in line for line in lines), lines
+        assert "https://x/a" not in "\n".join(lines), (
+            "the page's own URL must not appear in its evidence")
+        assert sum(1 for line in lines if "https://x/b" in line) == 1, (
+            f"the partner list is printed twice: {lines}")
+
 
 # ── The guard ───────────────────────────────────────────────────────────────
 

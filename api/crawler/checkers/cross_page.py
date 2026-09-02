@@ -866,6 +866,21 @@ def _check_body_uniqueness(pages) -> list[Issue]:
         for members in clusters.values():
             if len(members) > 1:
                 members = sorted(members)
-                issues.append(make_issue("NEAR_DUPLICATE_BODY", members[0],
-                                         extra={"members": members}))
+                # ND1 (2026-09-02): one row per MEMBER, not one per cluster.
+                # The single row on ``members[0]`` said nothing on the other
+                # pages' own Page Audit, and named no partner anywhere — so the
+                # finding reported "this page duplicates something" and left the
+                # operator to find what. `near_identical_to` is the other
+                # members; `members` stays the whole cluster (the score's
+                # representative election and the existing tests read it).
+                #
+                # The code remains site-scoped, so the health score is still
+                # charged ONCE per cluster (R5.1) — only the stored row count
+                # rises, which is the truth: each of these pages has the problem.
+                # Tests: tests/test_near_duplicate_body.py, tests/test_site_scope.py
+                for url in members:
+                    issues.append(make_issue(
+                        "NEAR_DUPLICATE_BODY", url,
+                        extra={"members": list(members),
+                               "near_identical_to": [m for m in members if m != url]}))
     return issues

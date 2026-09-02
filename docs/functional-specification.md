@@ -965,11 +965,33 @@ absorption). One shared pass shingles each page's lead content
 set** = shingles appearing on ≥ max(3, 20% of eligible) pages:
 - `NEAR_DUPLICATE_BODY` (site) — pages whose content-shingle Jaccard ≥ 0.80
   *after boilerplate removal* (nav/footer stripped — the false-positive guard).
-  Clustered via union-find; one issue per cluster naming the members. Exact
-  all-pairs Jaccard ≤ 400 eligible pages; MinHash prefilter above (announced in
-  logs, P9).
+  Clustered via union-find; exact all-pairs Jaccard ≤ 400 eligible pages, MinHash
+  prefilter above (announced in logs, P9). **The finding is emitted on every
+  member of a cluster** (ND1, 2026-09-02): each row carries
+  `extra.near_identical_to` — the *other* members, never the page itself — and
+  `extra.members`, the whole cluster. `near_identical_to` renders under
+  "Near-identical to"; `members` is a noise key so the same list is not printed
+  twice (`issue_evidence.py`). Until then the check emitted one row, on the
+  sorted-first member: the other pages' own Page Audit said nothing, and no
+  surface named the page a flagged page duplicated — the partners were computed
+  and never rendered (P25). The code stays **site-scoped**, so R5.1's
+  representative election still charges the health score **once per cluster**;
+  only the stored row count rises, which is the truth (each of those pages has
+  the problem). `tests/test_site_scope.py` pins that the score is unchanged by
+  the extra rows.
 - `BOILERPLATE_RATIO_HIGH` (page) — ≥ 60% of a page's shingles are the shared
   template — mostly boilerplate, low citability.
+
+A prerequisite for the above: **the bare origin is the root** (ND3, 2026-09-02).
+`normalise_url` maps an *empty* path to `/`, so `https://site.ca` and
+`https://site.ca/` are one page in the crawl queue, in storage, and in every
+cross-page check. Previously only a trailing slash on a non-empty path was
+stripped and an empty path was left alone, so a scan seeded at the bare origin
+crawled the home page twice and this check reported it as a near-duplicate of
+**itself** on every scan of that site — 19 of the 37 `NEAR_DUPLICATE_BODY` rows
+in the development database were that one artifact.
+→ `tests/test_normaliser.py::TestBareOriginCrawlsAsOnePage` (drives the real
+engine: asserting the normaliser against itself could not catch the consequence).
 
 All thresholds are config (env-overridable, `docs/thresholds.md`); old crawls
 missing `schema_blocks`/`first_1500_words` degrade to no findings, never a crash
@@ -2402,7 +2424,7 @@ For each major feature, the test file(s) that prove it works:
 
 | Feature | Primary test file(s) | Coverage notes |
 |---|---|---|
-| URL normalization | `tests/test_normaliser.py` | Trailing slash, fragments, UTM stripping |
+| URL normalization | `tests/test_normaliser.py` | Trailing slash, bare origin = root (ND3), fragments, UTM stripping |
 | robots.txt parsing | `tests/test_robots.py` | Disallow rules, wildcards, crawl-delay |
 | Sitemap discovery | `tests/test_sitemap.py` | Standard, index, gzip |
 | HTML parsing | `tests/test_parser.py` | Extractors, no-mutation invariant |

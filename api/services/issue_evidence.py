@@ -55,6 +55,11 @@ _NOISE_KEYS = frozenset({
     "mixed_content_items_total", "nofollow_links_total", "missing_fields_total",
     "unresolved", "is_lazy_loaded", "faq_heading", "page_type", "year",
     "total_occurrences", "empty_anchor_hrefs",
+    # ND2 (2026-09-02): NEAR_DUPLICATE_BODY carries the whole cluster in
+    # `members` AND this page's partners in `near_identical_to`. Rendering both
+    # prints the same URLs twice and includes the page's own URL, which reads as
+    # "this page duplicates itself". `near_identical_to` is the one to show.
+    "members",
 })
 
 # Prose keys: a sentence already written for a human. Rendered verbatim.
@@ -87,6 +92,7 @@ _KEY_LABELS = {
     "empty_levels": "Empty heading levels",
     "missing_tags": "Missing tags",
     "duplicate_urls": "Also on",
+    "near_identical_to": "Near-identical to",
     "groups": "Duplicate link groups",
     "img_missing_alt_srcs": "Images without alt text",
     "empty_anchors": "Links with no accessible name",
