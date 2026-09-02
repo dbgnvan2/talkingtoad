@@ -22,6 +22,10 @@ TalkingToad helps you identify technical SEO issues on your website and — for 
   confirms a fix without re-crawling, and reports what it found — resolved, still
   present, newly found, or *not re-checked* for the checks that need a whole-site crawl.
   It never marks a finding fixed on the strength of a check it could not run.
+- **Every finding teaches:** all 170 checks carry a seven-part plain-language explanation —
+  why it matters to a nonprofit, what it is, why it matters, good vs bad examples, an honest
+  "how this can mislead" caveat with its evidence tier, and the fix — on screen and in the PDF.
+  Style rules: `docs/explanation-style-guide.md`.
 - **Info detail:** Info notices are graded **Key / Notable / Low** from their impact, and a scan's
   *Info detail* setting (Advanced settings) chooses which tiers it shows **and counts toward the
   health score** — the level is printed under the score, excluded notices can be revealed, and

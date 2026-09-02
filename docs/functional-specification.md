@@ -1668,6 +1668,44 @@ broken config fails loudly rather than silently defaulting (P2).
 
 ---
 
+### 4.17 The education layer — every code teaches (Phase 2, 2026-09-02)
+
+TalkingToad's readers are nonprofit staff. A flagged code with a one-line tooltip teaches
+nothing; a code with a short, honest explanation turns the tool into a coach. This is the V4
+plan (`PLAN-V4.0.md`) delivered for all 170 codes.
+
+**One authored source.** `frontend/src/data/issueHelp.json` holds every explanation;
+`issueHelp.js` is a thin loader with unchanged exports; `api/services/issue_help_data.py` is
+GENERATED from the JSON by `scripts/generate_issue_help_py.py` and `tests/test_issue_help_sync.py`
+fails when it drifts (the file used to be a hand-copied 90-entry subset that the PDF printed
+while the screen showed the full set — P13).
+
+**Seven fields, in reading order** (`docs/explanation-style-guide.md`): `mission_impact` (one
+sentence in the nonprofit's own terms) · `definition` · `impact` · `good_vs_bad {good, bad}`
+(two concrete examples, never adjectives) · `how_it_can_mislead` (opens "Evidence tier: X." and
+names a false positive or negative and a correct-looking-but-wrong result) · `fix` (names the
+WordPress control) · `confidence`. The tier vocabulary is fixed: AI-readiness codes carry the
+API's label (`_AI_READINESS_CONFIDENCE`); every other code's tier is derived from
+`authority.yaml` (citation → Established, observation → Measured, heuristic → Heuristic). The
+retired `Mechanistic / Empirical / Conventional` set is gone and `LEGACY_VOCABULARY` is empty.
+
+**Guards** (`tests/test_issue_help_completeness.py`): every catalogue code has an entry and
+vice versa; every field non-empty; category and severity match the registry; confidence
+equals the derived tier; the caveat opens with the same tier; and a substance predicate rejects
+a vacuous caveat ("Results may vary", "It only looks at HTML") — asserted against three
+adversarial strings. Every number quoted was checked against `docs/thresholds.md` or the
+checker constant by a cold review; seven entries that had invented precision the checker
+does not have (a "150-word window" for an LLM judgement, "more than half of sections", a link
+rule described as "same organisation" when it is a URL-pattern match) were rewritten to say
+what actually runs, and `authority.yaml`'s matching phantom number was corrected with them.
+
+**Surfaces.** `IssueHelpPanel` renders all seven parts with the tier as a badge. The PDF's
+help box prints WHY IT MATTERS TO YOU, WHAT IT IS, IMPACT, GOOD vs BAD, HOW THIS CAN MISLEAD,
+HOW TO FIX under each issue type, so the client's printed copy teaches the same way the screen
+does. `clean_text` now transliterates typography (em dash, ellipsis, arrow, curly quotes)
+before the Latin-1 encode — the authored copy carries 500+ em dashes and every one printed as
+`?` until the sweep caught it.
+
 ## 5. Fix capabilities
 
 Fixes are organised into routers; all WP-touching endpoints validate domain credentials.

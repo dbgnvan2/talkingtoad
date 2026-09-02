@@ -180,6 +180,27 @@ Next to Fix Focus is a **Fix Focus Items Help** panel — a plain-English glossa
 
 Alongside the priority list you'll see a separate **Quick Wins** list. These are issues that are both **high impact** and **low effort** — the easy, high-value fixes that give you the most improvement for the least work. Quick Wins are picked independently of the priority ranking, so it's worth scanning this list even after you've worked through your Top Priority Fixes.
 
+### Reading an explanation
+
+Every finding opens into a short explanation written for people who do not do SEO for a
+living. It always has the same seven parts, in this order:
+
+1. **Why it matters to a nonprofit** — one sentence, in your terms.
+2. **What it is** — what the check looked at and what it found.
+3. **Why it matters** — what is at stake and how the mechanism works, jargon defined as it appears.
+4. **Good vs bad** — one concrete passing example and one failing one.
+5. **How this can mislead** — the honest caveat. It opens with the *evidence tier*
+   (shown as a badge beside the title): **Established** means a published source confirms
+   the effect; **Measured** means it was observed during the crawl; **Reasonable proxy**
+   means industry consensus; **Heuristic** means TalkingToad's own judgement. It then says
+   when the check is wrong in each direction and what a plausible-but-wrong result looks
+   like. Read this before acting on a finding you find surprising.
+6. **How to fix** — the concrete action, naming the WordPress control where that is where
+   you will do it.
+
+The PDF report prints the same explanation under each finding, so a printed copy teaches
+the same way the screen does. The writing rules are in `docs/explanation-style-guide.md`.
+
 ### Severity Colours
 
 After the 2026-07 severity recalibration, most issues now surface as **Info** — only page-fatal problems (such as `noindex` on a page you want indexed, or redirect loops) remain **Critical**. **Broken links** are now scored as **minor** (low impact) rather than critical: they're worth fixing, but they rarely sink your search visibility on their own.

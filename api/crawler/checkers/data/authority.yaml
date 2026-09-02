@@ -990,7 +990,8 @@ ORPHAN_CLAIM_TECHNICAL:
 CENTRAL_CLAIM_BURIED:
   basis: heuristic
   rationale: >-
-    Our judgement, and the first-150-words window is ours. No engine operator
+    Our judgement, made by a language model over the page's opening (roughly the
+    first thousand words; there is no fixed word window). No engine operator
     publishes anything about where an answer should sit. The reasoning is that
     a summariser reading a truncated page sees the opening first — plausible,
     unconfirmed.

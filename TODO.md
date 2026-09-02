@@ -27,17 +27,17 @@ user replaces the old image in the post by hand.
 
 ## Phase 2 — the education layer (V4)
 
-- [ ] **Style guide** for explanation copy: reading level, no-jargon rule, show-don't-assert for
-  good/bad examples. `docs/explanation-style-guide.md`.
-- [ ] **Every issue code carries the 6-part explainer** in `frontend/src/data/issueHelp.js`:
-  definition · impact · fix · good_vs_bad · how_it_can_mislead · confidence. 37 of 170 have
-  `how_it_can_mislead` today, 35 have `good_vs_bad`. Order: critical + warning (47), then
-  Key and Notable info, then Low.
-- [ ] **Parity test** fails on an incomplete entry (extends `test_confidence_help_parity.py`).
-- [ ] **Render it**: `IssueHelpPanel` shows good/bad and "how this can mislead"; the PDF's
-  help section prints them so the client's copy teaches offline.
-- [ ] **25 help entries use the superseded confidence vocabulary** (`Mechanistic` /
-  `Empirical` / `Conventional`); reconcile with `authority.yaml` `basis` during the pass.
+- [x] **Style guide** — `docs/explanation-style-guide.md` (2026-09-02).
+- [x] **Every issue code carries the seven-part explainer** — all 170, in
+  `frontend/src/data/issueHelp.json` (authored) with the Python copy generated (2026-09-02).
+- [x] **Completeness + substance guards** — `tests/test_issue_help_completeness.py` (2026-09-02).
+- [x] **Rendered** in `IssueHelpPanel` and the PDF help box (2026-09-02).
+- [x] **Retired confidence vocabulary gone**; `LEGACY_VOCABULARY` is empty (2026-09-02).
+- [ ] **Owner read-through.** The copy was written and cold-reviewed by Claude against the
+  checkers; the reading level for your clients is your call. Read a category tab's explanations
+  end to end and edit `issueHelp.json` directly (then `python scripts/generate_issue_help_py.py`).
+- [ ] **Panel explainers** for the non-issue features (FAQ generator, schema factory, image
+  optimizer, GEO report) — the V4 plan's second half; not part of Phase 2.
 
 ## Phase 3 — reliability of the happy path
 

@@ -34,9 +34,24 @@ class TalkingToadReport(FPDF):
         self.set_margins(25.4, 25.4, 25.4) 
         self.set_auto_page_break(auto=True, margin=25.4)
 
+    _TRANSLITERATE = {
+        "\u2014": "-", "\u2013": "-", "\u2026": "...", "\u2192": "->", "\u2715": "x",
+        "\u2018": "'", "\u2019": "'", "\u201c": '"', "\u201d": '"', "\u2265": ">=",
+        "\u2264": "<=", "\u00d7": "x", "\u2022": "-", "\u2713": "yes", "\u2717": "no",
+        "\u2705": "Good:", "\u274c": "Bad:",
+    }
+
     def clean_text(self, text):
+        """Latin-1 safe text. Phase 2 (2026-09-02): the authored explanations
+        use em dashes, ellipses and arrows freely (500+ of them); a bare
+        ``encode('latin-1', 'replace')`` printed every one as ``?``, so the
+        client's caveat read "the server sends ? before any JavaScript".
+        Transliterate the common typography first, then replace the rest."""
         if not text: return ""
-        return str(text).encode('latin-1', 'replace').decode('latin-1')
+        s = str(text)
+        for ch, rep in self._TRANSLITERATE.items():
+            s = s.replace(ch, rep)
+        return s.encode('latin-1', 'replace').decode('latin-1')
 
     # The PDF is Latin-1 (CLAUDE.md, Reporting), so any non-Latin-1 character
     # reaching fpdf raises UnicodeEncodeError and takes the whole export to a
@@ -82,8 +97,16 @@ class TalkingToadReport(FPDF):
         self.multi_cell(W, 10, self.clean_text(title))
         self.ln(2)
 
-    def draw_help_section(self, what, impact, how):
-        for label, content in [("WHAT IT IS", what), ("IMPACT", impact), ("HOW TO FIX", how)]:
+    def draw_help_section(self, what, impact, how, good_vs_bad=None, mislead=None, mission=None):
+        """The explainer under an issue type. Phase 2 (2026-09-02): GOOD vs BAD
+        and HOW THIS CAN MISLEAD sit between IMPACT and HOW TO FIX so the
+        client's printed copy teaches the same way the screen does."""
+        gb = ""
+        if isinstance(good_vs_bad, dict) and (good_vs_bad.get("good") or good_vs_bad.get("bad")):
+            gb = f"Good: {good_vs_bad.get('good', '')}  Bad: {good_vs_bad.get('bad', '')}"
+        blocks = [("WHY IT MATTERS TO YOU", mission), ("WHAT IT IS", what), ("IMPACT", impact),
+                  ("GOOD vs BAD", gb), ("HOW THIS CAN MISLEAD", mislead), ("HOW TO FIX", how)]
+        for label, content in blocks:
             if not content:
                 continue
             if self.get_y() > 240:
@@ -1593,11 +1616,15 @@ async def generate_pdf_report(
             # Help text (optional)
             if include_help:
                 help_entry = ISSUE_HELP.get(code, {})
-                what = help_entry.get("what") or first.what_it_is or first.description or ""
+                what = help_entry.get("definition") or help_entry.get("what") or first.what_it_is or first.description or ""
                 impact_text = help_entry.get("impact") or first.impact_desc or f"Impact score: {first.impact}/10."
                 how = help_entry.get("fix") or first.how_to_fix or first.recommendation or ""
+                good_vs_bad = help_entry.get("good_vs_bad")
+                mislead = help_entry.get("how_it_can_mislead")
+                mission = help_entry.get("mission_impact")
                 if what or how:
-                    pdf.draw_help_section(what, impact_text, how)
+                    pdf.draw_help_section(what, impact_text, how, good_vs_bad=good_vs_bad,
+                                          mislead=mislead, mission=mission)
 
             # Evidence — WHICH element on the page is wrong (2026-08-29).
             # Previously the report showed only the affected page URLs, so a

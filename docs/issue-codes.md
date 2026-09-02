@@ -1680,7 +1680,7 @@ The page's main claim or answer does not appear in the first 150 words
 
 **Basis:** TalkingToad's own judgement. No published source states this.
 
-> Our judgement, and the first-150-words window is ours. No engine operator publishes anything about where an answer should sit. The reasoning is that a summariser reading a truncated page sees the opening first — plausible, unconfirmed.
+> Our judgement, made by a language model over the page's opening (roughly the first thousand words; there is no fixed word window). No engine operator publishes anything about where an answer should sit. The reasoning is that a summariser reading a truncated page sees the opening first — plausible, unconfirmed.
 
 ---
 

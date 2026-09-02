@@ -79,3 +79,5 @@ Project Version: 3.0.0 (shipped)
 > cycle and the per-milestone Gemini Compiler step are documented in
 > `CLAUDE.md` under "Specification Change Management". This README is the
 > documentation index only.
+
+- `explanation-style-guide.md` — how every issue code teaches (the seven-part explainer).

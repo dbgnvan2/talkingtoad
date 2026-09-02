@@ -75,8 +75,10 @@ describe('AIReadinessPanel', () => {
     groupButton.click()
 
     await waitFor(() => {
-      // STATISTICS_COUNT_LOW has confidence: "Empirical" in issueHelp.js
-      expect(screen.getByText('Empirical')).toBeInTheDocument()
+      // STATISTICS_COUNT_LOW's confidence is the API's label (Phase 2 retired the
+      // old "Empirical" vocabulary); the value is pinned by
+      // tests/test_issue_help_completeness.py against the registry.
+      expect(screen.getAllByText('Heuristic').length).toBeGreaterThan(0)
     })
   })
 

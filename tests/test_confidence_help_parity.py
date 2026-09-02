@@ -18,50 +18,31 @@ nothing checked confidence, so the confidence half shipped.
 """
 from __future__ import annotations
 
-import re
 from pathlib import Path
 
 import pytest
 
 from api.crawler.checkers.registry import _AI_READINESS_CONFIDENCE
 
-HELP = Path(__file__).parent.parent / "frontend/src/data/issueHelp.js"
+HELP = Path(__file__).parent.parent / "frontend/src/data/issueHelp.json"
 API_TAXONOMY = frozenset({"Established", "Reasonable proxy", "Heuristic"})
 
-# Entries whose `confidence:` is written in an OLDER, different vocabulary
-# ("Mechanistic" / "Empirical" / "Conventional"), which predates the v2.0
-# taxonomy the API uses. They are not drift — they answer a different question,
-# and V1's authority record now answers it properly. Reconciling them is an
-# editorial decision for the owner, tracked in TODO.md; they are named here
-# rather than skipped by a pattern so the list cannot quietly grow.
-LEGACY_VOCABULARY = {
-    "AUTHOR_BYLINE_MISSING", "AI_TXT_MISSING", "CENTRAL_CLAIM_BURIED",
-    "CHUNKS_NOT_SELF_CONTAINED", "CODE_BLOCK_MISSING_TECHNICAL",
-    "COMPARISON_TABLE_MISSING", "CONTENT_CLOAKING_DETECTED",
-    "DATE_MODIFIED_MISSING", "DATE_PUBLISHED_MISSING", "EXTERNAL_CITATIONS_LOW",
-    "FAQ_SCHEMA_MISSING", "FIRST_VIEWPORT_NO_ANSWER", "JSON_LD_INVALID",
-    "JS_RENDERED_CONTENT_DIFFERS", "LINK_PROFILE_PROMOTIONAL",
-    "ORPHAN_CLAIM_TECHNICAL", "PROMOTIONAL_CONTENT_INTERRUPTS",
-    "QUERY_COVERAGE_WEAK", "QUOTATIONS_MISSING", "RAW_HTML_JS_DEPENDENT",
-    "SECTION_CROSS_REFERENCES", "SECTION_VAGUE_OPENER", "STATISTICS_COUNT_LOW",
-    "STRUCTURED_ELEMENTS_LOW", "UA_CONTENT_DIFFERS",
-}
-
-_ENTRY = re.compile(r'^  ([A-Z][A-Z0-9_]*): \{(.*?)^  \},', re.S | re.M)
+# Phase 2 (2026-09-02): the 25 entries that carried the retired vocabulary
+# ("Mechanistic" / "Empirical" / "Conventional") were rewritten to the API's
+# labels, so the exclusion list is EMPTY and asserted so — a code re-entering
+# the old vocabulary is a deliberate edit that has to touch this line.
+LEGACY_VOCABULARY: set[str] = set()
 
 
 def _help_confidence() -> dict[str, str]:
-    out = {}
-    for m in _ENTRY.finditer(HELP.read_text(encoding="utf-8")):
-        c = re.search(r'confidence: "([^"]*)"', m.group(2))
-        if c:
-            out[m.group(1)] = c.group(1)
-    return out
+    import json
+    data = json.loads(HELP.read_text(encoding="utf-8"))
+    return {code: e["confidence"] for code, e in data.items() if e.get("confidence")}
 
 
 def test_v11_help_confidence_matches_the_api_for_every_shared_code():
     help_conf = _help_confidence()
-    assert help_conf, "parsed no confidence values — the parser has drifted"
+    assert help_conf, "parsed no confidence values — the source has moved"
     bad = []
     for code, label in help_conf.items():
         if code in LEGACY_VOCABULARY or code not in _AI_READINESS_CONFIDENCE:
@@ -75,18 +56,12 @@ def test_v11_help_confidence_matches_the_api_for_every_shared_code():
 
 
 def test_v11_legacy_vocabulary_list_is_exact():
-    """P29 — a named exclusion list must not silently absorb new drift.
-
-    Asserted as an exact set, so a code leaving the old vocabulary (or a new
-    entry joining it) is a deliberate edit rather than an unnoticed pass.
-    """
+    """P29 — the retired vocabulary must stay gone."""
     help_conf = _help_confidence()
     actual = {c for c, v in help_conf.items()
               if v not in API_TAXONOMY and c in _AI_READINESS_CONFIDENCE}
     assert actual == LEGACY_VOCABULARY, (
-        f"the legacy-vocabulary set changed.\n"
-        f"  newly non-taxonomy: {sorted(actual - LEGACY_VOCABULARY)}\n"
-        f"  no longer present:  {sorted(LEGACY_VOCABULARY - actual)}")
+        f"codes using a non-API confidence label: {sorted(actual)}")
 
 
 @pytest.mark.parametrize("code", ["ENTITY_HOURS_DEFAULT",

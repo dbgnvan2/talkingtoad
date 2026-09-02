@@ -54,6 +54,18 @@ describe('issueHelp data', () => {
     }
   })
 
+  it('every entry carries the seven-part explainer (Phase 2)', () => {
+    // Backend parity (category, severity, confidence, caveat substance) is in
+    // tests/test_issue_help_completeness.py; this pins the shape the panel reads.
+    const required = ['title', 'mission_impact', 'definition', 'impact', 'good_vs_bad', 'how_it_can_mislead', 'fix', 'confidence']
+    Object.entries(issueHelp).forEach(([code, help]) => {
+      required.forEach(f => expect(help[f], `${code} missing ${f}`).toBeTruthy())
+      expect(help.good_vs_bad.good, `${code} good_vs_bad.good`).toBeTruthy()
+      expect(help.good_vs_bad.bad, `${code} good_vs_bad.bad`).toBeTruthy()
+      expect(help.how_it_can_mislead.startsWith('Evidence tier: '), `${code} caveat must open with the tier`).toBe(true)
+    })
+  })
+
   it('returns null for unknown codes', () => {
     expect(getIssueHelp('NONEXISTENT_CODE')).toBeNull()
   })

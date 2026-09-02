@@ -1,443 +1,2222 @@
-"""
-Issue help text for PDF reports.
+"""Issue help text for the PDF report — GENERATED, do not edit.
 
-Auto-generated from frontend/src/data/issueHelp.js.
-Each entry has: what (definition), impact, fix.
+Source: frontend/src/data/issueHelp.json (authored; see
+docs/explanation-style-guide.md). Regenerate with
+``python scripts/generate_issue_help_py.py``; tests/test_issue_help_sync.py
+fails when this file is out of date.
 """
 
-ISSUE_HELP: dict[str, dict[str, str]] = {
-    "TITLE_MISSING": {
-        "what": "This page has no <title> tag in its HTML. Every web page should have a unique title tag in its <head> section — it is the clickable headline shown in search results and in the browser tab.",
-        "impact": "Google doesn't know what to call this page in search results.",
-        "fix": "Add a <title> tag to the page's <head> section with a clear, descriptive title between 30 and 60 characters. In WordPress, most themes and SEO plugins (Yoast SEO, Rank Math) have a dedicated 'SEO Title' field on each page's edit screen."
+from __future__ import annotations
+
+ISSUE_HELP: dict[str, dict] = {
+    "AI_BOT_BLANKET_DISALLOW": {
+        "confidence": "Established",
+        "definition": "Your robots.txt file — a small text file at the root of your site that tells automated visitors what they may read — contains the two lines `User-agent: *` and `Disallow: /`. Together those mean \"no crawler may fetch anything here\".",
+        "fix": "Ask whoever manages your hosting or your SEO plugin to change `Disallow: /` to a blank `Disallow:`. In WordPress with Yoast or Rank Math, the file is editable under Tools then File editor; otherwise a developer edits robots.txt at the site root.",
+        "good_vs_bad": {
+            "bad": "robots.txt reads `User-agent: *` then `Disallow: /`, so the crawler stops before it reads your Grief Counselling page.",
+            "good": "robots.txt reads `User-agent: *` then `Disallow:` (blank), so crawlers may read the whole site."
+        },
+        "how_it_can_mislead": "Evidence tier: Established. The rule is defined in the robots exclusion standard (RFC 9309), so what the file says is not in doubt. The false-positive case is a site that genuinely means it — a private intranet or a staging copy that should stay hidden. A correct-looking-but-wrong result is the reverse direction: a badly behaved scraper that ignores robots.txt will still read your pages, so this file is an instruction, not a lock, and \"we are blocked\" does not mean \"we are private\".",
+        "impact": "Google, Bing, ChatGPT, Claude and Perplexity all obey this file. With a blanket block in place, your counselling pages, your events and your donate page can be excluded from search results and from AI answers entirely. This is usually left over from a staging site that went live without the file being changed. It is the single most damaging setting on this list, and also one of the quickest to undo.",
+        "mission_impact": "No search engine and no AI assistant can read a single page, so nobody finds your programs unless they already know your address.",
+        "title": "Every bot is blocked from your whole site"
     },
-    "TITLE_DUPLICATE": {
-        "what": "Two or more pages on this site share exactly the same page title. Each page should have a unique title that describes its specific content.",
-        "impact": "Search engines use titles to understand what makes each page distinct. Duplicate titles make it harder to rank well for relevant searches, because search engines may not be able to tell which page is most relevant — or may choose to show only one of them.",
-        "fix": "Write a unique title for each affected page that clearly describes what makes that page different from the others. Include the page topic and your organisation name, e.g. 'Counselling for Anxiety — Living Systems'."
+    "AI_BOT_DEPRECATED_DIRECTIVE": {
+        "confidence": "Established",
+        "definition": "Your robots.txt names an old AI crawler identity — `anthropic-ai` or `claude-web`. Anthropic retired those names in July 2024 and replaced them with ClaudeBot, Claude-SearchBot and Claude-User.",
+        "fix": "Replace the retired names with the current ones: `ClaudeBot` for training, `Claude-SearchBot` for search citation, `Claude-User` for a person asking the assistant about your page. Keep whatever allow or disallow rule you actually intended under each.",
+        "good_vs_bad": {
+            "bad": "`User-agent: anthropic-ai` followed by `Disallow: /` — a rule aimed at a name that was retired in 2024.",
+            "good": "`User-agent: ClaudeBot` followed by your chosen rule — a name the crawler actually answers to."
+        },
+        "how_it_can_mislead": "Evidence tier: Established. Each vendor publishes its current crawler names, so a name not on that list has no effect. The false-negative case is that we only know the names in our own reference table — a rule naming some other vendor's retired bot may go unflagged. A correct-looking-but-wrong result is a robots.txt that reads like a careful AI policy but is entirely inert, because every name in it was superseded.",
+        "impact": "A rule addressed to a name nobody uses is simply skipped. If the rule was meant to block AI training, nothing is being blocked; if it was meant to allow access, nothing is being allowed. Either way the file no longer says what you think it says. It also signals the file has not been reviewed in over a year, which usually means other rules are stale too.",
+        "mission_impact": "A rule you wrote to control AI access is doing nothing at all, so your actual intent is not being applied.",
+        "title": "robots.txt names an AI bot that no longer exists"
     },
-    "TITLE_TOO_SHORT": {
-        "what": "The page title is fewer than 30 characters. Short titles often lack enough context to be useful to visitors or search engines.",
-        "impact": "A very short title may not include enough keywords or context for search engines to understand the page's topic, reducing the likelihood of the page appearing in relevant searches. It may also look thin or unhelpful in search results.",
-        "fix": "Expand the title to between 30 and 60 characters. Include the specific topic of the page and your organisation name — for example, 'About Us — Living Systems Counselling Society' instead of just 'About'."
+    "AI_BOT_NO_AI_DIRECTIVES": {
+        "confidence": "Heuristic",
+        "definition": "Your robots.txt names no AI crawler, either to allow or to block one. The general `User-agent: *` rules apply to them instead, which on most sites means they are allowed.",
+        "fix": "Only act if you want to. Decide with your team whether AI assistants may cite your pages, then have whoever manages the site add named rules to robots.txt for the AI crawlers, or leave the file as it is.",
+        "good_vs_bad": {
+            "bad": "robots.txt lists only your sitemap and a couple of admin folders, so nobody can tell whether AI access was ever considered.",
+            "good": "robots.txt names the AI crawlers your board discussed — for example allowing `Claude-SearchBot` so your programs can be cited, while blocking `GPTBot` from training."
+        },
+        "how_it_can_mislead": "Evidence tier: Heuristic. This is our own judgement that stating an intent is better than leaving it implicit, and no engine rewards you for it. The false-positive case is an organisation that deliberately relies on the default and does not want a longer file. A correct-looking-but-wrong result is an explicit AI section that is confidently written and wrong — blocking the search bots while allowing the training bots is the exact opposite of what most nonprofits want.",
+        "impact": "This is a note, not a fault, and TalkingToad takes no position on which way you should go. Two separate choices sit behind it: whether AI companies may use your writing to train their models, and whether AI assistants may cite your pages when someone asks a question. Writing your choice down makes it survive staff turnover and site rebuilds. Leaving it unwritten means the default applies and nobody on your team knows what the default is.",
+        "mission_impact": "Nothing is broken — but your organisation has not recorded a decision about whether AI systems may use your content.",
+        "title": "robots.txt says nothing about AI crawlers"
     },
-    "TITLE_TOO_LONG": {
-        "what": "The page title exceeds 60 characters. Google typically displays around 50–60 characters in search results before cutting the title off with an ellipsis (…).",
-        "impact": "The end of your title — often the most distinguishing part — will be cut off in search results, making the listing less informative and less clickable to potential visitors.",
-        "fix": "Shorten the title to under 60 characters while keeping the most important keywords at the beginning. Put the specific page topic first, then the organisation name."
+    "AI_BOT_SEARCH_BLOCKED": {
+        "confidence": "Established",
+        "definition": "Your robots.txt disallows one of the crawlers that AI assistants use to look things up and cite them — OAI-SearchBot (OpenAI), Claude-SearchBot (Anthropic), or PerplexityBot. These are not the bots that gather training data; they are the ones that fetch pages in order to answer a live question.",
+        "fix": "Have whoever manages the site leave the `Disallow:` line blank for OAI-SearchBot, Claude-SearchBot and PerplexityBot. If a plugin or host setting added the block, look for an \"AI crawler\" toggle there first and turn off only the search-bot part.",
+        "good_vs_bad": {
+            "bad": "`User-agent: PerplexityBot` followed by `Disallow: /` — Perplexity is told to skip you, so a person asking about local food banks never sees your name.",
+            "good": "`User-agent: Claude-SearchBot` followed by a blank `Disallow:` — the assistant may fetch your Programs page and cite it."
+        },
+        "how_it_can_mislead": "Evidence tier: Established. The block is read straight out of your file, against the crawler names the vendors publish. The false-positive case is a deliberate policy decision to stay out of AI answers, which is a legitimate choice. A correct-looking-but-wrong conclusion is assuming that removing the block will produce citations: unblocking only makes you eligible, and whether an engine actually cites you depends on your content and on the engine.",
+        "impact": "These vendors document their crawler names and state that a disallow stops the fetch. Blocked, your pages cannot appear as a cited source in an AI answer, no matter how good the content is. It is common for this to be accidental: a plugin or a hosting \"block AI bots\" toggle usually blocks the search bots and the training bots together, and most organisations only meant the second. Of everything in an AI-readiness audit, this is the setting with the most direct effect.",
+        "mission_impact": "When someone asks ChatGPT or Perplexity where to find counselling in your city, your organisation cannot be one of the answers.",
+        "title": "An AI search bot is blocked in robots.txt"
     },
-    "META_DESC_MISSING": {
-        "what": "This page has no meta description tag. The meta description is the short paragraph (typically 1–2 sentences) that appears below the page title in search engine results, helping visitors decide whether to click.",
-        "impact": "Without a meta description, Google writes one automatically by pulling random text from the page. Auto-generated descriptions are often unhelpful or confusing, which reduces the likelihood that people will click through to your site from search results.",
-        "fix": "Add a meta description of 70–160 characters that clearly explains what visitors will find on this page and why they should visit. In WordPress, the Yoast SEO or Rank Math plugin adds a 'Meta Description' field to every page's edit screen."
+    "AI_BOT_TABLE_STALE": {
+        "confidence": "Heuristic",
+        "definition": "TalkingToad checks your robots.txt against an internal list of known AI crawler names. That list has not been reviewed in over 12 months.",
+        "fix": "There is nothing to change on your site. Let TalkingToad support know that the AI bot reference table is due for review.",
+        "good_vs_bad": {
+            "bad": "The table is two years old, so a newly launched search crawler blocked on your site is never mentioned in this report.",
+            "good": "The bot reference table was reviewed within the last 12 months, so the AI-bot findings reflect the crawlers that exist today."
+        },
+        "how_it_can_mislead": "Evidence tier: Heuristic. The 12-month freshness window is TalkingToad's own choice, not an industry standard. The false-positive case is a quiet year in which nothing actually changed and the old table is still perfectly accurate. The correct-looking-but-wrong result this guards against is the dangerous one: a stale table produces a confident, clean AI-bot section that simply never looked for the crawler that is blocking you.",
+        "impact": "AI vendors add, rename and retire crawlers several times a year. An old list means the audit may miss a bot that now matters, or keep reporting on one that has been withdrawn. Nothing here says your site has a defect — it says the other AI-bot findings in this report are working from an ageing reference and should be read with that in mind.",
+        "mission_impact": "Nothing on your site is wrong; this is a note about how much to trust the AI-bot findings in this report.",
+        "title": "TalkingToad's own AI bot list needs a refresh"
     },
-    "META_DESC_DUPLICATE": {
-        "what": "The same meta description appears on two or more pages. Each page should have a unique description that reflects its specific content.",
-        "impact": "Duplicate descriptions don't help search engines or visitors distinguish between your pages. They make each result look identical in search listings, reducing click-through rates and making it harder for search engines to rank the right page for a given query.",
-        "fix": "Write a unique meta description for each affected page that reflects its own content and purpose. Avoid generic descriptions like 'Welcome to our website' that could apply to any page."
+    "AI_BOT_TRAINING_DISALLOWED": {
+        "confidence": "Established",
+        "definition": "Your robots.txt disallows one or more training crawlers — GPTBot, ClaudeBot, CCBot and similar. These bots collect text used to train large language models, the systems behind assistants like ChatGPT and Claude.",
+        "fix": "If the block was intended, leave it. If it was not, have whoever manages the site remove the disallow for the training crawlers. Either way, confirm that the search bots are not caught up in the same rule.",
+        "good_vs_bad": {
+            "bad": "Every OpenAI and Anthropic name blocked together, which also removes your Volunteer page from AI answers, usually by accident.",
+            "good": "`GPTBot` and `ClaudeBot` blocked while `OAI-SearchBot` and `Claude-SearchBot` are allowed — out of training, still citable."
+        },
+        "how_it_can_mislead": "Evidence tier: Established. The vendors document that these crawlers honour a robots.txt disallow, so the block does what it says. TalkingToad reports the state and does not recommend allowing it. The false-negative case is that a crawler which ignores robots.txt is unaffected, so this is not a guarantee your text stays out of any model. The correct-looking-but-wrong reading is treating a green \"training blocked\" line as proof of AI protection, when the same file may be quietly blocking the search bots too — check that finding separately.",
+        "impact": "This scores zero because it is a choice, not a defect. The important thing to understand is that training bots and answer bots are different bots. Blocking GPTBot does not remove you from ChatGPT's answers; that is controlled by OAI-SearchBot. So you can decline to feed the models while remaining fully eligible to be cited when someone asks a question your programs answer.",
+        "mission_impact": "Your writing is being kept out of AI training data, which many nonprofits want — and it does not stop AI assistants citing you.",
+        "title": "AI training bots are blocked (this may be deliberate)"
     },
-    "META_DESC_TOO_SHORT": {
-        "what": "The meta description is fewer than 70 characters. Short descriptions leave valuable space unused and provide limited context.",
-        "impact": "Short descriptions give search engines less information to work with and are often less persuasive to visitors scanning search results. They may also be replaced by Google with automatically selected text from the page.",
-        "fix": "Expand the description to between 70 and 160 characters. Describe what the page covers, who it is for, and what action a visitor might take — written in natural, readable language."
+    "AI_BOT_USER_FETCH_BLOCKED": {
+        "confidence": "Established",
+        "definition": "Your robots.txt disallows a user-fetch bot — ChatGPT-User, Claude-User or Perplexity-User. These fetch a single page at the moment a person asks the assistant about it, rather than crawling your site in bulk.",
+        "fix": "Decide per vendor. If you want assistants to open pages people ask about, have whoever manages the site remove the disallow lines for ChatGPT-User, Claude-User and Perplexity-User.",
+        "good_vs_bad": {
+            "bad": "`User-agent: Claude-User` followed by `Disallow: /`, so the assistant reports it cannot read the page the person just handed it.",
+            "good": "No disallow for `Claude-User`, so a board member can paste your Annual Report link into an assistant and get an accurate summary."
+        },
+        "how_it_can_mislead": "Evidence tier: Established. The finding reads a documented directive against documented crawler names. The false-negative case is that a blocked page can still be fetched by the vendors that do not apply robots.txt here, so \"blocked\" does not mean unreachable. The correct-looking-but-wrong result is testing with one assistant, seeing it fetch the page fine, and concluding the block is harmless — while Claude-User, which does obey, is being turned away.",
+        "impact": "How much this costs you depends on the vendor, and the vendors differ. Anthropic's Claude-User honours robots.txt, so this block genuinely stops it — a real loss if the block was not intended. OpenAI documents ChatGPT-User as a case where robots.txt \"may not apply\", and Perplexity-User ignores it. So the same line in your file has a real effect on one assistant and little on the others.",
+        "mission_impact": "When a donor pastes your link into an AI assistant and asks what your program does, the assistant may not be able to open it.",
+        "title": "Assistants are blocked from opening this page on request"
     },
-    "META_DESC_TOO_LONG": {
-        "what": "The meta description exceeds 160 characters. Search engines typically display around 155–160 characters before cutting the text off.",
-        "impact": "The end of your description will be replaced with '…' in search results, which looks untidy and may cut off important information or calls to action.",
-        "fix": "Shorten the description to under 160 characters, keeping the most important information at the beginning. Lead with what the page is about, not background context."
+    "AI_CITED_PAGE": {
+        "confidence": "Established",
+        "definition": "A citation of this page's address was recorded by the citation source TalkingToad is configured to read, within the last 30 days. This is good news, recorded for information; there is nothing to fix.",
+        "fix": "Nothing to fix. Keep the page accurate and current, and use its structure — clear headings, an answer early, a visible date — as the pattern for your other program pages.",
+        "good_vs_bad": {
+            "bad": "The same information sits only inside a PDF newsletter, so it is never cited and the enquiry goes elsewhere.",
+            "good": "Your \"How to Refer Someone to Counselling\" page appears as a cited source in an AI answer about local referral routes."
+        },
+        "how_it_can_mislead": "Evidence tier: Established. This is a recorded observation, not a prediction — the citation genuinely happened. The important false-negative is on the other side: a page with no citation recorded here may simply never have been sampled, so absence proves nothing. A correct-looking-but-wrong conclusion is treating this as a running score — the check reports presence within a 30-day window only, so a page steadily losing citations still shows as cited until the last one falls out of the window.",
+        "impact": "AI assistants answer questions in their own words and then list the pages they drew on. Being one of those listed pages is how a nonprofit gets found by someone who never typed your name into Google. A cited page is also a working template: whatever makes this one quotable — clear headings, a direct answer near the top, real dates — is worth copying onto your other pages.",
+        "mission_impact": "Real people asking AI assistants questions were pointed at this page — proof your work is reaching an audience you never see in your own analytics.",
+        "title": "AI engines have cited this page recently"
     },
-    "SOCIAL_PREVIEW_METADATA_MISSING": {
-        "what": "One or more social-preview meta tags are missing — og:title, og:description, og:image, or twitter:card. These control how your page looks when shared on Facebook, LinkedIn, Twitter/X, and similar platforms. The finding lists exactly which tags are absent.",
-        "impact": "Shared links render with a missing preview image, a guessed or wrong title, or a plain-text preview — all of which look unprofessional and reduce click-through from social platforms.",
-        "fix": "Populate og:title, og:description, og:image and twitter:card. A single SEO plugin setting (Yoast, Rank Math) usually fills all of them at once."
+    "AI_CONTENT_NOT_IN_TEXT": {
+        "confidence": "Reasonable proxy",
+        "definition": "The page's substance is carried by images, video, or an embedded file such as a PDF or an iframe (a window showing another page inside this one), rather than by real text in the page. Anything that reads text receives almost nothing.",
+        "fix": "Type the key information into the page as ordinary text. In the WordPress block editor, add a Paragraph, List or Table block next to the image, and keep the image as the visual companion rather than the source.",
+        "good_vs_bad": {
+            "bad": "The whole \"Spring Support Groups\" schedule is one JPEG, so the page's readable text is a heading and a phone number.",
+            "good": "The workshop dates and eligibility criteria are typed out as page text, with the printable poster offered alongside as a download."
+        },
+        "how_it_can_mislead": "Evidence tier: Reasonable proxy. TalkingToad can see that the page is mostly media with little text; it cannot read the image to confirm the missing information is important. The false-positive case is a genuine photo gallery or an artwork page where the images are the point. The correct-looking-but-wrong result runs the other way: a page can pass because it has plenty of chatty text while the one fact people need — the intake phone number — is still only in the banner graphic.",
+        "impact": "Accessibility guidance from the W3C is clear that information carried only by an image needs a text alternative. The same limit applies to AI systems: they read text, so a poster image of your programme schedule is, to them, a blank space. This affects your visitors directly too — a person using a screen reader gets the same nothing. Pages like this often look rich and well designed while being invisible to everything except a sighted human.",
+        "mission_impact": "The details that matter — your eligibility rules, your event times — cannot be read by AI assistants or by a screen reader.",
+        "title": "Key content is trapped in an image or an embed"
     },
-    "CANONICAL_MISSING": {
-        "what": "This page has no canonical tag, and either it has URL query parameters (like ?page=2) or its content closely matches another page on the site. A canonical tag ",
-        "impact": "Without a canonical tag, search engines may treat similar or parameterised URLs as separate competing pages, splitting ranking signals between them. This is called 'duplicate content' and can dilute your search rankings across the affected pages."
+    "AI_HIGH_VALUE_UNCITED": {
+        "confidence": "Heuristic",
+        "definition": "This page scored well on health and has substantial content, but no AI citation of it was recorded in the monitoring window. It is offered as a prompt to look, not as a finding that something is wrong.",
+        "fix": "Before changing any content, confirm the AI search bots are not blocked in robots.txt. Then, if the page answers a real question, give it question-shaped H2 headings and a direct answer in the opening paragraph, and re-check after the next monitoring cycle.",
+        "good_vs_bad": {
+            "bad": "The same information is spread across a long, heading-free \"Our Approach\" essay that no AI answer has drawn on.",
+            "good": "Your \"What Does Grief Counselling Cost?\" page has clear question headings and is cited in AI answers about counselling fees."
+        },
+        "how_it_can_mislead": "Evidence tier: Heuristic. Absence of a recorded citation is not evidence of a problem — our sampling may simply not have seen one, or the page may have been cited before the window opened. The false-positive case is a page type nobody asks an assistant about: privacy policies and terms pages will always appear here, because this check does not consider what a page is for. A correct-looking-but-wrong response is rewriting a perfectly good page in reaction to a gap that was only a sampling artefact.",
+        "impact": "If a well-built page is genuinely never surfacing, the usual causes are worth ruling out: a robots.txt rule blocking the AI search bots, no clear question-shaped headings for a query to match, or a thin structured-data description of the page. Fixing those makes the page eligible. But treat this gently — it is the weakest signal in the AI section, and acting on it before checking the crawler settings wastes effort.",
+        "mission_impact": "One of your best pages is not showing up in AI answers, which may be a gap worth investigating — or may just be what our sample happened to see.",
+        "title": "A strong page with no AI citations recorded"
     },
-    "CANONICAL_EXTERNAL": {
-        "what": "This page has a canonical tag that points to a URL on a completely different website. This explicitly tells search engines that the authoritative version of this content exists on another domain — not yours.",
-        "impact": "All search ranking credit for this page will be directed to the external site. Your page will be treated as a copy and will not rank in search results. Unless you intentionally published this content elsewhere first, this is almost certainly a configuration error.",
-        "fix": "Review the canonical tag on this page. If the content originated on your site, change the canonical URL to point to this page itself (a self-referencing canonical). If the content was syndicated from another site, the external canonical may be correct — confirm with your web developer."
+    "AI_MAIN_CONTENT_LOW_RATIO": {
+        "confidence": "Heuristic",
+        "definition": "TalkingToad compares the text inside the page's main content area with all the visible text on the page. Here the main content is less than 40% of it — navigation menus, sidebars and the footer make up the rest.",
+        "fix": "The usual fix is to make the page say more rather than to strip the template — add real detail about the programme. If several pages on the same template are flagged, ask your developer whether the sidebars can be trimmed on content pages.",
+        "good_vs_bad": {
+            "bad": "A page whose body is two sentences, surrounded by a mega-menu, an events sidebar, a donate sidebar and a long link-filled footer.",
+            "good": "A programme page where the description, eligibility and how-to-apply text is most of the page, with a normal menu and footer around it."
+        },
+        "how_it_can_mislead": "Evidence tier: Heuristic. The 40% line is TalkingToad's own figure, and the check depends on correctly identifying which part of the page is the main content — on an unusual theme it may not. The false-positive case is a legitimately large footer of legal text or funder logos on a site whose content is perfectly substantial. The correct-looking-but-wrong result is the opposite: a page can pass the ratio comfortably because its body is padded with repeated calls to action, which the ratio counts as content.",
+        "impact": "Every page carries repeated furniture: the menu, the donate button, the footer with your charity number and social links. That is normal. It becomes a problem when the furniture outweighs the room. A system trying to work out what this page is for sees mostly the same words it saw on every other page of your site, and has little that is distinctly about counselling, or about this one event. The usual causes are a very short page body, or a template with several sidebars.",
+        "mission_impact": "Your programme description is a small island in a sea of navigation, so both readers and AI struggle to see what the page is about.",
+        "title": "Menus and footer outweigh the actual page content"
     },
-    "FAVICON_MISSING": {
-        "what": "The homepage has no favicon — the small icon that appears in browser tabs, bookmarks, browser history, and search results on some devices.",
-        "impact": "Favicons don't directly affect search rankings, but they reinforce your brand identity and help visitors recognise your site in a crowded list of browser tabs. A missing favicon can make a site look unfinished or untrustworthy, particularly on first visit.",
-        "fix": "Create a square image of your logo or brand mark at least 32×32 pixels (512×512 recommended), save it as a .ico or .png file, and upload it to your site. In WordPress, go to Appearance → Customise → Site Identity → Site Icon."
+    "AI_NO_VISUAL_COMPANION": {
+        "confidence": "Heuristic",
+        "definition": "This is an article, service or FAQ page with more than 300 words and no image or video anywhere in it. It is a suggestion about reader experience, not a defect.",
+        "fix": "Only add an image if a relevant one exists. In the WordPress block editor, insert an Image block near the top of the page, write a descriptive caption, and fill in the Alt text field so the image is described to screen readers.",
+        "good_vs_bad": {
+            "bad": "The same 600 words with no image at all, so a visitor deciding whether to walk through the door has nothing to picture.",
+            "good": "A 600-word page on your bereavement group with one photo of the meeting room and a caption naming the location and time."
+        },
+        "how_it_can_mislead": "Evidence tier: Heuristic. This is our own judgement, and the weakest kind — no source establishes an effect on AI retrieval. The false-positive case is a page that is right to have no image, such as a detailed policy or legal FAQ. The correct-looking-but-wrong outcome is satisfying the check with a meaningless stock photo of smiling strangers, which clears the flag while making the page slightly worse.",
+        "impact": "A relevant image gives a reader a place to rest and a sense of what your service actually looks like — a group room, a volunteer team, a map of the site. It also gives you a caption, which is a natural place to restate the page's point in plain words. The gain here is mostly for people; nothing establishes that adding an image changes whether AI systems cite you, which is why this scores near the bottom.",
+        "mission_impact": "A wall of text is harder for a worried visitor to stay with than the same words broken up by one relevant photograph.",
+        "title": "A long text page with no image or video"
     },
-    "THIN_CONTENT": {
-        "what": "This page has fewer than 300 words of readable body content. Thin content pages provide limited value to visitors and may be seen as low-quality by search engines.",
-        "impact": "This page has very little text; Google may think it isn't useful to visitors.",
-        "fix": "Expand the page content to at least 300 words of meaningful, relevant information. Describe the topic thoroughly enough to genuinely answer a visitor's question. If the page is intentionally brief (e.g., a contact page), consider adding more context about your organisation or services."
+    "AI_PREVIEW_BLOCKED_AT_BOT": {
+        "confidence": "Established",
+        "definition": "The page is served with an X-Robots-Tag header — an instruction your web server attaches to the page, invisible in the page itself — addressed to a specific AI crawler such as GPTBot or Google-Extended, telling it not to use this page.",
+        "fix": "This one needs a developer. Ask them to find the AI-crawler-specific X-Robots-Tag rule, which usually sits in the server configuration or an SEO plugin's advanced settings, and remove it if AI visibility is what you want.",
+        "good_vs_bad": {
+            "bad": "The server sends `X-Robots-Tag: Google-Extended: noindex`, so Google's AI surfaces skip the page while ordinary Google search keeps it.",
+            "good": "No AI-crawler-specific X-Robots-Tag, so every AI engine is free to use your Programs page as a source."
+        },
+        "how_it_can_mislead": "Evidence tier: Established. The header is read directly from the response, and its meaning is documented. The false-positive case is a deliberate policy — some organisations block Google-Extended on purpose. The false-negative case is that a crawler which does not honour the header is unaffected. A correct-looking-but-wrong conclusion is a clean bill of health from checking the page's source code, because the header is not in the page's HTML at all; only a look at the server response reveals it.",
+        "impact": "Google documents that these headers can be addressed to one named crawler, and the engines that respect them will act on it. Because the header lives in server configuration or an SEO plugin rather than in the page, nobody editing the page can see it. The result is a page that looks entirely healthy in your editor and to ordinary search, while being switched off for one AI engine. That is why this is worth confirming rather than assuming.",
+        "mission_impact": "One AI engine has been told, page by page, to leave this content alone — often without anyone at your organisation deciding that.",
+        "title": "A server header blocks a named AI crawler"
     },
-    "PAGINATION_LINKS_PRESENT": {
-        "impact": "This is generally fine and helps search engines understand the relationship between paginated pages. No immediate action is required unless the pagination structure is misconfigured or the linked pages are inaccessible.",
-        "fix": "No action required in most cases. Ensure the linked next/prev pages are crawlable and not blocked by robots.txt or noindex tags. Verify that pagination URLs are not generating excessive duplicate content."
+    "AI_PREVIEW_SUPPRESSED": {
+        "confidence": "Established",
+        "definition": "The page is served with an X-Robots-Tag header — a server instruction attached to the page rather than written in it — containing `nosnippet` or `max-snippet:0`. Both mean: display no preview text from this page.",
+        "fix": "Ask a developer to remove `nosnippet` or `max-snippet:0` from the X-Robots-Tag header, usually set in server configuration or an SEO plugin. If you need to cap the preview length rather than remove it, use a positive value such as `max-snippet:200`.",
+        "good_vs_bad": {
+            "bad": "`X-Robots-Tag: nosnippet` is sent, so the result shows only a title and searchers cannot tell whether you can help them.",
+            "good": "No snippet directive, so the first lines of your \"Emergency Food Support\" page appear under the result and can be quoted in an AI answer."
+        },
+        "how_it_can_mislead": "Evidence tier: Established. The directive is documented by Google and read straight from the server response. The false-positive case is a page where suppressing the preview is intentional, such as licensed content you may not excerpt. The correct-looking-but-wrong result is a page that passes every on-page check and still shows a blank result, because the directive is in a header no page-source inspection will show.",
+        "impact": "Google documents these directives as suppressing the text preview. Without a preview, a search result is a bare title and address, and an AI answer has nothing it is permitted to quote. The setting is almost always accidental — a plugin default or a rule copied from a page that genuinely needed it, such as a members-only area, and then applied more widely than intended. Removing it is a single configuration change.",
+        "mission_impact": "Search and AI results can name the page but not show a single line of it, so nobody sees what you actually offer.",
+        "title": "A server header forbids showing any snippet of this page"
+    },
+    "AI_TXT_MISSING": {
+        "confidence": "Heuristic",
+        "definition": "There is no /ai.txt file on your site. ai.txt is one of several competing proposals for a file where a site would state its policy on AI use of its content.",
+        "fix": "No action needed. If you want a public statement of your AI policy anyway, a developer can add a plain-text /ai.txt — but put the rules that must take effect in robots.txt.",
+        "good_vs_bad": {
+            "bad": "A carefully written /ai.txt declaring your policy, while robots.txt still blocks the AI search bots — the file nobody reads says yes, the file everybody reads says no.",
+            "good": "Your AI intentions are expressed in robots.txt, where the crawlers will actually read them."
+        },
+        "how_it_can_mislead": "Evidence tier: Heuristic. This is our own judgement and a weak one: ai.txt is an unadopted convention, not a standard. The false-positive risk is the harmful one — reading this as a task and spending time on a file with no audience. A correct-looking-but-wrong outcome is exactly that: creating ai.txt, seeing the flag clear, and believing your AI access policy is now in force when nothing has changed.",
+        "impact": "No major AI engine reads ai.txt today, so adding one changes nothing about how you are crawled or cited. The file that actually works is robots.txt, and the AI-bot findings in this report are the ones worth your attention. This entry scores near zero deliberately, and you can reasonably ignore it.",
+        "mission_impact": "Nothing is broken and nothing is lost — this is noted only so the report is complete.",
+        "title": "No ai.txt file at the site root"
     },
     "AMPHTML_BROKEN": {
-        "what": "This page declares an AMP (Accelerated Mobile Pages) version via a ",
-        "impact": "A broken AMP link means visitors accessing your content through AMP-served contexts (e.g., certain Google Search mobile results) may encounter errors. Search engines may de-prioritise or remove AMP versions if the declared URL is inaccessible."
+        "confidence": "Heuristic",
+        "definition": "The page declares an AMP version — a stripped-down mobile format — with a <link rel=\"amphtml\"> tag, but that address did not answer with a 200 OK when we checked it.",
+        "fix": "Either make the AMP address load, or remove the rel=\"amphtml\" tags. In WordPress, deactivating the AMP plugin removes them site-wide; if the tag comes from your theme, this needs your developer.",
+        "good_vs_bad": {
+            "bad": "It still declares /programs/counselling/amp/, which now returns 404.",
+            "good": "The page declares no AMP version at all, because your site stopped using AMP and the tags were removed."
+        },
+        "how_it_can_mislead": "Evidence tier: Heuristic. Calling a declared-but-unreachable address a broken reference is our own judgement, and it rests on a single check made during the crawl. A correct-looking-but-wrong result is an AMP address that was briefly failing, or that blocks automated requests, being reported as broken when it serves fine — and because AMP is deprecated, even a true finding is low-value housekeeping.",
+        "impact": "This is cleanup rather than an SEO fault: Google no longer requires AMP for mobile search results. Where AMP is still used, a declared address that does not resolve means anyone reaching your content through an AMP context sees an error. More often it means the site stopped using AMP but the tags were never removed.",
+        "mission_impact": "Your page advertises a mobile version that does not exist, which is leftover clutter worth clearing.",
+        "title": "Broken AMP version link"
     },
-    "H1_MISSING": {
-        "what": "This page has no H1 heading tag. An H1 is the main heading of a page — typically the largest, most prominent text — and there should be exactly one on every page.",
-        "impact": "Search engines use the H1 to understand the primary topic of a page. Missing H1 tags make it harder for search engines to categorise your content, and can directly reduce rankings for the search terms most relevant to that page.",
-        "fix": "Add a single <h1> tag that clearly states the main topic of the page. In most CMS platforms, the page or post title you enter is automatically output as the H1 by the theme. If H1 tags are missing, your theme may have a bug — check with your web developer."
+    "ANALYTICS_ID_INCONSISTENT": {
+        "confidence": "Heuristic",
+        "definition": "The analytics measurement ID is not the same on every page crawled — or the tag is on some pages and missing from others. A measurement ID is the G- or GTM- code that says which account the data goes to. This pattern usually means the tag was pasted in page by page instead of installed once in a shared template.",
+        "fix": "Install one measurement ID site-wide through the shared header or footer template — in WordPress, set it once in Site Kit or your headers-and-footers plugin — and delete the per-page copies pasted into individual pages or custom HTML blocks. Re-crawl to confirm one consistent ID everywhere.",
+        "good_vs_bad": {
+            "bad": "Your programs pages report to G-ABC123 while the newer donate page reports to G-XYZ789, left over from a half-finished migration.",
+            "good": "Every page carries the same G-ABC123 measurement ID, because it comes from one shared header template."
+        },
+        "how_it_can_mislead": "Evidence tier: Heuristic. This is TalkingToad's judgement, not a Google rule: a deliberate multi-property setup — a campaign microsite measured separately on purpose — is entirely legitimate and will be flagged as a false positive. Because it compares only the pages crawled, a false negative is a stray second ID living on pages the crawl did not reach. The correct-looking-but-wrong result is a clean pass on a small crawl of a site that does have a split, simply because both odd pages were outside the crawl limit.",
+        "impact": "Traffic is split across two properties, or lost entirely on the untagged pages, so no report reflects the whole site. Year-on-year trends look broken at the point the second ID appeared, and a visitor who moves from a page on one ID to a page on the other is counted as two people. This check needs the full crawl, because it compares pages against each other.",
+        "mission_impact": "Different pages report to different analytics accounts, so no single report covers your whole site.",
+        "title": "Different analytics IDs across the site"
     },
-    "H1_MULTIPLE": {
-        "what": "This page has more than one H1 tag. Best practice is to use exactly one H1 per page — the primary heading that introduces the main topic.",
-        "impact": "Multiple H1 tags send mixed signals to search engines about which topic is primary for the page, diluting its focus. It also creates a confusing experience for visitors using screen readers, who rely on headings to navigate page content.",
-        "fix": "Review the page and keep only one H1 that introduces the main topic. Demote additional H1 tags to H2 or H3, depending on where they fall in the content hierarchy."
+    "ANALYTICS_TAG_DUPLICATE": {
+        "confidence": "Established",
+        "definition": "This page appears to load Google Analytics more than once: either two separate GA4 configuration calls, or a direct GA4 tag sitting alongside a Tag Manager container that also loads GA4. The usual cause is a plugin adding the tag while Tag Manager is already delivering it.",
+        "fix": "Choose one delivery path for GA4 — usually Tag Manager — and remove the other; in WordPress that normally means turning off the analytics field in whichever plugin duplicates it (Site Kit, Yoast, or a headers-and-footers plugin). Confirm in GA4 DebugView or Google Tag Assistant before removing anything, then re-crawl to check one tag remains.",
+        "good_vs_bad": {
+            "bad": "A GA4 snippet added by an SEO plugin in the header, plus a GTM- container that also fires GA4 for the same property.",
+            "good": "One gtag.js loader plus one gtag('config', 'G-XXXX') call for a single measurement ID — that pair is the standard install, not a duplicate."
+        },
+        "how_it_can_mislead": "Evidence tier: Established. Google documents one GA4 tag per page, so the rule itself is solid, but the detection is from markup and is script-by-script: a false negative is two configuration calls inside one <script> block, which read as one. A false positive is a Tag Manager container that does not in fact load GA4 — TalkingToad cannot see inside your container, so a direct tag plus GTM is flagged on suspicion. The correct-looking-but-wrong result is removing a tag on the strength of this finding and discovering your data stops entirely, which is why you verify first.",
+        "impact": "Double-tagging inflates pageviews and sessions, and roughly halves your reported engagement and conversion rates, because the same visitor is counted as twice as many visits doing half as much each. Bounce rate collapses towards zero for the same reason. Every decision made from that data — which appeal worked, which program page to promote — is being made from the wrong numbers.",
+        "mission_impact": "Every visit to this page is counted twice, so the numbers you report to funders are inflated.",
+        "title": "Analytics loaded twice on this page"
     },
-    "HEADING_SKIP": {
-        "what": "The heading structure on this page skips one or more levels — for example, jumping from H1 directly to H3 with no H2 in between, or from H2 to H4.",
-        "impact": "Skipped heading levels create accessibility problems: screen reader users navigate pages by heading structure, and gaps are disorienting. Search engines also interpret heading hierarchy as a signal of content organisation — a broken hierarchy suggests the content is poorly structured.",
-        "fix": "Review the heading tags on this page and ensure no levels are skipped. Use H1 for the main topic, H2 for major sections, H3 for subsections within those, and so on. In WordPress, headings are set using the paragraph style selector in the block editor."
-    },
-    "HEADING_EMPTY": {
-        "what": "One or more heading tags (<h2>, <h3>, etc.) on this page contain no text. The tag exists in the HTML but is either completely empty or contains only whitespace.",
-        "impact": "Screen readers announce an empty heading, confusing visitors who rely on assistive technology.",
-        "fix": "Find the empty heading tags in your page editor and either add descriptive text or remove the heading tag entirely. In WordPress, switch to the Code Editor view to locate empty <h2></h2> or <h3></h3> tags. Common causes include deleted content that left behind empty heading blocks, or page builders inserting placeholder headings."
-    },
-    "BROKEN_LINK_404": {
-        "what": "This link points to a page that doesn't exist. The server responded with a '404 Not Found' status, meaning the destination page has either been deleted or its URL has changed.",
-        "impact": "Visitors clicking this will see an error page instead of your content.",
-        "fix": "Find the correct current URL for the destination content and update the link. If the content has been permanently removed with no replacement, delete the link. If you control the destination site, consider setting up a 301 redirect from the old URL to the new one."
-    },
-    "BROKEN_LINK_410": {
-        "what": "This link points to a page that has been permanently and intentionally removed. The server returned a '410 Gone' response, which explicitly signals that the content is gone for good — unlike a 404, which might be temporary.",
-        "impact": "Visitors clicking this link will see an error page. The 410 status also tells search engines to immediately remove the URL from their index. Any links pointing to a 410 page waste link authority that could otherwise benefit your site.",
-        "fix": "Remove the link from your site. The destination is permanently gone. If there is a relevant alternative page, update the link to point there instead."
-    },
-    "BROKEN_LINK_5XX": {
-        "what": "The destination of this link is returning a server error — a 5xx status code such as 500 Internal Server Error or 502 Bad Gateway. The server is responding but failing to serve the page correctly.",
-        "impact": "Visitors will see an error page rather than the expected content. Repeated 5xx errors reduce visitor trust and signal poor reliability to search engines.",
-        "fix": "Check whether the linked site is experiencing a temporary outage. If the error persists after several hours, treat the link as unreliable and either remove it or replace it with a link to an alternative resource."
-    },
-    "BROKEN_LINK_503": {
-        "what": "The destination of this link returned a 503 status code. This is often returned by Cloudflare and other CDN providers when they detect automated requests, even when the page loads normally for real visitors in a browser.",
-        "impact": "This may be a false alarm caused by bot protection on the destination site. It could also be a genuine temporary outage. Visitors are unlikely to be affected.",
-        "fix": "Open the link in a browser to confirm whether it loads for real visitors. If it works normally, no action is needed — the link is fine and the 503 is the destination site blocking automated checks. If it fails for visitors too, remove or replace the link."
-    },
-    "PAGE_TIMEOUT": {
-        "what": "This internal page did not respond within the timeout period. The crawler attempted to fetch it but received no response in time. The page was not audited for SEO issues.",
-        "impact": "If the page consistently times out, visitors may also experience slow or failed loads. Search engines that cannot crawl a page will not index it.",
-        "fix": "Visit the page in a browser to see if it loads. If it is slow, check your hosting server performance and page weight. If it consistently fails, contact your web host."
-    },
-    "EXTERNAL_LINK_TIMEOUT": {
-        "what": "The crawler attempted to verify this external link but received no response within the timeout period. The destination server may be slow, temporarily down, or blocking automated requests.",
-        "impact": "The link may work fine for real visitors (who have longer browser timeouts) or it may genuinely be slow or broken. This cannot be confirmed automatically.",
-        "fix": "Click the link to confirm it loads in your browser. If it opens quickly, no action is needed. If it is consistently slow or fails, consider replacing it with a faster or more reliable source."
-    },
-    "EXTERNAL_LINK_SKIPPED": {
-        "what": "This link points to a social media platform (such as LinkedIn, Facebook, or Instagram) that blocks automated requests. The crawler cannot confirm whether the link is working without a real browser session.",
-        "impact": "These links may be perfectly fine — most are. However, if the URL is mis-typed or the profile/page has been deleted, visitors will land on an error page or a 'this page does not exist' message. The crawler cannot detect this automatically.",
-        "fix": "Click each link in the list below and confirm it opens the correct profile or page. For LinkedIn, make sure you are signed in — some profiles redirect to a login wall for signed-out visitors even when the page exists."
-    },
-    "REDIRECT_TRAILING_SLASH": {
-        "what": "A link on your site points to a URL without a trailing slash (e.g. /about), but your server redirects it to the version with a trailing slash (e.g. /about/). Your CMS — WordPress, Drupal, and most others — does this automatically, so visitors never notice.",
-        "impact": "No visible impact for visitors. However, the extra redirect adds a small delay (one extra HTTP request) before the page loads. For most nonprofit sites this is negligible, but fixing it eliminates the unnecessary round trip.",
-        "fix": "Update internal links to include the trailing slash so no redirect is needed. In WordPress, this is the URL exactly as it appears in the browser address bar after the redirect. You do not need to change any server settings — just the link href values."
-    },
-    "REDIRECT_CASE_NORMALISE": {
-        "what": "A link on your site uses uppercase letters in the URL path (e.g. /About-Us), but your server redirects it to the lowercase version (/about-us). Web servers and CMS platforms typically handle this redirect automatically.",
-        "impact": "No visible impact. The redirect is transparent to visitors and search engines will follow it. However, it wastes one HTTP round trip and could, if widespread, dilute crawl budget on very large sites.",
-        "fix": "Update any internal links that use uppercase URLs to use lowercase instead. This prevents the redirect from happening at all. Check page slugs and navigation menus for uppercase characters."
-    },
-    "REDIRECT_301": {
-        "what": "This URL responds with a 301 Permanent Redirect, sending visitors and search engines to a different URL. A 301 tells search engines that this page has permanently moved and they should update their records to use the new URL.",
-        "impact": "301 redirects are generally handled well by search engines and do pass ranking signals to the destination URL. However, internal links on your own site that point to redirecting URLs add a small amount of overhead (one extra HTTP request per link).",
-        "fix": "Update any internal links on your own site to point directly to the final destination URL, bypassing the redirect. This is a low-priority housekeeping task but worth addressing during regular site maintenance."
-    },
-    "REDIRECT_302": {
-        "what": "This URL responds with a 302 Temporary Redirect. A 302 is intended for genuinely temporary moves — it signals to search engines that they should keep the original URL in their index because the move may be reversed.",
-        "impact": "If this redirect is actually permanent, using a 302 instead of a 301 means search engines may not fully transfer ranking signals to the new URL. The original URL may also continue to be crawled unnecessarily. This can harm your search rankings.",
-        "fix": "If this redirect is permanent, change it to a 301 redirect. In WordPress, the Redirection plugin can help you manage this. If the redirect is genuinely temporary, a 302 is correct and no action is needed."
-    },
-    "REDIRECT_CHAIN": {
-        "what": "This URL redirects to another URL which itself redirects again, creating a chain of two or more hops before the visitor reaches the final destination (e.g., A → B → C).",
-        "impact": "Each additional hop slows down page loading — the browser must make multiple requests before showing anything. Ranking signals also dilute slightly at each hop. Search engines may stop following chains after a certain number of hops.",
-        "fix": "Update the first redirect to point directly to the final destination URL, cutting out the intermediate steps. Review your redirect plugin rules for the original URL and update the target."
-    },
-    "REDIRECT_LOOP": {
-        "what": "This URL is part of an infinite redirect loop — it eventually redirects back to itself, creating a cycle that can never resolve. Examples: A → B → A, or A → B → C → A.",
-        "impact": "This page is stuck in a circle and will never load for a visitor.",
-        "fix": "Check your CMS permalink settings, redirect plugin rules, .htaccess file (Apache), or Nginx configuration for conflicting rules. Look for two rules that each redirect to the other. The loop must be broken before the page becomes accessible. Contact your web developer or hosting provider if unsure."
-    },
-    "META_REFRESH_REDIRECT": {
-        "what": "This page uses an HTML meta tag to automatically redirect visitors to another page ",
-        "impact": "Meta refresh redirects do not pass ranking signals as reliably as server-side 301 redirects. They can also cause a brief visible flash of the old page before the redirect fires, creating a poor user experience. Some assistive technologies do not handle them correctly.",
-        "fix": "Replace the meta refresh redirect with a server-side 301 redirect. Configure this in your .htaccess file (Apache), Nginx configuration, or through your CMS's redirect management feature (e.g., the Redirection plugin for WordPress)."
-    },
-    "LOGIN_REDIRECT": {
-        "what": "When the crawler tried to access this URL, it was redirected to a login or authentication page. This means the page requires a user to be logged in before it can be viewed.",
-        "impact": "Search engines cannot access password-protected pages, so this page will not appear in search results. This is normal for private member areas or staff intranets. If you intended this page to be publicly visible, the login redirect is a problem.",
-        "fix": "If this page should be public, review your CMS access or membership settings and remove the login requirement for this URL. If it is intentionally private, no action is needed."
-    },
-    "ROBOTS_BLOCKED": {
-        "what": "Your site's robots.txt file contains a rule that prevents search engine crawlers from accessing this page. The crawler found this URL by following links but cannot audit its content.",
-        "impact": "Search engines cannot index this page, so it will not appear in search results. If the block is intentional (admin pages, private areas), this is correct. If not, the page is invisible to search engines.",
-        "fix": "Open your robots.txt file (at yoursite.com/robots.txt) and review the Disallow rules. If you want search engines to access this page, remove or narrow the relevant rule. Take care — a broad Disallow rule can accidentally block your entire site. Test changes using Google Search Console's robots.txt tester."
-    },
-    "NOINDEX_META": {
-        "what": "This page contains a meta robots tag instructing search engines not to include it ",
-        "fix": "If you want this page in search results, remove the noindex directive. In WordPress with Yoast SEO, edit the page and look for the 'Search Appearance' section — there is usually a toggle labelled 'Allow search engines to show this post in search results'."
-    },
-    "NOINDEX_HEADER": {
-        "what": "The server is sending an HTTP response header (X-Robots-Tag: noindex) that instructs search engines not to index this page. This has the same effect as a noindex meta tag but is set at the server level, making it less visible.",
-        "impact": "This page will not appear in search results. Because this is a server-level setting, it is easy to overlook. It may have been set intentionally (e.g., for a staging environment) and then forgotten.",
-        "fix": "Check your server configuration, hosting settings, or any SEO or caching plugins that might be adding this header. In WordPress, check Settings → Reading for the 'Discourage search engines' checkbox. Staging environment settings are a common culprit when sites go live."
-    },
-    "NOT_IN_SITEMAP": {
-        "what": "The crawler found this page by following links, but the URL is not listed in your XML sitemap. Sitemaps act as a map for search engines, listing all the pages you consider important and want regularly crawled.",
-        "impact": "Search engines are less likely to discover and regularly re-crawl pages not in the sitemap, particularly if they are not heavily linked to from other pages. This is low-urgency for well-linked pages but can cause indexing delays for others.",
-        "fix": "Add this URL to your XML sitemap. If you use a sitemap plugin (Yoast SEO, Rank Math), check whether this page is excluded by a setting, a noindex tag, or an access restriction that prevents the plugin from including it."
-    },
-    "PDF_TOO_LARGE": {
-        "what": "A PDF linked from your site is larger than 5MB. This is detected from the Content-Length HTTP header returned by the server.",
-        "impact": "Large PDFs are slow to download, particularly for visitors on mobile or slower connections. Search engines may skip or only partially index very large PDFs. Visitors may abandon the download before it completes.",
-        "fix": "Compress the PDF before uploading it. Use Adobe Acrobat (File → Reduce File Size), Smallpdf (smallpdf.com), or ilovepdf.com to reduce the file size. Remove unnecessary embedded fonts, reduce image resolution within the PDF, or split large documents into smaller, more focused files."
-    },
-    "HIGH_CRAWL_DEPTH": {
-        "what": "This page is more than 4 clicks away from your homepage — meaning a visitor (or search engine crawler) would have to follow more than 4 links in sequence to reach it, starting from your homepage.",
-        "impact": "Search engines give less authority and crawl priority to pages buried deep in the site structure. Pages more than 4–5 clicks from the homepage may be crawled less frequently or given lower ranking weight. They are also harder for visitors to discover naturally.",
-        "fix": "Improve your internal linking so this page can be reached in 3 clicks or fewer from the homepage. Add links to deeply buried pages from your main navigation, sidebar, or from relevant higher-level pages that are already well-linked."
-    },
-    "SITEMAP_MISSING": {
-        "what": "The crawler could not find an XML sitemap for this domain. It checked the standard location (/sitemap.xml) and the robots.txt file for a Sitemap: directive, and found nothing at either location.",
-        "impact": "Without a sitemap, search engines must discover all of your pages purely by following links. Pages with few or no internal links pointing to them may never be found, crawled, or indexed — effectively making them invisible in search results.",
-        "fix": "Create an XML sitemap and submit it to Google Search Console. If you use WordPress, install Yoast SEO, Rank Math, or a dedicated sitemap plugin — these generate a sitemap automatically at /sitemap.xml. Squarespace and Wix do this automatically. Once created, add 'Sitemap: https://yoursite.com/sitemap.xml' to your robots.txt file."
-    },
-    "HTTP_PAGE": {
-        "what": "This page is served over HTTP rather than HTTPS. HTTP does not encrypt the connection between the visitor's browser and your server, leaving data transmitted to and from this page exposed.",
-        "impact": "Modern browsers display a 'Not Secure' warning for HTTP pages, which can undermine visitor trust and deter donations or contact form submissions. Search engines use HTTPS as a ranking signal — HTTP pages may rank lower. Any data submitted through forms on an HTTP page is transmitted unencrypted.",
-        "fix": "Enable HTTPS on your hosting account — most hosts provide free SSL certificates via Let's Encrypt. Configure a server-side 301 redirect from all HTTP URLs to their HTTPS equivalents. Contact your hosting provider if you need assistance enabling SSL."
-    },
-    "MIXED_CONTENT": {
-        "what": "This HTTPS page is loading one or more resources (images, scripts, or stylesheets) over HTTP. Although the page itself is secure, the HTTP resources create a security vulnerability known as mixed content.",
-        "impact": "Browsers may block or warn about mixed content. Blocked resources can break page layout or functionality. Scripts loaded over HTTP are particularly dangerous — an attacker on the network could intercept and modify them, potentially compromising your visitors' data.",
-        "fix": "Update all resource URLs on this page to use HTTPS. Check for HTTP URLs in img src attributes, script src attributes, link href attributes, and iframe src attributes. In WordPress, the Better Search Replace plugin can help update HTTP URLs stored in your database."
-    },
-    "MISSING_HSTS": {
-        "what": "This HTTPS page is not sending an HTTP Strict Transport Security (HSTS) header. HSTS is a security policy that instructs browsers to only access your site over HTTPS in future visits, even if the visitor types http:// directly.",
-        "impact": "Without HSTS, a visitor who types your URL without https:// could be briefly vulnerable to a downgrade attack on their first visit to the page. HSTS eliminates this window of vulnerability for return visitors. It is a best-practice security hardening measure rather than an urgent vulnerability.",
-        "fix": "Add the response header: Strict-Transport-Security: max-age=31536000; includeSubDomains to all HTTPS responses from your server. This is typically configured in your web server settings (.htaccess for Apache, server block for Nginx) or through your hosting provider's control panel."
-    },
-    "UNSAFE_CROSS_ORIGIN_LINK": {
-        "what": "This page contains one or more links to external websites that open in a new tab ",
-        "impact": "In older browsers, a malicious external page accessed via an unprotected "
-    },
-    "WWW_CANONICALIZATION": {
-        "what": "Both the www version (e.g. www.yoursite.com) and the non-www version (yoursite.com) of your site return a page without redirecting to each other. Search engines treat these as two separate websites with duplicate content.",
-        "impact": "Search engines may split your site's ranking power between two versions of every URL.",
-        "fix": "Choose one version (www or non-www) as your canonical domain and configure a 301 redirect from the other. In WordPress hosting panels, look for a 'Primary Domain' or 'Redirect' setting. In Cloudflare, use a Page Rule to redirect. On Apache, add a RewriteRule to .htaccess. Also set your preferred domain in Google Search Console."
-    },
-    "URL_UPPERCASE": {
-        "what": "This URL contains uppercase letters in its path — for example, /About-Us instead of /about-us. On most web servers, URLs are case-sensitive, meaning /About and /about are treated as different pages.",
-        "impact": "Uppercase URL variants can create duplicate content — search engines may index both /About and /about as separate pages, splitting ranking signals between them. Visitors who type or share the URL may reach inconsistent versions depending on which case they use.",
-        "fix": "Update your CMS to use lowercase-only URLs and set up 301 redirects from any existing uppercase URL variants to their lowercase equivalents. In WordPress, avoid capital letters when setting page slugs. Most CMS platforms default to lowercase automatically."
-    },
-    "URL_HAS_SPACES": {
-        "what": "This URL contains spaces encoded as %20 in the path or query string. Spaces are invalid in URLs and must be percent-encoded, but their presence indicates the URL was not properly formatted when created.",
-        "impact": "URLs with encoded spaces are harder to read and share, look unprofessional, and can break in some email clients and messaging apps when pasted as plain text. They also suggest the page slug was set incorrectly in the CMS.",
-        "fix": "Edit the URL to replace spaces with hyphens (-). In WordPress, this means editing the page slug in the page editor. After changing the URL, set up a 301 redirect from the old URL (with %20) to the new hyphenated version."
-    },
-    "URL_HAS_UNDERSCORES": {
-        "what": "This URL path uses underscores (_) as word separators instead of hyphens (-). For example, /about_us instead of /about-us.",
-        "impact": "Google's guidance is to prefer hyphens over underscores in URL paths. Google treats hyphens as word separators (so 'about-us' is read as two words: 'about' and 'us') but may treat underscores as word-joiners (so 'about_us' could be read as one word: 'aboutus'). This can affect how the URL's keywords are weighted for search rankings.",
-        "fix": "Consider updating URLs to use hyphens instead of underscores. This is a low-priority change — only undertake it with proper 301 redirects in place, and only for pages where search rankings matter. The effort may not be worth it on well-established pages with existing traffic and backlinks."
-    },
-    "URL_TOO_LONG": {
-        "what": "This URL exceeds 115 characters in total length. While there is no hard browser limit for most URLs, very long URLs are problematic in practice.",
-        "impact": "Long URLs are difficult to read, share, or remember. They may be truncated in search results and some browsers, making them less useful as navigation cues. Very long URLs can also suggest the site structure or permalink settings need review.",
-        "fix": "Shorten the URL slug to be more concise while still descriptive. Edit the page in your CMS and update the URL/slug field. After changing the URL, set up a 301 redirect from the old long URL to the new shorter one to preserve any existing links."
-    },
-    "IMG_ALT_MISSING": {
-        "what": "This image either has no alt attribute or has an empty/blank alt attribute. Every meaningful image should have descriptive alt text for accessibility and SEO.",
-        "fix": "Add a descriptive alt attribute to the image tag that describes what the image shows in one "
-    },
-    "IMG_OVERSIZED": {
-        "what": "This image has a file size exceeding 200KB as reported by the server's Content-Length header. Large images are one of the most common causes of slow page loading on nonprofit websites.",
-        "impact": "Oversized images significantly slow down page loading, particularly on mobile connections. Slow pages frustrate visitors and increase the likelihood they will leave before the page loads. Google uses page speed as a ranking factor, so consistently large images can harm your search rankings.",
-        "fix": "Compress the image before uploading it. Tools like Squoosh (squoosh.app), TinyPNG (tinypng.com), or ImageOptim (Mac) can dramatically reduce file size with minimal visible quality loss. Aim for images under 100KB where possible. Also ensure image dimensions match the display size — a 4000px wide photo in a 300px column is wasteful regardless of compression."
-    },
-    "INTERNAL_REDIRECT_301": {
-        "what": "An internal link on your site points to a URL that permanently redirects (301) to another URL. Visitors and search engines follow the redirect and reach the right page, but an extra round trip is required on every visit.",
-        "impact": "Search engines pass slightly less link authority through redirects than direct links. For large sites with many redirecting internal links, this can add up and slow down crawling. Fixing these is a quick win that removes unnecessary server load.",
-        "fix": "Update the internal link to point directly to the final destination URL. Check your navigation menus, footer links, and in-content links for outdated URLs."
-    },
-    "ORPHAN_PAGE": {
-        "what": "This page was found during the crawl (e.g. via sitemap) but no other page on your site links to it. It is an 'orphan' — isolated from the rest of your site's link structure.",
-        "impact": "Search engines discover pages primarily by following links. An orphan page may be crawled less frequently, accumulate less internal link authority, and rank poorly even if its content is good. Visitors also cannot navigate to it organically.",
-        "fix": "Add at least one internal link to this page from a relevant hub page, navigation menu, or related content page. If the page is no longer needed, consider removing it or redirecting it."
-    },
-    "CONTENT_STALE": {
-        "what": "This page has not been modified in over 12 months, based on the Last-Modified HTTP header sent by the server. While not all content needs frequent updates, search engines use freshness as a ranking signal.",
-        "impact": "Search engines and visitors may perceive this page as outdated or abandoned.",
-        "fix": "Review the page and update any outdated information — even small edits signal freshness to search engines. Update dates, statistics, staff names, and program details. If the content is evergreen and still accurate, consider republishing it with a current date."
-    },
-    "MISSING_VIEWPORT_META": {
-        "impact": "Your site may look broken or tiny on the phones your supporters use."
-    },
-    "IMG_BROKEN": {
-        "what": "One or more images on this page have a src URL that returns an error (404 Not Found or another HTTP error). The image file either no longer exists at that location or the URL path is incorrect.",
-        "impact": "Visitors see a broken image icon instead of your photo or graphic.",
-        "fix": "Find the broken image in your CMS media library and re-upload it, or update the image src URL in the page editor to point to the correct file. In WordPress, use the 'Broken Link Checker' plugin to locate and fix broken image references site-wide."
-    },
-    "IMG_ALT_TOO_SHORT": {
-        "what": "This image has alt text, but it's fewer than 5 characters — too brief to meaningfully describe the image content. Examples include single words like 'team' or 'logo'.",
-        "impact": "Very short alt text fails to provide adequate context for screen reader users, who may not understand what the image depicts. Search engines also benefit from descriptive alt text — a one-word label provides minimal SEO value compared to a concise description.",
-        "fix": "Expand the alt text to describe what the image actually shows. Instead of 'team', write 'Staff members gathered at our annual fundraising gala'. Aim for 5–125 characters that convey the image's content and purpose. In WordPress, edit the image in the Media Library."
-    },
-    "IMG_ALT_TOO_LONG": {
-        "what": "This image has alt text exceeding 125 characters. While detailed descriptions are valuable, extremely long alt text can be overwhelming for screen reader users and may dilute keyword relevance for search engines.",
-        "impact": "Screen reader users must listen to the entire alt text before they can move on. Overly long descriptions slow down navigation and may cause users to skip images entirely. Search engines may also weight keywords less heavily if they're buried in lengthy text.",
-        "fix": "Shorten the alt text to 125 characters or fewer. Focus on the most important aspect of the image. If a longer description is genuinely needed (e.g. for a complex infographic), consider using a separate visible caption or linking to a full text description."
-    },
-    "IMG_ALT_GENERIC": {
-        "what": "The alt text for this image is a generic placeholder word like 'image', 'photo', 'picture', 'icon', or 'graphic'. These terms describe what the element is, not what it depicts.",
-        "impact": "Generic alt text provides no useful information. A screen reader user hears 'image' but learns nothing about what the image shows. Search engines cannot determine the image's content or match it to relevant queries.",
-        "fix": "Replace the generic text with a description of what the image actually shows. For example, change 'photo' to 'A counsellor meeting with a young family in our community centre'. In WordPress, click on the image in the Media Library and update the Alt Text field."
-    },
-    "IMG_ALT_DUP_FILENAME": {
-        "what": "The alt text for this image is identical (or nearly identical) to its filename. Examples include 'DSC_0042' or 'hero-banner-v2'. Filenames rarely describe image content meaningfully.",
-        "impact": "Machine-generated filenames provide no value for accessibility or SEO. Screen reader users hear text like 'DSC underscore zero zero four two' instead of a useful description. This is a common sign that alt text was auto-generated rather than deliberately written.",
-        "fix": "Write alt text that describes the actual content of the image, ignoring the filename. In WordPress, when uploading images, the Media Library may auto-populate alt text from the filename — always review and replace this with a proper description."
-    },
-    "IMG_ALT_MISUSED": {
-        "what": "This image appears to be decorative (it has role='presentation', aria-hidden='true', or is marked as decorative), yet it also has alt text. Decorative images should have empty ",
-        "impact": "When a decorative image has alt text, screen readers announce it unnecessarily, cluttering the listening experience. Decorative images include visual flourishes, spacers, and icons that repeat information already provided in text."
-    },
-    "IMG_SLOW_LOAD": {
-        "what": "This image took more than 1 second to download. Slow-loading images can significantly delay page rendering and hurt the overall user experience.",
-        "impact": "Visitors may see blank spaces or loading placeholders while waiting for slow images. Core Web Vitals (Google's page experience metrics) are negatively affected by slow resource loading. On mobile connections, a 1-second delay per image can add up quickly.",
-        "fix": "Reduce the image file size through compression or format conversion (JPEG → WebP). Ensure images are appropriately sized for their display dimensions. Consider lazy loading images below the fold so they don't block initial page rendering."
-    },
-    "IMG_OVERSCALED": {
-        "what": "This image's intrinsic dimensions (width/height in pixels) are more than twice the size at which it's displayed on the page. For example, a 2000px wide image displayed at 400px wide is being scaled down by 5x.",
-        "impact": "Overscaled images waste bandwidth — visitors download far more data than is actually needed to display the image. This slows page loading and wastes mobile data. The browser must also spend resources scaling the image down.",
-        "fix": "Resize the image to match its display size before uploading. If the image appears at 600px wide on desktop, resize it to approximately 1200px wide (2x for retina displays). Use srcset to serve different sizes to different devices."
-    },
-    "IMG_POOR_COMPRESSION": {
-        "what": "This image has a high bytes-per-pixel ratio, suggesting it could be compressed more efficiently without visible quality loss. The raw file size is larger than expected for the image's pixel dimensions.",
-        "impact": "Poorly compressed images increase page weight and loading time unnecessarily. Modern compression tools can often reduce file size by 50–80% with no perceptible quality difference. Every extra kilobyte affects mobile users most.",
-        "fix": "Re-compress the image using tools like Squoosh (squoosh.app), TinyPNG, or ImageOptim. For photographs, try quality settings around 75–85%. For graphics with flat colors, use PNG-8 or SVG instead of full-color PNG-24."
-    },
-    "IMG_FORMAT_LEGACY": {
-        "what": "This large image is using an older format (JPEG, PNG, or GIF) instead of modern formats like WebP or AVIF. Legacy formats typically produce larger file sizes for equivalent visual quality.",
-        "impact": "WebP images are typically 25–35% smaller than equivalent JPEG or PNG files. For sites with many images, this adds up to significant bandwidth savings and faster page loads. All modern browsers (Chrome, Firefox, Safari, Edge) support WebP.",
-        "fix": "Convert images to WebP format using tools like Squoosh, cwebp, or an image optimization plugin. In WordPress, plugins like ShortPixel, Imagify, or Smush can automatically convert uploaded images to WebP and serve them to supported browsers."
-    },
-    "IMG_NO_SRCSET": {
-        "what": "This image is being scaled down for display but has no srcset attribute. A srcset allows browsers to choose the most appropriately sized image file based on screen size and resolution, rather than always downloading the largest version.",
-        "impact": "Without srcset, mobile users download the same large image file as desktop users, even though they only need a fraction of those pixels. This wastes bandwidth and slows page loading on mobile devices.",
-        "fix": "Add a srcset attribute with multiple image sizes, or use WordPress's built-in responsive image support (which automatically generates srcset for uploaded images). When adding images manually, include 2–3 size variants (e.g. 400w, 800w, 1200w)."
-    },
-    "IMG_DUPLICATE_CONTENT": {
-        "what": "The same image content is served from multiple different URLs on your site. The crawler detected identical image data (via content hash) being loaded from different file paths.",
-        "impact": "Duplicate images waste storage space and may confuse search engine image indexing. Each URL is treated as a separate image, potentially splitting any image search ranking value. It also suggests inconsistent asset management.",
-        "fix": "Consolidate duplicate images to a single canonical URL. Update any pages loading the duplicate version to use the primary URL. In WordPress, delete duplicate entries from the Media Library and update posts that reference them."
-    },
-    "LINK_EMPTY_ANCHOR": {
-        "what": "One or more links on this page have no visible text inside them — the <a> tag is empty or contains only an image without an alt attribute. Screen readers announce these as 'link' with no description, and search engines cannot determine where the link leads.",
-        "impact": "Empty links are inaccessible to people using screen readers and assistive technology. Search engines use anchor text as a signal of what the linked page is about — empty anchor text passes no useful signal. This is also a WCAG 2.1 accessibility failure.",
-        "fix": "Add descriptive text inside each empty link. If the link is an icon or image, add an "
+    "ANALYTICS_TAG_MISSING": {
+        "confidence": "Heuristic",
+        "definition": "No Google Analytics 4 tag and no Google Tag Manager container were found in this page's HTML, so visits to it are not being recorded. Tag Manager is the container that usually loads the analytics tag for you.",
+        "fix": "Put the GA4 tag, or the Tag Manager container that loads it, in the shared header or footer template so every page inherits it — in WordPress this is usually a field in Site Kit, Insert Headers and Footers, or your theme's options panel. Re-crawl afterwards to confirm, and check GA4's Realtime report to confirm it actually fires.",
+        "good_vs_bad": {
+            "bad": "Your donate page was built as a standalone landing page outside the normal template, so it carries no tag and its traffic never appears in your reports.",
+            "good": "The page source contains a gtag.js snippet with your G- measurement ID, or a GTM- container snippet, because it sits in the shared header template."
+        },
+        "how_it_can_mislead": "Evidence tier: Heuristic. Whether to install analytics at all is your decision, not an SEO requirement — this reports an absence rather than asserting a fault. The check reads the delivered HTML, so a false positive is a tag injected later by JavaScript or by a consent banner, which this cannot see; a false negative is an analytics product TalkingToad does not have a signature for, such as Matomo or Plausible, which counts as \"missing\" here even though you are measuring perfectly well. The correct-looking-but-wrong result runs the other way too: a page that passes because the snippet is present, when the snippet is misconfigured and never actually sends anything.",
+        "impact": "You are flying blind on this page: no sessions, no engagement, no conversions. If it is a donate or contact page, you cannot tell whether people reach it, or whether a change you made helped. The gap also drags your site-wide totals down, so the pages that are tagged look busier than they really are relative to the whole.",
+        "mission_impact": "This page is not being measured, so you cannot tell whether it is working.",
+        "title": "No analytics tag on this page"
     },
     "ANCHOR_TEXT_GENERIC": {
-        "what": "One or more links on this page use generic text like 'click here', 'read more', 'learn more', or 'here' as their clickable label. These phrases tell neither the reader nor search engines what the linked page is about.",
-        "impact": "Search engines can't tell where your links go, and screen reader users hear unhelpful 'click here' text.",
-        "fix": "Replace generic text with descriptive labels. Instead of 'Click here to donate', write 'Donate to support our programs'. Instead of 'Read more', write 'Read about our community drumming workshops'. The link text should make sense out of context."
+        "confidence": "Established",
+        "definition": "One or more links on this page use generic wording as their clickable text: click here, read more, learn more, here, more, this, link, more info, find out more, go, see more, details, continue reading, click, or download.",
+        "fix": "Rewrite each link so its wording makes sense read on its own: \"Donate to support our programs\" rather than \"Click here to donate\". In the WordPress block editor, select the words you want to be the link and apply the link to them, instead of adding a bare \"click here\" at the end of the sentence.",
+        "good_vs_bad": {
+            "bad": "\"Click here\" at the end of the sentence about the workshops.",
+            "good": "\"Read about our community drumming workshops\" as the clickable text."
+        },
+        "how_it_can_mislead": "Evidence tier: Established. The check matches the link's whole text against a fixed list of phrases, so it is exact: \"Read more about our grief group\" is not flagged even though it starts with a generic phrase, and \"Download\" is flagged even when the sentence around it makes the file obvious. That exactness is the false-negative case. A correct-looking-but-wrong result is a page that passes because every link reads \"Click here to learn more\", which is not on the list and is no more descriptive.",
+        "impact": "A link's purpose should be clear from its own wording, because \"click here\" conveys nothing when links are listed out of their sentence. Screen reader users often pull up a list of a page's links to navigate, and a list of eight \"read more\" entries is useless. Search engines read link wording as a description of the destination, so generic text spends that signal on nothing.",
+        "mission_impact": "Links reading \"click here\" tell neither a search engine nor a screen reader user where they lead.",
+        "title": "Link text says nothing"
     },
-    "INTERNAL_NOFOLLOW": {
-        "impact": "Applying nofollow to your own internal links prevents search engines from discovering or valuing those pages. It can suppress the ranking of pages you likely want visitors to find — such as service pages, donation pages, or program descriptions."
-    },
-    "PAGE_SIZE_LARGE": {
-        "what": "The HTML response for this page exceeds 150 KB. This is the raw size of the HTML document itself — not counting images, scripts, or stylesheets loaded separately. Very large HTML pages take longer to download and can slow down how quickly the page appears for visitors.",
-        "impact": "Slow-loading pages lead to higher bounce rates — visitors leave before the page finishes loading. Google uses page speed as a ranking factor. Supporters on mobile data plans may abandon large pages entirely. Crawlers may also time out on very large pages.",
-        "fix": "Review what is generating so much HTML. Common causes include: very long pages with hundreds of sections, excessive inline scripts or styles embedded in the HTML, or a page builder that generates complex nested markup. Consider paginating long content, moving scripts to external files, and cleaning up unused page builder blocks. Tools like Google PageSpeed Insights can help diagnose the cause."
-    },
-    "LANG_MISSING": {
-        "impact": "Screen readers use the lang attribute to choose the correct pronunciation rules, so missing it harms accessibility for visually impaired visitors. Search engines also use it to match your content to searches in the correct language."
-    },
-    "TITLE_H1_MISMATCH": {
-        "what": "The page's <title> tag and its H1 heading share no significant words. While they don't need to be identical, both should describe the same topic.",
-        "impact": "Visitors who find your page in search results click based on the title they see. If the main heading on the page describes something different, it creates confusion and can increase bounce rates. Search engines also treat a strong mismatch as a consistency signal.",
-        "fix": "Update the title or H1 so they both describe the same topic. Typically the H1 is "
-    },
-    "HTTPS_REDIRECT_MISSING": {
-        "what": "When someone visits your site's http:// address (without the 's'), they are not automatically redirected to the secure https:// version. Both addresses currently resolve to a page rather than one redirecting to the other.",
-        "impact": "Search engines treat http:// and https:// as completely separate URLs, which splits your SEO value across two versions of your site. Visitors arriving on the insecure version will see a 'Not Secure' warning in their browser, reducing trust. Modern browsers also block form submissions and logins on HTTP pages.",
-        "fix": "Configure a 301 redirect from all http:// URLs to their https:// equivalents. In WordPress hosting panels this is usually a one-click setting (e.g. 'Force HTTPS' in cPanel, Cloudflare, or your host's dashboard). If you manage the server directly, add the redirect in your .htaccess file or Nginx config."
-    },
-    "CANONICAL_SELF_MISSING": {
-        "impact": "Without a canonical tag, search engines must guess which URL is preferred if multiple variations exist (e.g. with/without www, with/without trailing slash, or with tracking parameters). Adding one is a best-practice preventive measure even if you don't currently have duplicate URL problems."
-    },
-    "LLMS_TXT_MISSING": {
-        "what": "Your site is missing an /llms.txt file at its root. This is a new standard used by AI agents (Gemini, ChatGPT, Perplexity) to discover and accurately summarise your most important content.",
-        "impact": "Without an /llms.txt file, AI agents must guess which pages are most important by crawling your entire site. This can lead to hallucinations or outdated information being served to users who ask about your organisation in an AI chat.",
-        "fix": "Create a plain text file at yoursite.com/llms.txt. Use the 'Generate llms.txt' utility in TalkingToad to create a curated list of your high-value pages formatted correctly for AI consumption."
-    },
-    "LLMS_TXT_INVALID": {
-        "what": "Your /llms.txt file exists but does not follow the standard format. It may have the wrong MIME type (not text/plain), be missing required Markdown elements (H1, blockquote), or contain too many links.",
-        "impact": "AI agents may fail to parse an incorrectly formatted /llms.txt file, reverting to a standard crawl of your site. If the file contains too many links (>20), it acts as a 'cheat sheet' rather than a curated guide, which can confuse AI retrieval systems.",
-        "fix": "Ensure /llms.txt is served as text/plain. Include a single # H1 title, a > blockquote summary, and a list of 10-20 high-value URLs. Use the TalkingToad generator to ensure perfect formatting."
-    },
-    "SEMANTIC_DENSITY_LOW": {
-        "what": "This page has a text-to-HTML ratio of less than 10%. This means the actual readable content is dwarfed by the underlying HTML code (scripts, styles, and structural markup).",
-        "impact": "Large amounts of code-bloat 'confuse' AI tokenizers and retrieval systems (RAG). Retrieving a small snippet of text buried in massive HTML consumes more AI tokens and increases the risk of the AI missing the actual context of the page.",
-        "fix": "Clean up your page structure. Move inline CSS and JavaScript to external files. Avoid deeply nested <div> elements and 'div-soup' generated by some older page builders. Focus on semantic HTML5 tags (<article>, <section>, <main>)."
-    },
-    "DOCUMENT_PROPS_MISSING": {
-        "what": "This PDF document is missing internal 'Title' or 'Subject' properties in its metadata. You can view these properties in any PDF reader under File → Properties.",
-        "impact": "When AI systems cite a PDF as a source, they use the internal Title property as the citation label. If missing, the AI may use the file name (e.g. 'doc_v2_final.pdf') or an auto-generated title, which looks unprofessional and reduces the authority of your citations.",
-        "fix": "Open the PDF in a tool like Adobe Acrobat or a free online PDF editor and fill in the Document Properties (Title, Subject, Author). Save the file and re-upload it to your site."
-    },
-    "JSON_LD_MISSING": {
-        "impact": "Schema markup provides a structured 'Knowledge Graph' for AI systems. Without it, LLMs must rely on heuristic parsing of your HTML, which is less accurate and more prone to retrieval errors.",
-        "fix": "Add JSON-LD structured data to the page. At minimum, ensure your homepage has Organization schema. Most WordPress SEO plugins (Yoast, Rank Math) can generate this automatically."
-    },
-    "CONVERSATIONAL_H2_MISSING": {
-        "what": "None of the H2 headings on this page use interrogative words (How, What, Why). AI systems increasingly prefer direct question-answer pairings for accurate retrieval.",
-        "impact": "LLMs and AI search engines (Perplexity, SearchGPT) often look for explicit questions in headings to match user queries. Descriptive-only headings (e.g. 'Our Services') are less 'matchable' than conversational ones (e.g. 'What Services Do We Provide?').",
-        "fix": "Rewrite some of your subheadings as questions. This doesn't just help AI; it also helps human visitors who are often scanning your page for an answer to a specific question."
-    },
-    "ENTITY_NAME_INCONSISTENT": {
-        "what": "Your organisation is named differently in the structured data across pages (after ignoring capitalisation and legal suffixes like 'Inc' or 'Society'). No single brand entity is consistently asserted.",
-        "impact": "AI systems build one entity profile per name they see. Different names across pages split that signal, weakening your ability to be recognised and cited by name.",
-        "fix": "Choose one canonical Organization name and use it identically in the JSON-LD on every page/template."
-    },
-    "ENTITY_SAMEAS_MISSING": {
-        "what": "An Organization or Person block in this page's JSON-LD has no sameAs links to authoritative profiles (Wikipedia, Wikidata, official social accounts).",
-        "impact": "sameAs is the bridge that lets AI resolve your name to a specific knowledge-graph entity. Without it, machines must guess which organisation you are.",
-        "fix": "Add a sameAs array to your Organization/Person schema pointing to your Wikipedia/Wikidata entry and official social profiles."
-    },
-    "AUTHOR_IDENTITY_INCONSISTENT": {
-        "what": "The same author name appears under different author URLs across your article structured data (or one URL under different names), so a machine cannot treat them as one person.",
-        "impact": "Fragmented author identity dilutes the expertise and authority (E-E-A-T) signals AI and search systems use to decide whom to trust and attribute content to.",
-        "fix": "Give each author one canonical profile URL and one consistent display name, used in every article's author schema."
-    },
-    "NEAR_DUPLICATE_BODY": {
-        "what": "Two or more pages have near-identical lead content (their first ~1500 words) once shared navigation and footer template is removed from the comparison.",
-        "impact": "Generic, repeated content is the most 'absorbable' by AI answers — if many pages say the same thing, one AI paragraph can replace them all. Near-duplicate pages also compete with each other in search.",
-        "fix": "Consolidate duplicates into one strong page and canonical/redirect the weaker ones, or differentiate each page with genuinely first-party specifics."
-    },
-    "BOILERPLATE_RATIO_HIGH": {
-        "what": "Most of this page's text is site-wide template (navigation, footer, repeated CTAs found on many other pages), with little content unique to the page itself.",
-        "impact": "A page that is mostly shared template offers little for an AI answer to cite and reads as thin — among the pages most exposed to being ignored in AI search.",
-        "fix": "Add substantive, first-party content unique to this page — original explanation, data, examples, or a distinct perspective."
-    },
-    "HOWTO_SCHEMA_INCOMPLETE": {
-        "what": "This page includes HowTo structured data, but the HowTo block declares no steps — it announces a step-by-step procedure without listing the steps in machine-readable form.",
-        "impact": "AI assistants reproduce procedures from structured steps; an empty HowTo block gives them nothing to extract. (Google retired HowTo rich results, so the value here is AI extraction, not search appearance.)",
-        "fix": "Populate the HowTo step array in your JSON-LD (one entry per step with a name and text), or remove the HowTo type if the page isn't really a how-to."
-    },
-    "PRODUCT_REVIEW_SCHEMA_MISSING": {
-        "what": "This page has Product structured data, but the Product block carries neither a review nor an aggregateRating — no rating signal is exposed to search or AI.",
-        "impact": "Review stars in search and the trust signals AI systems use both come from rating markup. A Product block without it describes the product but never rates it.",
-        "fix": "Add review and/or aggregateRating to your Product JSON-LD — but only when you have genuine, verifiable ratings."
+    "AUTHOR_BYLINE_MISSING": {
+        "confidence": "Reasonable proxy",
+        "definition": "This blog or article page has no visible author byline and no author recorded in its structured data — the hidden, machine-readable summary of the page. Nothing identifies who wrote it.",
+        "fix": "Add a real name and role at the top of the post. In WordPress the post's Author field sets this on most themes; if your theme hides it, add the byline as a line of text under the title and ask your developer to include an author in the Article schema.",
+        "good_vs_bad": {
+            "bad": "A 1,200-word article on supporting a bereaved child, published with no name attached anywhere.",
+            "good": "\"By Maria Chen, Registered Clinical Counsellor\" under the headline, with the same name in the page's Article structured data."
+        },
+        "how_it_can_mislead": "Evidence tier: Reasonable proxy. Google asks for clear authorship but publishes no required format, so we look for the common markers and may miss an unusual one. The false-positive case is an article deliberately attributed to the organisation as a whole, or a piece by a survivor writing anonymously for their own safety — both legitimate. A correct-looking-but-wrong pass is a byline that satisfies the check while telling the reader nothing, such as \"By Admin\" or \"By The Team\".",
+        "impact": "Google's guidance on helpful content asks plainly who wrote a page and whether the site makes that clear. AI systems use the same signal when deciding whose account of a topic to trust and cite. For a nonprofit the human benefit matters more than the machine one: a reader deciding whether to take advice about a crisis is reassured by a name and a role. Anonymous articles ask them to trust a website instead of a person.",
+        "mission_impact": "Advice about grief, benefits or safety carries more weight when a named person stands behind it.",
+        "title": "This article names nobody as its author"
     },
     "AUTHOR_CREDENTIALS_MISSING": {
-        "what": "This article names an author in its structured data, but the author entry is bare — a name with no job title, bio, sameAs links, or profile URL.",
-        "impact": "Expertise and authority (E-E-A-T) signals come from who the author is. A name alone is a weak signal; credentials strengthen whom AI and search will trust and cite.",
-        "fix": "Enrich the author Person in your JSON-LD with jobTitle, a short bio (description), and sameAs or url pointing to an author profile."
+        "confidence": "Heuristic",
+        "definition": "This article does record an author in its structured data — the machine-readable summary behind the page — but the entry is bare: a name with no job title, no short bio, and no link to a profile.",
+        "fix": "Ask your developer or SEO plugin to fill in `jobTitle`, a one-sentence `description`, and a `url` or `sameAs` link to an author profile in the article's author entry. In WordPress, filling in the Biographical Info and Website fields on the user's profile is often enough for a modern SEO plugin to do the rest.",
+        "good_vs_bad": {
+            "bad": "The author entry contains only `name: \"Jane Doe\"` and nothing else.",
+            "good": "The author entry gives the name, the job title \"Registered Clinical Counsellor\", and a link to her profile page on your site."
+        },
+        "how_it_can_mislead": "Evidence tier: Heuristic. Google's guidance discusses expertise but publishes no credential requirement and no way to verify one, so this is our judgement about a gap in your markup. It only fires when author markup exists and is empty — a plain visible byline with no structured data does not trigger it, which is deliberate, since that would flag nearly every blog post. The correct-looking-but-wrong pass is markup stuffed with an impressive job title that nobody has checked; this measures whether a claim is stated, never whether it is true.",
+        "impact": "Expertise and authority are what search and AI systems weigh when deciding whose page to quote on a sensitive subject, and those judgements start from who the author is. A name on its own carries almost none of that. For your readers the effect is the same: a role and one line of background turn an anonymous-feeling article into advice from a qualified person at an organisation they can check.",
+        "mission_impact": "\"Jane Doe\" means little to a reader; \"Jane Doe, Registered Clinical Counsellor\" tells them why to trust the advice.",
+        "title": "The author is named but nothing says who they are"
+    },
+    "AUTHOR_IDENTITY_INCONSISTENT": {
+        "confidence": "Heuristic",
+        "definition": "Across your site's articles, the same author name is recorded against different profile addresses, or one profile address appears under different names. A machine cannot tell whether these are one person or several.",
+        "fix": "Choose one display name and one profile page per author and use them everywhere. In WordPress, merging duplicate user accounts and reassigning their posts under Users is the usual route; check the Display name field on the surviving account.",
+        "good_vs_bad": {
+            "bad": "Older posts point to /author/j-doe as \"J. Doe\" while newer ones point to /author/jane as \"Dr. Jane Doe\".",
+            "good": "Every post by Jane points to /author/jane and shows the name \"Jane Doe\"."
+        },
+        "how_it_can_mislead": "Evidence tier: Heuristic. This is our own judgement about a pattern, and name variants are frequently legitimate. The clearest false positive is two genuinely different people who share a common name — the check sees a conflict where there is none. A correct-looking-but-wrong pass is a site where every article points to a single tidy profile that happens to be a shared \"Staff Writer\" account covering four different people, which looks perfectly consistent and identifies nobody.",
+        "impact": "When a counsellor writes fifteen posts, those posts together are the evidence that she knows the subject. Split across three profile addresses, they read as three people with five posts each, and the expertise signal is diluted accordingly. The usual causes are mundane: a site migration that created a second user account, or a name written \"Jane Doe\" in some posts and \"Dr. Jane Doe\" in others.",
+        "mission_impact": "Your most experienced staff member's body of work is split into fragments, so none of it builds a reputation.",
+        "title": "The same author appears under different identities"
+    },
+    "BLOG_SECTIONS_MISSING": {
+        "confidence": "Heuristic",
+        "definition": "This blog or article page has 500 words or more but fewer than three meaningful H2 or H3 headings. H2 and H3 are the subheading levels inside a page, below the main title.",
+        "fix": "In the WordPress block editor, split the post into 3–8 sections and set each section title to Heading 2 from the block toolbar. Make each heading describe what that section actually answers.",
+        "good_vs_bad": {
+            "bad": "The same 900 words as one continuous run of paragraphs under a single title.",
+            "good": "A post on applying for a hardship grant with H2s for \"Who Can Apply\", \"What You Will Need\" and \"How Long It Takes\"."
+        },
+        "how_it_can_mislead": "Evidence tier: Heuristic. Both figures — 500 words and three headings — are TalkingToad's own, and how any given engine actually chunks a page is not published. The false-positive case is a piece that should be unbroken: a personal story, a letter from the director, a poem. The correct-looking-but-wrong pass is an article carved up by three decorative headings like \"Introduction\", \"More\" and \"Finally\", which clears the count while naming nothing a reader could search for.",
+        "impact": "AI systems break a page into chunks, and headings are the natural seams. Without them, the whole article is one undifferentiated block, and an engine has no way to point at \"the part about eligibility\" — it can only quote the page or ignore it. Your human readers behave the same way: most scan for the heading that matches their question and leave if they cannot find one. Three to eight named sections usually solves both problems at once.",
+        "mission_impact": "A 500-word-plus article with no sections has no handle for anyone — reader or AI — to grab one part of it.",
+        "title": "A long post with almost no section headings"
+    },
+    "BOILERPLATE_RATIO_HIGH": {
+        "confidence": "Heuristic",
+        "definition": "TalkingToad compared this page's text with the rest of your site and found that more than 60% of it is template — the menu, footer, sidebars and repeated calls to action that appear on many other pages. Less than 40% is unique to this page.",
+        "fix": "Add real, page-specific substance: who this is for, what happens, what it costs, what to bring. If a whole set of pages is flagged, the shared blocks may be too heavy — ask your developer whether some can be trimmed on content pages.",
+        "good_vs_bad": {
+            "bad": "A page that is a heading, one line, and then the same donate block, newsletter block and footer found across the entire site.",
+            "good": "A service page with several paragraphs of its own about who the service is for and how to access it, plus the normal footer."
+        },
+        "how_it_can_mislead": "Evidence tier: Heuristic. The 60% ratio is ours, and the calculation compares against text that recurs across your own crawled pages. The false-positive case is unavoidable and common: an index or hub page whose job is to link onward is legitimately light on prose, and a very short site gives the comparison little to work with. The correct-looking-but-wrong result is a page passing because someone padded it with generic filler — the ratio counts words, not whether they say anything.",
+        "impact": "The template is not the problem in itself; every site has one. The problem is the balance. When a page is mostly words the crawler has already seen on twenty other pages, there is very little that is actually about this page's subject, and nothing distinctive for an AI answer to cite. Pages in this state are also the ones most easily replaced in AI search by a fuller page elsewhere.",
+        "mission_impact": "This page mostly repeats what every other page says, so it gives an AI answer nothing of its own to quote.",
+        "title": "Most of this page is text repeated site-wide"
+    },
+    "BROKEN_LINK_404": {
+        "confidence": "Established",
+        "definition": "This link points to a page that does not exist. When TalkingToad requested it, the server answered '404 Not Found' — meaning the page has been deleted or its address changed.",
+        "fix": "Find the current address of the destination and update the link. In WordPress, edit the page, click the link in the editor, and paste the new URL; if the content is gone for good with no replacement, remove the link and the sentence that leads to it.",
+        "good_vs_bad": {
+            "bad": "The same button still points to /counselling-2019/, a page deleted last year, so it answers 404 Not Found.",
+            "good": "The 'Book a counselling session' button points to /programs/counselling/, which answers 200 OK."
+        },
+        "how_it_can_mislead": "Evidence tier: Established. A 404 is the server's own answer, defined by the HTTP standard, so the reading itself is rarely wrong — but the destination may have been briefly down or mid-deploy when we checked, and some sites return a 404 to automated requests while serving the page to a browser. A correct-looking-but-wrong result is a link reported dead because the other organisation's site was being redeployed during the scan; open it yourself before deleting it.",
+        "impact": "Anyone who clicks lands on an error page and usually leaves rather than hunting for the right page. Search engines follow your internal links to find pages, so a broken internal link is a route into your site that leads nowhere. A page full of dead links also reads as unmaintained to a visitor deciding whether to trust you with a donation.",
+        "mission_impact": "A supporter clicking this link hits an error page instead of the counselling, event, or donation page you meant to send them to.",
+        "title": "Broken link — page not found (404)"
+    },
+    "BROKEN_LINK_410": {
+        "confidence": "Established",
+        "definition": "The destination answered '410 Gone'. Unlike a 404, which can mean 'missing, possibly by accident', a 410 is the server saying the page was removed on purpose and is not coming back.",
+        "fix": "Replace the link with the destination's current equivalent page, or delete the link. In WordPress, edit the page and remove or repoint the link in the block editor — there is nothing to fix on the other site's end.",
+        "good_vs_bad": {
+            "bad": "It still links to the 2021 guidelines the funder deliberately retired, which answer 410 Gone.",
+            "good": "Your funding page links to the funder's current grant guidelines, which answer 200 OK."
+        },
+        "how_it_can_mislead": "Evidence tier: Established. The 410 comes from the destination server and the HTTP standard defines it as permanent, so a false positive is unlikely; the honest gap is the other direction, since most removed pages are served as a plain 404 and appear under that code instead. A correct-looking-but-wrong result is a clean 410 report on a site that actually deletes hundreds of pages but returns 404 for all of them.",
+        "impact": "Visitors clicking the link get an error page. Because 410 is an explicit signal, search engines drop the destination from their index quickly, so there is no chance the address starts working again. Any link on your site pointing there is permanently spent — it sends people and crawlers nowhere.",
+        "mission_impact": "This link points at content the other site has deliberately deleted, so a supporter following it reaches nothing.",
+        "title": "Broken link — page permanently removed (410)"
+    },
+    "BROKEN_LINK_503": {
+        "confidence": "Established",
+        "definition": "The destination answered '503 Service Unavailable'. Cloudflare and similar protection layers return this to automated requests while serving the page normally to people in a browser, so it means 'we could not check', not 'this is broken'.",
+        "fix": "Click the link yourself. If it loads, no action is needed; if it fails for you too, replace or remove the link in the WordPress editor.",
+        "good_vs_bad": {
+            "bad": "The link still errors when you open it yourself, so the destination really is down.",
+            "good": "The link to a partner's booking system opens instantly in your browser; the 503 was bot protection and nothing needs changing."
+        },
+        "how_it_can_mislead": "Evidence tier: Established. The 503 code is standard and means a temporary inability to serve, which is why we never call it broken — but that also makes it the noisiest code here, since anti-bot layers use it routinely. A correct-looking-but-wrong result is a page reported with several 'broken' links where every one of them opens perfectly in a browser; the only reliable test is your own click.",
+        "impact": "Most of the time there is no impact at all — the link works for real visitors. Occasionally a 503 is a genuine outage on the destination site, in which case visitors see an error too. TalkingToad scores this low on purpose so it does not crowd out real problems.",
+        "mission_impact": "This is usually a false alarm: the destination blocked our automated check, not your supporters.",
+        "title": "Link returned 503 — often just bot protection"
+    },
+    "BROKEN_LINK_5XX": {
+        "confidence": "Established",
+        "definition": "The destination answered with a server error — a code in the 500 range, such as 500 Internal Server Error or 502 Bad Gateway. The server is reachable but cannot produce the page.",
+        "fix": "Open the link in a browser. If it works, leave it and re-check on the next scan; if it still errors hours later, replace it with an alternative source or remove it in the WordPress editor.",
+        "good_vs_bad": {
+            "bad": "It links to a partner directory whose server answers 502 Bad Gateway every time.",
+            "good": "Your 'Find a food bank' page links to a partner directory that answers 200 OK."
+        },
+        "how_it_can_mislead": "Evidence tier: Established. The status code is the server's own, but a 5xx is by definition a temporary-looking failure: a destination that was mid-restart during the scan is reported exactly like one that has been broken for months. A correct-looking-but-wrong result is a long list of 5xx links from a partner site that had a ten-minute outage while your scan ran, all of which work fine now — re-scan or click through before removing them.",
+        "impact": "Visitors see an error rather than the resource you pointed them to. Unlike a 404, this is usually a fault on the destination's side rather than a wrong address, so it may clear on its own. If it does not clear within a day or so, the link is unreliable and reflects on your page every time someone clicks it.",
+        "mission_impact": "The page you are sending supporters to is failing, so they see an error message with your recommendation attached to it.",
+        "title": "Broken link — destination server error (5xx)"
+    },
+    "CANONICAL_EXTERNAL": {
+        "confidence": "Established",
+        "definition": "This page has a canonical tag pointing at a web address on a different domain. A canonical tag names the official version of a page, so this one is telling search engines to index another site's URL instead of yours.",
+        "fix": "Look at the canonical address on this page. If the content started on your site, change it to point at this page itself. In WordPress the field is Advanced, then Canonical URL, in the Yoast SEO or Rank Math box; if you cannot find where the external address is coming from, it is likely set by the theme and a developer should check.",
+        "good_vs_bad": {
+            "bad": "The same page has a canonical pointing at staging.olddesigner.com/grief-counselling/.",
+            "good": "/programs/grief-counselling/ has a canonical pointing at itself on your own domain."
+        },
+        "how_it_can_mislead": "Evidence tier: Established. The check compares domains only; it does not judge intent. A legitimate case is content you republished from a partner organisation, where pointing at their original is correct. A correct-looking-but-wrong result is a flag on a site that lives on two domains you own, such as a .org and a .ca, where the cross-domain canonical is doing exactly what you intended.",
+        "impact": "A canonical pointing to another domain asks Google to index that domain's URL rather than this one. In practice the page is treated as a copy and normally will not appear in search results at all. Unless you deliberately published this content elsewhere first, this is almost always a configuration mistake: a copied template, a staging address left behind after launch, or a plugin misconfiguration.",
+        "mission_impact": "This page tells Google that the real version of your content lives on somebody else's site.",
+        "title": "Canonical points to another website"
+    },
+    "CANONICAL_MISSING": {
+        "confidence": "Established",
+        "definition": "This page has no canonical tag, and either its web address carries query parameters (the part after a ?, such as ?page=2) or its title and description match another page on the site. A canonical tag is a line in the HTML that says which address is the official version of a page.",
+        "fix": "Add a canonical tag in the page head pointing at the preferred address. In WordPress, Yoast SEO and Rank Math add canonicals automatically for most pages, so first check the plugin is active; a custom template or a page builder that strips the head usually needs a developer.",
+        "good_vs_bad": {
+            "bad": "The same tracking address has no canonical tag, so it can be indexed as a second, separate page.",
+            "good": "/programs/grief-counselling/?utm_source=newsletter carries a canonical tag pointing at /programs/grief-counselling/."
+        },
+        "how_it_can_mislead": "Evidence tier: Established. This fires on only two conditions: the address has a query string, or the page shares its exact title and description with another page in this scan. A false positive is a filtered listing such as /events/?category=workshops that is genuinely its own page and should stay indexed on its own. A false negative is a real duplicate whose title differs by one word, which the near-duplicate condition never groups. A correct-looking-but-wrong result is a clean scan on a site full of duplicate content that happens to vary its titles.",
+        "impact": "A canonical tag tells Google which URL to treat as authoritative among duplicates such as query-string variants. Without one, two addresses for the same counselling page can be treated as two competing pages, and the credit from links and visits is split between them. Neither version then ranks as well as the single page would have.",
+        "mission_impact": "Several web addresses show the same programme page, and search engines have to guess which one is the real one.",
+        "title": "Canonical tag missing"
+    },
+    "CANONICAL_SELF_MISSING": {
+        "confidence": "Established",
+        "definition": "This indexable page has no canonical tag. A canonical tag is a line in the page's HTML naming the address that should be treated as the official version. Pointing it at the page's own address is called a self-referencing canonical.",
+        "fix": "Add a canonical tag in the page head pointing at the page's own exact address. In WordPress, Yoast SEO and Rank Math add self-referencing canonicals automatically, so check the plugin is active and its canonical feature enabled before editing anything by hand.",
+        "good_vs_bad": {
+            "bad": "The same page has no canonical, so /programs/grief-counselling and the ?utm_source variant can be judged separately.",
+            "good": "/programs/grief-counselling/ carries a canonical pointing at its own address."
+        },
+        "how_it_can_mislead": "Evidence tier: Established. Google states a canonical is not required, so we report the absence as a suggestion, not a fault. It is deliberately not raised on a page that already triggered the stronger canonical-missing finding. A false positive is a site that publishes each page at exactly one address and never uses tracking parameters, where nothing is at risk. A correct-looking-but-wrong result is a self-canonical added by hand that points at the wrong address, for example the http version or a stale slug, which passes this check and causes a real problem.",
+        "impact": "Google supports a self-referencing canonical as an explicit statement of the preferred address. Without one, search engines decide for themselves when the same page is reachable at several addresses, with and without www, with and without a trailing slash, or with a newsletter tracking parameter tacked on. Adding one costs nothing and prevents the problem before it appears.",
+        "mission_impact": "Nothing on the page states which web address is the official one, so variants of it can compete with each other later.",
+        "title": "No canonical tag"
+    },
+    "CENTRAL_CLAIM_BURIED": {
+        "confidence": "Heuristic",
+        "definition": "A language model read this page's opening and judged that the page's central claim — the thing it is actually telling you — is not stated near the top. The opening is background, welcome, or preamble instead.",
+        "fix": "Rewrite the first paragraph so it states the page's answer in one or two plain sentences, and move the history and context below it. In the WordPress block editor this is usually a matter of dragging the existing paragraph blocks into a new order.",
+        "good_vs_bad": {
+            "bad": "Three paragraphs on the charity's founding in 1987 before the page mentions that the counselling is free.",
+            "good": "\"Our free bereavement counselling is open to anyone over 16 living in the region, with no referral needed.\" — first sentence."
+        },
+        "how_it_can_mislead": "Evidence tier: Heuristic. This is a language model's judgement, not a measurement: there is no fixed word window, and the model sees roughly the first thousand words of the page. No engine operator publishes anything about where an answer should sit, so the reasoning is plausible but unconfirmed. The false-positive case is a page with no single central claim — a listing, a story, an events index — where the check is looking for something that does not exist. The correct-looking-but-wrong pass is an opening that states a claim clearly but not the page's real one, which reads as answer-first and still sends the summariser off with the wrong headline.",
+        "impact": "A system summarising your page reads the beginning first, and often reads no further than a truncated version of it. If the opening is a warm introduction to your organisation's history, that is what gets summarised, and the answer the page exists to give is never picked up. Human readers behave much the same. The fix is the journalist's inverted pyramid: the answer first, the context after.",
+        "mission_impact": "Someone in difficulty reads the first paragraph and then decides whether to stay; make sure it answers them.",
+        "title": "The page's main point is not in the opening"
+    },
+    "CHUNKS_NOT_SELF_CONTAINED": {
+        "confidence": "Heuristic",
+        "definition": "A language model judged that sections of this page cannot be understood in isolation. They open with words like \"This also applies to...\" or \"The second option is...\", which only make sense after the section above.",
+        "fix": "Open each section with one sentence that names the subject in full before adding detail. Change \"They also need...\" to \"Volunteer drivers also need...\" and the section stands on its own.",
+        "good_vs_bad": {
+            "bad": "\"They also need a full licence and a current DBS check.\" — meaningless unless you read the section above.",
+            "good": "\"Volunteer drivers need a full licence and a current DBS check.\" — complete on its own."
+        },
+        "how_it_can_mislead": "Evidence tier: Heuristic. This is a language model's yes-or-no judgement over the page, not a count: there is no proportion of sections and no heading level behind it, and how any given engine chunks a page is not published. The false-positive case is a genuinely sequential page — step-by-step instructions are meant to depend on the step before, and rewriting each step to stand alone would make the page worse. The correct-looking-but-wrong pass is a page whose sections each repeat the subject noun mechanically, satisfying the check while reading like a form letter.",
+        "impact": "Retrieval systems commonly index and serve passages rather than whole pages, so a section can be lifted out and shown to someone who never sees the paragraph before it. A section beginning \"It costs nothing and takes about six weeks\" is useless on its own; the same section beginning \"The bereavement counselling programme costs nothing and takes about six weeks\" answers a question by itself. One added noun usually does it.",
+        "mission_impact": "AI answers quote one section at a time, and yours arrive without the context that makes them mean anything.",
+        "title": "Most sections make no sense read on their own"
+    },
+    "CITATIONS_MISSING_SUBSTANTIAL_CONTENT": {
+        "confidence": "Heuristic",
+        "definition": "This page has more than 200 words and contains no citations, footnotes, or links to sources. Nothing on it points to where its factual claims came from.",
+        "fix": "Add a source to each factual or numerical claim — an inline link to the report, or a short Sources list at the foot of the page. In the WordPress block editor, select the statistic and use the link button, or add a List block titled \"Sources\".",
+        "good_vs_bad": {
+            "bad": "\"One in five local households skip meals\" stated flatly, with no indication of where the number came from.",
+            "good": "\"One in five local households reported skipping meals last year (Regional Food Security Survey, 2025)\", with the survey linked."
+        },
+        "how_it_can_mislead": "Evidence tier: Heuristic. The research supports citations helping, but the 200-word trigger is ours and plenty of legitimate pages cite nothing at all. The false-positive case is common: a page describing your own services makes no external claims and needs no sources. The correct-looking-but-wrong pass is a page that clears the check with a handful of decorative links to your own other pages, which counts as citation here while verifying nothing.",
+        "impact": "A study of generative engines (Aggarwal and colleagues, KDD 2024) found that adding cited sources was among the changes that raised a page's visibility in AI answers. The reason is intuitive: an engine choosing between two pages making the same claim can verify one of them. For a nonprofit the funding case is at least as strong — a statistic about local need is far more persuasive when the reader can follow it to the census or the health authority report it came from.",
+        "mission_impact": "Claims about need, outcomes or entitlements land harder when a reader can see where the figure came from.",
+        "title": "A substantial page with no sources cited"
+    },
+    "CITATIONS_ORPHANED": {
+        "confidence": "Heuristic",
+        "definition": "The page contains citations — footnote markers, reference links, source notes — that sit without surrounding text saying what claim they support.",
+        "fix": "Move each reference into the sentence that makes the claim, or add a short lead-in naming what the source shows. Keeping a Sources list is fine, as long as the body text points into it.",
+        "good_vs_bad": {
+            "bad": "A paragraph of claims, then a bare line reading \"NHS England, 2025\" with nothing linking the two.",
+            "good": "\"Waiting times for community mental health support averaged 14 weeks last year (NHS England, 2025).\""
+        },
+        "how_it_can_mislead": "Evidence tier: Heuristic. This is our own judgement about what a usable citation looks like, and no source states it. The check reads whether a citation has surrounding context, so an unusual layout — a caption, a sidebar, a definition list — can be read as context-free when a human would see the connection perfectly well. The correct-looking-but-wrong pass is a citation wrapped in a sentence that mentions it without saying what it supports, such as \"For more information, see the report below\".",
+        "impact": "A citation does its work through the sentence it is attached to. Standing alone, a reader cannot tell whether it backs the statistic above it or the one below, and a summarising system cannot attribute it faithfully either. This often happens when references are pasted in as a block at the end while the body text never points to them, so the two halves never connect.",
+        "mission_impact": "A bare link or footnote marker tells a reader nothing about what it proves.",
+        "title": "Citations appear with no sentence explaining them"
+    },
+    "CITATIONS_SOURCES_INACCESSIBLE": {
+        "confidence": "Heuristic",
+        "definition": "TalkingToad followed the sources this page cites and one or more could not be retrieved — the address returned an error, was withdrawn, or refused the request.",
+        "fix": "Open each flagged link. If it has genuinely gone, replace it with the publisher's current address, an abstract or preprint, or an archived copy from a service such as the Internet Archive.",
+        "good_vs_bad": {
+            "bad": "The cited statistic links to a council page that now returns \"404 Not Found\" after a website rebuild.",
+            "good": "The cited 2024 needs assessment opens straight to the published PDF."
+        },
+        "how_it_can_mislead": "Evidence tier: Heuristic. The retrieval result itself is factual, but treating it as \"the source is gone\" is our inference. The false-positive case is real and frequent: a site that was briefly down, one that blocks automated requests, or a paywall that a human subscriber would pass straight through. The correct-looking-but-wrong pass runs the other way — a link that returns a perfectly healthy page which is no longer the report you cited, because the address was reused for something else. Always open a flagged link yourself before removing it.",
+        "impact": "Under the web standard for HTTP (RFC 9110), an address returning a 4xx or 5xx code cannot be retrieved, so nobody following that citation can check it — not a reader, not a funder, not an AI system verifying your claim. Link rot is normal and unavoidable: government departments reorganise, research bodies move reports, universities retire pages. What matters is catching it, because a dead reference quietly weakens every claim it was meant to support.",
+        "mission_impact": "A broken source is worse than no source: it looks like evidence and then fails in front of the reader.",
+        "title": "Some sources this page cites cannot be opened"
+    },
+    "CODE_BLOCK_MISSING_TECHNICAL": {
+        "confidence": "Heuristic",
+        "definition": "This page is a technical how-to with numbered steps, but contains no code or preformatted blocks — the fixed-width, shaded boxes used to show commands, settings, or snippets exactly as they must be typed.",
+        "fix": "Wrap each command, path or snippet in a code block. In the WordPress block editor, use the Code block for standalone commands, or select inline text and apply Inline code from the formatting menu.",
+        "good_vs_bad": {
+            "bad": "Step 3 says: now open the file at wp-content/uploads/2026 — with the path formatted as ordinary prose and the quotes auto-curled.",
+            "good": "Step 3 shows the file path in a code block, so the volunteer copies it exactly as written."
+        },
+        "how_it_can_mislead": "Evidence tier: Heuristic. This is our own judgement, drawn from the pattern of numbered technical steps with no preformatted text anywhere. The false-positive case is a technical guide that legitimately involves no code — a step-by-step for using a web interface, where every step is a button to click. The correct-looking-but-wrong pass is a page whose only code block holds something decorative, such as a version number, while the commands people actually need remain buried in prose.",
+        "impact": "Commands written inline in a sentence get mangled. Word processors and page editors turn straight quotes into curly ones, hyphens into dashes, and wrap long lines in the middle. A code block prevents all of that and marks the text unambiguously as something to reproduce character for character rather than paraphrase. Anyone copying your setup steps — a volunteer configuring a donation form, an AI assistant relaying them — gets them intact.",
+        "mission_impact": "Instructions people must copy exactly are safer when they are visually marked as things to copy exactly.",
+        "title": "A technical guide with no code formatting"
+    },
+    "COMPARISON_TABLE_MISSING": {
+        "confidence": "Heuristic",
+        "definition": "The page's headings use comparison language — \"vs\", \"versus\", \"compared to\" — but the page contains no HTML table. The comparison is being made in prose only.",
+        "fix": "Add a table with one row per point of difference and one column per option. In the WordPress block editor, insert a Table block and use the header row for the option names.",
+        "good_vs_bad": {
+            "bad": "The same page as five paragraphs alternating between the two options, so the reader has to hold both in their head.",
+            "good": "A \"Drop-in vs Booked Appointments\" page with a table whose rows are cost, wait time, and who it suits."
+        },
+        "how_it_can_mislead": "Evidence tier: Heuristic. This is our own judgement, and it is detected from phrasing, so it flags pages where \"versus\" was incidental — an article titled \"Grief vs Depression\" that is a reflective essay, not a comparison chart. The false-negative case is a page that compares two things thoroughly without ever using the word \"versus\", which this check will not notice. The correct-looking-but-wrong pass is any table at all: a table of opening hours on a comparison page clears the flag without comparing anything.",
+        "impact": "A table is the clearest way to compare, for people and for machines alike. A reader can scan down one column and see exactly where two options differ; a system reading the page can lift the whole comparison out as structured rows rather than trying to reconstruct it from paragraphs. Prose comparisons also tend to be uneven — three points made about the first option and only two about the second — which a table exposes and forces you to fix.",
+        "mission_impact": "Someone choosing between two of your services can see the difference at a glance, or they can read four paragraphs and guess.",
+        "title": "The page compares things but shows no table"
+    },
+    "CONSENT_MODE_MISSING": {
+        "confidence": "Established",
+        "definition": "An analytics tag is present on this page, but no Google Consent Mode v2 signal was found. Consent Mode is the mechanism Google provides for a tag to change its behaviour according to whether a visitor accepted cookies.",
+        "fix": "If you serve EU or UK visitors, configure Consent Mode v2 in Google Tag Manager alongside your cookie banner — the main consent-banner plugins (CookieYes, Complianz, Cookiebot) have a Google Consent Mode switch in their settings. This is advisory guidance from your page's HTML, not legal advice; check with whoever advises you on privacy.",
+        "good_vs_bad": {
+            "bad": "The GA4 tag loads immediately on every visit with no consent call anywhere, so European visitors are measured before they have agreed to anything.",
+            "good": "A gtag('consent', 'default', {…}) call runs before the analytics tag, and your cookie banner updates it when the visitor chooses."
+        },
+        "how_it_can_mislead": "Evidence tier: Established. Google documents the mechanism, but whether consent signalling is legally required depends on your jurisdiction — TalkingToad does not give legal advice and does not assert a requirement. The check reads the delivered HTML, so a false positive is a consent setup configured entirely inside Tag Manager, which is invisible from the outside; a false negative is a consent call present in the markup but wired to a banner that never updates it. The correct-looking-but-wrong result is a page that passes on the presence of the snippet while consent is never actually honoured.",
+        "impact": "Without it, one of two things is usually happening. Either the tag collects data before the visitor has agreed, which is a privacy risk for EU and UK visitors, or your cookie banner blocks the tag outright and you lose all data from everyone who does not click accept — often most of your European audience. Consent Mode is the middle path: the tag still loads but sends less until consent arrives.",
+        "mission_impact": "Your analytics may not be respecting visitors' cookie choices in the EU and UK.",
+        "title": "Consent Mode not detected"
+    },
+    "CONTACT_INFO_NOT_IN_HTML": {
+        "confidence": "Reasonable proxy",
+        "definition": "TalkingToad found no machine-readable contact details in your homepage text — no mailto: or tel: link, no email address, and no phone number pattern. Details may exist only inside an image or be written in by JavaScript after the page loads.",
+        "fix": "Put your phone, email and address on the homepage as ordinary text, usually in the footer, and link them with tel: and mailto:. In WordPress this is normally a Paragraph block in the footer widget area or the site editor's footer template.",
+        "good_vs_bad": {
+            "bad": "The phone number appears only inside the banner image at the top of the page, or is inserted by a script after load.",
+            "good": "The footer reads \"Call 604-555-0100 or email hello@charity.org\" as real text, with tel: and mailto: links."
+        },
+        "how_it_can_mislead": "Evidence tier: Reasonable proxy. The check confirms that readable contact details are absent from the homepage text; it cannot look inside an image to confirm they are hiding there, and it does not read pages that load their content by script the way a browser does. The clearest false positive is a homepage that deliberately routes all contact to a separate /contact page, where nothing is broken. The correct-looking-but-wrong pass is a homepage carrying a general switchboard number as text while the intake line people actually need stays inside a graphic.",
+        "impact": "Accessibility guidance from the W3C treats details rendered only as an image as not present as text at all, and the same is true for anything reading your page. A phone number baked into a header graphic is invisible to an AI assistant and to a screen reader alike, however large it looks on screen. For an organisation people reach in a crisis, this is one of the more consequential gaps on the list.",
+        "mission_impact": "When someone asks an assistant how to reach your organisation, there is nothing on your homepage it can read out.",
+        "title": "No readable contact details on the homepage"
+    },
+    "CONTENT_CLOAKING_DETECTED": {
+        "confidence": "Reasonable proxy",
+        "definition": "TalkingToad compared the page's topic keywords before and after running its scripts, and they barely overlap. In other words, what arrives in the raw page and what a visitor ends up seeing are about noticeably different things.",
+        "fix": "This needs a developer. Ask them to make sure the page's main text is present in the HTML the server sends, rather than assembled by script afterwards, and to confirm nothing serves different content based on who is asking.",
+        "good_vs_bad": {
+            "bad": "The raw page contains only a loading spinner and a cookie notice, and the entire programme description arrives later by script.",
+            "good": "The raw page already contains the programme description, and scripts only add a map and a booking widget on top."
+        },
+        "how_it_can_mislead": "Evidence tier: Reasonable proxy. TalkingToad detects a topic shift between raw and rendered content. That is a signal, not a finding of intent, and a common cause is a personalisation script rather than deception. The false-positive case dominates in practice: a page built entirely by JavaScript will look like cloaking to a keyword comparison even though every visitor and every crawler eventually sees the same thing. A correct-looking-but-wrong pass is genuine cloaking that keeps the same vocabulary in both versions, which a keyword overlap cannot see.",
+        "impact": "Google's spam policies define cloaking — showing different content to search engines than to people — as a violation, and treat it seriously. The overwhelmingly likely cause here is innocent: a script that swaps in personalised content, a slow-loading content system, or a consent banner replacing the page body. But the effect is the same either way. An AI system may cite text your visitors never see, and a search engine may draw its own conclusions about the mismatch.",
+        "mission_impact": "Search engines and AI may be reading a different page from the one your visitors see, which puts your listing at risk.",
+        "title": "The page's topic changes after scripts run"
+    },
+    "CONTENT_DATE_STALE_VISIBLE": {
+        "confidence": "Reasonable proxy",
+        "definition": "The page shows or declares a last-modified date old enough to read as stale for its type. TalkingToad expects articles to be refreshed within 12 months, and service, about, home, FAQ and contact pages within 24 months.",
+        "fix": "Read the page and correct anything out of date, then update it so the date refreshes. In WordPress, saving an update to the page normally updates the modified date; if the page is genuinely timeless, ask your developer whether the theme can hide the date instead.",
+        "good_vs_bad": {
+            "bad": "A programme page still displaying a modified date from three years ago, next to a phone number that has since changed.",
+            "good": "A service page reviewed this year, showing a current date beside opening hours that are actually correct."
+        },
+        "how_it_can_mislead": "Evidence tier: Reasonable proxy. The cadences — 12 months and 24 months by page type — are TalkingToad's own, and age is not error. The false-positive case is genuinely evergreen content: a mission statement or a contact page can be right and unchanged for years. The correct-looking-but-wrong result is the far more damaging one — bumping the date without reviewing the content, which clears the flag and leaves a stale page now claiming to be current.",
+        "impact": "Dates are read as a proxy for whether anyone is still looking after the page. A visitor checking whether your food bank is open sees \"Last updated March 2022\" and reasonably doubts the opening hours below it. AI systems making the same judgement tend to prefer a more recently updated source when choosing what to cite. Nothing here says the content is wrong — only that its date is telling readers something you may not intend.",
+        "mission_impact": "A visitor who sees a three-year-old date wonders whether your programme still runs at all.",
+        "title": "The date shown on this page looks old"
+    },
+    "CONTENT_IMAGE_HEAVY": {
+        "confidence": "Heuristic",
+        "definition": "This page has substantially more images than it has text sections — more images than headings. The balance suggests the page's meaning sits in the visuals rather than in the words.",
+        "fix": "Add a caption under each meaningful image saying what it shows, and a short paragraph of context around groups of images. In the WordPress block editor, use the Caption field on the Image block and fill in Alt text describing the content, not the filename.",
+        "good_vs_bad": {
+            "bad": "A page of twelve event photographs with no headings, no captions, and alt text reading \"IMG_4471.jpg\".",
+            "good": "An impact-report page where each chart image sits under a heading with a sentence stating the figure the chart shows."
+        },
+        "how_it_can_mislead": "Evidence tier: Heuristic. This is our own judgement about a ratio, and it is entirely correct-by-design to fire on a photo gallery, where images outnumbering headings is the whole point. There is also a false-negative worth knowing: TalkingToad reports only the most serious extractability problem it finds on a page, in order — no text, then thin, then no headings, then image-heavy — so a page can be genuinely image-heavy and be reported under one of the earlier codes instead. The correct-looking-but-wrong pass is adding decorative captions like \"Our team\" that clear the ratio without conveying anything.",
+        "impact": "AI systems and screen readers work from text. Where the information is in the picture — a schedule graphic, an infographic about need in your area, a photographed poster — there is nothing for them to extract. A caption is the cheapest fix available: one sentence under each image saying what it shows adds both readable content and context that helps a machine interpret the image itself.",
+        "mission_impact": "A page that carries its meaning in pictures says nothing to anyone reading it as text.",
+        "title": "Far more images than text on this page"
+    },
+    "CONTENT_NOT_EXTRACTABLE_NO_TEXT": {
+        "confidence": "Established",
+        "definition": "The page contains little or no visible text. Its content is images, video, or something built entirely in the browser by script — a canvas, an interactive map, an embedded application.",
+        "fix": "Add real text: a paragraph of context, captions for images, a transcript or summary for video, and a plain list of the data an interactive widget displays. Once the page carries any readable text this flag clears; a separate check (CONTENT_THIN) asks for at least 100 words.",
+        "good_vs_bad": {
+            "bad": "A \"Where We Work\" page that is a single full-width map widget with no words at all around it.",
+            "good": "An interactive service map with a text list of the same locations and their opening hours below it."
+        },
+        "how_it_can_mislead": "Evidence tier: Established. The absence of text is measured directly from the page, and the consequence for text-consuming readers follows from the standard. The false-positive case is a page where this is intended and acceptable, such as a splash or a piece of visual art. The correct-looking-but-wrong result comes from the other direction: a page built by JavaScript may hold plenty of text once a browser has run it, and still be flagged here because TalkingToad reads the page as served — worth checking with your developer before rewriting anything.",
+        "impact": "Accessibility guidance from the W3C is unambiguous: content carried only as images or media has no text equivalent, so anything consuming text receives nothing. That covers assistive technology and crawlers alike. Such a page cannot be summarised, cannot be cited in an AI answer, and cannot be read aloud to a visitor using a screen reader. This is the most severe form of the extractability problem, and it is usually a surprise — the page looks complete and attractive on screen.",
+        "mission_impact": "To a search engine, an AI assistant, or a blind visitor, this page is blank.",
+        "title": "This page has essentially no text at all"
+    },
+    "CONTENT_STALE": {
+        "confidence": "Heuristic",
+        "definition": "The date the server reports for this page's last change is older than the review interval we use for its kind of page — 12 months for articles and news, 24 months for pages such as Home, About, Services, Contact and FAQ. Staff biography pages are never flagged.",
+        "fix": "Read the page and correct anything that has changed — dates, names, costs, intake steps. In WordPress, updating and saving the page is enough; there is no need to change the content just to move the date.",
+        "good_vs_bad": {
+            "bad": "It still lists a 2023 waiting-list policy and a staff member who left, untouched for three years.",
+            "good": "The counselling page was reviewed six months ago and its intake details and phone number are current."
+        },
+        "how_it_can_mislead": "Evidence tier: Heuristic. The intervals are ours and no source sets them; worse, the date comes from the server's own Last-Modified header, which some hosts and caching layers refresh on every request or omit altogether. A correct-looking-but-wrong result is a page reported as fresh because a caching plugin stamps today's date on it, or a genuinely evergreen reference page nagged for being old while being entirely correct.",
+        "impact": "Age is not itself a defect and this is scored low on purpose. The real risk is content that has quietly gone wrong: a programme that has changed intake rules, an event page from two years ago, a staff name that is no longer current, or a phone number nobody answers. Search engines also tend to favour recently reviewed pages for topics where currency matters.",
+        "mission_impact": "Outdated programme details or old dates can confuse the people you are trying to reach.",
+        "title": "Page has not been updated in a long time"
+    },
+    "CONTENT_STAT_OUTDATED": {
+        "confidence": "Heuristic",
+        "definition": "The page's body text refers to a year at least 24 months in the past and never mentions the current year. TalkingToad cannot tell whether that is a stale statistic or a deliberate historical reference.",
+        "fix": "Check the flagged text. Either update the figure to the latest available, or keep the original year and add a short clause saying whether it still holds and when you last checked.",
+        "good_vs_bad": {
+            "bad": "\"One in six local families use a food bank (2021)\", with no indication of whether that is still true.",
+            "good": "\"One in six local families used a food bank in 2021; the 2026 figure remains close to that.\""
+        },
+        "how_it_can_mislead": "Evidence tier: Heuristic. This is a noisy check, and the 24-month window is ours. Copyright lines and year ranges such as 2019–2021 are deliberately ignored, but a founding date or an anniversary still trips it, and \"Serving the community since 2003\" is not a stale statistic. The correct-looking-but-wrong pass is the fix people reach for first: adding the current year somewhere on the page silences the flag while the old figure sits there just as unverified as before.",
+        "impact": "Readers date a page by the years inside it more readily than by any \"last updated\" label. \"In 2021, one in six local families used a food bank\" reads as an old claim, even if the figure has been reviewed since. AI systems weighing which source to quote on a current question make a similar judgement. Often the number is still the best available and all that is needed is a sentence saying so.",
+        "mission_impact": "A figure labelled with a year from long ago reads as out of date, whether or not it still holds.",
+        "title": "An old year is quoted with no current context"
+    },
+    "CONTENT_THIN": {
+        "confidence": "Reasonable proxy",
+        "definition": "The page has fewer than 100 words of text. Short pages can be entirely legitimate, but at this length there is very little for anything to work from.",
+        "fix": "Add the information a visitor needs: who the service is for, what happens, what it costs, and how to get in touch. If the real content is inside a linked PDF, copy the key parts onto the page itself.",
+        "good_vs_bad": {
+            "bad": "A page reading \"Counselling Services — we offer counselling. Contact us to find out more.\" and nothing else.",
+            "good": "A programme page of a few hundred words covering who it serves, what happens, what it costs and how to get in touch."
+        },
+        "how_it_can_mislead": "Evidence tier: Reasonable proxy. The 100-word figure is ours; Google publishes no word count and states there is no minimum, so this is a prompt rather than a rule. The false-positive case is a page that is complete at 40 words — a contact page, a thank-you page after a donation, a simple index. The correct-looking-but-wrong pass is padding: adding two paragraphs of mission language clears the count while leaving the visitor's actual questions unanswered.",
+        "impact": "Google's guidance asks that content offer substantial value rather than little of substance. A page this short usually cannot say who a service is for, what it costs, and how to access it — the three things a visitor came to find. AI systems summarising it will produce something equally thin, or pass over it for a fuller page elsewhere. The usual causes are a page published as a placeholder and never finished, or content that lives in a linked PDF rather than on the page.",
+        "mission_impact": "There is not enough here for an AI answer, or a first-time visitor, to learn what you do.",
+        "title": "Under 100 words on this page"
+    },
+    "CONTENT_UNSTRUCTURED": {
+        "confidence": "Reasonable proxy",
+        "definition": "The page has more than 200 words and no headings at all — not even an H1. It reads as one unbroken block.",
+        "fix": "Give the page a title as a real heading and break the body into named sections. In the WordPress block editor, select each section title and choose Heading 2 from the block toolbar — do not just make it bold, because bold text is not a heading.",
+        "good_vs_bad": {
+            "bad": "The same 700 words as one continuous run of paragraphs, with bolded phrases where the title and section names should be — no heading element anywhere.",
+            "good": "An eligibility page with an H1 title and H2s for \"Who Can Apply\", \"What It Costs\" and \"How to Book\"."
+        },
+        "how_it_can_mislead": "Evidence tier: Reasonable proxy. The standard establishes that structure should be exposed; the 200-word trigger is ours. The check fires only when the page has no heading element of any level, so a page with a single H1 and 2,000 words of unbroken text passes — that is the main false negative, and it is common. The false-positive case is a page that is genuinely one piece of prose — a director's letter, a personal story — where headings would be an intrusion. The correct-looking-but-wrong pass is text styled to look like a heading with bold and a larger font, which satisfies a sighted reader completely while remaining an ordinary paragraph to every machine.",
+        "impact": "Accessibility guidance from the W3C requires that structure visible on screen also be available to software; substantial text with no headings exposes no structure at all. Headings are what let a screen reader jump between sections, what a scanning visitor uses to find the paragraph they need, and what an AI system uses to identify which part of the page answers which question. Without them, all three are reduced to reading straight through, and most people simply leave.",
+        "mission_impact": "Everything a visitor needs may be here, but they have to read all of it to find any of it.",
+        "title": "A long page with no headings at all"
+    },
+    "CONVERSATIONAL_H2_MISSING": {
+        "confidence": "Heuristic",
+        "definition": "None of this page's H2 headings use a question word — how, what, why, who, where, when, which. Every heading is a label rather than a question.",
+        "fix": "Rewrite one or two headings as the questions your visitors actually ask, and put the answer in the first sentence below each. In the WordPress block editor, edit the Heading block text directly.",
+        "good_vs_bad": {
+            "bad": "\"Fees and Charges\" as the H2, followed by three paragraphs before the cost is actually stated.",
+            "good": "\"What Does It Cost?\" as an H2, with the answer in the sentence directly below it."
+        },
+        "how_it_can_mislead": "Evidence tier: Heuristic. This is our own judgement and a contested one — phrasing headings as questions is common advice for AI search, and no engine operator has confirmed it helps. It scores low deliberately, because a page where every heading is a question reads badly. The false-positive case is a page whose content is not question-shaped at all, such as a staff directory. The correct-looking-but-wrong pass is a page of question headings that never answers them directly underneath, which satisfies the check and helps nobody.",
+        "impact": "Someone asks an assistant \"how do I get a food parcel?\", and a page whose heading reads \"How Do I Get a Food Parcel?\" is a more obvious match than one reading \"Our Services\". The benefit is real for human scanners too — most visitors arrive with one specific question and look for it in the headings. Treat this as a light suggestion: it is one of the lowest-scoring items here, and deliberately so.",
+        "mission_impact": "People ask assistants questions in ordinary words; a heading shaped like the question is easier to match.",
+        "title": "No headings phrased as questions"
+    },
+    "CTA_TRACKING_MISSING": {
+        "confidence": "Heuristic",
+        "definition": "Analytics does not measure clicks on buttons within your site by itself — something has to mark each button for tracking. This page marks some buttons that way, using a class or data- attribute your tracking script watches for, but at least one button whose wording signals a conversion (Donate, Book, Register, Contact) does not carry that marker.",
+        "fix": "Add the same click-tracking marker your other buttons use to the untagged button — in WordPress that is the Additional CSS class(es) field in the block sidebar — or add a Google Tag Manager click trigger for it instead. Confirm the event actually fires in GA4's DebugView; wiring up a new tracking convention from scratch needs your developer.",
+        "good_vs_bad": {
+            "bad": "\"Subscribe\" and \"Volunteer\" carry class=\"track-cta\", but the new <a class=\"btn\" href=\"/donate\">Donate now</a> was pasted in without it.",
+            "good": "Every conversion button on the page carries the same marker — <a class=\"btn track-cta\" href=\"/donate\">Donate</a>, matching the tracked \"Volunteer\" and \"Subscribe\" buttons beside it."
+        },
+        "how_it_can_mislead": "Evidence tier: Heuristic. This is TalkingToad's inference from your own markup: it fires only when the page already shows a tracking convention on at least one button, and stays silent otherwise, so a site tracking everything through Tag Manager click triggers is never flagged — and equally, a site with no tracking at all produces no finding here. That is the main false negative. The false positive is a button whose wording sounds like a conversion but is not one, such as \"Contact your MP\" on an advocacy page. The correct-looking-but-wrong result is a page reported clean because your one marked-up button happens to sit in a widget the crawl reads, while the buttons that matter are tracked nowhere.",
+        "impact": "The action you most need to count is the one going uncounted. You can see how many people reached the page, but not how many clicked through to give or to register, so you cannot tell which appeal, page, or campaign actually produces action. Because the rest of the page's buttons are tracked, the gap is usually an oversight from when that one button was added.",
+        "mission_impact": "A Donate, Book, or Contact button on this page is not being measured, so you cannot see how many people clicked it.",
+        "title": "Conversion button is not tracked"
+    },
+    "CWV_CLS_POOR": {
+        "confidence": "Established",
+        "definition": "Cumulative Layout Shift measures how much content moves on screen while the page is still loading. The figure is what real Chrome visitors experienced at the 75th percentile over the last 28 days, scored from 0 (nothing moves) upwards.",
+        "fix": "Give every image and embed an explicit width and height so the browser can hold their space — in WordPress this normally happens automatically, so check any image added through a page builder or custom HTML block. Stopping banners, cookie notices, or ads from being inserted above content already on screen usually needs your developer.",
+        "good_vs_bad": {
+            "bad": "A cookie banner and an un-sized event photo drop in after the text has drawn and push the Donate button down the screen, giving a score of 0.4 — above 0.25, which is Google's \"poor\" band and what fires this finding.",
+            "good": "Every image and embed on your counselling page has width and height set, so the browser reserves the space and the score stays under 0.1 — Google's \"good\" band."
+        },
+        "how_it_can_mislead": "Evidence tier: Established. A high score usually comes from one offending element rather than from the whole page being badly built, so the figure can look worse than the page feels. A false negative is a page with the same fault but too little traffic for Google to report it — and this is a 28-day average, so a fix made today will not show for weeks. The correct-looking-but-wrong result is treating a missing figure as a clean bill of health when the page was simply never measured.",
+        "impact": "Content that shifts as it loads makes people tap the wrong link — they aim for \"Donate\" and land on the newsletter signup that just pushed it down. Core Web Vitals are a confirmed Google ranking input, so a poor score can also reduce how often the page is shown. The usual culprits are images without reserved space and banners injected above content that has already drawn.",
+        "mission_impact": "Your page jumps around while it loads, so people tap the wrong thing on the way to donating or booking.",
+        "title": "Poor Cumulative Layout Shift"
+    },
+    "CWV_INP_POOR": {
+        "confidence": "Established",
+        "definition": "Interaction to Next Paint measures how long the page takes to visibly respond after a visitor taps, clicks, or types. The figure is what real Chrome visitors experienced at the 75th percentile over the last 28 days.",
+        "fix": "Reduce the JavaScript that runs the moment someone interacts. In WordPress, deactivate or defer chat widgets, popup plugins, and extra analytics tags one at a time to see which one is competing for the browser; splitting or deferring page-builder scripts needs your developer.",
+        "good_vs_bad": {
+            "bad": "The same tap takes 900 milliseconds while a chat widget and two analytics scripts finish running — anything over 500 milliseconds is Google's \"poor\" band, which is what fires this finding.",
+            "good": "Tapping \"Register\" on your events page visibly responds in about 150 milliseconds, inside Google's \"good\" band of under 200 milliseconds."
+        },
+        "how_it_can_mislead": "Evidence tier: Established. This is a field-only measurement: there is no laboratory equivalent, so a speed-testing tool cannot confirm or deny it, and TalkingToad did not run a browser to produce it. A false negative is a slow page with too few visitors for Google to report; a false positive is a page dragged into the poor band by a small group of visitors on old phones or bad connections. The correct-looking-but-wrong result is reading a blank figure as a pass, when it only means nobody measured.",
+        "impact": "Core Web Vitals are a confirmed Google ranking input, so a poor score can cost you visibility. More immediately, a page that does not react to a tap feels broken even when it is only busy, and people tap again or leave. On a donation or registration form, a delay at the moment of commitment is the most expensive place to have one.",
+        "mission_impact": "When someone taps Donate or opens your menu, the page takes long enough to react that it feels broken.",
+        "title": "Poor Interaction to Next Paint"
+    },
+    "CWV_LCP_POOR": {
+        "confidence": "Established",
+        "definition": "Largest Contentful Paint measures how long it takes for the biggest thing in the first screenful — usually a hero photo or the main heading — to appear. The figure shown here is what real Chrome visitors experienced, taken at the 75th percentile over the last 28 days, so three quarters of your visitors did better than it and one quarter did worse.",
+        "fix": "Find the largest element in the first screenful and make it load sooner: in WordPress, re-upload the hero image at the size it is actually displayed, let a plugin such as Smush or ShortPixel serve it as WebP, and turn off lazy-loading for that one image. Removing render-blocking CSS and fonts queued ahead of it usually needs your developer.",
+        "good_vs_bad": {
+            "bad": "The same photo takes 5.8 seconds because it is a 4 MB original loaded behind three web fonts — anything over 4 seconds is Google's \"poor\" band, which is what fires this finding.",
+            "good": "The hero photo on your Programs page finishes drawing in 2.1 seconds, comfortably inside Google's \"good\" band of under 2.5 seconds."
+        },
+        "how_it_can_mislead": "Evidence tier: Established. The number is a 28-day rolling average of real visits, so a false positive is a page you fixed last week that still shows as poor for another few weeks, and a false negative is a page that is genuinely slow but has too few visitors for Google to report it anonymously. The correct-looking-but-wrong result to watch for is a quiet page showing no figure at all and being read as \"fast\" — it is not fast, it is unmeasured. This is field data from Google, not a test TalkingToad ran, so it cannot be re-checked on demand.",
+        "impact": "Core Web Vitals are one of the signals Google has confirmed it uses when ranking pages. A slow main element is also the most visible kind of slow: for those seconds the visitor is looking at a blank or half-drawn page. People arriving from a search for counselling or a donate link often leave before the page becomes readable, so the visit never counts. Fixing it helps both the ranking signal and the people who are already arriving.",
+        "mission_impact": "Your page takes so long to show its main image or headline that people give up before they read about your programs.",
+        "title": "Poor Largest Contentful Paint"
+    },
+    "DATE_MODIFIED_MISSING": {
+        "confidence": "Reasonable proxy",
+        "definition": "This blog or article page has no `dateModified` in its structured data — the hidden, machine-readable summary of the page that search engines and AI systems read. There is no declared record of when the content last changed.",
+        "fix": "This is usually a plugin or theme setting rather than a page edit. Ask your developer, or check your SEO plugin's schema settings, to make sure Article schema includes dateModified — and only update the article when you have actually reviewed it.",
+        "good_vs_bad": {
+            "bad": "The article was substantially rewritten this year, but carries no dateModified at all, so nothing records the update.",
+            "good": "The article's structured data carries `dateModified: 2026-08-14`, matching a genuine review of the content."
+        },
+        "how_it_can_mislead": "Evidence tier: Reasonable proxy. Google documents the field; that a missing field costs you visibility is our inference, not their published claim. The false-positive case is an evergreen piece that has genuinely never needed changing, where an absent date is honest. The correct-looking-but-wrong pass is far more common: many themes set dateModified automatically on every save, so a typo fix bumps the date and the page claims to be freshly reviewed when nobody has read it in years.",
+        "impact": "Google documents dateModified as the declared signal for when content last changed. Without it, a system deciding between your article and a competing one has no evidence yours has been maintained, and will often prefer the one that says so. This matters most for the pages where currency is the point — benefit rates, referral routes, service hours. The field is set by your theme or SEO plugin, not by you typing a date into the page.",
+        "mission_impact": "Nothing tells a reader or an AI system that this article has been kept up to date, even when it has.",
+        "title": "No last-updated date recorded for this article"
+    },
+    "DATE_PUBLISHED_MISSING": {
+        "confidence": "Reasonable proxy",
+        "definition": "This blog or article page carries no publication date — none in its structured data (the machine-readable summary behind the page) and none in its Open Graph meta tags (the fields used when a link is shared on social media).",
+        "fix": "Make sure your Article or BlogPosting structured data includes datePublished, and show the date on the page. In WordPress the post's own publish date normally supplies both, provided your theme or SEO plugin outputs it — ask your developer if it does not.",
+        "good_vs_bad": {
+            "bad": "An article about this year's grant deadlines with no date anywhere, so nobody can tell which year it refers to.",
+            "good": "The post shows \"Published 14 March 2026\" on the page and carries datePublished in its structured data."
+        },
+        "how_it_can_mislead": "Evidence tier: Reasonable proxy. Google documents the field and recommends it; the effect on how you are cited is our inference. The false-positive case is a page correctly treated as timeless — an About or policy page that happens to sit under a blog template will be flagged though it needs no publication date. The correct-looking-but-wrong pass is a date restored during a site migration that reflects when the page was imported rather than when it was written, which satisfies every check while telling readers something untrue.",
+        "impact": "Google documents how it works out a page's publication date and recommends stating it explicitly in structured data and visibly on the page. Undated advice is hard to trust: someone reading about a funding round or an entitlement needs to know when it was written before they act on it. Systems answering a time-sensitive question face the same problem and will often prefer a source that is dated.",
+        "mission_impact": "A reader cannot tell whether your guidance was written last month or six years ago.",
+        "title": "No publication date recorded for this article"
+    },
+    "DOCUMENT_PROPS_MISSING": {
+        "confidence": "Established",
+        "definition": "Every PDF carries internal document properties: Title, Subject, Author. This PDF is missing its Title or its Subject. You can see the same fields in any PDF reader under File → Properties.",
+        "fix": "Open the PDF in Adobe Acrobat or a free online PDF editor, fill in Document Properties (Title, Subject, Author) with the real name of the document, save, and re-upload it to WordPress through Media → Add New, replacing the old file.",
+        "good_vs_bad": {
+            "bad": "Title: blank, so the document is cited everywhere as 'AR-final-FINAL-v3.pdf'.",
+            "good": "Title: 'Living Systems Counselling — 2025 Annual Report'; Subject: 'Programme outcomes and financials for the year ending March 2025'."
+        },
+        "how_it_can_mislead": "Evidence tier: Established. The check reads the PDF's own metadata, so it is a direct reading rather than a guess — but a scanner or export tool sometimes writes a Title automatically, and that autogenerated Title (often the file name again, or the name of the software) passes the check while telling a reader nothing. That is the correct-looking-but-wrong result: no finding here, and a document still labelled 'Microsoft Word - untitled'. In the other direction, a PDF that is genuinely a fragment (a one-page form) is flagged even though nobody will ever cite it.",
+        "impact": "Search engines, screen readers and AI systems all use the internal Title as the name of the document. When it is empty they fall back to the file name or to a guess from the first line of text. A grant report or programme evaluation that shows up as 'doc2 (1).pdf' looks unfinished and is harder for anyone to cite by name.",
+        "mission_impact": "When an AI answer or a search result names your annual report, it reads the file's internal title — so a blank one gets your report labelled 'report_v2_final.pdf'.",
+        "title": "PDF has no internal title or subject"
+    },
+    "ENTITY_FIELD_EMPTY": {
+        "confidence": "Established",
+        "definition": "Structured data — the hidden block of machine-readable facts your SEO plugin adds to each page — declares a field such as telephone or email, but the field carries nothing: an empty string, an empty list, or an empty object. A telephone published as [] is the usual case.",
+        "fix": "Enter the value in your SEO plugin's settings (Yoast: SEO → Settings → Site representation; Rank Math: Titles & Meta → Local SEO). The field is already configured to publish, so this is a settings edit rather than a decision about what to declare.",
+        "good_vs_bad": {
+            "bad": "telephone: [] — the property is announced and then carries nothing.",
+            "good": "telephone: \"+1-604-555-0100\" — the same number the contact page shows."
+        },
+        "how_it_can_mislead": "Evidence tier: Established. The check reads the published markup directly, so a flagged field really is empty. The false positive is a plugin that emits an empty array for a field the organisation deliberately does not publish — a counselling service that withholds a direct phone line, for example; there the right fix is to remove the field, not to fill it. The correct-looking-but-wrong result is the opposite case: a field filled with a single space or a dash, which no longer reads as empty and so is never flagged, while still telling a reader nothing.",
+        "impact": "An empty value can be worse than a missing one. It passes the simple 'is this field present?' checks that validators run, while giving a search engine or AI assistant nothing usable. It is also a reliable sign that a settings screen was opened and left half-finished, so other fields on the same screen are often wrong too.",
+        "mission_impact": "Your organisation's contact details are announced to search engines with nothing in them, so a supporter asking an AI assistant for your phone number gets a blank.",
+        "title": "An entity field is published empty"
+    },
+    "ENTITY_HOURS_DEFAULT": {
+        "confidence": "Heuristic",
+        "definition": "Your structured data publishes opening hours for all seven days at the SEO plugin's default times — typically 9:00–17:00 — which is exactly what the field contains when nobody has changed it.",
+        "fix": "In your SEO plugin's Local SEO settings, enter the verified public hours, or turn opening-hours output off entirely. If the address is an administrative office with no walk-in hours, disable it rather than inventing a schedule.",
+        "good_vs_bad": {
+            "bad": "All seven days at 9:00–17:00 for a counselling service that runs by appointment only and has no walk-in hours.",
+            "good": "Mon–Thu 9:00–17:00, Friday 9:00–13:00, weekend absent — matching what the contact page says."
+        },
+        "how_it_can_mislead": "Evidence tier: Heuristic. This is TalkingToad's own judgement: identical hours on all seven days at a plugin's default value are more often an untouched default than a real schedule. A drop-in centre that genuinely is open 9:00–17:00 seven days a week will be flagged, and that is a plain false positive — check the hours against reality and suppress the code for your site if they are right. The correct-looking-but-wrong result runs the other way: someone edits the hours to a different but still invented set (10:00–16:00 daily), the check goes quiet, and the false hours stay published.",
+        "impact": "Unlike a missing field, this actively asserts something that is probably false. Search engines show these hours in the panel beside your listing, and AI assistants repeat them when someone asks whether you are open. Inaccurate hours cost a visitor a wasted trip, and they weaken trust in the rest of your entity data — the block of facts that says who and where you are.",
+        "mission_impact": "Someone in crisis can be sent to a locked door because your site tells Google you are open 9 to 5 every day when nobody entered the real hours.",
+        "title": "Default opening hours are being published"
+    },
+    "ENTITY_NAME_INCONSISTENT": {
+        "confidence": "Reasonable proxy",
+        "definition": "Your organisation is named differently in the structured data — the hidden machine-readable facts on each page — across the site, even after capitalisation and legal suffixes such as 'Inc' or 'Society' are ignored. No single brand identity is asserted.",
+        "fix": "Choose one canonical organisation name and use it identically everywhere. In WordPress this is usually one field — your SEO plugin's Site representation setting — that feeds the Organization schema site-wide; if a theme or a second plugin also emits a name, fix that too.",
+        "good_vs_bad": {
+            "bad": "Some pages say 'Living Systems', others 'LSC Counselling', others 'Living Systems Counselling Inc.' — three organisations, to a machine.",
+            "good": "Every page's Organization name reads 'Living Systems Counselling Society'."
+        },
+        "how_it_can_mislead": "Evidence tier: Reasonable proxy. Casing and legal-suffix differences are normalised away before comparison, so those never fire. The false positive is a legitimate second identity: a registered operating name, a sub-brand, or a programme with its own name that genuinely belongs to a different entity — the finding flags variance for review, not error. The correct-looking-but-wrong result is a site that passes because every page repeats the same wrong name, such as a pre-rebrand name the plugin still holds.",
+        "impact": "Search engines and AI systems resolve a site to a named entity, and they build one profile per name. When your pages assert different names, that signal splits, and none of the fragments carries the full weight of your history, your reviews or your citations. Being the organisation that people and machines reliably recognise by name is exactly what a donor searching 'grief counselling near me' benefits from.",
+        "mission_impact": "AI assistants build one profile per name they see, so three spellings of your charity's name split the reputation you have spent years building into three weaker ones.",
+        "title": "The organisation is named differently across pages"
+    },
+    "ENTITY_NAP_INCOMPLETE": {
+        "confidence": "Established",
+        "definition": "The Organization or LocalBusiness block in your structured data is missing identity fields that the type it declares implies — address, telephone, email or logo. A block typed as a physical place with no address is the common case.",
+        "fix": "Complete the listed fields in your SEO plugin's Site representation and Local SEO settings, using the same values that appear in your footer and on your contact page. If you have no public premises, change the declared type rather than inventing an address.",
+        "good_vs_bad": {
+            "bad": "A block typed Organization and Place carrying only a name and a website URL.",
+            "good": "A LocalBusiness block with full postal address, telephone, email and logo, all matching the visible contact page."
+        },
+        "how_it_can_mislead": "Evidence tier: Established. Google documents the identity fields a local business is expected to carry, so the list is not invented — but the check measures the declared type against its fields, not against reality. An online-only organisation has no street address to give, and is flagged anyway; there the fix is to narrow the declared type, not to invent premises. The correct-looking-but-wrong result is a block that passes with every field filled in from an old office the charity left two years ago — complete, and wrong.",
+        "impact": "These fields are how a search engine or AI assistant links your site to a real organisation in the world. Missing them weakens local visibility, reduces your chance of a knowledge panel (the box of details beside a search result), and lowers the confidence with which an AI answer will name you. A block that declares a physical place and gives no address tells a search engine less than no block at all.",
+        "mission_impact": "Search engines connect your website to a real organisation using name, address and phone — without them your counselling centre may not appear when someone searches for help nearby.",
+        "title": "Organisation details are incomplete"
+    },
+    "ENTITY_SAMEAS_MISSING": {
+        "confidence": "Reasonable proxy",
+        "definition": "An Organization or Person block in this page's structured data has no sameAs array. sameAs is a list of links to authoritative pages about the same entity — a Wikipedia or Wikidata entry, your registered-charity listing, your official LinkedIn or Facebook page.",
+        "fix": "Add a sameAs list to your Organization schema. Most SEO plugins expose this as the social-profile fields on the Site representation screen — fill in every official profile you actually maintain, plus your Wikidata or charity-register entry if you have one.",
+        "good_vs_bad": {
+            "bad": "An Organization block with a name and logo and no sameAs at all.",
+            "good": "Organization schema with sameAs listing your Wikidata entry, your CRA charity listing, and your official Facebook and LinkedIn pages."
+        },
+        "how_it_can_mislead": "Evidence tier: Reasonable proxy. A new organisation may genuinely have no authoritative profile to point at yet, so the gap is not always fixable today — that is the honest false positive, and the check does not judge whether you deserve a Wikipedia entry. The correct-looking-but-wrong result is a sameAs array that satisfies the check while pointing at a dormant Twitter account or a page for a different organisation with a similar name; presence is what is measured, not accuracy.",
+        "impact": "sameAs is the bridge between the name on your page and a specific entry in a search engine's knowledge graph — its internal database of real-world people, places and organisations. Without it a machine must disambiguate you by guesswork from surrounding text. Two charities sharing a name is common, and the one with sameAs links is the one that gets resolved, named and cited correctly.",
+        "mission_impact": "Without links tying your schema to your official profiles, an AI assistant has to guess which organisation with your name it is talking about — and it may pick the wrong one.",
+        "title": "No sameAs links to authoritative profiles"
+    },
+    "ENTITY_VALUE_PLACEHOLDER": {
+        "confidence": "Reasonable proxy",
+        "definition": "A structured-data field carries a template default rather than real content — values such as 'site logo', 'Just another WordPress site', or a description too short to describe anything. These are what a theme or plugin leaves behind when nobody replaces them.",
+        "fix": "Edit the field in your SEO plugin's Site representation settings and write the real value. Review the site description, organisation name and legal name together — they sit on the same screen and are usually wrong together.",
+        "good_vs_bad": {
+            "bad": "description: 'site logo'.",
+            "good": "description: 'A Canadian nonprofit offering Bowen family systems counselling and clinical training.'"
+        },
+        "how_it_can_mislead": "Evidence tier: Reasonable proxy. The check matches an editorial list of known placeholder phrases plus descriptions below a minimum length, so an organisation genuinely called something like 'Example Society' is not flagged. The list is hand-maintained and will miss placeholders it has not seen — that is the false negative, and the correct-looking-but-wrong result: a clean report on a site whose description reads 'Your mission statement here', because that exact phrase is not yet in the list. Read the field yourself rather than trusting silence.",
+        "impact": "These fields feed your entity description — the short summary a search engine or AI assistant uses when it introduces your organisation. A leftover placeholder there is published as your own official account of yourself, and it is read that way. Placeholders also cluster: the ones on a single settings screen tend to be wrong together.",
+        "mission_impact": "'Just another WordPress site' is currently your organisation's official self-description in search results and AI answers.",
+        "title": "Placeholder text is published as fact"
+    },
+    "EXTERNAL_CITATIONS_LOW": {
+        "confidence": "Heuristic",
+        "definition": "This page runs to 500 words or more and its body text contains no links to sources outside your own domain. An external citation here means a link to a research paper, a government health page, a professional association, or another organisation's official documentation.",
+        "fix": "Add two or three links in the body text to sources you would actually cite in a grant application — a government health page, a professional association, a peer-reviewed study. In WordPress, select the phrase and use the link button; set the links to open in a new tab if that suits your site.",
+        "good_vs_bad": {
+            "bad": "A 1,200-word page on trauma-informed care whose only links go to your own donate and contact pages.",
+            "good": "A page on grief support that links to the Canadian Mental Health Association's bereavement resources and to a cited study on complicated grief."
+        },
+        "how_it_can_mislead": "Evidence tier: Heuristic. Both the rule and the 500-word trigger are TalkingToad's own; no vendor publishes a required number of outbound links. Original first-party material — a client story, a board statement, your own programme evaluation — legitimately cites nothing external and is flagged anyway. The correct-looking-but-wrong result is a page that clears the check by linking to a low-quality blog or a directory listing: the counter goes up, the credibility does not.",
+        "impact": "Outbound links to reputable sources are one of the few visible signals that a page is grounded in something beyond its own assertion. Readers use them to verify; AI systems use the surrounding material when they decide what to quote. A long explainer with no outside reference reads as an opinion piece even when it is carefully researched.",
+        "mission_impact": "A page about grief or addiction that links to no outside authority gives a reader — and an AI assistant — nothing to check your claims against.",
+        "title": "A long page cites no outside sources"
+    },
+    "EXTERNAL_LINK_SKIPPED": {
+        "confidence": "Measured",
+        "definition": "This link points at a platform that refuses automated checks — LinkedIn, Facebook, Instagram and similar. TalkingToad deliberately did not test it, and records that fact rather than quietly counting it as working.",
+        "fix": "Click each listed link and confirm it opens the right profile. For LinkedIn, sign out first if you can — some profiles show a login wall to signed-out visitors even when they exist.",
+        "good_vs_bad": {
+            "bad": "It still points to a profile you renamed two years ago and now shows 'This content isn't available'.",
+            "good": "The footer's Facebook icon opens your organisation's actual page when you click it."
+        },
+        "how_it_can_mislead": "Evidence tier: Measured. This records only that we chose not to check, so it says nothing at all about whether the link works — it is neither a false positive nor a real fault. A correct-looking-but-wrong reading is treating a long list here as a list of problems; equally wrong is assuming these links are fine, which is exactly what we refuse to assume. Once you have confirmed a link, mark it verified so it stops appearing.",
+        "impact": "Nothing is known to be wrong. The value of the finding is honesty: an unverified link is not a verified one, and social buttons are a common place for a typo or a renamed profile to survive for years. If the handle is wrong, every supporter who clicks 'Follow us' lands on a 'page does not exist' screen.",
+        "mission_impact": "We could not confirm this link works, so a wrong address on your Facebook or LinkedIn button could go unnoticed.",
+        "title": "Link not checked — please open it yourself"
+    },
+    "EXTERNAL_LINK_TIMEOUT": {
+        "confidence": "Measured",
+        "definition": "TalkingToad asked the destination for a response and got none within its time limit. That is recorded as unverified, not as broken — a slow server and a dead one are different findings.",
+        "fix": "Open the link in a browser. If it loads at reasonable speed, leave it; if it consistently fails, replace it with a more reliable source in the WordPress editor.",
+        "good_vs_bad": {
+            "bad": "The link hangs and eventually fails because the partner's domain lapsed.",
+            "good": "The link to a partner's referral form opens in about a second when you click it."
+        },
+        "how_it_can_mislead": "Evidence tier: Measured. This is our own timeout, not a verdict from the destination, so a site that is merely slow is reported the same way as one that no longer exists. A correct-looking-but-wrong result is a busy government or partner site flagged on every scan while working perfectly for people — click through before you change anything.",
+        "impact": "Real visitors wait longer than our crawler does, so many of these links work, just slowly. But a domain that has expired or a server that has gone away produces exactly the same silence. Slow destinations also frustrate supporters on phones and mobile data, which is how most people reach nonprofit sites.",
+        "mission_impact": "A slow or dead partner link may be leaving supporters staring at a blank screen.",
+        "title": "Link did not answer in time — check it yourself"
+    },
+    "FAQ_ANSWERS_NOT_IN_HTML": {
+        "confidence": "Reasonable proxy",
+        "definition": "Your FAQ questions appear in the page's HTML source, but the answers do not. The answer text is only inserted by JavaScript when a visitor clicks the question open. Crawlers and AI systems that read the source without clicking see the questions and nothing else.",
+        "fix": "Use an accordion block that writes the answer into the page source and hides it with CSS — the WordPress core Details block does this. Confirm by opening the page source (Ctrl+U or Cmd+Option+U) and searching for a phrase from one answer. If your accordion plugin cannot do it, this needs a developer.",
+        "good_vs_bad": {
+            "bad": "An accordion where 'Do you offer a sliding scale?' is in the source but the answer arrives only after the click.",
+            "good": "A collapsed accordion whose answer text is present in the HTML source and merely hidden by CSS — searching the page source for 'sliding scale' finds it."
+        },
+        "how_it_can_mislead": "Evidence tier: Reasonable proxy. The check requires a systematic pattern before it fires — at least 2 answers missing and at least half of the FAQ block — so one genuinely terse answer does not trigger it. That guard creates the false negative: a page where a single important answer is JavaScript-only stays silent. It measures answer length in the raw HTML (under 40 characters counts as absent), so the correct-looking-but-wrong result is an accordion that passes because each answer emits a short placeholder line in the source while the real text still arrives on click.",
+        "impact": "Search engines and AI crawlers read the HTML the server sends. Text that only exists after a click is absent from that HTML, so it cannot be indexed, quoted or cited. The visible result is that your site appears to ask good questions and answer none of them — which is the opposite of what an FAQ is for.",
+        "mission_impact": "Your most useful answers — fees, waitlists, who is eligible — are invisible to the AI assistants people now ask those questions of.",
+        "title": "FAQ answers are hidden until someone clicks"
+    },
+    "FAQ_SCHEMA_MISSING": {
+        "confidence": "Established",
+        "definition": "This page has an FAQ section — several question-shaped headings, or a heading that says FAQ — but no FAQPage structured data marking up the question-and-answer pairs in machine-readable form.",
+        "fix": "Add FAQPage structured data mirroring the visible questions and answers exactly. Most WordPress SEO plugins offer an FAQ block that generates it for you — in Yoast and Rank Math, insert their FAQ block and paste your existing content into it. Check the result with Google's Rich Results Test.",
+        "good_vs_bad": {
+            "bad": "Six question-shaped H3 headings with answers below them and no structured data at all.",
+            "good": "An FAQPage block listing each visible question with its matching answer text, word for word."
+        },
+        "how_it_can_mislead": "Evidence tier: Established. Google documents FAQPage as the way to declare question-and-answer content — but note what it no longer buys you: Google restricted FAQ rich results in 2023, so this is reported because the markup states the structure unambiguously, not because it promises a fancier search listing. The false positive is a page with several question-shaped headings that is not really an FAQ — an essay whose sections are phrased as questions. The correct-looking-but-wrong result is FAQPage markup that satisfies the check while its answers no longer match the ones on the page, which is a policy problem rather than a fix.",
+        "impact": "FAQPage markup states the structure explicitly instead of leaving a machine to infer it from layout. That matters most when your answers are the thing someone actually needs: eligibility, cost, how to refer someone. Without the markup, a search engine or AI system has to guess where each answer starts and stops, and it sometimes guesses wrong.",
+        "mission_impact": "Your questions and answers are on the page but nothing tells a machine which text is the question and which is the answer.",
+        "title": "FAQ section has no FAQPage markup"
+    },
+    "FAVICON_MISSING": {
+        "confidence": "Established",
+        "definition": "The homepage declares no favicon, the small square icon that appears on the browser tab, in bookmarks, and next to your listing in search on some devices. This is checked once per scan, on the homepage only.",
+        "fix": "Upload a square version of your logo, at least 32 by 32 pixels and ideally 512 by 512, as your site icon. In WordPress go to Appearance, then Customise, then Site Identity, and set Site Icon; WordPress writes the declaration for you.",
+        "good_vs_bad": {
+            "bad": "No icon link is declared, and the tab shows the browser's blank-page symbol.",
+            "good": "The homepage head declares <link rel=\"icon\" href=\"/favicon-512.png\"> and your logo mark shows on the tab."
+        },
+        "how_it_can_mislead": "Evidence tier: Established. The check looks for a link element declaring an icon in the homepage HTML. A false positive, and the common one, is a site that serves a file at /favicon.ico without declaring it: browsers find it anyway and the tab looks fine, so the result reads as wrong even though the declaration really is absent. That is the correct-looking-but-wrong case to expect. The check also only looks at the homepage, so an inner page declaring a different icon is never examined.",
+        "impact": "Google can show a site's favicon beside its search results and defines how the icon is declared and discovered. The icon does not affect ranking, but it is a small trust and recognition signal: a supporter with fifteen tabs open finds you by the icon, and a site showing a blank page symbol looks unfinished next to ones that do not.",
+        "mission_impact": "Your organisation has no small icon beside its name in browser tabs, bookmarks and some search results.",
+        "title": "Favicon missing"
+    },
+    "FIRST_VIEWPORT_NO_ANSWER": {
+        "confidence": "Heuristic",
+        "definition": "The first 200 words of the page contain no answer-shaped signal — no definition ('Family counselling is…'), no summary phrase ('In short', 'The short answer is'), no direct statement of what the page is about. The check runs on pages of more than 200 words.",
+        "fix": "Rewrite the first paragraph to state the point directly: what this is, who it is for, and what to do next. In WordPress, edit the page and move that paragraph above any welcome text or hero image caption.",
+        "good_vs_bad": {
+            "bad": "'Welcome to our website. We are so glad you found us. Grief is a journey that looks different for everyone…'",
+            "good": "'Our grief support groups are free, run for eight weeks, and are open to anyone in Metro Vancouver who has lost a family member. Here is how to join.'"
+        },
+        "how_it_can_mislead": "Evidence tier: Heuristic. Both the rule and the 200-word window are TalkingToad's own, and the check looks for answer-shaped phrasing rather than for an actual answer. That is exactly where it goes wrong in both directions: a page that opens with a clear, plainly written answer in a form the pattern does not recognise is flagged for nothing, and — the correct-looking-but-wrong result — a page that opens 'In short, we are here for you' passes while answering nothing at all.",
+        "impact": "Both AI systems and human skimmers read top down and weight the opening heavily. When the first screen is a welcome message or a scene-setting anecdote, the thing a reader came for sits below it. A page that opens by naming its subject and answering it in one or two sentences is easier to quote, easier to skim and easier to act on.",
+        "mission_impact": "A parent looking for youth counselling reads your first paragraph and still does not know what you do or whether you can help.",
+        "title": "The page does not answer anything up front"
+    },
+    "GEO_SUMMARY_BURIED": {
+        "confidence": "Heuristic",
+        "definition": "Under one or more H2 or H3 headings, the first real content — a paragraph, list or table — does not lead the section. It appears only after images, embedded media, or other non-content blocks, so the answer to 'what is this section about' is pushed down.",
+        "fix": "Reorder each flagged section so the core answer leads in one or two sentences, with supporting detail and examples following. In the WordPress editor, drag the image block below the opening paragraph rather than above it.",
+        "good_vs_bad": {
+            "bad": "'How to refer a client' — heading, then a hero image, an embedded video and a figure caption, and only then the referral steps.",
+            "good": "'How to refer a client' — heading, then the answer paragraph, then four supporting paragraphs and a photo."
+        },
+        "how_it_can_mislead": "Evidence tier: Heuristic. No AI vendor has confirmed how much the position of an answer changes what gets cited, so treat this as a nudge rather than a verdict. A correct-looking-but-wrong result would be flagging a rich, well-written section simply for being long — which an earlier count-based version of this check actually did, and the positional rewrite removed. It can still miss the opposite case: an answer that leads its section but says nothing useful passes.",
+        "impact": "AI systems lift short passages to quote, and they look immediately under the heading. Skimming readers do the same. Position is what matters here, not length: a section whose answer leads is fine no matter how long it runs, and only answers pushed below other content are flagged. Decorative elements such as icons and scripts are ignored.",
+        "mission_impact": "A section headed 'How to refer a client' opens with a photo and a preamble, so the referral steps are the last thing anyone — or any AI — finds.",
+        "title": "The answer is buried under the heading"
+    },
+    "H1_MISSING": {
+        "confidence": "Established",
+        "definition": "This page has no H1, the top-level heading that names what the page is about. Usually it is the largest text at the top, and there should be one per page.",
+        "fix": "Make sure the page has one heading marked as Heading 1 stating its main topic. In the WordPress block editor, select the top heading block and set it to H1 in the block settings. If the editor shows an H1 and the scan does not see one, the theme is rendering it differently and a developer should check.",
+        "good_vs_bad": {
+            "bad": "The page opens with large styled text in a plain paragraph, so nothing in the code is marked as the main heading.",
+            "good": "The page opens with <h1>Grief Counselling for Families</h1>, then H2 sections beneath it."
+        },
+        "how_it_can_mislead": "Evidence tier: Established. Before counting, the scan removes a theme banner heading, an H1 that shares no significant words with the page title or carries a banner-style class, because many themes repeat the parent page name as an H1 at the top of every sub-page. That removal is where the misleading cases come from: a page whose only real H1 happens to use different wording from its title can be stripped and then reported as having none. A correct-looking-but-wrong result is a flag on a page that visibly has one clear big heading, where the wording simply did not match the title.",
+        "impact": "Accessibility guidance says structure conveyed visually must also be available in the code; a top-level heading is how a page states its subject. Someone using a screen reader jumps between headings to find their place, and with no H1 they land in the middle of the content with no anchor. Search engines lose the same clear statement of topic.",
+        "mission_impact": "The page never states its own subject in a way screen readers and search engines can find.",
+        "title": "Main heading missing"
+    },
+    "H1_MULTIPLE": {
+        "confidence": "Heuristic",
+        "definition": "This page has more than one H1. An H1 is the top-level heading that names the page's subject, and the usual convention is one per page with everything else as H2 or H3 beneath it.",
+        "fix": "Keep one H1 for the page's subject and demote the others to H2 or H3 depending on where they sit. In the WordPress block editor, select the heading block and change its level in the block settings panel.",
+        "good_vs_bad": {
+            "bad": "Three H1s: \"Counselling Programs\", \"Family Counselling\" and \"Donate Today\", all at the top level.",
+            "good": "One H1, \"Counselling Programs\", with H2s for \"Family Counselling\", \"Grief Support\" and \"Fees\"."
+        },
+        "how_it_can_mislead": "Evidence tier: Heuristic. This is our judgement. Google has said multiple H1s are fine and the HTML standard permits them, so we report it as a structure-clarity signal, not a ranking fault, and score it accordingly. Anyone told this must be fixed for Google's sake has been misinformed. A false positive is a page-builder layout that emits an H1 inside a banner block as well as the content heading, which no reader experiences as two competing titles. A correct-looking-but-wrong response is demoting a genuinely important heading to H3 just to clear the count, which makes the outline worse.",
+        "impact": "Several H1s make the outline flatter: someone navigating by headings hears three equally top-level titles and cannot tell which is the page's actual subject, and the same flatness makes the content harder to summarise. This is a clarity point, not a penalty. Google has said publicly that multiple H1s are fine, and the HTML standard permits them.",
+        "mission_impact": "The page announces several different main subjects, which makes it harder to skim by heading.",
+        "title": "More than one main heading"
+    },
+    "HEADING_EMPTY": {
+        "confidence": "Established",
+        "definition": "One or more headings on this page contain no text at all, or only spaces. The heading tag exists in the HTML and takes its place in the page outline, but there is nothing there to read.",
+        "fix": "Find each empty heading and either write real text in it or delete the block. In WordPress, switch the page to the Code editor view to spot empty heading tags, or click through the block list in the editor sidebar for heading blocks with no text.",
+        "good_vs_bad": {
+            "bad": "<h2></h2> left behind where an old section heading was deleted.",
+            "good": "<h2>How to register for the Tuesday group</h2> above the registration steps."
+        },
+        "how_it_can_mislead": "Evidence tier: Established. The check reads the text inside each heading tag. A heading whose only content is an image or an icon counts as empty here, which is right for a screen reader if the image has no alt text, and a false positive if the design is a logo heading that is already labelled another way. A correct-looking-but-wrong fix is putting a single space or a dash inside the tag: the check passes and a screen reader still announces a heading that says nothing.",
+        "impact": "Accessibility guidance says a heading must describe the topic or purpose of what follows; a heading with no text describes nothing and still occupies the outline. Someone jumping between headings lands on a blank one and has to guess where they are. These are almost always leftovers: a deleted section, or a page builder inserting a placeholder heading block.",
+        "mission_impact": "Screen readers announce a heading with nothing in it, which confuses visitors relying on assistive technology.",
+        "title": "Empty heading tag"
+    },
+    "HEADING_SKIP": {
+        "confidence": "Established",
+        "definition": "The headings on this page jump a level, for example H1 straight to H3 with no H2 between, or H2 to H4. Heading levels are meant to work like an outline: H1 for the page subject, H2 for its main sections, H3 for parts inside those. Only the first skip on a page is reported.",
+        "fix": "Walk the page top to bottom and step heading levels one at a time. In the WordPress block editor, select a heading block and set its level in the block settings, then use CSS or the theme's typography settings if you need it to look different.",
+        "good_vs_bad": {
+            "bad": "H1 \"Counselling Programs\", then H3 \"What a first session covers\" because H3 looked the right size.",
+            "good": "H1 \"Counselling Programs\", H2 \"Family Counselling\", H3 \"What a first session covers\"."
+        },
+        "how_it_can_mislead": "Evidence tier: Established. Skipping a level is advisory in the accessibility guidelines, not a conformance failure, so we report it as structure rather than as a violation. A false positive comes from headings inside a sidebar or widget that the page builder inserts between your content headings, creating a jump nobody experiences. A correct-looking-but-wrong result is fixing the skip by changing a heading's level for appearance and then styling it back to the old size, which clears the check without changing what a reader hears.",
+        "impact": "Heading levels express document structure, and a skipped level misstates the nesting to anyone navigating by headings. A screen reader user hearing \"heading level 3\" straight after \"heading level 1\" assumes they missed a section. Skips usually happen because a heading level was picked for its size on screen rather than its place in the outline.",
+        "mission_impact": "Someone navigating your page by headings hits a gap and loses track of how the sections nest.",
+        "title": "Heading levels skip a step"
+    },
+    "HIGH_CRAWL_DEPTH": {
+        "confidence": "Heuristic",
+        "definition": "Starting at your homepage and following links, it takes more than four steps to reach this page. TalkingToad measures the shortest route it found during the crawl.",
+        "fix": "Add a link to this page from somewhere already well-linked. In WordPress, use Appearance → Menus to add it to a menu, or link to it from the relevant hub page's content.",
+        "good_vs_bad": {
+            "bad": "Home → About → Our Work → Services → Programs → Family Support: five clicks, with no menu link.",
+            "good": "Home → Programs → Family Support: two clicks, and it is linked from the main menu."
+        },
+        "how_it_can_mislead": "Evidence tier: Heuristic. The four-click line is ours — Google publishes no depth limit — and this can only be judged on a full crawl, because depth is measured from the pages we actually fetched. A correct-looking-but-wrong result is a page reported as deep because the shorter route to it runs through a page the scan skipped or could not read, when in reality it sits one click off the homepage.",
+        "impact": "Pages far from the homepage tend to be crawled less often, so updates take longer to appear in search. They also receive less of the standing that flows through your internal links. Most importantly, a visitor browsing your site is unlikely to find them — if your family-support programme sits five clicks down, most people give up first.",
+        "mission_impact": "Supporters and search engines have to work hard to reach this page, so many never do.",
+        "title": "Page is buried more than 4 clicks deep"
+    },
+    "HOWTO_SCHEMA_INCOMPLETE": {
+        "confidence": "Heuristic",
+        "definition": "This page includes HowTo structured data, but the HowTo block contains no step list. It announces a step-by-step procedure without stating any of the steps in machine-readable form.",
+        "fix": "Populate the step list in the HowTo structured data — one entry per step, each with a name and text. This is usually a developer or SEO-plugin schema-template edit. If the page is not really a how-to, remove the HowTo type instead.",
+        "good_vs_bad": {
+            "bad": "A HowTo block with a name and a description and no steps.",
+            "good": "A HowTo block with an ordered step list mirroring the on-page instructions — 'Call intake', 'Complete the referral form', 'Attend the first session'."
+        },
+        "how_it_can_mislead": "Evidence tier: Heuristic. This only fires when HowTo schema is already present, so it flags incomplete markup and never its absence — an ordinary page with no HowTo block stays silent, which is deliberate. The false negative follows from that: a genuine step-by-step page with no markup at all is never mentioned here. The correct-looking-but-wrong result is a HowTo block filled with one meaningless step to clear the check, which passes and helps nobody.",
+        "impact": "AI assistants reproduce procedures from structured steps when they have them. An empty HowTo block gives them nothing to extract, so the markup does no work at all — it is a promise with nothing behind it. Note that Google retired HowTo rich results in 2023, so the value of fixing this is machine extraction, not a nicer-looking search listing.",
+        "mission_impact": "Your page promises machines a step-by-step procedure — how to apply, how to volunteer — and then hands them an empty list.",
+        "title": "HowTo markup declares no steps"
+    },
+    "HTTPS_REDIRECT_MISSING": {
+        "confidence": "Established",
+        "definition": "Your site works over HTTPS, but its http:// address still serves a page instead of sending visitors on to the secure one. A redirect is the server's instruction to go to the correct address automatically.",
+        "fix": "This one needs your developer or host. Ask for a permanent (301) redirect from all http:// addresses to their https:// equivalents — in most hosting panels it is a single \"Force HTTPS\" or \"Always use HTTPS\" setting, and in Cloudflare it is a one-click rule.",
+        "good_vs_bad": {
+            "bad": "http://livingsystems.org/donate serves its own page and stays on http",
+            "good": "http://livingsystems.org/donate answers with a 301 redirect to https://livingsystems.org/donate"
+        },
+        "how_it_can_mislead": "Evidence tier: Established. The check fetches the http:// version of your starting address once and looks at where it ends up, so it is a direct observation of a single address, not of every page. If that one request fails for a network reason the check stays silent, so an absent finding is not proof the redirect exists — that is the false negative. It also tests only the address the scan started from: a redirect configured for the home page but not for the rest of the site passes. A correct-looking-but-wrong result is a clean report on a site where only the home page redirects.",
+        "impact": "Most people type or share addresses without the https:// prefix, so this is the ordinary path onto your site, not an edge case. Those visitors get the \"Not Secure\" warning, and browsers now block some forms and logins on such pages. Search engines treat http:// and https:// as two separate addresses for every page, so links and reputation are split between two copies of the same site.",
+        "mission_impact": "Anyone who types your address without \"https\" lands on an unprotected copy of your site.",
+        "title": "The insecure address does not redirect"
+    },
+    "HTTP_PAGE": {
+        "confidence": "Established",
+        "definition": "This page loads over HTTP rather than HTTPS. HTTPS encrypts the connection between a visitor's browser and your server; plain HTTP does not, so anything typed or shown on the page travels in the open.",
+        "fix": "This one needs your developer or host. Most hosts issue a free certificate through Let's Encrypt and offer a \"Force HTTPS\" switch in the control panel; after enabling it, ask for a permanent (301) redirect from every http:// address to its https:// equivalent.",
+        "good_vs_bad": {
+            "bad": "http://livingsystems.org/donate — the browser shows \"Not Secure\" beside the address",
+            "good": "https://livingsystems.org/donate — the browser shows a normal, unmarked address bar"
+        },
+        "how_it_can_mislead": "Evidence tier: Established. The check reads the address the page actually finished loading at, so it is direct rather than inferred. It can still mislead: a site that has HTTPS working fine may be crawled over its HTTP address because that is the address entered or linked to, making the site look insecure when only the link was — start the scan from the https:// address to rule this out. In the other direction, only pages the crawl reached are checked, so an HTTP page nothing links to is missed. A correct-looking-but-wrong result is a whole site flagged as insecure when its certificate is fine and the crawl simply began at http://.",
+        "impact": "Chrome and Safari mark HTTP pages \"Not Secure\" in the address bar, which is exactly the wrong message beside a donate button or a confidential contact form. Anything a visitor submits — a name, an email, a message about a crisis — can be read or altered by anyone on the same network. Google has said publicly that HTTPS protects the integrity and confidentiality of a site's traffic and is a prerequisite for many browser features.",
+        "mission_impact": "Browsers label this page \"Not Secure\", right where you are asking people to give.",
+        "title": "Page is not served securely"
+    },
+    "IMG_ALT_DUP_FILENAME": {
+        "confidence": "Heuristic",
+        "definition": "The alt text on this image is the same as the image's file name once punctuation and case are ignored — for example a file called DSC_0042.jpg with alt text \"DSC 0042\". This almost always means the alt text was filled in automatically rather than written.",
+        "fix": "In WordPress, open the image in the Media Library and rewrite the Alt Text field to describe the picture. WordPress often pre-fills alt text from the file name on upload, so review it every time rather than accepting the default.",
+        "good_vs_bad": {
+            "bad": "File hero-2024.jpg with alt=\"hero 2024\"",
+            "good": "File hero-2024.jpg with alt=\"Families arriving at our summer camp registration desk\""
+        },
+        "how_it_can_mislead": "Evidence tier: Heuristic. Occasionally the file name genuinely is the best description — an image saved as annual-report-cover-2025.jpg with that same alt text is flagged here as a false positive. The check only compares against the file name, so auto-generated alt text that came from a caption or a post title instead is missed entirely. A correct-looking-but-wrong result is an image whose alt text was machine-copied from the post title passing cleanly while a well-named file is reported as a problem.",
+        "impact": "A screen reader reads the file name out character by character, which tells a listener nothing and is unpleasant to sit through. Search engines see a description that merely repeats the file name, adding no new information about the image. It is also a reliable sign that nobody has reviewed the images on this page.",
+        "mission_impact": "Screen-reader users hear a camera file number instead of a description of your work.",
+        "title": "Alt text is just the file name"
+    },
+    "IMG_ALT_GENERIC": {
+        "confidence": "Established",
+        "definition": "The whole alt text for this image is one generic word — image, photo, picture, graphic, icon, banner, thumbnail, placeholder or similar. Alt text is meant to describe what the picture shows.",
+        "fix": "In WordPress, click the image in the Media Library and replace the Alt Text field with a description of the scene, the people, or the point the graphic is making. For a logo, name the organisation instead: \"Living Systems Counselling logo\".",
+        "good_vs_bad": {
+            "bad": "alt=\"photo\"",
+            "good": "alt=\"Two counsellors meeting a family in our community centre\""
+        },
+        "how_it_can_mislead": "Evidence tier: Established. The check matches the alt text only when the entire value is one word from a fixed list, so \"photo of our team\" or \"image1\" slips through as a false negative even though it is equally empty of meaning. It can also fire correctly-but-awkwardly on a genuine case: an image whose only content is your organisation's mark, given alt=\"logo\", is flagged although that is a reasonable description. A correct-looking-but-wrong result is a page reported clean because every image says \"our photo\" rather than the bare word \"photo\".",
+        "impact": "A screen reader already announces that the element is an image, so hearing \"image\" adds nothing at all. The listener is left with a gap exactly where a photo of your programme or your team should have told them something. Search engines get no usable description either, so the picture cannot be matched to anyone searching for it.",
+        "mission_impact": "The image description says \"photo\" and nothing about your work.",
+        "title": "Alt text is a placeholder word"
+    },
+    "IMG_ALT_MISSING": {
+        "confidence": "Established",
+        "definition": "Alt text is the short written description of an image that a screen reader speaks aloud and a search engine reads. This image has no alt attribute at all, or one containing only blank space.",
+        "fix": "In WordPress, open the Media Library, click the image, and fill in the Alt Text field — or select the image in the block editor and use Alternative text in the settings sidebar. Describe what the picture shows in one plain sentence. If the image really is pure decoration, leave alt empty on purpose so screen readers skip it.",
+        "good_vs_bad": {
+            "bad": "<img src=\"DSC_0042.jpg\"> with no alt attribute at all",
+            "good": "alt=\"Counsellor talking with a young person in our drop-in room\""
+        },
+        "how_it_can_mislead": "Evidence tier: Established. The check treats an image as decorative, and skips it, whenever it carries alt=\"\", role=\"presentation\", aria-hidden=\"true\", or is smaller than 32 by 32 pixels — so a genuinely meaningful photo that someone gave an empty alt=\"\" to silence a plugin passes silently, a false negative. In the other direction, alt=\" \" (a single space) is counted as missing, which is correct but can look like a false alarm because the field appears filled in your editor. A correct-looking-but-wrong result is a page reported clean because every image was marked decorative, when in fact the only picture on the page carries the whole message.",
+        "impact": "People who are blind or have low vision hear nothing where this image sits, so a photo of your counselling team or a graphic explaining how to donate simply vanishes for them. Search engines also cannot see pictures; alt text is the only description they get. Missing alt text on a meaningful image is a failure of an international accessibility standard (WCAG 2.2), which many funders and public bodies expect nonprofits to meet.",
+        "mission_impact": "A supporter using a screen reader learns nothing about this photo of your work.",
+        "title": "Image has no alt text"
+    },
+    "IMG_ALT_MISUSED": {
+        "confidence": "Established",
+        "definition": "This image is marked as decorative — it carries role=\"presentation\" or aria-hidden=\"true\", which tell assistive software to ignore it — yet it also has alt text describing something. The two instructions contradict each other.",
+        "fix": "Decide which the image is. If it is decoration, remove the alt text so it reads alt=\"\" and keep the decorative marking. If it carries meaning, remove role=\"presentation\" or aria-hidden and keep the description — set it in the WordPress Media Library Alt Text field. Do not use both.",
+        "good_vs_bad": {
+            "bad": "The same divider marked role=\"presentation\" but with alt=\"green leaf divider graphic\"",
+            "good": "A decorative leaf divider marked role=\"presentation\" with alt=\"\" — screen readers skip it"
+        },
+        "how_it_can_mislead": "Evidence tier: Established. The check reads only the markup, so it cannot tell whether the image really is decorative: a meaningful chart wrongly tagged aria-hidden=\"true\" is flagged here as a formatting clash when the real problem is that the chart is hidden from screen readers altogether. In the other direction, a decorative image with no decorative marking and a long description is not flagged at all. A correct-looking-but-wrong result is fixing this by deleting the alt text on an image that actually did carry information, leaving it silently hidden.",
+        "impact": "Decorative flourishes, dividers and spacer images exist for the eye only, and the accessibility standard says assistive software should skip them. When one is also given a description, some screen readers announce it anyway, cluttering the page for a listener trying to find your donate button. It also signals confusion about which images actually carry meaning.",
+        "mission_impact": "Screen-reader users hear descriptions of borders and spacers that add nothing.",
+        "title": "Decorative image also carries alt text"
+    },
+    "IMG_ALT_TOO_LONG": {
+        "confidence": "Heuristic",
+        "definition": "The alt text — the written description a screen reader reads aloud — runs past 125 characters on this image. That is roughly two full sentences.",
+        "fix": "In WordPress, open the image in the Media Library and trim the Alt Text field to the single most important thing the picture shows. If a long description is genuinely needed — a chart or a diagram — put it in a visible caption or the page text instead, where everyone benefits.",
+        "good_vs_bad": {
+            "bad": "alt=\"A photograph taken at our annual general meeting held in the community hall on the third of June showing the board chair standing at the lectern presenting the 2025 impact report to approximately sixty attendees\" (over 200 characters)",
+            "good": "alt=\"Board chair presenting the 2025 impact report at our annual general meeting\" (78 characters)"
+        },
+        "how_it_can_mislead": "Evidence tier: Heuristic. The 125-character figure is ours: WCAG sets no length limit, and long alt text is not an accessibility failure. It reflects long-standing practitioner convention from older screen readers, so a complex chart or infographic that genuinely needs a longer description will be flagged as a false positive. A correct-looking-but-wrong result is a detailed, genuinely useful description of an impact chart being reported as a problem while a 120-character string of keyword padding passes.",
+        "impact": "A screen reader speaks alt text straight through with no way to skim, so a long description slows a listener down and can push them to skip your images entirely. Very long alt text also tends to drift into information that belongs in the page text where every visitor can read it. Shorter is usually kinder, but not always.",
+        "mission_impact": "Screen-reader users must sit through a paragraph before they can move on.",
+        "title": "Alt text is very long"
+    },
+    "IMG_ALT_TOO_SHORT": {
+        "confidence": "Heuristic",
+        "definition": "This image has alt text — the written description a screen reader reads aloud — but it is under 5 characters. Single words like \"team\" or \"gala\" fall here.",
+        "fix": "In WordPress, open the image in the Media Library and rewrite the Alt Text field to say what is actually in the frame. Use the check as a prompt, not a verdict — if the short text is genuinely the best description, leave it.",
+        "good_vs_bad": {
+            "bad": "alt=\"Gala\"",
+            "good": "alt=\"Volunteers packing food hampers at our Tuesday depot\""
+        },
+        "how_it_can_mislead": "Evidence tier: Heuristic. The 5-character floor is ours; WCAG sets no minimum, and some very short alt text is exactly right — \"Logo\" is a fine description of a logo, and it will be flagged here as a false positive. The reverse also happens: \"photo of team\" is long enough to pass this check while being just as uninformative. A correct-looking-but-wrong result is an image that passes at 6 characters and still leaves the listener with no idea what is in the picture.",
+        "impact": "A two- or three-character label tells a listener almost nothing, so the image may as well be undescribed. It is usually a sign that the field was filled in quickly to stop a checker complaining rather than to help a person. Search engines get the same thin signal and cannot connect the image to what your page is about.",
+        "mission_impact": "The image description is so brief that a screen-reader user still does not know what the picture shows.",
+        "title": "Alt text is too short to describe anything"
+    },
+    "IMG_BROKEN": {
+        "confidence": "Established",
+        "definition": "The address this image points to returns an error when fetched — a 404 Not Found or another 4xx/5xx server error. The file has been moved, renamed, or deleted, or the address is mistyped.",
+        "fix": "Open the flagged image address in a browser to confirm it really is gone. If it is, re-upload the file in the WordPress Media Library and re-insert it in the page editor, or point the block at the correct existing file.",
+        "good_vs_bad": {
+            "bad": "The same page still points at /wp-content/uploads/2019/old-appeal.jpg, deleted last spring, returning 404",
+            "good": "The donate page hero loads from /wp-content/uploads/2025/06/appeal-hero.jpg and returns 200 OK"
+        },
+        "how_it_can_mislead": "Evidence tier: Established. A 4xx or 5xx response genuinely means no image came back, but the crawler is not a browser: an image behind a login, or one whose server blocks automated requests, returns 403 to us and loads perfectly for a real visitor — a false positive. Images inserted by JavaScript after the page loads are not fetched at all, so a broken one there is missed. A correct-looking-but-wrong result is a whole gallery reported broken because the image host rate-limited the crawl, not because anything is actually missing — open one of the flagged addresses in your browser before acting.",
+        "impact": "Nothing renders in that space, so a donor landing on your appeal page sees an empty box or a broken-image icon. It reads as neglect at exactly the moment you are asking for trust and money. Search engines also cannot index an image that does not exist, so any search value the picture might have carried is gone.",
+        "mission_impact": "Visitors see a broken-image icon where a photo of your work should be.",
+        "title": "Image does not load"
+    },
+    "IMG_DUPLICATE_CONTENT": {
+        "confidence": "Heuristic",
+        "definition": "Two or more addresses on your site return byte-for-byte identical image files. The crawler compares a fingerprint of each downloaded file to spot this, after ignoring harmless differences in the address such as version numbers or resizing parameters.",
+        "fix": "Pick one copy as the real one and point every page at it, then delete the spare from the WordPress Media Library — but check first which posts use it, since deleting a file in use leaves a broken image. Where the duplicate comes from a plugin generating its own copies, this is normal and can be left alone.",
+        "good_vs_bad": {
+            "bad": "/uploads/logo.png and /uploads/2024/logo-1.png hold identical bytes and both are used across the site",
+            "good": "The logo is stored once at /uploads/logo.png and every page points at that address"
+        },
+        "how_it_can_mislead": "Evidence tier: Heuristic. The comparison only sees images the crawl actually downloaded — the dimension pass measures at most 150 images per job and stops at its time and data budget, so on a large site most duplicates are never compared, a systematic false negative. Duplicates are also sometimes deliberate: a partner-supplied asset kept separately so it can be withdrawn independently is flagged though nothing is wrong. A correct-looking-but-wrong result is a report showing two duplicates on a site that has fifty, because only the first 150 images were fingerprinted.",
+        "impact": "A browser caches images by address, so the same picture stored under two addresses is downloaded twice by the same visitor. It also means two entries in your Media Library to keep track of when a photo needs replacing or a consent expires. The effect on speed is small; the effect on tidiness is real.",
+        "mission_impact": "Repeat visitors re-download a picture their browser had already saved.",
+        "title": "The same image file is stored more than once"
+    },
+    "IMG_FORMAT_LEGACY": {
+        "confidence": "Established",
+        "definition": "This image is over 50 KB and is saved as a JPEG, PNG or GIF. Newer formats such as WebP store the same picture in a noticeably smaller file.",
+        "fix": "Convert the file with Squoosh (squoosh.app) and compare the two sizes before swapping. In WordPress, a plugin such as ShortPixel, Imagify or Smush can convert uploads to WebP and serve them automatically, which is easier than doing it image by image.",
+        "good_vs_bad": {
+            "bad": "campaign-hero.jpg at 240 KB, showing exactly the same picture",
+            "good": "campaign-hero.webp at 150 KB"
+        },
+        "how_it_can_mislead": "Evidence tier: Established. That WebP produces smaller files than equivalent-quality JPEG or PNG is Google's published position, but the 50 KB floor for flagging is ours, and the check never opens the file to confirm a saving is actually available — an already well-compressed JPEG may convert to a WebP that is no smaller, a false positive. A GIF animation converted carelessly can also lose its animation. A correct-looking-but-wrong result is converting a flagged file and finding the WebP version is the same size or larger; compare before replacing.",
+        "impact": "WebP files are typically a quarter to a third smaller than an equivalent JPEG or PNG at the same visual quality. On a page carrying a dozen programme photos that difference is felt directly by a supporter on mobile data. Every current browser — Chrome, Safari, Firefox, Edge — displays WebP, so there is little downside.",
+        "mission_impact": "A more modern format would send the same picture to supporters in less data.",
+        "title": "Large image uses an older file format"
+    },
+    "IMG_NO_SRCSET": {
+        "confidence": "Established",
+        "definition": "This image has no srcset — the list of alternative sizes a browser can choose from — even though the picture is bigger than the space it is drawn in. Without that list, every visitor gets the one file.",
+        "fix": "Upload images through the WordPress Media Library and insert them with the block editor — WordPress generates the alternative sizes and the srcset for you. Images pasted in as raw HTML or hard-coded by a theme need your developer to add the srcset list.",
+        "good_vs_bad": {
+            "bad": "<img src=\"gala-1600.jpg\" width=\"400\"> and nothing else",
+            "good": "<img src=\"gala-800.jpg\" srcset=\"gala-400.jpg 400w, gala-800.jpg 800w, gala-1600.jpg 1600w\">"
+        },
+        "how_it_can_mislead": "Evidence tier: Established. The principle — let the browser choose a source matched to the device — is published by Google, but the check needs both a measured pixel width and a width attribute on the tag to know the image is being scaled down. Themes that size images in CSS rather than in the width attribute leave the check silent, so a site with no findings here may still be serving one size to everyone: that is the main false negative. It can also flag an image that a theme genuinely never scales. A correct-looking-but-wrong result is a clean report on a phone-heavy site whose images all lack srcset.",
+        "impact": "A phone with a narrow screen ends up downloading exactly the same file as a wide desktop monitor, paying for detail it cannot show. Since most nonprofit traffic arrives on phones, this is where the waste concentrates. Offering two or three sizes lets the browser pick the smallest one that still looks sharp.",
+        "mission_impact": "Phone visitors download the desktop-sized picture whether they need it or not.",
+        "title": "Image offers only one size to every device"
+    },
+    "IMG_OVERSCALED": {
+        "confidence": "Established",
+        "definition": "The image's real width in pixels is more than twice the width the page asks the browser to draw it at. For example, a 2000 px photo placed in a 400 px column.",
+        "fix": "Resize the picture to roughly twice its display width before uploading — a 600 px slot wants about a 1200 px file. In WordPress, deleting and re-uploading the resized file, or running an optimisation plugin such as ShortPixel or Imagify, is the usual route; letting WordPress generate its responsive sizes handles the rest.",
+        "good_vs_bad": {
+            "bad": "The same 600 px slot filled with a 4032 px photo straight from a phone",
+            "good": "A photo shown at 600 px wide, uploaded at 1200 px so it still looks sharp on a high-resolution screen"
+        },
+        "how_it_can_mislead": "Evidence tier: Established. Google's guidance that oversized images waste bytes is published, but the 2x cut-off is ours and is deliberately generous so sharp high-resolution screens are not punished. The displayed width is read from the image tag's width attribute only — when the size is set by the site's stylesheet instead, as most modern themes do, the check cannot compare anything and stays silent, which is the main false negative. It can also mislead the other way: an image whose width attribute is small but which the theme stretches full-width is flagged as overscaled when it is sized correctly. A correct-looking-but-wrong result is a clean report on a page full of camera-original photos, simply because the theme sizes them in CSS.",
+        "impact": "Every one of those extra pixels is downloaded and then thrown away by the browser, so someone on mobile data pays for a picture they never see at full size. It is one of the largest easy savings on most nonprofit sites, because photos are usually uploaded straight from a phone or camera. The browser also has to spend a moment shrinking the image, which delays the page slightly.",
+        "mission_impact": "Visitors download pixels they can never see, on your slowest pages first.",
+        "title": "Image is far larger than it is displayed"
+    },
+    "IMG_OVERSIZED": {
+        "confidence": "Heuristic",
+        "definition": "This image file is larger than 200 KB, as reported by the server when the crawler asked for the file's size. That is the weight of the download, not the size of the picture on screen.",
+        "fix": "Compress the file before uploading: Squoosh (squoosh.app), TinyPNG or ImageOptim usually cut the size by more than half with no visible difference. Also resize it to roughly the width it is displayed at — a 4000 px photo in a 400 px column is wasted no matter how well it is compressed. A WordPress plugin such as ShortPixel or Imagify can do this on upload.",
+        "good_vs_bad": {
+            "bad": "The same photo straight off the camera at 3.4 MB, shrunk to fit by the browser",
+            "good": "A 1200 px wide event photo saved as WebP at 140 KB"
+        },
+        "how_it_can_mislead": "Evidence tier: Heuristic. The 200 KB figure is ours and is configurable; no published source sets a per-image limit, because what actually matters is the weight of the whole page and the visitor's connection. A single 250 KB photo on an otherwise light page is a false positive, while ten 190 KB images that all pass add up to a genuinely slow page — a real false negative. The size comes from the server's Content-Length header, so a server that omits it leaves the image unmeasured and unflagged. A correct-looking-but-wrong result is a page with no oversized-image findings that is still slow because of its total image weight.",
+        "impact": "Heavy images are the most common reason a nonprofit page feels slow, especially on a phone on mobile data. A visitor who arrived from a fundraising email may leave before your appeal has even drawn. Page speed is one of the many signals search engines take into account, so a page stacked with heavy photos is at a mild disadvantage as well.",
+        "mission_impact": "Supporters on phones wait longer for your page, and some leave before it appears.",
+        "title": "Image file is over 200 KB"
+    },
+    "IMG_POOR_COMPRESSION": {
+        "confidence": "Established",
+        "definition": "Comparing the file's size against its pixel count gives more than 0.5 bytes per pixel, which is high for a web photo. In plain terms, the file is heavy for the amount of detail it actually contains.",
+        "fix": "Re-save the file through Squoosh (squoosh.app), TinyPNG or ImageOptim — around 75-85% quality for photographs — and check it still looks right before uploading it in place of the original. Flat-colour graphics usually belong in PNG-8 or SVG rather than a full-colour PNG.",
+        "good_vs_bad": {
+            "bad": "The same 1200x800 photo saved as a maximum-quality PNG at 2.1 MB — about 2.2 bytes per pixel",
+            "good": "A 1200x800 event photo saved as WebP at 180 KB — about 0.19 bytes per pixel"
+        },
+        "how_it_can_mislead": "Evidence tier: Established. Google's Lighthouse documentation supports the idea that inefficiently encoded images cost bytes, but the 0.5 bytes-per-pixel line is ours and is only a proxy: some images legitimately need a high bit rate, so a detailed photograph or a screenshot full of fine text can be flagged as a false positive and will look worse if squeezed. The check only runs on images the crawl actually measured, and only when they are at least 10,000 pixels (100x100) or at least 50 KB, so small or unmeasured images are never flagged. A correct-looking-but-wrong result is a crisp map or infographic reported as poorly compressed when its file size is exactly what its detail requires.",
+        "impact": "Re-saving such a file at a sensible quality setting often halves its size with no difference anyone can see. Across a photo-heavy programme or gallery page that adds up to a noticeably faster load on a phone. It matters most for the large picture at the top of a page, which visitors wait on before anything looks finished.",
+        "mission_impact": "This picture costs your visitors more data than it needs to.",
+        "title": "Image is bigger than its detail requires"
+    },
+    "IMG_SLOW_LOAD": {
+        "confidence": "Heuristic",
+        "definition": "The crawler took more than 1 second to download this image. The file is not big enough or oversized enough to explain it, so the delay points at the server or hosting service that stores the image.",
+        "fix": "Re-run the scan to see whether the delay repeats. If it does, the file is usually hosted somewhere slow — move it into your own WordPress Media Library, or ask your host or developer about a content delivery network. Compressing the file also helps, but is not the main lever here.",
+        "good_vs_bad": {
+            "bad": "The same photo takes 2.6 seconds because it is hot-linked from a slow third-party gallery",
+            "good": "The programme photo returns in about 200 ms from your own hosting"
+        },
+        "how_it_can_mislead": "Evidence tier: Heuristic. The 1-second figure is ours, and the timing is measured from the crawler's network at one moment in time, not from any visitor's phone — a momentary blip during the crawl produces a false positive, and an image that is consistently slow for visitors but happened to be cached during the crawl produces a false negative. This finding is also suppressed when the image was already flagged as oversized or overscaled, so the slowest images on your site may not appear here at all. A correct-looking-but-wrong result is a single slow reading on a perfectly healthy image; re-run the scan before treating it as real.",
+        "impact": "While an image is still arriving, the space it occupies is blank or shifting, which makes a page feel broken even when the text has arrived. If the slow image is the main picture at the top of the page, it can dominate how fast the whole page feels. Where the problem is the host rather than the file, compressing the picture will not help much.",
+        "mission_impact": "This picture keeps visitors waiting even when the file itself is not huge.",
+        "title": "Image was slow to download"
+    },
+    "INTERACTIVE_NO_ACCESSIBLE_NAME": {
+        "confidence": "Established",
+        "definition": "An interactive element — a <button>, or a text-style form field — has no accessible name: no visible text, no aria-label, no title, no associated <label>, and no placeholder. An accessible name is simply the label software announces for a control. Empty links are reported separately as Empty Link Text.",
+        "fix": "Add visible text, an aria-label such as aria-label=\"Search\", or a proper <label for> on each unnamed control; icon-only buttons always need an aria-label. In WordPress, form fields built with Gravity Forms, WPForms, or Contact Form 7 have a Label field in the form editor — fill it in rather than relying on the placeholder; controls added by a theme or page builder need your developer.",
+        "good_vs_bad": {
+            "bad": "<button>✕</button> with no label, or <input type=\"text\"> sitting under a heading with nothing tying the two together.",
+            "good": "<button aria-label=\"Close\">✕</button>, and <label for=\"amount\">Donation amount</label><input id=\"amount\">."
+        },
+        "how_it_can_mislead": "Evidence tier: Established. To avoid false alarms the check accepts a placeholder as a name, even though a placeholder disappears as soon as someone types and is not a robust label — so a false negative is a placeholder-only field that passes here but still fails a real accessibility audit. It also looks only at buttons and text-like fields, so custom widgets are out of scope. The correct-looking-but-wrong result is a clean report on a form whose fields are labelled only by their grey placeholder text.",
+        "impact": "Screen readers and task-running agents decide which control performs an action from its name. An unnamed control is announced as \"button\" and nothing else, so a visitor using a screen reader has to guess, and an agent will usually skip it. On a donation form or an event registration field, that is the point at which the person gives up. The W3C accessibility guidelines require every control to expose a name.",
+        "mission_impact": "A control on this page has no name, so a blind visitor or an automated assistant cannot tell what it does.",
+        "title": "Unlabelled button or form field"
+    },
+    "INTERNAL_NOFOLLOW": {
+        "confidence": "Established",
+        "definition": "One or more links on this page point to other pages on your own site but carry rel=\"nofollow\". That attribute asks search engines not to follow the link or pass any value through it — it was designed for links to sites you do not vouch for.",
+        "fix": "Remove rel=\"nofollow\" from links to your own pages, keeping it for outside sites you do not vouch for and for user-submitted content. In WordPress, check your SEO plugin's link settings and any nofollow options on menu items.",
+        "good_vs_bad": {
+            "bad": "<a href=\"/donate/\" rel=\"nofollow\">Donate</a>, where a plugin added nofollow site-wide.",
+            "good": "<a href=\"/donate/\">Donate</a> in your footer, with no rel attribute."
+        },
+        "how_it_can_mislead": "Evidence tier: Established. Google documents what rel=\"nofollow\" does and the attribute is read straight from your HTML, so the detection is exact — it just cannot tell a mistake from a decision. A correct-looking-but-wrong result is a login or account link deliberately marked nofollow being reported as a problem, when keeping crawlers out of it is sensible.",
+        "impact": "Google states that nofollow means it will not use the link for discovery or ranking. Pointing that at your own pages works against you: it can leave a page harder to find and starve it of the standing your other pages would otherwise pass along. It usually appears by accident, from an SEO plugin setting or a menu option applied more broadly than intended.",
+        "mission_impact": "You are telling search engines to ignore a link to one of your own pages.",
+        "title": "Internal link marked nofollow"
+    },
+    "INTERNAL_REDIRECT_301": {
+        "confidence": "Established",
+        "definition": "A link on your own site points to an address that permanently redirects (301) to a different one. Everyone still arrives at the right page, but only after an extra round trip that your own link caused.",
+        "fix": "Update the link to the final address. In WordPress, check Appearance → Menus, your footer widgets, and the page content itself, and leave the redirect rule in place for outside links.",
+        "good_vs_bad": {
+            "bad": "It still links to /counselling, which 301-redirects to /programs/counselling/ on every click.",
+            "good": "The main menu's Counselling item links to /programs/counselling/, the address the server serves."
+        },
+        "how_it_can_mislead": "Evidence tier: Established. Google publishes this recommendation and the redirect is the server's own answer, so the finding is solid; what it cannot see is whether the old address is deliberately kept as a short, memorable link used on printed material. A correct-looking-but-wrong response is deleting the redirect rule itself instead of updating your link, which breaks every poster and email that still quotes the short address.",
+        "impact": "This is a genuine quick win because both ends are yours to change. Google recommends pointing internal links at the final address rather than relying on a redirect. On a site with many of these — usually after a menu rename or a permalink change — the extra requests add up in crawl effort and in load time on phones.",
+        "mission_impact": "Your own menus or content link to an old address, so every visitor makes an extra hop to reach the right page.",
+        "title": "An internal link takes a detour"
+    },
+    "JSON_LD_INVALID": {
+        "confidence": "Reasonable proxy",
+        "definition": "A JSON-LD block is present on the page but is missing @type or @context. Those two lines say which vocabulary the block uses and what kind of thing it describes; without them a machine has nothing to interpret.",
+        "fix": "Make sure every JSON-LD block includes '@context': 'https://schema.org' and a real '@type'. Blocks are usually emitted by your SEO plugin or theme, so a stray one often comes from a custom snippet a developer added — that is where to look.",
+        "good_vs_bad": {
+            "bad": "A block listing a name, a date and a location with no @context and no @type — a bag of values with no stated meaning.",
+            "good": "A block containing '@context': 'https://schema.org' and '@type': 'Event' with the event's name and date."
+        },
+        "how_it_can_mislead": "Evidence tier: Reasonable proxy. The check looks for the two structural keys, not for full schema.org validity, so it is a shallow test. The correct-looking-but-wrong result is a block that has @type and @context and passes here while being wrong in every other way — misspelled property names, a date in the wrong format, a type that does not exist. Passing this check is not the same as valid markup; run validator.schema.org before you call it done.",
+        "impact": "A malformed block is not read half-way — it is skipped. Everything it was supposed to declare (your organisation's name, an event's date, an article's author) is simply absent as far as search engines and AI systems are concerned, while the page looks to a human editor as though schema is in place.",
+        "mission_impact": "The machine-readable facts on this page are written in a form no search engine can read, so the work of adding them is wasted.",
+        "title": "A structured-data block is malformed"
+    },
+    "JSON_LD_MISSING": {
+        "confidence": "Reasonable proxy",
+        "definition": "This indexable page carries no usable JSON-LD structured data — either no structured-data script at all, or one that declares no type. JSON-LD is a small block of machine-readable facts, invisible to visitors, that states what the page is about.",
+        "fix": "Enable structured data in your WordPress SEO plugin (Yoast and Rank Math both generate it automatically once Site representation is filled in), and at minimum make sure the homepage carries an Organization block. Page-specific types such as Event or Article are usually a per-page setting in the same plugin.",
+        "good_vs_bad": {
+            "bad": "The same workshop page with the date and address only in the visible text, and no structured data anywhere.",
+            "good": "A workshop page carrying an Event block with the name, start date, location and registration URL."
+        },
+        "how_it_can_mislead": "Evidence tier: Reasonable proxy. Structured data is not required for indexing, so this is reported as an opportunity, not a defect — a perfectly good contact page needs none. The check fires whenever no usable type is found, which includes a block that exists but is broken, so a site owner who 'added schema last month' can still see this. The correct-looking-but-wrong result is a page that clears the check with a bare WebPage block: technically present, and saying nothing anyone needed.",
+        "impact": "Structured data is how a page says explicitly 'this is an event, on this date, at this address' rather than leaving a machine to work it out from layout. Without it, AI systems fall back on reading your HTML and guessing, which is less accurate and more prone to mixing up what belongs to what. Being missing is not a fault — pages index fine without it — but it is a missed opportunity on any page that describes a real thing.",
+        "mission_impact": "Nothing on this page states in machine-readable form what it is, so search engines and AI assistants have to infer your programme, event or article from prose alone.",
+        "title": "The page has no structured data at all"
+    },
+    "JS_DEPENDENT_NAVIGATION": {
+        "confidence": "Established",
+        "definition": "This page has a navigation region — a <nav> element, a role=\"navigation\" container, or a menu-classed block — that contains no usable links in the HTML the server sends. The menu only appears once JavaScript runs in a visitor's browser.",
+        "fix": "Have the main menu delivered as real <a href> links in the HTML the server sends, and confirm it by using your browser's \"View page source\" (not the inspector, which shows the page after scripts run). This is a theme-level change and needs your developer; a plain <noscript> list of links is a workable stopgap.",
+        "good_vs_bad": {
+            "bad": "The page source shows only a hamburger <button> and an empty <ul> that a script fills in after the page loads.",
+            "good": "Viewing the page source shows <nav> containing real links such as <a href=\"/counselling\">Counselling</a> and <a href=\"/donate\">Donate</a>."
+        },
+        "how_it_can_mislead": "Evidence tier: Established. TalkingToad does not run a JavaScript render for this check — it reads the HTML the server sent, so it reports what a non-JavaScript reader would see, not what your visitors see. A false positive is a navigation region that legitimately holds only a search box, or a menu whose links are in-page anchors; a false negative is a menu built by JavaScript inside a container the check does not recognise as navigation. The correct-looking-but-wrong result is a page that passes because it has a footer link list, while the real menu is still JavaScript-only.",
+        "impact": "AI crawlers such as GPTBot, ClaudeBot, and PerplexityBot, and the task-running agents built on them, frequently do not run JavaScript. They receive a page with no way forward and cannot reach your programs, events, or donate pages. Google does run JavaScript, but in a deferred second pass, so links absent from the served HTML are discovered late — if at all.",
+        "mission_impact": "Automated readers that reach this page find no menu to follow, so the rest of your site stays invisible to them.",
+        "title": "Navigation needs JavaScript to appear"
+    },
+    "JS_RENDERED_CONTENT_DIFFERS": {
+        "confidence": "Established",
+        "definition": "TalkingToad fetched the page twice: once as plain HTML, and once with JavaScript executed. The rendered version contains more than 20% more text than the raw HTML, meaning a meaningful share of the content is added by scripts after the page loads.",
+        "fix": "Have your developer serve the important body text, headings and facts in the initial HTML — server-side rendering or static generation, depending on the stack. Dynamic extras such as comments or a live counter can stay in JavaScript.",
+        "good_vs_bad": {
+            "bad": "The service list, hours and staff bios all arrive from a script, leaving a raw HTML page that is mostly navigation.",
+            "good": "Programme descriptions and contact details are in the served HTML; only a live donation ticker is added by script."
+        },
+        "how_it_can_mislead": "Evidence tier: Established. Google documents the two-phase crawl, but the 20% trigger is TalkingToad's own — no vendor publishes a point at which a difference starts to matter. The measure is a token count, so it cannot tell important text from unimportant: a page whose extra 30% is a cookie banner and a related-posts widget is flagged for nothing. The correct-looking-but-wrong result is the reverse — a page just under the threshold whose script-loaded 15% happens to be the entire fee schedule, reported as clean.",
+        "impact": "Search engines render JavaScript, but on a second pass that can lag well behind the first. Many AI crawlers do not render at all. Content that only exists after scripts run is therefore delayed for search and often entirely absent for AI — and it is usually the parts that matter, since tabs, accordions and 'load more' sections tend to hold programme details.",
+        "mission_impact": "More than a fifth of your page's words arrive only after scripts run, and the AI systems people ask about your services may never see them.",
+        "title": "Much of the page only appears after JavaScript runs"
+    },
+    "LANDMARK_MAIN_MISSING": {
+        "confidence": "Established",
+        "definition": "The page has no <main> element (or role=\"main\") marking the region that holds its principal content, as distinct from the header, navigation, sidebar, and footer. This check runs on every indexable page.",
+        "fix": "Wrap the primary content in <main>…</main>, once per page. In WordPress this lives in the theme's content template, so it is normally a theme or child-theme change and needs your developer — many modern block themes already do it.",
+        "good_vs_bad": {
+            "bad": "Every region of the page is a bare <div class=\"content-area\">, so nothing distinguishes the article from the site furniture.",
+            "good": "<main><article>Our grief counselling program runs weekly…</article></main>, with the menu and footer outside it."
+        },
+        "how_it_can_mislead": "Evidence tier: Established. Landmarks are a W3C best practice rather than a WCAG success criterion, so their absence is not an accessibility conformance failure — which is why this is informational. A false positive is a theme that marks its content with <article> instead: the page is reasonably structured and will still be flagged. A correct-looking-but-wrong result is a page that passes because a <main> element exists but wraps the whole page including the menu, which signposts nothing.",
+        "impact": "A landmark is a signpost in the HTML that says \"the real content begins here\". Without one, screen readers cannot jump straight to the content, and AI systems extracting an answer must fall back on guesswork — sometimes lifting your navigation, cookie notice, or footer instead of your description of the counselling program. It is a small, one-time structural fix with a long tail of benefit.",
+        "mission_impact": "Software reading this page has to guess where your real content starts, and may quote your menu instead.",
+        "title": "No main content landmark"
+    },
+    "LANDMARK_NAV_MISSING": {
+        "confidence": "Established",
+        "definition": "Your homepage has no <nav> element (or role=\"navigation\") marking its menu. The check runs on the homepage only, because navigation is normally site-wide and one representative check avoids repeating the same finding on every page.",
+        "fix": "Wrap the main menu in <nav>…</nav>, and add an aria-label such as \"Primary\" or \"Footer\" when the page has more than one menu region. This lives in the WordPress theme's header template and normally needs your developer, though most current block themes output it already.",
+        "good_vs_bad": {
+            "bad": "The same menu inside <div class=\"main-menu\">, with nothing marking it as navigation.",
+            "good": "<nav aria-label=\"Primary\"><ul><li><a href=\"/programs\">Programs</a></li>…</ul></nav>."
+        },
+        "how_it_can_mislead": "Evidence tier: Established. Landmarks are a W3C best practice, not a WCAG success criterion, so this is advisory. Because only the homepage is examined, a false negative is a site whose homepage is well marked up while inner-page templates are not — they are never checked. A correct-looking-but-wrong result is a page that passes on a stray <nav> around a breadcrumb trail while the real menu carries no landmark at all.",
+        "impact": "A <nav> landmark tells software \"these links are how you move around the site\". Without it, a screen-reader user cannot skip past the menu, and an AI crawler or task agent cannot separate your main menu from links inside an article. Site traversal still works, but it is guesswork rather than instruction — which is why this is informational rather than a warning.",
+        "mission_impact": "Software cannot tell your site menu apart from ordinary links, so moving around your site is less reliable for it.",
+        "title": "No navigation landmark"
+    },
+    "LANG_MISSING": {
+        "confidence": "Established",
+        "definition": "The page's opening html tag has no lang attribute, such as lang=\"en\". That attribute is how a page states, in code, which human language its content is written in.",
+        "fix": "Set the language on the html tag, for example lang=\"en-CA\". In WordPress this comes from Settings, then General, then Site Language, and the theme writes the attribute; if the setting is right and the attribute is still missing, the theme's header template is dropping it and a developer should add it.",
+        "good_vs_bad": {
+            "bad": "<html> with no lang attribute, so assistive technology falls back to whatever the visitor's device assumes.",
+            "good": "<html lang=\"en-CA\"> at the top of the page."
+        },
+        "how_it_can_mislead": "Evidence tier: Established. The check looks for the attribute on the html element only, and it checks that one is present, not that it is right. So a page declaring lang=\"en\" while its content is in French passes cleanly, and that is exactly the correct-looking-but-wrong result to watch for on a bilingual site. A page whose language is set by a script after loading is flagged even though a browser inspector would show it.",
+        "impact": "Accessibility guidance requires that a page's default language be determinable in the code, and the lang attribute is how that is done. Screen readers use it to pick pronunciation rules; without it, an English page may be read with French pronunciation, which is close to unusable. Search engines also use it to match your content to searches in the right language.",
+        "mission_impact": "Screen readers do not know what language to read your page in, so it can be pronounced as gibberish.",
+        "title": "No language declared"
+    },
+    "LINK_EMPTY_ANCHOR": {
+        "confidence": "Established",
+        "definition": "One or more links on this page have nothing readable inside them. The link tag is empty, or it holds only an icon or image with no alternative text and no label attached to the link.",
+        "fix": "Give each empty link a description. In the WordPress block editor, social icon blocks have a label field; for a custom icon link, add an aria-label such as aria-label=\"Donate now\" to the link, or alt text to the image inside it.",
+        "good_vs_bad": {
+            "bad": "The same icon link with no label and no image alt text, announced only as \"link\".",
+            "good": "A Facebook icon link carrying aria-label=\"Living Systems on Facebook\"."
+        },
+        "how_it_can_mislead": "Evidence tier: Established. A link is cleared if it has a name from any source: visible text, aria-label, a title attribute, aria-labelledby, or an image with alt text inside it. That is why the false negative matters: a link labelled aria-label=\"link\" or aria-label=\"read more\" passes this check while telling a screen reader user nothing. A correct-looking-but-wrong result is a page with a clean bill of health whose icon links are all labelled \"icon\".",
+        "impact": "Accessibility guidance is that a link with no discernible text has no announceable purpose. Someone using a screen reader hears \"link\" and must guess or click to find out. Search engines use the wording of a link as a clue about the page it points at, and an empty link passes on no clue at all. Social media icons and icon-only buttons are the usual culprits.",
+        "mission_impact": "A screen reader announces this link as just \"link\", so a blind visitor has no idea where the donate button goes.",
+        "title": "Link has no text"
+    },
+    "LINK_PROFILE_PROMOTIONAL": {
+        "confidence": "Heuristic",
+        "definition": "More than 80% of the outbound links in this page's body text carry affiliate or campaign markers — a ?ref=, aff=, utm_source= or partner= parameter, or a /ref/, /aff/ or /go/ path — rather than pointing plainly to independent sources.",
+        "fix": "Link to independent sources with plain URLs, and keep campaign tracking parameters for your own outbound campaign links rather than adding them to every link. This is an editing job in the WordPress page editor, not a settings change.",
+        "good_vs_bad": {
+            "bad": "A page on youth mental health whose eight outbound links all carry ?utm_source=newsletter or /go/ redirect paths.",
+            "good": "A page on youth mental health linking to two provincial health resources and one study, with plain links and no tracking parameters."
+        },
+        "how_it_can_mislead": "Evidence tier: Heuristic. Both the rule and the 80% figure are TalkingToad's own, and \"promotional\" is decided from the link's URL pattern alone — not from where it points or what it says. A page whose links to perfectly independent sources all carry your own utm_source= tag for analytics is flagged anyway; that is the plainest false positive. The correct-looking-but-wrong pass is the reverse: a page of affiliate links with the tracking stripped from the URLs reads as clean.",
+        "impact": "Outbound links are a visible statement of what a page relies on. When nearly all of them are tagged as campaign or affiliate links, the page reads as promotion rather than as a resource, and it offers a reader nothing to corroborate it against. On an explainer or a resource page that is a real weakness; on a campaign page it is simply what the page is.",
+        "mission_impact": "A page whose only outside links go to your own donate and campaign sites reads as promotion rather than as a resource.",
+        "title": "Almost every outbound link points back at you"
+    },
+    "LINK_STACKED_DUPLICATE": {
+        "confidence": "Heuristic",
+        "definition": "Two or more links inside a single card point at the same destination, typically an invisible link covering the whole card stacked on top of a link on the title and another on the image. On screen it looks like one clickable card.",
+        "fix": "In your page builder's card or listing template, keep one link with descriptive text and remove the duplicates. If you keep the whole-card overlay link, give it a descriptive aria-label and make the inner title and image non-interactive; in Elementor and similar builders this is usually a single \"link whole card\" toggle rather than a code change.",
+        "good_vs_bad": {
+            "bad": "One card with a whole-card overlay link, a title link and an image link, all pointing at /counselling/.",
+            "good": "One card with a single link on the title reading \"How family systems counselling works\"."
+        },
+        "how_it_can_mislead": "Evidence tier: Heuristic. This is our judgement; the whole-card-clickable pattern is not wrong in itself. The links must sit inside something the scan recognises as a card, so a header logo link and a Home text link both pointing at / are not flagged, and that container test is also where the check can be wrong in both directions: a card built from an unusual layout may be missed, and an unusual container may be read as a card when it is really the page's main content area. A correct-looking-but-wrong result is a listing where one card is reported and its identical sibling is not, because only one matched the container rules.",
+        "impact": "Someone tabbing through with a screen reader hears the destination announced two or three times before moving on, which turns a six-item programme listing into eighteen announcements. Crawlers also see several links where the editor meant one, so it is less clear which wording describes the destination. Page builders produce this pattern by default; it is a usability point, not an accessibility violation.",
+        "mission_impact": "A visitor using a screen reader hears the same programme link announced two or three times in a row.",
+        "title": "Several links in one card go to the same page"
+    },
+    "LLMS_TXT_INVALID": {
+        "confidence": "Heuristic",
+        "definition": "Your site serves something at /llms.txt, but it is not a valid llms.txt file: it has no Markdown '# Title' heading. Most often the URL is returning an ordinary web page — a themed 404 or a redirect — rather than a plain Markdown file.",
+        "fix": "Serve /llms.txt as plain Markdown text beginning with a '# Your Organisation Name' line. TalkingToad's llms.txt generator produces a correctly formatted file you can upload to your site root; check afterwards that visiting the URL shows plain text, not a web page.",
+        "good_vs_bad": {
+            "bad": "/llms.txt returning your site's styled 404 page, complete with navigation and a search box.",
+            "good": "A plain-text file beginning '# Living Systems Counselling', followed by an optional summary line and links to your key pages."
+        },
+        "how_it_can_mislead": "Evidence tier: Heuristic. Per llmstxt.org the only required element is the H1 title — the summary line, the '## Section' lists and the number of links are all optional, and there is no cap on links, so anything you may have read about a 20-link limit does not apply. The check therefore tests one thing only. The correct-looking-but-wrong result is a file that passes because it starts with '# Home' while listing stale or irrelevant URLs beneath it; TalkingToad does not judge whether the links are the right ones.",
+        "impact": "llms.txt is a proposed plain-text file that lists the pages you most want AI systems to read. Its only required element is the '# Title' line at the top. A file without it is not recognisable as an llms.txt, so any agent that goes looking finds nothing usable and falls back to crawling your site as it would otherwise.",
+        "mission_impact": "The file meant to point AI assistants at your best pages cannot be read as one, so it does nothing.",
+        "title": "The llms.txt file is not a valid llms.txt"
+    },
+    "LLMS_TXT_MISSING": {
+        "confidence": "Heuristic",
+        "definition": "There is no file at yoursite.com/llms.txt. llms.txt is a proposed plain-text file, similar in spirit to robots.txt, that names your organisation and links to the pages you most want AI systems to read.",
+        "fix": "Use TalkingToad's llms.txt generator to build a curated list of your high-value pages, then upload the file to your site root so it is reachable at yoursite.com/llms.txt. On most WordPress hosts that means an FTP or file-manager upload, or a plugin that serves root files.",
+        "good_vs_bad": {
+            "bad": "/llms.txt returns 404, so nothing on your site states which pages you would like read first.",
+            "good": "/llms.txt exists and lists your services, contact, donate and about pages with a one-line description each."
+        },
+        "how_it_can_mislead": "Evidence tier: Heuristic. llms.txt is a published proposal, not a standard, and no AI engine operator has committed to reading it — so its absence is reported as an option, not a defect, and adding it may change nothing. The correct-looking-but-wrong result is treating a present llms.txt as proof of AI visibility: the file can exist, be perfectly formatted, and still be ignored by every crawler that visits.",
+        "impact": "Without it, an AI agent has to infer which of your pages are important by crawling everything, which favours whatever is easiest to reach rather than what you would choose. A short curated file is a low-cost way to point at your programme pages, your contact details and your current campaign instead of an old news post.",
+        "mission_impact": "You have no short, curated list telling AI assistants which of your pages actually matter — they will work it out for themselves.",
+        "title": "No llms.txt file at the site root"
+    },
+    "LOGIN_REDIRECT": {
+        "confidence": "Measured",
+        "definition": "When TalkingToad requested this address, it was sent to a login screen instead of the page. The content was never read, so none of the other checks ran on it.",
+        "fix": "If the page should be public, review your membership or access plugin's rules and exclude this address. If it is meant to be private, no action is needed.",
+        "good_vs_bad": {
+            "bad": "/programs/family-support/ redirects to a login because a membership plugin rule caught it by mistake.",
+            "good": "/volunteer-portal/ redirects to a login, and it is meant to be private."
+        },
+        "how_it_can_mislead": "Evidence tier: Measured. This records only what happened during this crawl — the address sent us to a login — and cannot tell a deliberate private area from an accidental one. A correct-looking-but-wrong result is a public page flagged because a maintenance-mode or coming-soon plugin was active during the scan, which would clear on the next run.",
+        "impact": "Search engines are in the same position we were: they cannot see the page, so it will not appear in search results. For a members' area, a volunteer portal, or a staff intranet, that is correct and no action is needed. It only matters if a page you meant to be public — a programme description, an event listing — has ended up behind a membership rule by accident.",
+        "mission_impact": "This page is private, so search engines cannot see it — which is often exactly right.",
+        "title": "Page requires a login — not audited"
+    },
+    "META_DESC_DUPLICATE": {
+        "confidence": "Established",
+        "definition": "The same meta description appears on two or more pages, ignoring capitals and outside spaces. The meta description is the short summary shown under the title in search results.",
+        "fix": "Write a separate description for each affected page, describing that page's own content and its next step. In WordPress, edit the Meta description field in Yoast or Rank Math on each page rather than relying on a site-wide template.",
+        "good_vs_bad": {
+            "bad": "Both pages carry the same sentence: \"Living Systems supports families across Greater Vancouver.\"",
+            "good": "The donate page says what a gift funds; the counselling page says who the sessions are for and when they run."
+        },
+        "how_it_can_mislead": "Evidence tier: Established. Only pages this scan fetched are compared, so a partial crawl can miss duplicates on pages it never reached. A false positive is a set of near-identical service pages for different towns where one shared summary is a deliberate choice. A correct-looking-but-wrong result is clearing the check by adding a different location word to each copy, which makes the descriptions unique without making any of them more useful.",
+        "impact": "Google advises a distinct description per page; identical descriptions cannot tell results apart. If your counselling page and your donate page both say \"Living Systems supports families across Greater Vancouver\", a searcher comparing two of your results learns nothing from either. Google is also more likely to discard the description and write its own.",
+        "mission_impact": "Every one of your pages describes itself the same way, so search results all look interchangeable.",
+        "title": "Duplicate meta description"
+    },
+    "META_DESC_MISSING": {
+        "confidence": "Established",
+        "definition": "This page has no meta description tag. A meta description is a short summary, usually one or two sentences, stored in the page's HTML; Google often uses it as the grey text under the title in search results.",
+        "fix": "Write a description of about 70 to 160 characters saying what the visitor will find and what they can do. In WordPress, this is the Meta description field in the Yoast SEO or Rank Math box on each page's edit screen.",
+        "good_vs_bad": {
+            "bad": "No description tag, so Google shows \"Home About Donate Contact Skip to content...\" under the title.",
+            "good": "\"Free drop-in grief counselling for families in Vancouver. Sessions run Tuesday evenings; no referral needed. Register online or call us.\""
+        },
+        "how_it_can_mislead": "Evidence tier: Established. Google is free to ignore your description and write its own snippet whenever it thinks a different piece of the page better answers the search, so writing one is not a guarantee it will be used. A false positive is a page whose description is added by a plugin that runs late, so the delivered HTML has none even though a preview tool shows one. A correct-looking-but-wrong result is a site that clears this check with a single generic description copied onto every page, which passes here and then trips the duplicate-description check.",
+        "impact": "Google uses the meta description as one source for the snippet when it summarises the page well. With none, Google assembles its own from text on the page, which frequently pulls a menu label, a cookie notice, or half a sentence. A description you wrote can name who the programme is for and what to do next; a machine-picked one usually cannot.",
+        "mission_impact": "The two lines under your search result get written by a machine instead of by you.",
+        "title": "Meta description missing"
+    },
+    "META_DESC_TOO_LONG": {
+        "confidence": "Established",
+        "definition": "The meta description, the short summary shown under your title in search results, is longer than 160 characters. Search results usually show only the first part before trailing off.",
+        "fix": "Shorten the description to under 160 characters, keeping the most important information first. In WordPress, edit the Meta description field in Yoast or Rank Math, which shows a length indicator as you type.",
+        "good_vs_bad": {
+            "bad": "A 240-character description that spends its first two lines on the society's history before mentioning the group.",
+            "good": "\"Register for our Tuesday evening grief support group in East Vancouver. Free, drop-in, and open to adults of any age.\" (116 characters)"
+        },
+        "how_it_can_mislead": "Evidence tier: Established. The 160-character figure is ours. Google publishes no description length and states snippet length varies, so a 175-character description may show in full on a wide screen and be cut on a phone. A false positive is a long description that Google was never going to use anyway because it writes its own snippet for that query. A correct-looking-but-wrong result is a description chopped at 160 characters mid-sentence, which now clears the check and ends nowhere.",
+        "impact": "Google trims snippets to the space available and may write its own text instead. A description that opens with background about your founding year can be cut before it reaches \"register for the Tuesday group\". Leading with the useful part protects the message no matter where the cut falls.",
+        "mission_impact": "Your call to action can be the part that gets cut off before anyone reads it.",
+        "title": "Meta description too long"
+    },
+    "META_DESC_TOO_SHORT": {
+        "confidence": "Heuristic",
+        "definition": "The meta description, the short summary shown under your title in search results, is fewer than 70 characters. Short descriptions leave usable space empty.",
+        "fix": "Expand the description to roughly 70 to 160 characters: what the page covers, who it is for, and what the visitor can do next. In WordPress, edit the Meta description field in the Yoast SEO or Rank Math box.",
+        "good_vs_bad": {
+            "bad": "\"Our counselling services.\" (25 characters)",
+            "good": "\"Weekly grief support groups for adults in East Vancouver. Free to attend, no referral needed - see upcoming dates and register.\" (127 characters)"
+        },
+        "how_it_can_mislead": "Evidence tier: Heuristic. Our judgement, and the 70-character floor is ours. Google publishes no minimum and frequently writes its own snippet regardless, so a short description is not a fault, only a missed opportunity. A false positive is a crisp 60-character description that already answers the question completely. A correct-looking-but-wrong result is a description padded past 70 characters with vague filler, which passes the check and reads worse to the person deciding whether to click.",
+        "impact": "A description has one job: answer the searcher's question well enough that they click. \"Our counselling services.\" does not say who the service is for, where it runs, or what it costs. A fuller sentence has more chance of matching what the person actually typed, which is also what makes Google keep your text instead of writing its own.",
+        "mission_impact": "A very short summary uses only part of the space you get to persuade someone to click.",
+        "title": "Meta description too short"
+    },
+    "META_REFRESH_REDIRECT": {
+        "confidence": "Established",
+        "definition": "The page carries a tag like <meta http-equiv=\"refresh\" content=\"0; url=/donate/\">, which tells the browser to move to another address after a delay. This is an old alternative to a proper server redirect.",
+        "fix": "Replace the tag with a proper server redirect. In WordPress, add a 301 rule in the Redirection plugin and delete the meta refresh tag from the page; if the tag comes from your theme, this needs your developer.",
+        "good_vs_bad": {
+            "bad": "/give is an otherwise-empty page carrying <meta http-equiv=\"refresh\" content=\"0; url=/donate/\">.",
+            "good": "/give is set up as a server-side 301 redirect to /donate/, and the browser never renders the old page."
+        },
+        "how_it_can_mislead": "Evidence tier: Established. The accessibility guideline behind this is published by the W3C, and the tag is read directly out of the page, so the detection is exact — but it cannot tell a redirect from a legitimate timed page refresh such as an auto-updating status board. A correct-looking-but-wrong result is a live event dashboard that refreshes itself every 60 seconds being reported as a redirect.",
+        "impact": "A timed redirect moves people without their control, which accessibility guidance treats as a problem unless the delay can be adjusted or switched off. Visitors may see a flash of the old page before it jumps. Search engines handle server redirects far more predictably, so signals from the old address transfer less reliably here.",
+        "mission_impact": "This page bounces visitors elsewhere using an old technique that can disorient people using screen readers.",
+        "title": "Redirect written into the HTML (meta refresh)"
+    },
+    "MISSING_HSTS": {
+        "confidence": "Established",
+        "definition": "Your HTTPS pages do not send a Strict-Transport-Security header. That header is a short instruction telling the browser to use HTTPS for your site from now on, even if someone types or clicks a plain http:// address.",
+        "fix": "This one needs your developer or host. Ask them to add Strict-Transport-Security: max-age=31536000; includeSubDomains to all HTTPS responses — an .htaccess line on Apache, a server-block line on Nginx, or a switch in your host's or Cloudflare's panel. Only enable it once HTTPS works everywhere, including subdomains.",
+        "good_vs_bad": {
+            "bad": "Responses carry no Strict-Transport-Security header at all",
+            "good": "Responses carry Strict-Transport-Security: max-age=31536000; includeSubDomains"
+        },
+        "how_it_can_mislead": "Evidence tier: Established. The header and its effect are specified in an internet standard (RFC 6797), and the check simply looks for it in the response, reporting once per hostname. A content delivery network or caching layer can add the header on the live edge while the crawler, taking a different path, does not see it — a false positive worth verifying before you ask anyone to change server settings. The header is also only checked on HTTPS pages, so a site still on HTTP will never show this finding even though it is in a worse position. A correct-looking-but-wrong result is this being reported on a site where the header is present in production.",
+        "impact": "Without it, a visitor who types your address without \"https\" makes one unencrypted request before the redirect takes them somewhere safe, and that first request can be intercepted. The header closes that window for everyone who has visited before. It is security hardening rather than an open hole — worth doing, not worth panicking about.",
+        "mission_impact": "A first-time visitor has a brief, small window of exposure before your site becomes secure.",
+        "title": "The HTTPS-only instruction is not set"
+    },
+    "MISSING_VIEWPORT_META": {
+        "confidence": "Established",
+        "definition": "The page's <head> has no <meta name=\"viewport\"> tag. That tag tells a phone browser to lay the page out at the phone's width; without it, the browser assumes a desktop screen and zooms out.",
+        "fix": "Add <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"> inside the page's <head>. Most WordPress themes include it already; if yours does not, this needs your developer to add it to the theme header.",
+        "good_vs_bad": {
+            "bad": "The tag is absent, so the phone renders the page at desktop width and shrinks it to fit.",
+            "good": "The head contains <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"> and the page fills a phone screen."
+        },
+        "how_it_can_mislead": "Evidence tier: Established. Google publishes that a page without a viewport tag is rendered at desktop width and zoomed out, and we read the head directly, so absence is certain — but a page can still be unusable on a phone with the tag present, and a rare fixed-width page may not want it. A correct-looking-but-wrong result is a clean pass on this check being read as 'the site is mobile-friendly', which this check alone cannot tell you.",
+        "impact": "Text comes out too small to read and buttons too small to tap, so a supporter has to pinch and drag to reach your donate button. Google judges pages primarily by their mobile version when deciding where they rank, so a page that renders badly on a phone is at a disadvantage in search as well as with the visitor in front of it.",
+        "mission_impact": "Your page may appear tiny and unusable on the phones most of your supporters use.",
+        "title": "Mobile viewport tag missing"
+    },
+    "MIXED_CONTENT": {
+        "confidence": "Established",
+        "definition": "This page itself loads securely over HTTPS, but it asks for at least one file — an image, script, stylesheet or embedded frame — over insecure HTTP. That combination is called mixed content.",
+        "fix": "Change the flagged addresses from http:// to https://. In WordPress, the Better Search Replace plugin can update http:// addresses stored across your database in one pass — take a backup first. Where the reference is inside a theme or plugin file, this needs your developer.",
+        "good_vs_bad": {
+            "bad": "<script src=\"http://cdn.example.org/donate-widget.js\"> on an https:// donate page",
+            "good": "<script src=\"https://cdn.example.org/donate-widget.js\">"
+        },
+        "how_it_can_mislead": "Evidence tier: Established. Browser behaviour here is documented by MDN, and the finding lists the exact files involved. The check reads the page's delivered HTML only, so files requested later by JavaScript are invisible to it — the commonest false negative. It also cannot tell whether the insecure file still exists, so an old http:// reference to a file nobody notices is reported at the same weight as a broken donate widget. A correct-looking-but-wrong result is a page reported clean while a script it injects at runtime is being blocked in real browsers; open the page and check the browser console to confirm.",
+        "impact": "Browsers refuse to load insecure scripts, stylesheets and frames on a secure page, so those pieces simply do not appear: a donation form or an event map can vanish entirely. Insecure images are usually upgraded or loaded with a warning instead. Where a script is involved the risk is not only cosmetic — someone on the network can alter what that script does, which is why browsers block it outright.",
+        "mission_impact": "Parts of a secure page can be blocked or tampered with, breaking how it looks or works.",
+        "title": "Secure page pulls in insecure files"
+    },
+    "NEAR_DUPLICATE_BODY": {
+        "confidence": "Reasonable proxy",
+        "definition": "Two or more pages have near-identical lead content once the shared site template — the navigation and footer repeated everywhere — is removed from the comparison. TalkingToad compares overlapping five-word phrases and groups pages that share at least 80% of them.",
+        "fix": "Merge the duplicates into one strong page and redirect or canonical the weaker ones, or give each page genuinely local specifics — real staff, real hours, a real story. This is content work in the WordPress editor; the redirect step usually needs your SEO plugin's redirect tool.",
+        "good_vs_bad": {
+            "bad": "Ten 'counselling in [town]' pages identical except for the town name swapped in.",
+            "good": "Each location page carries its own hours, its own staff, and a testimonial from that community."
+        },
+        "how_it_can_mislead": "Evidence tier: Reasonable proxy. The similarity threshold is TalkingToad's own, measured after shared template text is stripped; Google documents that it consolidates duplicates but publishes no number. Near-identical opening paragraphs are normal across a legitimate service-area set, so those are flagged without being wrong. The correct-looking-but-wrong result is the near miss: two pages at 78% similarity — genuinely interchangeable to a reader — reported as clean because they fall just under the line.",
+        "impact": "Generic repeated content is the easiest kind for an AI answer to absorb: if ten pages say the same thing, one summarised paragraph replaces them all and none gets cited. Search engines also consolidate pages they judge duplicates and index one of them, so the others may not appear separately at all.",
+        "mission_impact": "Near-identical programme pages compete with each other in search, and a single AI paragraph can replace all of them at once.",
+        "title": "Several pages say nearly the same thing"
+    },
+    "NOINDEX_HEADER": {
+        "confidence": "Established",
+        "definition": "The server sends an HTTP response header, X-Robots-Tag: noindex, with this page. It has the same effect as a noindex tag in the HTML but is set at the server or plugin level, so you cannot see it by viewing the page.",
+        "fix": "In WordPress, first check Settings → Reading for the 'Discourage search engines from indexing this site' box. If that is off, the header is coming from the server, a caching layer, or a plugin — this needs your developer or your host.",
+        "good_vs_bad": {
+            "bad": "Every page on the live site carries it, because the staging server's rule was copied across at launch.",
+            "good": "Only the private volunteer-portal responses carry X-Robots-Tag: noindex."
+        },
+        "how_it_can_mislead": "Evidence tier: Established. Google documents the header as equivalent to the meta tag, and we read it directly off the response, so it is certain — but as with the tag, the check cannot tell deliberate from accidental. A correct-looking-but-wrong result is treating this as a page-level content problem and editing the page repeatedly, when the setting is in the server and no edit will ever clear it.",
+        "impact": "The page will not appear in search results. Because the setting lives in server configuration rather than in the page, it survives content edits and is commonly overlooked for months. The classic cause is a staging environment's blanket noindex that travelled with the site when it went live — which hides every page at once.",
+        "mission_impact": "Something on your server is hiding this page from search, and it is easy to miss because it is invisible in the page itself.",
+        "title": "Hidden from search by a server header"
+    },
+    "NOINDEX_META": {
+        "confidence": "Established",
+        "definition": "The page's HTML contains <meta name=\"robots\" content=\"noindex\">, which tells search engines to visit the page but keep it out of their results. TalkingToad also notes when the address looks like a live production page, since a leftover staging setting is the usual cause.",
+        "fix": "If the page belongs in search results, remove the directive. In WordPress with Yoast SEO or Rank Math, edit the page, open the SEO box, and switch 'Allow search engines to show this page in search results' back to Yes.",
+        "good_vs_bad": {
+            "bad": "/programs/counselling/ carries noindex, left over from when the site was being built.",
+            "good": "/donate/thank-you carries noindex, because nobody should reach it from a search result."
+        },
+        "how_it_can_mislead": "Evidence tier: Established. Google documents that noindex removes a page from its index, and the tag is read straight out of your HTML, so the reading is certain — what the check cannot know is whether you meant it. A correct-looking-but-wrong result is a critical finding on a thank-you or landing page that is supposed to be hidden; treat the list as pages to confirm, not pages to change.",
+        "impact": "The page will not appear in search results however good its content is. On a thank-you page or a duplicate print version that is intentional. On a programme, donate, or event page it is one of the most costly single settings on a site — the page is invisible to everyone searching for the help you offer.",
+        "mission_impact": "You have a 'Do Not Disturb' sign on this page, and Google is obeying it.",
+        "title": "Hidden from search by a noindex tag"
+    },
+    "NON_SEMANTIC_BUTTON": {
+        "confidence": "Established",
+        "definition": "A clickable control on the page is a <div> or <span> carrying a click handler — or a button-style class plus a tabindex — with no interactive role attached. It looks like a button to a sighted mouse user, but structurally it is just a box of text.",
+        "fix": "Use a real <button> for actions and <a href> for navigation — if the control came from a page-builder block, check that block's settings for a proper button element rather than a styled box. Rewriting a custom control, or adding role=\"button\", tabindex=\"0\", keyboard handling, and a label to it, needs your developer.",
+        "good_vs_bad": {
+            "bad": "<div class=\"btn\" onclick=\"donate()\">Donate</div> — no role, no tabindex, unreachable by keyboard.",
+            "good": "<button class=\"btn\">Donate</button>, or, if the markup must stay, <div role=\"button\" tabindex=\"0\" aria-label=\"Donate\">Donate</div>."
+        },
+        "how_it_can_mislead": "Evidence tier: Established. The check needs a strong clue in the HTML — an inline onclick, or a button-style class alongside a tabindex — so a false negative is common: a control wired up entirely in a separate JavaScript file leaves no trace in the markup and is not flagged. A false positive is a decorative box that carries a button-ish class but is not actually clickable. The correct-looking-but-wrong result is a page reported clean while its real Donate control is a bare div, because the click was attached from an external script.",
+        "impact": "Screen readers and task-running agents work out what they can operate from each element's role. A <div> with no role is never announced as a button and is not reachable by keyboard, so whatever it does — open the donation form, submit the volunteer signup — becomes unreachable for those visitors. The W3C accessibility guidelines require a control's role to be readable by software, so this is also an accessibility failure, not only an automation one.",
+        "mission_impact": "A button on this page is not recognisable as a button, so screen-reader users and automated assistants cannot press it.",
+        "title": "Fake button built from a div or span"
+    },
+    "NOT_IN_SITEMAP": {
+        "confidence": "Established",
+        "definition": "We reached this page by following a link, but its address is not listed in your XML sitemap — the file that tells search engines which pages you want crawled. Addresses containing a query string are skipped, since filtered and paginated views are meant to be absent.",
+        "fix": "Add the page to your sitemap. In WordPress with Yoast SEO or Rank Math, open the page's SEO settings and check whether it has been excluded, then confirm the post type is enabled in the plugin's sitemap options.",
+        "good_vs_bad": {
+            "bad": "It is absent because the SEO plugin's settings exclude that post type from the sitemap.",
+            "good": "/programs/counselling/ appears in sitemap.xml alongside the rest of your programme pages."
+        },
+        "how_it_can_mislead": "Evidence tier: Established. The sitemaps protocol defines what a sitemap advertises, and we compare your live sitemap against the pages we found — but this only makes sense over a full crawl, since a partial scan may read one sitemap file while pages live in another, and a sitemap index split across several files can be read incompletely. A correct-looking-but-wrong result is a long list of 'missing' pages on a site whose sitemap is split by post type, where the pages are in fact listed in a file the scan did not open.",
+        "impact": "A missing entry does not prevent indexing; well-linked pages are usually found anyway. It matters most for pages with few links pointing at them, which may be discovered slowly or re-crawled rarely, so an updated programme description takes longer to show up in search. It is reported as a gap in discovery, not as a fault.",
+        "mission_impact": "This page is not on the map you hand search engines, so it may be found late or not at all.",
+        "title": "Page missing from your sitemap"
+    },
+    "ORPHAN_CLAIM_TECHNICAL": {
+        "confidence": "Heuristic",
+        "definition": "This technical or how-to page contains three or more specific factual claims — capabilities, numbers, procedure steps — that are not paired with a source link or an attribution such as 'according to the ministry guidelines'. An orphan claim states a fact and offers no way to check it.",
+        "fix": "Add a source link or an attribution beside each specific claim or step — a linked guideline, a named report, a policy document. This is editing in the WordPress page editor: select the phrase and add the link.",
+        "good_vs_bad": {
+            "bad": "'Referrals are processed within ten business days.' — stated three times over, with no source anywhere on the page.",
+            "good": "'Referrals are processed within ten business days, per the regional health authority's 2025 intake standard [link].'"
+        },
+        "how_it_can_mislead": "Evidence tier: Heuristic. Both the rule and the three-claim trigger are TalkingToad's own, and deciding whether a sentence is an unsupported factual claim is a language judgement made approximately — it will miss real claims and flag supported ones. The correct-looking-but-wrong result is a page that clears the check because a nearby link happened to sit inside the same paragraph as the claim, while the link points somewhere unrelated. Read the flagged sentences yourself before acting.",
+        "impact": "Specific claims are the parts of a page most worth citing and most worth verifying. When they arrive unattributed, a careful reader has to take them on faith, and an AI system quoting them has nothing to point at. Adding the source is usually a one-line edit that turns an assertion into evidence.",
+        "mission_impact": "A how-to page that states specific facts with nothing behind them is harder for anyone — a funder, a referrer, an AI assistant — to trust.",
+        "title": "How-to page makes claims with no source"
+    },
+    "ORPHAN_PAGE": {
+        "confidence": "Established",
+        "definition": "This page was found during the crawl — usually through your sitemap — but no other page on your site links to it. It sits outside your site's link structure entirely.",
+        "fix": "Add at least one link from a relevant hub page, a menu, or a related article. In WordPress, edit the parent page and link to it, or add it under Appearance → Menus; if the page is no longer wanted, remove it.",
+        "good_vs_bad": {
+            "bad": "/donate/monthly-giving/ exists and is in the sitemap, but no page anywhere on the site links to it.",
+            "good": "/programs/family-support/ is linked from the Programs hub and the main menu."
+        },
+        "how_it_can_mislead": "Evidence tier: Established. Google documents that it discovers pages by following links, but this check proves an absence, which is only sound over a complete crawl — so it is skipped entirely on a partial scan, one that hit its page limit, or a cancelled run, rather than flagging every page whose only inbound link lay outside the scan. Links are also read from raw HTML, so a page linked only by JavaScript, a query-driven listing, or a skipped archive page can appear here wrongly. A correct-looking-but-wrong result is an empty orphan list read as proof that nothing is orphaned, when the check never ran.",
+        "impact": "Google finds pages mainly by following links, so a page nothing links to has to be discovered some other way and is re-crawled rarely. It also receives none of the standing that internal links pass along, so it ranks poorly even when the content is good. And a visitor browsing your site simply cannot get there — which is why an orphaned donate or programme page is worth fixing quickly.",
+        "mission_impact": "No page on your site points here, so visitors can only reach it if they already have the address.",
+        "title": "Orphan page — nothing links to it"
+    },
+    "OUTBOUND_LINK_UNTRACKABLE": {
+        "confidence": "Heuristic",
+        "definition": "An external link on this page is an image or icon with no text, no aria-label, no title, and no alt text on the image. Analytics still records the outbound click, but with an empty label, so the click cannot be told apart from any other.",
+        "fix": "Give the link an aria-label, or descriptive alt text on the image inside it — in WordPress, click the image and fill in the Alternative text field in the block sidebar, or use the label field on a social-icons block.",
+        "good_vs_bad": {
+            "bad": "<a href=\"https://donate.example.org\"><img src=\"heart.svg\"></a> — no alt, no label, so the click is recorded with an empty name.",
+            "good": "<a href=\"https://facebook.com/yourcharity\" aria-label=\"Our Facebook page\"><img src=\"fb.svg\" alt=\"\"></a>, which shows up in analytics as a named click."
+        },
+        "how_it_can_mislead": "Evidence tier: Heuristic. This is a measurement observation, not a standard, and it assumes your analytics is reporting outbound clicks by link label — if you track those links some other way, in Tag Manager for instance, nothing is actually lost. A false positive is a link that is unlabelled in the HTML but given a label by JavaScript before any click happens; a false negative is a labelled link whose label is so generic (\"Click here\", repeated eight times) that reports are just as unusable. The correct-looking-but-wrong result is a page that passes while every outbound link shares the same useless label.",
+        "impact": "Every unlabelled outbound click looks identical in your reports. You cannot measure how many people go to your donation processor, how many follow the link to a partner agency, or which social icon people actually use. That matters most when you are reporting referrals to a funder or deciding whether a partnership link earns its place on the page.",
+        "mission_impact": "You can see people leaving for other sites, but not which link they used.",
+        "title": "Outbound link with no label"
+    },
+    "PAGE_SIZE_LARGE": {
+        "confidence": "Established",
+        "definition": "The HTML document for this page is larger than 300 KB — that is the page's own markup, not counting images, stylesheets or scripts loaded separately. Your scan settings can change the figure we compare against.",
+        "fix": "Find what is generating the bulk — usually a page builder's markup or inline scripts. Trimming unused blocks and moving scripts to external files helps; Google PageSpeed Insights will point at the cause, and the work usually needs your developer.",
+        "good_vs_bad": {
+            "bad": "It is 700 KB because a page builder emitted thousands of nested wrappers and inline styles.",
+            "good": "The donate page's HTML is about 90 KB and the content appears almost immediately."
+        },
+        "how_it_can_mislead": "Evidence tier: Established. That response size affects how quickly content can render is documented by Google's web.dev, but the size at which we report is ours — no source sets an HTML weight limit. A correct-looking-but-wrong result is a long, genuinely content-rich page flagged for its length while a small page that loads four megabytes of images passes untouched, since this check never looks at images.",
+        "impact": "The larger the response, the longer before anything appears on screen, and page speed is one of the things Google weighs. On a phone on a limited data plan the cost is real. Very heavy HTML usually comes from a page builder producing deeply nested markup, or from scripts and styles pasted directly into the page.",
+        "mission_impact": "A heavy page is slow on mobile data, and supporters often leave before it finishes.",
+        "title": "Page HTML is unusually large"
+    },
+    "PAGE_TIMEOUT": {
+        "confidence": "Measured",
+        "definition": "TalkingToad requested this page on your own site and received no usable response within its time limit. The page was skipped, so none of the other checks ran against it.",
+        "fix": "Open the page in a browser. If it loads slowly, ask your host about server response times and consider trimming the page; if it fails for you too, this needs your developer or your hosting provider.",
+        "good_vs_bad": {
+            "bad": "/events/annual-gala returned nothing before the timeout, so it shows no issues only because it was never read.",
+            "good": "Every page in the scan returned its HTML, so every page carries real findings."
+        },
+        "how_it_can_mislead": "Evidence tier: Measured. This is our own timeout during this crawl, not a measurement of your site's speed for a visitor, whose browser waits far longer than we do. A correct-looking-but-wrong result is a healthy page reported as timing out because the scan hit the server hard, or because a shared host throttled us — and the reverse trap is reading a timed-out page's empty issue list as a clean bill of health.",
+        "impact": "The most important consequence is that this page has no results — it is not clean, it is unknown. If it consistently fails to respond, visitors may be seeing the same thing, and a search engine that cannot fetch a page will not index it. A single timeout on one page usually means a slow query or a heavy page; timeouts across many pages usually mean the server itself is struggling.",
+        "mission_impact": "We could not read this page at all, so nothing on it has been checked.",
+        "title": "Page did not respond — it was not audited"
+    },
+    "PAGINATION_LINKS_PRESENT": {
+        "confidence": "Heuristic",
+        "definition": "The page declares rel=\"next\" or rel=\"prev\" link elements, which mark it as one part of a series — a blog archive or news listing split across several pages.",
+        "fix": "No action needed. If you want to be thorough, confirm the pages this markup points to are reachable and are not blocked by robots.txt or a noindex setting.",
+        "good_vs_bad": {
+            "bad": "The same markup points at page 3, which is blocked by robots.txt so nobody can follow the series.",
+            "good": "Page 2 of your news archive declares rel=\"prev\" to page 1 and rel=\"next\" to page 3, and every one of those pages loads."
+        },
+        "how_it_can_mislead": "Evidence tier: Heuristic. This is purely informational — it makes markup visible and is deliberately not scored — so the only way it misleads is by looking like a task. A correct-looking-but-wrong response is stripping the tags out to make the list shorter, which changes nothing for search and can break other tools that read them.",
+        "impact": "There is no impact and TalkingToad scores this at zero. Google announced in 2019 that it no longer uses these tags for indexing, so having them neither helps nor harms. They are still harmless and mildly useful to other software, so this is not a suggestion to remove them.",
+        "mission_impact": "Nothing to do here; we are simply telling you this markup exists.",
+        "title": "Pagination markup present — for information only"
+    },
+    "PARA_TOO_LONG": {
+        "confidence": "Heuristic",
+        "definition": "At least one paragraph on this page runs over 150 words. The check counts paragraphs in the page's own body text, not navigation or footers.",
+        "fix": "Break long passages into paragraphs of roughly 50 to 100 words, one idea each, and use bullet lists where you are making several points. In WordPress, press Enter for a new paragraph block rather than Shift+Enter.",
+        "good_vs_bad": {
+            "bad": "The same information arrives as one 220-word block with the eligibility rule in the middle.",
+            "good": "The eligibility section runs as three short paragraphs of about 60 words, one idea each."
+        },
+        "how_it_can_mislead": "Evidence tier: Heuristic. The 150-word line is ours and no standard sets a paragraph length; the count also depends on how the page marks up its text, so a passage broken with line breaks rather than paragraph tags can register as one enormous paragraph. A correct-looking-but-wrong result is a well-structured page reported for long paragraphs purely because its editor used soft line breaks throughout.",
+        "impact": "Long paragraphs are difficult to scan on a small screen, so a reader looking for 'am I eligible' or 'how do I book' may not find the sentence that answers it. AI assistants that quote pages also work in passages, and a single dense block makes it less likely the relevant sentence is pulled out cleanly. This is a readability opinion, not a ranking claim, and is scored low.",
+        "mission_impact": "Dense blocks of text are hard to read on a phone, and readers skim past the point you are making.",
+        "title": "Some paragraphs are very long"
+    },
+    "PDF_TOO_LARGE": {
+        "confidence": "Heuristic",
+        "definition": "A PDF linked from your site is over 10 MB, measured from the file size the server reports. Nothing about the document's content is examined — only its weight.",
+        "fix": "Compress the file before uploading. Use Acrobat's Reduce File Size, or a free tool such as smallpdf.com, and lower the resolution of embedded photographs; consider splitting a very long report into sections.",
+        "good_vs_bad": {
+            "bad": "It is a 40 MB PDF because every photograph was placed at full camera resolution.",
+            "good": "Your 2025 annual report is a 3 MB PDF that opens in a few seconds on a phone."
+        },
+        "how_it_can_mislead": "Evidence tier: Heuristic. The 10 MB line is ours — no standard or search engine publishes a PDF size limit — and it reflects what is reasonable to ask of someone on a mobile connection. A correct-looking-but-wrong result is a high-resolution map or print-ready poster flagged as a problem when large is exactly what it needs to be; equally, a 9 MB file passes while being just as slow.",
+        "impact": "Large PDFs are slow to download on mobile data and can cost the reader real money on a limited plan. Many people abandon the download before it finishes, so the report you worked hardest on is the one least read. Search engines may only partly index very large documents, so the text inside is less findable.",
+        "mission_impact": "Supporters on phones may give up before your annual report or programme guide finishes downloading.",
+        "title": "PDF is larger than 10 MB"
+    },
+    "PLACEHOLDER_LINK": {
+        "confidence": "Heuristic",
+        "definition": "A link that reads as a call to action (a button style, or text like Donate, Contact, Sign up) has a placeholder address instead of a real one: its href is '#' or 'javascript:void(0)'. The check skips genuine in-page controls such as accordions and tabs.",
+        "fix": "Set the link's href to its real destination page. In WordPress, edit the button block and fill in the Link field rather than leaving the default '#'; keep '#' only for true in-page controls.",
+        "good_vs_bad": {
+            "bad": "<a class=\"btn\" href=\"#\">Donate</a>, which only navigates because a script intercepts the click.",
+            "good": "<a class=\"btn\" href=\"/donate\">Donate</a> — the destination is written into the link."
+        },
+        "how_it_can_mislead": "Evidence tier: Heuristic. A href of '#' is perfectly legitimate for a control that opens an accordion or switches a tab, so the check only flags links whose text or styling reads as navigation and skips elements marked as buttons or toggles. A correct-looking-but-wrong result is a styled 'Learn more' toggle that opens a panel being reported as a broken call to action — and the reverse can happen too, where a plain-text 'Donate' link with a placeholder address slips past.",
+        "impact": "AI assistants and automated agents navigate by reading the href value, so a Donate button whose href is '#' is a dead end for them even if JavaScript makes it work for a mouse click. Anyone opening the button in a new tab, or with JavaScript blocked, also goes nowhere. It is the most important button on a nonprofit page failing in the quietest way.",
+        "mission_impact": "Your Donate or Contact button has no real destination, so software following it — and sometimes people — reach nothing.",
+        "title": "Dead call-to-action link"
+    },
+    "PRODUCT_REVIEW_SCHEMA_MISSING": {
+        "confidence": "Reasonable proxy",
+        "definition": "This page has Product structured data, but the Product block carries neither a review nor an aggregateRating. No rating information is exposed to search engines or AI systems.",
+        "fix": "Add review or aggregateRating to the Product structured data — but only where you hold genuine, verifiable ratings, and make sure the numbers match reviews a visitor can actually see. This is usually a developer or plugin schema-template change.",
+        "good_vs_bad": {
+            "bad": "A Product block with a name and a price and no rating markup, on a page carrying twelve visible participant reviews.",
+            "good": "A workshop's Product block with aggregateRating giving a rating value and the number of reviews, matching the testimonials shown on the page."
+        },
+        "how_it_can_mislead": "Evidence tier: Reasonable proxy. This fires only where Product schema is already present, so it targets incomplete markup rather than nagging every page — a programme page with no Product block is silent even if it is effectively a product. The obvious wrong response is to invent ratings; fabricated ratings violate Google's guidelines and can cost you rich results entirely. The correct-looking-but-wrong result is a block that passes with an aggregateRating that no visible review on the page supports.",
+        "impact": "Star ratings in search results and the trust signals AI systems weigh both come from rating markup. A Product block without it describes the thing and never rates it, so that eligibility goes unused. This matters most on paid training and ticketed events, where a prospective attendee is deciding between options.",
+        "mission_impact": "A page describing something you sell — a training course, a ticketed workshop — declares it in machine-readable form but never says anyone rated it.",
+        "title": "Product markup carries no rating"
+    },
+    "PROMOTIONAL_CONTENT_INTERRUPTS": {
+        "confidence": "Heuristic",
+        "definition": "An opt-in AI review of this page's opening content judged that more than one mid-article section is promotional rather than informational — an appeal, a campaign pitch or a call to action sitting between sections of the argument.",
+        "fix": "Move calls to action and campaign pitches to the end of the article or into a sidebar, so the body reads as one continuous argument. In the WordPress editor, drag the appeal block below the final section.",
+        "good_vs_bad": {
+            "bad": "Two paragraphs on recognising burnout, then a full-width 'Give $50 today' block, then the rest of the explanation.",
+            "good": "The article runs uninterrupted, with the donation appeal at the end and a standing appeal in the sidebar."
+        },
+        "how_it_can_mislead": "Evidence tier: Heuristic. This is a language judgement made by a language model over roughly the first thousand words (the text sent to the model is cut at 6,000 characters), and it misfires in both directions: a section that legitimately describes your fundraising work can be classed as promotional, and a smoothly written appeal can read as informational and be missed. The check is opt-in and costs one AI call. The correct-looking-but-wrong result is a clean verdict on a page whose appeals all sit past the opening the model reads.",
+        "impact": "A passage lifted for an AI answer is taken from its surroundings without the visual cues that tell a human reader 'this is an ad'. A fundraising block wedged between two explanatory sections can be excerpted as though it were the next paragraph of the explanation. It also interrupts a reader who came for the information.",
+        "mission_impact": "A donate box dropped into the middle of an article about grief can be lifted out as though it were part of the explanation.",
+        "title": "Donation appeals interrupt the article"
+    },
+    "QUERY_COVERAGE_WEAK": {
+        "confidence": "Heuristic",
+        "definition": "The main topic words from the page's H1 — its top heading — are under-represented in the first 200 words and absent from the section headings. The page announces a subject and then largely stops using its language.",
+        "fix": "Use the language of your H1 naturally in the opening paragraph and in at least one section heading — the words a visitor would actually type. Edit both in the WordPress page editor; do not repeat the phrase mechanically.",
+        "good_vs_bad": {
+            "bad": "H1 'Family counselling in Vancouver'; the page then talks only about 'our approach', 'the work' and 'sessions'.",
+            "good": "H1 'Family counselling in Vancouver'; the opening paragraph and an H2 both use the phrase family counselling."
+        },
+        "how_it_can_mislead": "Evidence tier: Heuristic. This is a word-overlap proxy, and TalkingToad's own — it is easily fooled by good writing that uses synonyms deliberately, so a page consistently saying 'family therapy' where the H1 says 'family counselling' is flagged for a difference no reader would notice. The correct-looking-but-wrong result is the reverse: a thin page that repeats its H1 phrase mechanically in the intro and one heading passes cleanly while covering the topic barely at all.",
+        "impact": "Search and AI retrieval systems score a page by how closely its content matches what someone asked for. If the language of your own title does not appear where those systems look first, the page can be skipped in favour of one that says the words plainly. Writing naturally in the reader's vocabulary usually fixes this without any keyword stuffing.",
+        "mission_impact": "A page titled 'Family counselling' that never uses those words again may not be matched to someone searching for exactly that.",
+        "title": "The page's own topic words barely appear"
+    },
+    "QUOTATIONS_MISSING": {
+        "confidence": "Heuristic",
+        "definition": "This page runs to 500 words or more and contains no direct quotations from named sources: no block quotes, and no attribution patterns such as 'according to Dr Lee' or 'the 2025 review stated'.",
+        "fix": "Add one or two genuine quotes with names and roles attached, using the WordPress Quote block for longer ones. Attribute plainly: 'According to Dr Lee…', 'The 2025 programme evaluation found…'.",
+        "good_vs_bad": {
+            "bad": "A 900-word page on the programme's results with no named voice anywhere in it.",
+            "good": "'Most families see a change within six sessions,' says Dr Amrit Lee, clinical director — set as a block quote."
+        },
+        "how_it_can_mislead": "Evidence tier: Heuristic. The evidence is one study on a research corpus rather than a statement from any engine operator, and the 500-word trigger is TalkingToad's own. The check counts block quotes and attribution phrasing, so it cannot tell a substantive quote from a decorative one — the correct-looking-but-wrong result is a page that passes on a pull-quote repeating its own headline. It also misses real quotations formatted as ordinary paragraphs with no attribution phrase.",
+        "impact": "A quoted, attributed statement is a self-contained unit that can be excerpted without distortion, which is what both journalists and AI systems look for. Research on generative engines found that adding quotations from named sources was among the changes that raised a page's visibility. For a nonprofit the quotes are usually already available — a programme lead, a partner agency, a published evaluation.",
+        "mission_impact": "A page with no quoted voice — a clinician, a participant, a report — gives an AI answer nothing crisp to lift and attribute to you.",
+        "title": "A long page quotes nobody"
+    },
+    "RAW_HTML_JS_DEPENDENT": {
+        "confidence": "Established",
+        "definition": "The HTML your server sends for this page looks like a JavaScript app shell — a nearly empty container with a root element and scripts — and its visible text is under 5% of the page. All the content is built by scripts after the page loads in a browser.",
+        "fix": "This needs a developer. Ask them to render the key content on the server or generate it as static HTML — Next.js, Nuxt and SvelteKit all support this directly — so the important text is in the response before any script runs.",
+        "good_vs_bad": {
+            "bad": "Viewing the page source shows an empty container div, a few script tags, and no readable words at all.",
+            "good": "Viewing the page source shows your headings and paragraphs as plain HTML text."
+        },
+        "how_it_can_mislead": "Evidence tier: Established. Google documents that content present only after JavaScript is absent from the served HTML — that part is not in dispute; the 5% cut-off is TalkingToad's, and the check needs both conditions — the shell shape and the low text ratio — so a text-light page that is not an app shell is not flagged. The false positive is a page that is legitimately a shell, such as an embedded booking application, where nobody needs the content cited. The correct-looking-but-wrong result is a page just above the threshold: enough boilerplate text in the source to pass, with every meaningful word still arriving from a script.",
+        "impact": "Crawlers such as GPTBot and ClaudeBot may not execute JavaScript at all. When they do not, they see the empty shell and can extract nothing: no programme description, no contact details, nothing to cite. Search engines render eventually, on a delayed second pass, so even there the page is slower to be understood than a page that ships its content as HTML.",
+        "mission_impact": "An AI crawler that does not run scripts sees a blank page where your services, hours and contact details should be.",
+        "title": "The page is empty without JavaScript"
+    },
+    "REDIRECT_301": {
+        "confidence": "Established",
+        "definition": "This URL answers with a 301 Permanent Redirect, sending visitors and search engines on to a different address. A 301 is the standard way of saying 'this page has moved for good, use the new address'.",
+        "fix": "Where the old address appears in your own links, update it to the destination. Leave the redirect itself in place so outside links keep working; removing a server redirect needs your developer.",
+        "good_vs_bad": {
+            "bad": "It links to /counselling, which 301-redirects to /programs/counselling/ on every single click.",
+            "good": "Your newsletter links directly to /programs/counselling/, the address the server actually serves."
+        },
+        "how_it_can_mislead": "Evidence tier: Established. The redirect is the server's own answer and Google documents 301 as the permanent-move signal, so the reading is reliable — but a 301 is often exactly what you want, and reporting it is not a recommendation to remove it. A correct-looking-but-wrong response is deleting a deliberate redirect that keeps an old campaign address alive, which would break every link on last year's printed flyers.",
+        "impact": "Nothing is broken — search engines handle 301s well and pass the original page's standing to the new address. The cost is one extra round trip for every visitor who arrives at the old address, and a small amount of confusion when your own printed materials or emails still quote the old URL. This is housekeeping, not a fault.",
+        "mission_impact": "This address has moved permanently; visitors still arrive, just after one extra step.",
+        "title": "Permanent redirect (301)"
+    },
+    "REDIRECT_302": {
+        "confidence": "Established",
+        "definition": "This URL answers with a 302 Temporary Redirect. A 302 tells search engines that the move may be reversed, so they should keep indexing the original address rather than the destination.",
+        "fix": "Decide whether the move is permanent. If it is, change the rule to a 301 — in WordPress the Redirection plugin has a status setting on each rule; if the redirect comes from the server or theme instead, this needs your developer.",
+        "good_vs_bad": {
+            "bad": "/counselling 302-redirects to /programs/counselling/ even though the old address will never be used again — that should be a 301.",
+            "good": "/appeal 302-redirects to /appeal/winter-2026 while that campaign runs, and will point elsewhere next year."
+        },
+        "how_it_can_mislead": "Evidence tier: Established. The status code is definite and Google documents what each one signals, but only you know whether the move is temporary, so the check cannot tell a correct 302 from a mistaken one. A correct-looking-but-wrong response is converting a genuinely seasonal redirect to a 301, which then sticks in search engines long after the campaign ends.",
+        "impact": "If the move really is temporary — a campaign page pointing at this year's appeal, say — a 302 is correct. If the move is permanent and a 302 was used by mistake, search engines keep showing the old address and the new page builds up less standing of its own. This is a common accident, because some plugins default to 302.",
+        "mission_impact": "If this move is actually permanent, search engines are keeping the old address and not the new one.",
+        "title": "Temporary redirect (302) — check it is meant to be"
+    },
+    "REDIRECT_CASE_NORMALISE": {
+        "confidence": "Heuristic",
+        "definition": "A link uses capital letters in the address, such as /About-Us, and the server redirects it to the lowercase version, /about-us. Web servers and content systems normally do this on their own.",
+        "fix": "Optional. In WordPress, check your menu items and in-page links for capital letters in the address and lower-case them; no server change is needed.",
+        "good_vs_bad": {
+            "bad": "The footer links to /About-Us, so every visitor is redirected to /about-us first.",
+            "good": "The footer links to /about-us, which loads directly."
+        },
+        "how_it_can_mislead": "Evidence tier: Heuristic. This is our own judgement that a case-only redirect is routine server behaviour, with no published source behind it; the check requires the two addresses to be identical apart from letter case in the path, so anything else is reported elsewhere. A correct-looking-but-wrong reading is spending an afternoon on these while a genuine redirect chain or a broken donate button sits further down the list.",
+        "impact": "No visible impact, and TalkingToad scores this at zero on purpose. One extra request happens before the page loads. It is listed so a redirect is never invisible, not because it needs fixing.",
+        "mission_impact": "Nothing is wrong here; your server is correcting an uppercase address for you.",
+        "title": "Capitalisation redirect — handled automatically"
+    },
+    "REDIRECT_CHAIN": {
+        "confidence": "Established",
+        "definition": "This address redirects to another address which redirects again, so there is at least one real stop in between before the visitor arrives. TalkingToad counts only genuine intermediate stops, ignoring hops that are just the same address with or without a trailing slash.",
+        "fix": "Point the first rule straight at the final address so the middle stop disappears. In WordPress, edit the rule in your redirect plugin and change its target; server-level rules need your developer.",
+        "good_vs_bad": {
+            "bad": "/give redirects to /donate-now, which redirects to /donate/ — two hops for every visitor.",
+            "good": "/give redirects once, straight to /donate/."
+        },
+        "how_it_can_mislead": "Evidence tier: Established. Google advises keeping chains short but publishes no maximum hop count, so the point at which we report — one real intermediate stop or more — is our choice, not a standard. A correct-looking-but-wrong result is the version this check used to produce, where a plain /page to /page/ trailing-slash redirect counted as a hop and fired on nearly every WordPress page; those are now filtered out.",
+        "impact": "Every extra hop is another request before anything appears on screen, which is most noticeable on a phone on mobile data. Search engines follow chains but advise keeping them short, and long chains cost crawl effort that could have gone to your other pages. A chain usually means two redirect rules were added at different times and never merged.",
+        "mission_impact": "Visitors take a detour through two or more addresses before your page appears.",
+        "title": "Redirect chain — more hops than needed"
+    },
+    "REDIRECT_LOOP": {
+        "confidence": "Established",
+        "definition": "This address redirects to another, which eventually redirects back to it — A to B and back to A, or a longer ring. A browser follows a limited number of hops and then gives up, so the page is never reached.",
+        "fix": "This needs your developer. Ask them to look for two conflicting rules — usually in a redirect plugin, the site's permalink settings, or the server configuration — where each rule sends traffic to the other.",
+        "good_vs_bad": {
+            "bad": "/donate redirects to /give, and /give redirects back to /donate, forever.",
+            "good": "/donate redirects once to /donate/ and stops there."
+        },
+        "how_it_can_mislead": "Evidence tier: Established. The internet standard requires a client to break redirect cycles, and we stop after ten hops, so what we call a loop is genuinely unretrievable at scan time — but a rule added by a plugin and then removed can produce a loop that no longer exists by the time you look. A correct-looking-but-wrong result is a loop reported on a page that a temporary maintenance or membership rule was redirecting during the scan; re-check the address in a browser first.",
+        "impact": "The page is completely unreachable. Browsers show 'This page isn't working — too many redirects'. Search engines cannot index it, so it disappears from search results entirely. If the looping address is a donation or programme page, every link to it from an email, a poster, or another site is dead. This is the most urgent kind of finding in this category.",
+        "mission_impact": "This page is stuck in a circle and will never open for a supporter or a search engine.",
+        "title": "Redirect loop — this page can never load"
+    },
+    "REDIRECT_TRAILING_SLASH": {
+        "confidence": "Heuristic",
+        "definition": "A link points to an address without a trailing slash, such as /about, and the server redirects it to /about/ (or the other way round). WordPress and most other systems do this automatically, and visitors never notice.",
+        "fix": "Optional. If you want to remove the extra step, copy the address exactly as it appears in the browser bar — trailing slash included — into your WordPress menus and in-page links.",
+        "good_vs_bad": {
+            "bad": "Your menu links to /about, so every visitor is bounced to /about/ first.",
+            "good": "Your menu links to /about/, exactly as it appears in the address bar after loading."
+        },
+        "how_it_can_mislead": "Evidence tier: Heuristic. This is our own judgement that a slash-only redirect is routine rather than a defect, and no source is claimed for it; the check compares the two addresses ignoring the final slash, so a redirect that also changes something else is reported under a different code instead. A correct-looking-but-wrong reading is treating a page of these as a real problem list — a version of this check that counted the origin address as a hop used to fire a scored redirect finding on nearly every WordPress page.",
+        "impact": "There is no visible impact and TalkingToad deliberately scores this at zero. The only cost is one extra request before the page loads, measured in milliseconds. It is reported so the redirect is visible if you are tracing why a page takes an extra step, not because it is a fault.",
+        "mission_impact": "Nothing is wrong here; your site is quietly tidying an address for you.",
+        "title": "Trailing-slash redirect — handled automatically"
+    },
+    "ROBOTS_BLOCKED": {
+        "confidence": "Established",
+        "definition": "Your site's robots.txt file — a small text file at yoursite.org/robots.txt that tells crawlers where they may go — carries a rule that forbids fetching this address. We found the page by following a link but were not allowed to read it.",
+        "fix": "Open yoursite.org/robots.txt and review the Disallow lines. If a rule is too broad, narrow it — and test the change in Google Search Console's robots.txt tester, because one careless line can hide the whole site. This usually needs your developer.",
+        "good_vs_bad": {
+            "bad": "robots.txt contains 'Disallow: /programs' left over from a redesign, hiding every programme page.",
+            "good": "robots.txt disallows /wp-admin/ and nothing else, so your programme and donate pages are all crawlable."
+        },
+        "how_it_can_mislead": "Evidence tier: Established. The rule and its meaning come from an internet standard, and we read your own file, so the detection is exact — but it cannot know whether the block is deliberate. A correct-looking-but-wrong result is a staging or internal tool flagged as critical when hiding it is entirely correct; judge each one by whether you want that page in Google.",
+        "impact": "Search engines that honour the file will not crawl the page, so it will not appear in search results. This is correct for admin screens and private areas, and TalkingToad already ignores addresses that are normally blocked on purpose, such as carts, checkouts and search results. When it fires on a real content page, it usually means one broad rule is hiding more than anyone intended. Note that blocking crawling does not remove a page already in the index — a noindex directive does that.",
+        "mission_impact": "You are telling search engines not to look at this page, so it will not be found in search.",
+        "title": "Blocked by robots.txt"
+    },
+    "SCHEMA_DEPRECATED_TYPE": {
+        "confidence": "Established",
+        "definition": "This page's structured data declares a schema.org type that schema.org has marked as superseded. Superseded types still exist in the vocabulary but have a modern replacement, and consumers are free to ignore them.",
+        "fix": "Look up the flagged type on schema.org, find the replacement it names, and update the type in your structured data. In WordPress this is usually a schema-template setting in your SEO plugin, or a developer edit if the block comes from a custom snippet.",
+        "good_vs_bad": {
+            "bad": "The page declares a type schema.org lists as superseded, whose replacement it never uses.",
+            "good": "The page declares the current schema.org type that matches its content, with no superseded labels in the block."
+        },
+        "how_it_can_mislead": "Evidence tier: Established. schema.org itself marks which types are superseded, so the finding is a lookup rather than an opinion — but a lookup against a list that changes over time, so a type retired since TalkingToad's list was updated will not be flagged. That is the false negative. The correct-looking-but-wrong result is a page that clears this check while its type, though current, describes the page wrongly — which is a different check entirely.",
+        "impact": "Nothing breaks immediately — many parsers still recognise old types. But the point of structured data is to be unambiguous, and a retired type is a label whose meaning is no longer guaranteed. Replacing it with the current equivalent is normally a one-word change and removes the ambiguity for good.",
+        "mission_impact": "Your machine-readable markup uses a label schema.org has superseded, so a search engine is under no obligation to understand it.",
+        "title": "The page uses a retired schema type"
+    },
+    "SCHEMA_ORG_MISSING": {
+        "confidence": "Reasonable proxy",
+        "definition": "The homepage has no Organization (or LocalBusiness, or NGO) structured data — the block that states your name, website, logo and contact points in machine-readable form. This is the identity anchor for the entire site.",
+        "fix": "Add an Organization or NGO block to the homepage with your name, URL, logo and contact point. TalkingToad's Entity Schema Factory can generate one, or you can fill in your SEO plugin's Site representation settings and let it publish the block for you.",
+        "good_vs_bad": {
+            "bad": "The homepage carries only Article or WebPage schema, or no structured data at all.",
+            "good": "The homepage carries an Organization block (or NGO, or a LocalBusiness subtype) with your real name, URL, logo and contact point."
+        },
+        "how_it_can_mislead": "Evidence tier: Reasonable proxy. The check accepts any type in the Organization family, including NGO and the LocalBusiness subtypes, so it will not nag a correctly typed charity. A homepage that describes the organisation beautifully in visible prose still fires — the absence of markup is the point, not the absence of information, and some readers find that unfair. The correct-looking-but-wrong result is a homepage that passes on an Organization block full of placeholder or outdated details, since presence is what is measured here, not accuracy.",
+        "impact": "Search engines and AI systems build an entity profile of your organisation, and Organization markup on the homepage is where that profile normally starts. Without it they must infer your identity from surrounding text, which is less reliable and more easily confused with a similarly named organisation. It also weakens your chance of being named correctly when an AI answer cites your work.",
+        "mission_impact": "Your homepage carries no machine-readable statement of your organisation's identity, so AI systems have to infer who you are from prose.",
+        "title": "The homepage does not say who you are"
+    },
+    "SCHEMA_TYPE_CONFLICT": {
+        "confidence": "Reasonable proxy",
+        "definition": "This page declares multiple structured-data types that contradict each other — marking the same content as both an Article and a Product, for example — with no nesting to say how they relate.",
+        "fix": "Consolidate the markup into a single coherent structure. If the page really does contain distinct entities, nest them or use a graph rather than listing flat conflicting types — usually a developer or SEO-plugin template change. Validate the result at validator.schema.org.",
+        "good_vs_bad": {
+            "bad": "The same page content declared flatly as both Article and Product, side by side, with nothing saying which is which.",
+            "good": "An Article block with an author nested inside it as a Person — one clear structure, related parts."
+        },
+        "how_it_can_mislead": "Evidence tier: Reasonable proxy. Whether two types genuinely conflict is a judgement, and TalkingToad makes it from a list of pairings it treats as incompatible — a legitimate combination it has not seen can be flagged, and an odd combination it does not know about goes unmentioned. The correct-looking-but-wrong result is a page that passes because its types are technically compatible while neither describes what the page actually is.",
+        "impact": "Contradictory declarations leave a consumer nothing to act on. A search engine or AI system reading the page cannot tell which type applies to which content, so it may pick one arbitrarily, misclassify the page, or ignore the markup altogether. Where a page really does describe several things, there is a correct way to express that.",
+        "mission_impact": "Your page claims to be two incompatible kinds of thing at once, so a machine has no basis for choosing between them.",
+        "title": "The page declares conflicting schema types"
+    },
+    "SCHEMA_TYPE_MISMATCH": {
+        "confidence": "Reasonable proxy",
+        "definition": "This page has structured data, but the type it declares does not match what TalkingToad judges the page to be — a blog post marked as a Product, say, or a team member page marked as an Article.",
+        "fix": "Decide what the page really is — article, service, person, event, FAQ — and set the matching type. In WordPress, most SEO plugins have a per-page schema setting (Yoast: the Schema tab in the SEO box; Rank Math: the Schema tab) where you pick the type.",
+        "good_vs_bad": {
+            "bad": "A counsellor's bio page declares Article, so the person is never identified as a person.",
+            "good": "A counsellor's bio page declares Person; a workshop page declares Event; a blog post declares BlogPosting."
+        },
+        "how_it_can_mislead": "Evidence tier: Reasonable proxy. TalkingToad infers what kind of page this is from its content and URL, and that inference can simply be wrong — which is why this is reported rather than asserted. A hybrid page (a programme page that is also a story) will often be flagged for a type that is perfectly defensible. The correct-looking-but-wrong result is a mismatch that goes unreported because the inference happened to agree with the wrong markup.",
+        "impact": "The declared type is the strongest hint a machine gets about what a page is. When it is wrong, summaries and citations can be wrong in kind, not just in detail: a counsellor's bio described as an article about counselling, an event page treated as a general web page and its date ignored. Correcting the type is usually a single setting.",
+        "mission_impact": "A staff bio labelled as an article, or a service page labelled as a product, teaches AI systems the wrong thing about your site.",
+        "title": "Schema type does not match the page"
+    },
+    "SCHEMA_VISIBLE_MISMATCH": {
+        "confidence": "Established",
+        "definition": "One or more values in this page's structured data — a headline, a name, an FAQ answer, an address — do not appear anywhere in the page's visible text. Google requires markup to reflect the content the visitor actually sees.",
+        "fix": "For each flagged field, either add the declared value to the visible page content, or change the structured data to match what the page shows. In WordPress, compare your SEO plugin's schema settings for the page against the actual page text and bring one into line with the other.",
+        "good_vs_bad": {
+            "bad": "The markup's headline reads 'Best Therapy in Vancouver' and no such phrase appears anywhere on the page.",
+            "good": "The markup's headline reads 'Grief Counselling Services' and the page's H1 reads 'Grief Counselling Services'."
+        },
+        "how_it_can_mislead": "Evidence tier: Established. Google states plainly that markup must match visible content, so the rule is not TalkingToad's invention — but the comparison is text against text, and a value shown on the page inside an image, a PDF, or a script-loaded block counts as absent. That is the false positive worth checking first. The check ignores fields that are missing entirely (a different finding), so the correct-looking-but-wrong result is a page reported clean because the offending field was dropped rather than corrected.",
+        "impact": "Structured data is meant to restate what is on the page, not to add to it. A value that appears only in the markup reads as an attempt to tell machines something different from what people are told, which is the definition of the problem Google's structured-data policies address. Pages doing it risk losing rich-result eligibility, and AI systems that compare markup against page text may discount the page.",
+        "mission_impact": "Your markup tells search engines something your visitors cannot see, which Google treats as a policy violation.",
+        "title": "Schema claims text the page never shows"
+    },
+    "SECTION_CROSS_REFERENCES": {
+        "confidence": "Heuristic",
+        "definition": "The page contains backward-reference phrases such as 'as mentioned above', 'as discussed earlier' or 'the above approach'. Each one ties a passage to text that came before it.",
+        "fix": "Replace the reference with the thing it refers to. Instead of 'as mentioned above, this reduces the wait', write 'the group intake process reduces the wait to about two weeks'. This is editing in the WordPress page editor.",
+        "good_vs_bad": {
+            "bad": "'As mentioned above, the same rate applies here.'",
+            "good": "'Sliding-scale fees start at $40 per session, and the same rate applies to couples work.'"
+        },
+        "how_it_can_mislead": "Evidence tier: Heuristic. This is a writing observation of TalkingToad's own, and it is deliberately scored low: back-references are perfectly good prose for someone reading the page from the top, which most of your visitors do. The check matches phrases, so it flags every instance regardless of whether the passage is one anyone would quote. The correct-looking-but-wrong result is a page that passes while its sections still depend on each other through pronouns the phrase list does not catch.",
+        "impact": "AI systems retrieve and quote individual passages, not whole pages. A passage that points backwards cannot be understood on its own, so it is a poor candidate for quoting — and if it is quoted anyway, the reader gets a sentence referring to something they were never shown. Naming the thing instead costs a few words and helps skimming readers too.",
+        "mission_impact": "'As mentioned above' makes sense to someone reading top to bottom and nonsense to anyone shown only that paragraph.",
+        "title": "Sections refer back to earlier text"
+    },
+    "SECTION_VAGUE_OPENER": {
+        "confidence": "Heuristic",
+        "definition": "One or more H2 or H3 sections begin with a vague pointing word — 'This method…', 'It allows…', 'These sessions…' — instead of naming the subject. The section relies on the heading or the text above it to say what is being discussed.",
+        "fix": "Rewrite the first sentence of each flagged section to name its subject explicitly, then carry on as before. Edit the sections in the WordPress page editor.",
+        "good_vs_bad": {
+            "bad": "'This runs on Tuesday evenings and is open to anyone over 18.'",
+            "good": "'Our eight-week grief group meets on Tuesday evenings and is open to anyone over 18.'"
+        },
+        "how_it_can_mislead": "Evidence tier: Heuristic. TalkingToad's own writing observation: a section opening on 'this' or 'these' with no noun nearby reads as incomplete when excerpted. It matches openings, so it flags cases where the heading directly above supplies the subject and any reader would follow — a real false positive. The correct-looking-but-wrong result is a section that passes because it opens with a noun, while the rest of the passage is full of unexplained pronouns.",
+        "impact": "AI systems extract sections as standalone passages, and a passage that never names its own subject cannot be quoted usefully. Human skimmers who jump straight to a heading have the same problem. Naming the subject in the first sentence costs a few words and makes each section self-contained.",
+        "mission_impact": "A section that begins 'This programme helps…' is unquotable on its own, because nothing in it says which programme.",
+        "title": "Sections open without naming their subject"
+    },
+    "SELF_REFERENCING_UTM": {
+        "confidence": "Established",
+        "definition": "A link on this page points to another page on your own site and carries utm_ campaign parameters — the ?utm_source=… style tags on the end of a web address. UTM tags are meant for links arriving from somewhere else: an email, an ad, a social post.",
+        "fix": "Edit the link to point at the clean internal address with no utm_ parameters — in WordPress, open the page or the menu item and re-enter the plain URL. Keep UTM tags for links coming from outside: emails, ads, and social posts.",
+        "good_vs_bad": {
+            "bad": "It links to /donate?utm_source=website&utm_campaign=spring — a tag copied from the newsletter version of the link.",
+            "good": "The Donate button on your programs page links to /donate, with nothing after it."
+        },
+        "how_it_can_mislead": "Evidence tier: Established. Google documents that campaign parameters start a new attributed session, so the mechanism is not in doubt. A false positive is a link that only looks internal — a tagged link to a donation processor or event platform on a subdomain you treat as part of the site, where the tag is doing its job. A false negative is a tagged link added by JavaScript or living in a page the crawl did not reach. The correct-looking-but-wrong result is a page reported clean while its tagged links sit in a menu or footer widget rendered outside the page HTML the crawl saw.",
+        "impact": "When someone clicks an internal link carrying UTM tags, analytics ends the current session and starts a new one attributed to that campaign. So a visitor who found you through a Google search and then clicked your tagged \"Donate\" button is recorded as two visits, and the donation is credited to the fake campaign rather than to search. Your genuine sources — organic search, referrals from partner sites — are under-counted as a result.",
+        "mission_impact": "A link between your own pages rewrites where the visitor appears to have come from, scrambling your traffic reports.",
+        "title": "Internal link carries campaign tags"
+    },
+    "SEMANTIC_DENSITY_LOW": {
+        "confidence": "Heuristic",
+        "definition": "The visible text on this page is less than 10% of the HTML the server sends. The rest is scripts, styles and structural markup — usually the output of a page builder.",
+        "fix": "Ask your developer or theme maintainer to move inline CSS and JavaScript into external files and to reduce deeply nested container markup. If the page is otherwise strong, this is a low priority.",
+        "good_vs_bad": {
+            "bad": "A page where the visible text is a few kilobytes inside several hundred kilobytes of inline styles and nested containers.",
+            "good": "A programme page whose HTML is mostly the words a visitor reads, with styles and scripts in separate files."
+        },
+        "how_it_can_mislead": "Evidence tier: Heuristic. The rule and the 10% figure are both TalkingToad's own — no vendor publishes a text-to-HTML target. It is a crude proxy that penalises any page built with a modern page builder regardless of how good its content is, which is exactly why it is scored low. The correct-looking-but-wrong result is a nearly empty page that passes with flying colours because it has very little markup as well as very little to say.",
+        "impact": "A retrieval system has to pull a small amount of readable text out of a large document. That costs it more to process and raises the chance that surrounding markup obscures the context of what it does find. This is a mild signal, not a fault: a heavy page with good content still works.",
+        "mission_impact": "Your readable words are a thin layer on a very large page, which makes the content harder for retrieval systems to find and quote.",
+        "title": "Far more code on the page than text"
+    },
+    "SITEMAP_MISSING": {
+        "confidence": "Established",
+        "definition": "No XML sitemap was found for this site. A sitemap is a machine-readable list of your pages that you publish for search engines. The scan looked at the standard address /sitemap.xml and at any Sitemap: line in your robots.txt file, and found nothing usable at either.",
+        "fix": "Publish an XML sitemap and name it in robots.txt with a Sitemap: line, then submit it in Google Search Console. In WordPress, Yoast SEO and Rank Math each generate one automatically once enabled; check the plugin's sitemap setting and open the address it reports before assuming there is none.",
+        "good_vs_bad": {
+            "bad": "/sitemap.xml returns a 404 and robots.txt has no Sitemap: line, so nothing advertises your page list.",
+            "good": "https://livingsystems.ca/sitemap.xml lists every page, and robots.txt names it with a Sitemap: line."
+        },
+        "how_it_can_mislead": "Evidence tier: Established. Only two places are checked: the standard address and the Sitemap: lines in robots.txt. A false positive is a real sitemap published at an unusual address, such as /sitemap_index.xml or /wp-sitemap.xml, that robots.txt never mentions; the site is fine and the finding is not. A momentary timeout while fetching the file produces the same result. A correct-looking-but-wrong outcome would be building a second sitemap in response, leaving two lists that disagree.",
+        "impact": "A sitemap lets a site tell crawlers which URLs exist, and it is the standard way to have pages discovered. Without one, search engines find pages only by following links from other pages. A new event page, or a programme page you removed from the menu last year, can stay invisible in search simply because nothing points at it.",
+        "mission_impact": "Search engines have to stumble across your pages by following links, so a page nothing links to may never be found.",
+        "title": "No XML sitemap found"
+    },
+    "SOCIAL_PREVIEW_METADATA_MISSING": {
+        "confidence": "Established",
+        "definition": "One or more social-preview tags are missing: og:title, og:description, og:image, or twitter:card. These Open Graph tags declare the title, description and picture a platform uses when someone shares your link. The finding lists exactly which ones are absent.",
+        "fix": "Fill in og:title, og:description, og:image and twitter:card. In WordPress, one setting usually populates all of them: open Yoast SEO or Rank Math on the page and use the Social tab to set a share image of at least 1200 by 630 pixels and a share title and description.",
+        "good_vs_bad": {
+            "bad": "The same link posts as a bare grey box reading \"livingsystems.ca\" with no picture or description.",
+            "good": "A shared donate link shows a photo of the community garden, the headline \"Give to the 2026 Food Programme\", and a one-line summary."
+        },
+        "how_it_can_mislead": "Evidence tier: Established. The check fires when any one of the four tags is absent, so a page with a good og:title, description and image but no twitter:card is flagged even though most platforms will still render a proper preview by falling back to the Open Graph tags. A correct-looking-but-wrong result is a page that passes because all four tags exist while og:image points at a broken or tiny file, which the check does not open.",
+        "impact": "Open Graph tags tell Facebook, LinkedIn and similar platforms what to show for a shared URL. Without them the platform guesses, and often shows a plain link, a wrong picture pulled from the page, or a menu label as the headline. For a nonprofit whose events and appeals travel by sharing, a preview with no image is a real drop in the number of people who click.",
+        "mission_impact": "When a supporter shares your donate page on Facebook, the post may appear as a bare link with no image.",
+        "title": "Social preview metadata missing"
+    },
+    "STATISTICS_COUNT_LOW": {
+        "confidence": "Heuristic",
+        "definition": "This page runs to 500 words or more and its opening content contains no statistics: no numbers paired with units, no percentages, no dates, no counts. A statistic here means a specific numeric claim such as '412 families in 2025' or 'wait times fell by 23%'.",
+        "fix": "Add real figures from your own reporting — participants served, sessions run, outcomes measured, dates — and put at least one of them in the opening paragraphs. Replace vague claims with the number you already have in your annual report.",
+        "good_vs_bad": {
+            "bad": "'We support many families each year and participants tell us they feel better.'",
+            "good": "'In 2025 we ran 38 grief groups and supported 412 families; 87% of participants reported improved coping at eight weeks.'"
+        },
+        "how_it_can_mislead": "Evidence tier: Heuristic. The 500-word trigger is TalkingToad's own, and the underlying study tested a research corpus rather than your site — no engine operator has confirmed the effect. The check counts number-shaped text, so it cannot tell a meaningful statistic from an incidental one: the correct-looking-but-wrong result is a page that passes because it mentions a phone number and a street address while making no measured claim at all. And a page whose figures all sit past the opening window can be flagged despite being full of data.",
+        "impact": "Specific numbers are concrete, checkable and easy to lift into an answer, which is why research on generative engines found that adding statistics measurably raised a page's visibility. For a nonprofit they also do the work vague language cannot: they make the scale of a programme legible to a donor or a referring professional in one line.",
+        "mission_impact": "'We help many families' is far less quotable — to a funder or an AI answer — than 'we supported 412 families last year'.",
+        "title": "A long page contains no numbers"
+    },
+    "STRUCTURED_ELEMENTS_LOW": {
+        "confidence": "Heuristic",
+        "definition": "This page runs to 500 words or more and contains no lists, tables, or other structured blocks. Every part of it is continuous prose.",
+        "fix": "Convert the parts that are genuinely a sequence or a set — steps, criteria, fees, times — into WordPress list or table blocks. Leave narrative prose as prose.",
+        "good_vs_bad": {
+            "bad": "The same four steps and the fee schedule written as one 200-word paragraph.",
+            "good": "'To refer a client:' followed by a numbered list of four steps, and a small table of session fees."
+        },
+        "how_it_can_mislead": "Evidence tier: Heuristic. The rule and the word-count trigger are TalkingToad's own, and plenty of excellent pages are pure prose by design — a personal story broken into bullet points would be worse, not better. The check counts structured blocks without asking whether the content suits them. The correct-looking-but-wrong result is a page that passes because it carries a single decorative bullet list of social links, while its real procedural content remains one dense paragraph.",
+        "impact": "A list or table marks structure explicitly where a paragraph only implies it, so both readers and extraction systems can lift one item without guessing where it begins and ends. Steps, eligibility criteria, fees and opening times are the content that benefits most; an essay or a story does not need it.",
+        "mission_impact": "Eligibility rules and referral steps written as continuous paragraphs are harder for a tired reader — and an AI system — to pull apart.",
+        "title": "A long page is unbroken prose"
+    },
+    "THIN_CONTENT": {
+        "confidence": "Established",
+        "definition": "The readable body text on this page is under 300 words. Navigation, headers and footers are excluded, so this counts only the page's own content. The check runs only on pages that are open to indexing.",
+        "fix": "Expand the page so it genuinely answers what a visitor came to ask — who the service is for, what happens, what it costs, what to do next. Edit it in WordPress like any other page.",
+        "good_vs_bad": {
+            "bad": "The same page reads 'We offer counselling. Call us to book.' and nothing else.",
+            "good": "The counselling page explains who the service is for, what a session is like, cost, and how to book — around 500 words."
+        },
+        "how_it_can_mislead": "Evidence tier: Established. Google's guidance on substantial content is published, but the 300-word line is ours — Google states there is no minimum word count, and a short page can be complete. A correct-looking-but-wrong result is a contact page or a clear, well-designed hub of links flagged as low quality purely for being brief; ask whether the page answers its question, not whether it hits a number.",
+        "impact": "Google asks that pages cover their topic substantially and completely. A page with a heading and two sentences rarely answers the question that brought someone to it, so it ranks poorly and gives a first-time visitor little reason to trust you. For a nonprofit, the pages that most often come up short are exactly the ones people search for: a programme with no description of who it is for, or an event with a date but no explanation.",
+        "mission_impact": "There is too little on this page for a search engine, or a supporter, to tell what you do.",
+        "title": "Thin content — fewer than 300 words"
+    },
+    "TITLE_DUPLICATE": {
+        "confidence": "Established",
+        "definition": "Two or more pages on this site carry exactly the same title, ignoring capitals and outside spaces. Each page should have a title that says what makes that page different.",
+        "fix": "Rewrite the title of each affected page so it names that page's own subject first, then your organisation: \"Counselling for Anxiety - Living Systems\". In WordPress this is the SEO title field in Yoast or Rank Math on each page's edit screen.",
+        "good_vs_bad": {
+            "bad": "Both the programmes page and the workshops page titled \"Living Systems Counselling Society\".",
+            "good": "\"Family Counselling Programs - Living Systems\" on one page and \"Upcoming Community Workshops - Living Systems\" on the other."
+        },
+        "how_it_can_mislead": "Evidence tier: Established. The comparison covers only the pages this scan actually fetched, so a partial crawl can miss a duplicate that lives on a page it never reached. Pages that name a different page as their canonical, such as archive page 2 pointing back to page 1, are deliberately left out. A correct-looking-but-wrong result is a flag on two event listings that genuinely repeat a series name and are meant to be near-identical, where the duplication is intentional and harmless.",
+        "impact": "Google advises a unique, descriptive title per page so results can be told apart. When the counselling page and the events page both say \"Living Systems Counselling Society\", a searcher scanning results cannot see which one answers their question. Search engines have the same problem, and may show only one of the pages.",
+        "mission_impact": "Two of your pages compete under the same headline, so neither one clearly wins the search a donor or client is doing.",
+        "title": "Duplicate page title"
+    },
+    "TITLE_H1_MISMATCH": {
+        "confidence": "Heuristic",
+        "definition": "The page title, the headline shown in search results, and the H1, the main heading on the page, share no significant words. The site name after a separator such as a dash or a pipe is ignored before comparing, and so are common filler words.",
+        "fix": "Decide which of the two describes the page correctly and rewrite the other so they share the key words. Typically the H1 is the subject and the title adds your organisation: H1 \"Grief Counselling for Families\", title \"Grief Counselling for Families - Living Systems\", set in the SEO title field in Yoast or Rank Math.",
+        "good_vs_bad": {
+            "bad": "Title \"Donate to Living Systems\", H1 \"Our Story\".",
+            "good": "Title \"Grief Counselling for Families - Living Systems\", H1 \"Grief Counselling for Families\"."
+        },
+        "how_it_can_mislead": "Evidence tier: Heuristic. This is our judgement; no source requires a title and an H1 to match, and a deliberate difference can be legitimate. The comparison is word-by-word, so synonyms fail it: title \"Counselling for Families\" beside H1 \"Therapy for Parents and Children\" shares no words and gets flagged although both describe the same page. Before flagging, the scan checks whether the title matches an H2 instead, which catches themes that put the real heading lower down. A correct-looking-but-wrong result is a mismatch fixed by copying the title into the H1, which clears the check and gives the page a heading nobody would write.",
+        "impact": "People click a search result because of its title, then check the heading at the top of the page to confirm they are in the right place. When those two describe different things, the visit often ends there. It usually means one of the two is wrong: the title was written for search and never updated, or the heading is a leftover from an earlier version of the page.",
+        "mission_impact": "Someone clicks your search result expecting one thing and lands on a page headed with something else.",
+        "title": "Title and main heading disagree"
+    },
+    "TITLE_MISSING": {
+        "confidence": "Established",
+        "definition": "This page has no <title> tag in its HTML. The title tag is the clickable headline shown in search results and the text on the browser tab. Every page should have one, and it should be its own.",
+        "fix": "Give the page a clear title of about 30 to 60 characters naming the topic and your organisation. In WordPress, open the page, scroll to the Yoast SEO or Rank Math box and fill in the SEO title field; if that field is filled and the tag is still missing, the theme is dropping it and a developer needs to look.",
+        "good_vs_bad": {
+            "bad": "No <title> tag at all, so the browser tab shows the bare web address.",
+            "good": "<title>Grief Counselling in Vancouver - Living Systems</title>"
+        },
+        "how_it_can_mislead": "Evidence tier: Established. The check reads the HTML the server sends, before any JavaScript runs, and it only looks at pages that are set to be indexed. A false positive is a page whose title is written in by a script after the page loads: your browser tab looks fine, but the tag really is absent from the delivered HTML, and Google may or may not see it. A correct-looking-but-wrong result is a clean scan of a site whose titles are all injected that way, which reads as \"all good\" while search engines see nothing.",
+        "impact": "Google uses the title element as the main source for the headline it shows in search results. With no title, Google writes one itself, usually by grabbing a line of text from the page. That guess is often a navigation label or a fragment, so someone searching for grief counselling may see a result headed \"Home\" and scroll past it.",
+        "mission_impact": "Google has nothing to call this page, so your programme shows up in search under a headline you did not choose.",
+        "title": "Page title missing"
+    },
+    "TITLE_TOO_LONG": {
+        "confidence": "Established",
+        "definition": "The page title is longer than 60 characters. Google publishes no title length limit; it trims titles to the width available on the searcher's screen, and it may rewrite a title at any length.",
+        "fix": "Aim for about 60 characters as a guide, not a rule, and lead with the words that distinguish the page. In WordPress, shorten the SEO title field in Yoast or Rank Math, which shows a preview of how the result will look.",
+        "good_vs_bad": {
+            "bad": "\"Living Systems Counselling Society - Compassionate Support for Families Across Greater Vancouver\" (96 characters).",
+            "good": "\"Grief Counselling for Families - Living Systems\" (47 characters, topic first)."
+        },
+        "how_it_can_mislead": "Evidence tier: Established. The 60-character figure is ours. Google publishes no title length limit; truncation is by pixel width, which varies by device and by the characters used, so a 62-character title of narrow letters may never be cut while a 58-character one in wide capitals is. A correct-looking-but-wrong result is a title trimmed to exactly 60 characters that now ends mid-thought and reads worse than the long version did.",
+        "impact": "When a title runs past the space available, the end is replaced with an ellipsis. That end is often the most distinguishing part, so \"Living Systems Counselling Society - Serving Families in Greater Vancouver Since...\" hides the words a searcher was looking for. Putting the specific topic first protects you whatever the cut-off turns out to be.",
+        "mission_impact": "The part of your headline that says what you actually offer may be the part Google cuts off.",
+        "title": "Page title too long"
+    },
+    "TITLE_TOO_SHORT": {
+        "confidence": "Established",
+        "definition": "The page title is fewer than 30 characters. Short titles often leave out the context that tells a searcher what the page actually offers.",
+        "fix": "Expand the title to roughly 30 to 60 characters, naming the page topic first and then your organisation. In WordPress, edit the SEO title field in the Yoast SEO or Rank Math box on that page.",
+        "good_vs_bad": {
+            "bad": "\"About\" (5 characters).",
+            "good": "\"About Us - Living Systems Counselling Society\" (44 characters)."
+        },
+        "how_it_can_mislead": "Evidence tier: Established. The 30-character floor is ours; Google publishes no minimum, and a short title is not automatically a poor one. A false positive is a genuinely strong short title such as \"Donate to Living Systems\" that says everything it needs to. A correct-looking-but-wrong result would be padding a good short title with filler words just to clear 30 characters, which makes the listing worse while clearing the check.",
+        "impact": "Google advises titles be descriptive rather than vague or generic. A title of \"About\" says nothing about who you are or what you do, so a person scanning ten search results has nothing to grab onto. Adding the topic and your organisation name usually costs nothing and makes the result readable on its own.",
+        "mission_impact": "A one-word headline in search results gives a stranger no reason to click through to your programme.",
+        "title": "Page title too short"
+    },
+    "UA_CONTENT_DIFFERS": {
+        "confidence": "Reasonable proxy",
+        "definition": "TalkingToad requested the page identifying itself as an AI crawler (GPTBot, ClaudeBot) and as a browser, and compared the results. The AI crawler received more than 20% fewer words. Something between the request and the response is stripping content for those user agents.",
+        "fix": "Ask whoever manages your hosting to check the CDN, firewall and security-plugin rules for user-agent filtering, and allow GPTBot and ClaudeBot the same response other visitors get. In WordPress, security plugins with a bot-blocking feature are the usual culprit.",
+        "good_vs_bad": {
+            "bad": "A request as ClaudeBot returns a challenge page or a stripped-down shell, while a browser gets the full services page.",
+            "good": "A request as GPTBot returns the same page text a browser gets."
+        },
+        "how_it_can_mislead": "Evidence tier: Reasonable proxy. Google's policies define cloaking but set no measured threshold, so the 20% trigger is TalkingToad's own — a smaller difference can still be deliberate. Personalisation, geolocation and A/B tests can produce a difference with no bot rule behind it, which is the common false positive. The correct-looking-but-wrong result is a clean report on a site that blocks those user agents outright at the firewall, since a blocked request never produces a comparison at all.",
+        "impact": "AI systems cannot cite what they cannot see. Serving a reduced page to crawlers usually comes from a security plugin, a CDN rule or a bot-management setting rather than a deliberate decision, but the effect is the same: your programme information is missing from the version those systems read. Serving different content to a crawler than to a person is also what Google's spam policies call cloaking.",
+        "mission_impact": "GPTBot and ClaudeBot receive a thinner version of this page than a visitor does, so AI answers about your work are built from less than you published.",
+        "title": "AI crawlers are served less content"
+    },
+    "UNSAFE_CROSS_ORIGIN_LINK": {
+        "confidence": "Established",
+        "definition": "This page links to another website with target=\"_blank\", which opens a new tab, but without rel=\"noopener\" or rel=\"noreferrer\". Those keywords cut the connection the newly opened page would otherwise have back to yours.",
+        "fix": "In WordPress, edit the link in the block editor and re-tick \"Open in new tab\" — the editor adds rel=\"noopener\" for you. Links written by hand in a custom HTML block need rel=\"noopener noreferrer\" added; links generated by a theme or plugin need your developer.",
+        "good_vs_bad": {
+            "bad": "<a href=\"https://partner.org\" target=\"_blank\">Our partner</a>",
+            "good": "<a href=\"https://partner.org\" target=\"_blank\" rel=\"noopener noreferrer\">Our partner</a>"
+        },
+        "how_it_can_mislead": "Evidence tier: Established. OWASP documents the attack, but every current browser applies noopener to target=\"_blank\" by default, so a flagged link is usually already safe for almost all visitors — treat this as tidiness, not urgency. The check reads the delivered HTML only, so links added by JavaScript are not seen, and it looks only at links leaving your domain. A correct-looking-but-wrong result is a long list of findings read as a security incident when the practical risk on modern browsers is close to zero.",
+        "impact": "Without them, the page that opens can reach back and change the address of the tab it came from — a trick known as reverse tabnabbing, in which your visitor returns to what looks like your site but is not. Current browsers add the protection automatically, so this is minor hardening rather than a live hole. It still matters most on links you do not control, such as partner or funder directories.",
+        "mission_impact": "A link to a partner site opens a new tab that could, in older browsers, redirect yours.",
+        "title": "Link to another site opens without protection"
+    },
+    "URL_HAS_SPACES": {
+        "confidence": "Established",
+        "definition": "This address contains a space, either as a literal space or written as %20 — the code browsers use to carry a space in an address. Spaces are not valid in web addresses and have to be encoded this way.",
+        "fix": "In WordPress, open the page and edit the URL slug in the editor sidebar, replacing each space with a hyphen. Then ask your host or a redirect plugin to send the old address to the new one so existing links and printed materials still work.",
+        "good_vs_bad": {
+            "bad": "https://livingsystems.org/events/spring%20fundraiser",
+            "good": "https://livingsystems.org/events/spring-fundraiser"
+        },
+        "how_it_can_mislead": "Evidence tier: Established. Google recommends simple, readable addresses, and this check reads the address directly, so the finding itself is not a judgement call. It only inspects addresses the crawl encountered, so a badly formed address nobody links to is missed. The severity can still mislead: a rarely visited archive page with a space in its address is reported exactly like the event page you are about to print on a flyer, so read the finding alongside where the page actually matters. A correct-looking-but-wrong result is treating a long list of these as urgent when only one of the pages is ever shared.",
+        "impact": "Addresses with %20 are hard to read and look unfinished on a poster or in a newsletter. Email programs and messaging apps often break the link at the space, so a supporter clicking it lands on an error. It usually means the page slug was created from a title without being tidied up.",
+        "mission_impact": "The address breaks when supporters paste it into an email or a message.",
+        "title": "Web address contains spaces"
+    },
+    "URL_HAS_UNDERSCORES": {
+        "confidence": "Established",
+        "definition": "This address uses underscores between words — /about_us instead of /about-us. Google's guidance is to separate words in an address with hyphens.",
+        "fix": "Use hyphens when you set the URL slug for new pages in the WordPress editor. Only rename an existing page if it is new or has little traffic, and put a 301 redirect in place when you do — on an established page the disruption usually outweighs the gain.",
+        "good_vs_bad": {
+            "bad": "https://livingsystems.org/programs/youth_counselling",
+            "good": "https://livingsystems.org/programs/youth-counselling"
+        },
+        "how_it_can_mislead": "Evidence tier: Established. The hyphen preference is Google's published guidance, but the finding fires on any underscore anywhere in the path, including ones that are not word separators at all — a file name such as /downloads/annual_report_2025.pdf is flagged though nothing is wrong with it. That is the everyday false positive. The check says nothing about whether the words in the address matter for search in the first place. A correct-looking-but-wrong result is renaming a long-standing, well-linked page for this reason alone and losing the links in the process.",
+        "impact": "Google treats a hyphen as a gap between words, so \"youth-counselling\" reads as two words. An underscore is treated as a joiner, so \"youth_counselling\" can be read as a single unfamiliar word, and the words in the address stop helping anyone find the page. The effect is small — addresses are a minor signal — but the fix is free on new pages.",
+        "mission_impact": "Search engines may read the words in your address as one run-together word.",
+        "title": "Web address separates words with underscores"
+    },
+    "URL_TOO_LONG": {
+        "confidence": "Heuristic",
+        "definition": "This web address is longer than 200 characters in total. There is no browser or search limit at that point; it is a readability line.",
+        "fix": "In WordPress, open the page and shorten the URL slug in the editor sidebar to a few descriptive words, then set a 301 redirect from the old address so existing links survive. If the length comes from a deep folder structure, that is a navigation question worth raising before renaming anything.",
+        "good_vs_bad": {
+            "bad": "https://livingsystems.org/our-programs/community-services/counselling-services/youth-and-family/individual-sessions/booking-information-and-frequently-asked-questions-2025",
+            "good": "https://livingsystems.org/programs/youth-counselling"
+        },
+        "how_it_can_mislead": "Evidence tier: Heuristic. The 200-character figure is ours; Google states no address-length limit for ranking, so this is a usability point, not a ranking one. It measures the whole address including the domain and any query parameters, so a short, clean page address carrying a long tracking or filter string is flagged even though the page itself is fine — the commonest false positive. A page just under 200 characters is equally hard to share and is not flagged. A correct-looking-but-wrong result is a report on a filtered listing address that no one ever types.",
+        "impact": "Long addresses are cut off in search results and in some browsers, so they stop working as a clue about where a link goes. They are unpleasant to put on a flyer, read out, or paste into a message. A very long address often means the page sits several folders deep, which is worth a look on its own.",
+        "mission_impact": "The address is awkward to share and gets cut short where supporters see it.",
+        "title": "Web address is very long"
+    },
+    "URL_UPPERCASE": {
+        "confidence": "Heuristic",
+        "definition": "The path part of this web address contains capital letters — /About-Us rather than /about-us. Most web servers treat capitals and lower case as different, so /About and /about can be two separate pages.",
+        "fix": "In WordPress, open the page and edit the URL slug in the editor sidebar so it is lowercase — then ask your host or developer for a 301 redirect from the old capitalised address so existing links keep working. On established pages with real traffic, weigh the redirect work against the small benefit.",
+        "good_vs_bad": {
+            "bad": "https://livingsystems.org/Programs/Youth-Counselling",
+            "good": "https://livingsystems.org/programs/youth-counselling"
+        },
+        "how_it_can_mislead": "Evidence tier: Heuristic. This is our judgement, not a rule from Google, which does not require lowercase paths — consistency is the point, not the case itself. The check reports any capital in the path without testing whether the lowercase version also works, so an address that is capitalised everywhere and has no lowercase twin is flagged although nothing is actually split: that is the false positive. It also cannot see addresses nothing links to. A correct-looking-but-wrong result is a tidy, consistently capitalised site being reported as having a duplicate-address problem it does not have.",
+        "impact": "When both forms work, search engines may index each one separately and divide the links and reputation between them. Visitors typing or re-typing the address reach whichever they guess. Many servers quietly redirect one form to the other, which fixes the split but adds an extra round trip on every visit.",
+        "mission_impact": "The same page can end up living at two addresses, splitting its search standing.",
+        "title": "Web address contains capital letters"
+    },
+    "WRONG_PLACEHOLDER_LINK": {
+        "confidence": "Established",
+        "definition": "This link's destination is an obvious stand-in — example.com, example.org, localhost, 127.0.0.1, yourdomain.com, or a bare search-engine homepage used as filler — rather than the page it was meant to reach.",
+        "fix": "Edit the link and paste the real address. In WordPress, open the page in the block editor, click the link, and replace the URL; if the placeholder domain is genuinely intended, ignore the finding.",
+        "good_vs_bad": {
+            "bad": "<a href=\"https://example.com\">Contact our team</a>, left in place from the theme demo.",
+            "good": "<a href=\"https://livingsystems.ca/contact\">Contact our team</a>."
+        },
+        "how_it_can_mislead": "Evidence tier: Established. The example domains are reserved by an internet standard and can never be a real destination, so those are certain; the search-engine case is judgement, and is only flagged when the address has no path and is not your own domain, so a genuine deep link such as a Google Maps address is left alone. A correct-looking-but-wrong result is a page about internet standards that quotes example.com on purpose being told to fix it — and an unusual placeholder host outside our list will not be caught at all.",
+        "impact": "These are almost always unfinished template content that reached the live site by accident. A visitor clicking a 'Contact our team' link that goes to example.com sees a placeholder page from the standards body that reserves that name. Automated assistants following the link lose the trail entirely, and the page looks unfinished to anyone deciding whether to donate.",
+        "mission_impact": "A link from a template was never filled in, so supporters clicking it land somewhere meaningless.",
+        "title": "Link points at a placeholder domain"
+    },
+    "WWW_CANONICALIZATION": {
+        "confidence": "Established",
+        "definition": "Both www.yoursite.org and yoursite.org return pages, and neither redirects to the other. To a search engine those are two different websites showing the same content.",
+        "fix": "This one needs your developer or host. Choose one version as the real address and ask for a permanent (301) redirect from the other — most hosting panels have a \"Primary domain\" or redirect setting, and Cloudflare does it with a rule. Use the chosen version consistently in your own links and printed materials.",
+        "good_vs_bad": {
+            "bad": "www.livingsystems.org and livingsystems.org each return their own copy of the home page",
+            "good": "www.livingsystems.org answers with a 301 redirect to livingsystems.org"
+        },
+        "how_it_can_mislead": "Evidence tier: Established. Google publishes that it picks one canonical address when several serve the same content, and this check confirms the situation directly by fetching the other version once. It does not read the rel=\"canonical\" tag, so a site that serves both versions but names one as canonical in its pages — which usually resolves the problem — is still flagged: that is the main false positive. If the other version cannot be reached during the scan the check stays silent, so an absent finding is not proof. A correct-looking-but-wrong result is this being reported on a site that already handles the split correctly with canonical tags.",
+        "impact": "Links, shares and reputation earned by one version do not count towards the other, so your visibility is divided between two copies of every page. Google will pick one of them as the real one on your behalf, and it may not be the one you use on your materials. Analytics is also split, which makes reporting to funders harder than it needs to be.",
+        "mission_impact": "Search engines may split your site's standing between two copies of every page.",
+        "title": "www and non-www both serve the site"
     }
 }
