@@ -628,9 +628,9 @@ def test_every_crawl_launching_endpoint_is_rate_limited():
     launcher — an unlimited one would not be a new feature, it would be a
     bypass of an existing control, and nothing about the response would say so.
 
-    Asserted structurally rather than by firing 11 requests: the limit is
-    "10/hour" in production and "10000/hour" under test, so a behavioural test
-    would pass on an endpoint carrying no decorator at all.
+    Asserted structurally: the decorator must be present. The behavioural half
+    (an 11th call is refused) lives in tests/test_rate_limits.py since 2026-09-02,
+    when the limit strings stopped flipping to 10000/hour under test.
 
     Spec: docs/pending/2026-09-01_rescan-from-home.md#R1
     """

@@ -47,7 +47,7 @@ The `POST /api/jobs/{job_id}/ai-citations` endpoint accepts citation data for AI
 - **Output**: `{matched_count, unmatched_count, unmatched_urls}`. Triggers re-scoring of `AI_CITED_PAGE` (page is cited by AI engines) and `AI_HIGH_VALUE_UNCITED` (high-value page lacks citations).
 - **Idempotency**: Duplicate citations (same URL + engine) are silently overwritten.
 - **SSRF**: Citation URLs are matched as strings only — they are never fetched.
-- **Auth**: Bearer token required. Rate limited to 10/minute per IP.
+- **Auth**: Bearer token required. Rate limited to 10/minute per bearer token.
 
 ## Related
 

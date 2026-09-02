@@ -15,7 +15,7 @@ Three independent cold reviews of `origin/main..HEAD`. The high and medium
 findings were fixed in the same cycle (see LEARNINGS.md). Deferred, with the
 reason:
 
-- [ ] **🔴 The rate limits are not bounds — the limiter key is attacker-controlled.**
+- [x] **🔴 Done 2026-09-02 (Phase 1), keyed on the token.** Was: The rate limits are not bounds — the limiter key is attacker-controlled.**
   `Dockerfile:70` runs uvicorn with `--forwarded-allow-ips=*`. On the pinned
   `uvicorn~=0.46.0` that sets `always_trust`, so
   `_TrustedHosts.get_trusted_client_address` returns the **first, entirely
@@ -49,7 +49,7 @@ reason:
   `carried_over_codes` instead. Either wire it into the per-issue row or delete
   it and the doc line. Recorded rather than left silent, per the D2 precedent.
 
-- [ ] **`CLAUDE.md` points at a directory that does not exist.** Line 246 calls
+- [x] **`CLAUDE.md` points at a directory that does not exist.** — done 2026-09-02 (Phase 1). Line 246 calls
   `~/.claude/standards/learnings.md` "auto-loaded by Claude Code", and line 321
   tells the reader to "read the relevant file from `~/.claude/standards/`"
   before starting work, listing four files. **`~/.claude/standards/` is not
@@ -58,7 +58,7 @@ reason:
   or drop both references; leaving an instruction that cannot be followed
   teaches readers to skip instructions.
 
-- [ ] **No rate limit anywhere in the repo has a test.** `tests/conftest.py`
+- [x] **No rate limit anywhere in the repo has a test.** — done 2026-09-02, `tests/test_rate_limits.py`. `tests/conftest.py`
   sets `RATE_LIMIT_ENABLED=false`, so slowapi returns before evaluating and the
   decorator is never exercised. Pre-existing and repo-wide, surfaced because
   D6's own rationale calls `/page-details` "a fetch amplifier". A single test
@@ -301,7 +301,7 @@ CLN4 strictly improved the matched case):
 - [ ] **The single-page path still cannot RUN those 24 checks.** Cycle 2 made the gap honest,
   not smaller. Actually running them (fetching the sitemap, building a link graph for one
   page) changes what a single-page scan costs and means, and needs its own spec.
-- [ ] **`~/.claude/standards/` does not exist on this machine.** `CLAUDE.md` and `LEARNINGS.md`
+- [x] **`~/.claude/standards/` does not exist on this machine.** — done 2026-09-02 (Phase 1). `CLAUDE.md` and `LEARNINGS.md`
   both point at a P1–P32 generic pattern catalogue there. Only the inline checklist in
   `LEARNINGS.md` survives.
 - [ ] **`page_size_limit_kb` is defined twice** — `engine.py:237` and `issue_checker.py`'s

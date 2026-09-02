@@ -26,7 +26,6 @@ from fastapi.exceptions import HTTPException, RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pythonjsonlogger import jsonlogger
-from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 
@@ -181,7 +180,23 @@ app.add_middleware(
 
 app.state.limiter = limiter
 app.add_middleware(SlowAPIMiddleware)
-app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+
+async def _rate_limited(request: Request, exc: RateLimitExceeded) -> JSONResponse:
+    """429 in the spec error shape. slowapi's default handler returns
+    ``{"error": "Rate limit exceeded: ..."}``, a string where every other
+    error carries ``{code, message, http_status}`` — a client reading
+    ``error.code`` got undefined the first time a limit fired (P14)."""
+    return JSONResponse(
+        status_code=429,
+        content={"error": {"code": "RATE_LIMITED",
+                           "message": f"Rate limit exceeded: {exc.detail}. Try again later.",
+                           "http_status": 429}},
+        headers={"Retry-After": "60"},
+    )
+
+
+app.add_exception_handler(RateLimitExceeded, _rate_limited)
 
 # ── Custom exception handlers ──────────────────────────────────────────────
 

@@ -67,4 +67,8 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
 # Use uvicorn directly. Railway expects the container to bind to 0.0.0.0:$PORT.
 # --proxy-headers because Railway terminates TLS at its edge and forwards
 # X-Forwarded-* — required so request.url.scheme reports https correctly.
+# --forwarded-allow-ips=* means request.client is whatever the caller put in
+# X-Forwarded-For; nothing security-relevant keys on it (the rate limiter keys
+# on the bearer token — api/services/rate_limiter.py). Set it to Railway's
+# ingress range if accurate client addresses in logs ever matter.
 CMD ["sh", "-c", "uvicorn api.main:app --host 0.0.0.0 --port ${PORT:-8000} --proxy-headers --forwarded-allow-ips=*"]

@@ -24,7 +24,7 @@ _enabled = os.getenv("RATE_LIMIT_ENABLED", "true").lower() != "false"
 
 
 def rate_limit_key(request: Request) -> str:
-    """Bucket key: the bearer token's hash, else the direct socket address.
+    """Bucket key: the bearer token's hash, else one shared anonymous bucket.
 
     Phase 1 (2026-09-02, docs/pending/2026-09-02_phase1-trust-holes.md#P1.1).
     The container runs uvicorn with ``--forwarded-allow-ips=*``, so the client
@@ -34,12 +34,18 @@ def rate_limit_key(request: Request) -> str:
     token, so keying on it makes each limit a real bound for the caller who
     holds it, whatever headers they send. The token itself never becomes a
     storage key or a log line: only its SHA-256 does.
+
+    There is deliberately no per-address fallback: behind ``--proxy-headers``
+    uvicorn rewrites ``request.client`` from the same forwarded header, so an
+    "address" key would be the bypass in a different costume. Without a token
+    every /api route is 401 before the limiter counts (dependencies resolve
+    first), so the anonymous bucket is only reachable in dev mode with
+    ``AUTH_TOKEN`` unset — and there, one shared bucket is the honest bound.
     """
     auth = request.headers.get("authorization", "")
     if auth.lower().startswith("bearer ") and auth[7:].strip():
         return "tok:" + hashlib.sha256(auth[7:].strip().encode()).hexdigest()[:32]
-    client = request.client
-    return "ip:" + (client.host if client else "unknown")
+    return "anon"
 
 
 # One limiter instance shared across the app
@@ -54,3 +60,5 @@ AI_ANALYSIS_LIMIT = "60/hour"
 # an operator-initiated single-page fetch, cheaper than an AI call and far
 # cheaper than a crawl.
 DETAILS_LIMIT = "60/hour"
+# Citation ingestion (M5) — a bulk write; the literal used to live in the router.
+CITATIONS_LIMIT = "10/minute"

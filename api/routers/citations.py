@@ -24,7 +24,7 @@ from api.crawler.normaliser import normalise_url
 from api.models.issue import Issue
 from api.routers.crawl import get_store
 from api.services.auth import require_auth
-from api.services.rate_limiter import limiter
+from api.services.rate_limiter import CITATIONS_LIMIT, limiter
 
 logger = logging.getLogger(__name__)
 
@@ -61,7 +61,7 @@ class CitationIngestionResponse(BaseModel):
 # ── Endpoint ──────────────────────────────────────────────────────────────────
 
 @router.post("", response_model=CitationIngestionResponse)
-@limiter.limit("10/minute")
+@limiter.limit(CITATIONS_LIMIT)
 async def ingest_ai_citations(
     request: Request,
     job_id: str,

@@ -117,7 +117,7 @@ same doc's §9 verification matrix.
 
 ### POST /api/jobs/{job_id}/ai-citations
 **Auth:** Bearer token required  
-**Rate limit:** 10/minute per IP  
+**Rate limit:** 10/minute per bearer token (`CITATIONS_LIMIT`)  
 **Body:** `CitationIngestionRequest` with `citations: [{url, engines: [{engine, count_30d, last_seen?}]}]`  
 **Response:** `{matched_count, unmatched_count, unmatched_urls}`  
 **Errors:** 401 (no auth), 404 (job not found), 422 (malformed body or job_id)  
@@ -504,7 +504,7 @@ Only the fields you include are updated.
 | `INVALID_URL` | 422 | Malformed or unreachable URL |
 | `BLOCKED_URL` | 403 | URL targets a private or internal network (SSRF protection) |
 | `INVALID_CATEGORY` | 422 | Unrecognised category slug |
-| `CRAWL_LIMIT_EXCEEDED` | 429 | Rate limit reached |
+| `RATE_LIMITED` | 429 | Rate limit reached — every limited route; body carries `message` with the limit and a `Retry-After` header (2026-09-02) |
 | `CRAWL_FAILED` | 500 | Unrecoverable crawler error |
 | `TARGET_UNREACHABLE` | 502 | Target website unreachable |
 

@@ -35,14 +35,17 @@ class TestKey:
         b = rl.rate_limit_key(_request({"Authorization": "Bearer two"}))
         assert a != b
 
-    def test_no_token_falls_back_to_the_socket_address(self):
-        k = rl.rate_limit_key(_request({"X-Forwarded-For": "10.0.0.1"}, host="203.0.113.9"))
-        assert k == "ip:203.0.113.9", "the forwarded header must never be the key"
+    def test_no_token_shares_one_anonymous_bucket(self):
+        """Behind --proxy-headers request.client IS the forwarded header, so an
+        address fallback would be the bypass in a different costume."""
+        a = rl.rate_limit_key(_request({"X-Forwarded-For": "10.0.0.1"}, host="10.0.0.1"))
+        b = rl.rate_limit_key(_request({"X-Forwarded-For": "10.0.0.2"}, host="10.0.0.2"))
+        assert a == b == "anon"
 
     def test_limit_strings_are_the_documented_values(self):
         """P29: docs/thresholds.md 'API rate limits' pins these."""
-        assert (rl.CRAWL_START_LIMIT, rl.EXPORT_LIMIT, rl.AI_ANALYSIS_LIMIT, rl.DETAILS_LIMIT) == (
-            "10/hour", "30/hour", "60/hour", "60/hour")
+        assert (rl.CRAWL_START_LIMIT, rl.EXPORT_LIMIT, rl.AI_ANALYSIS_LIMIT, rl.DETAILS_LIMIT,
+                rl.CITATIONS_LIMIT) == ("10/hour", "30/hour", "60/hour", "60/hour", "10/minute")
 
 
 @pytest.fixture
@@ -63,9 +66,13 @@ class TestLimitFires:
     PATH = "/api/crawl/no-such-job/export/pdf"
 
     async def test_limit_fires_with_the_real_strings(self, api_client, auth_headers, live_limiter):
-        codes = [(await api_client.get(self.PATH, headers=auth_headers)).status_code for _ in range(31)]
+        responses = [await api_client.get(self.PATH, headers=auth_headers) for _ in range(31)]
+        codes = [r.status_code for r in responses]
         assert codes[:30] == [404] * 30, codes
         assert codes[30] == 429, "the 31st export in an hour must be refused"
+        body = responses[30].json()
+        assert body["error"]["code"] == "RATE_LIMITED" and body["error"]["http_status"] == 429, body
+        assert responses[30].headers.get("retry-after")
 
     async def test_rotating_forwarded_for_does_not_escape(self, api_client, auth_headers, live_limiter):
         """The exact bypass: a fresh X-Forwarded-For on every call."""

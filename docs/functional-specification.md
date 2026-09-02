@@ -1415,10 +1415,8 @@ concurrent requests, so one caller lifting it could uncap another's render or
 truncate one mid-flight. A parameter cannot race.
 
 Rate limited at `DETAILS_LIMIT` (60/hour) — it fetches the live page per click.
-**That limit is not currently a bound**: the deployment runs uvicorn with
-`--forwarded-allow-ips=*`, so the limiter's key is the client-supplied
-`X-Forwarded-For`. Recorded in `TODO.md`; the fix needs the platform's proxy
-range and is the owner's call.
+(Until 2026-09-02 that limit was not a bound, because the limiter keyed on the
+client-supplied `X-Forwarded-For`; it now keys on the bearer token — §8.1.)
 
 **External links are not re-checked here.** `_fetch_and_check_page` takes
 `check_external_links`, and this endpoint passes `False`. Left on, one click
@@ -2236,13 +2234,16 @@ traffic or revenue. A cap that did not bite is not mentioned.
 
 **Rate limits are bounds (Phase 1, 2026-09-02).** `api/services/rate_limiter.py` keys every
 slowapi limit on the SHA-256 of the bearer token (`rate_limit_key`), falling back to the direct
-socket address only when no token is presented. Before this, the container's
+one shared anonymous bucket when no token is presented (an address fallback would be
+the bypass in a different costume: behind `--proxy-headers` uvicorn rewrites `request.client`
+from the same header). Before this, the container's
 `--forwarded-allow-ips=*` made the key the first client-supplied `X-Forwarded-For` entry, so a
 token holder rotating that header got a fresh bucket per request and no limit ever fired. The
 limit strings are constants (10 crawl starts, 30 exports, 60 AI analyses, 60 live page-details
 per hour); `RATE_LIMIT_ENABLED` controls only `limiter.enabled`, which is how
 `tests/test_rate_limits.py` switches the limiter on at runtime and observes a real 429 — the
-first in the suite. The token itself is never a storage key or a log line.
+first in the suite. A 429 carries the spec error shape (`error.code = RATE_LIMITED`) and a
+`Retry-After` header. The token itself is never a storage key or a log line.
 
 ### 8.2 Performance
 

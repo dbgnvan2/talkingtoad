@@ -65,6 +65,13 @@ user replaces the old image in the post by hand.
 
 ## Adjacent, when touched
 
+- [ ] **`FixInlinePanel` maps `TITLE_H1_MISMATCH → seo_title` but the backend fix map does not** —
+  the inline fix for that code likely fails server-side; the parity test excludes it. Decide
+  which side is right and drop the exclusion. (Promoted from the archive 2026-09-02.)
+- [ ] `checks_not_run` from `/scan-page` reaches no UI beyond the Page Audit note; the Results
+  summary for a single-page job does not say which 24 checks could not run.
+- [ ] Fix Focus mutations are read-modify-write on one blob (last writer wins); Performance
+  Bundle PB4/PB5/PB7/PB9 remain after PB3; dimension-pass concurrency floor (~33 images) unpinned.
 - [ ] Category tiles / PDF per-page rows show stored counts beside a scored score (`info_detail`).
 - [ ] Prevalence tiers by today's catalogue, lists by stored impact (P8).
 - [ ] `/pages?min_severity=info` is level-blind.

@@ -211,6 +211,7 @@ codes; all other page-scoped codes on that page contribute 0. See functional-spe
 | Crawl-start (per bearer token, 2026-09-02) | 10 per hour | `api/services/rate_limiter.py` `CRAWL_START_LIMIT` — keyed on the token hash via `rate_limit_key`, never on `X-Forwarded-For`; `tests/test_rate_limits.py` observes the 429 |
 | Exports (PDF/Excel) | 30 per hour | `EXPORT_LIMIT` |
 | AI analyses | 60 per hour | `AI_ANALYSIS_LIMIT` |
+| Citation ingestion (`POST /api/jobs/{job_id}/ai-citations`) | 10 per minute | `CITATIONS_LIMIT` |
 
 ## Frontend / UI
 
