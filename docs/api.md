@@ -556,6 +556,7 @@ Error response shape:
 | `enabled_analyses` | list\|null | null (all) | Restrict which issue categories are checked |
 | `suppress_h1_strings` | list[str] | [] | H1 text strings to ignore (exact, case-insensitive) — for theme-injected banner headings |
 | `suppress_banner_h1` | bool | false | Auto-detect and ignore H1s that share no words with the page title — handles parent-page banners injected by themes (Salient, Avada, Divi, etc.) without needing explicit strings |
+| `info_detail` | `all` \| `notable` \| `key` \| `none` | `all` | **Which info tiers this scan shows AND counts toward the health score** (2026-09-01). `notable` keeps impact ≥ 2, `key` keeps impact 3 only, `none` keeps no info row. Detection is unchanged — every finding is still stored. Unknown value → 422 `INVALID_SETTINGS`. Echoed by `GET /api/crawl/{job_id}` under `settings`. |
 
 ### enabled_analyses groups
 
@@ -626,6 +627,19 @@ The `security` category always runs regardless of toggles.
 ```
 
 `health_score` is 0–100. Formula: `max(0, 100 − Σ issue impacts)` across all issues. The health score calculation normalises trailing slashes on page URLs so that issues and pages always match correctly.
+
+**Info detail (2026-09-01).** When the job's `settings.info_detail` is not `all`, `health_score`, `agent_health_score` and every per-page grade are computed over the info tiers the scan chose (see functional-specification §4.0.2). The summary always carries the reason:
+
+```json
+"info_detail": "notable",
+"info_by_tier": { "high": 9, "medium": 42, "low": 98 },
+"info_scored": 51,
+"info_excluded": 98
+```
+
+`info_scored + info_excluded == by_severity.info`, always; `by_severity` and `total_issues` are the **stored** counts and never move with the level. Every issue in `issues[]` carries `info_tier` (`high` | `medium` | `low` | `null` unless info) and `scored` (false only for a revealed row the level excluded). Every list response carries `info_filtered: {hidden, by_tier, info_detail}` beside `filtered`.
+
+`?info_detail=all` on `/results`, `/results/{category}` and `/pages/issues` is **reveal-only**: it may loosen the job's level (showing excluded rows with `scored: false`) but never tightens it, and never changes the score.
 
 `orphan_detection` reports whether `ORPHAN_PAGE` ran, and over how much of the site. `status` is one of `complete`, `skipped_partial_scan`, `skipped_truncated`, `skipped_cancelled`, `skipped_single_page`, `skipped_failed`, `not_run` — **treat any unrecognised value as "did not run"**, never as complete. `pages_analysed` counts the pages the check reasoned over (HTML pages), not every fetched file. `pages_out_of_scope` is the shortfall: out-of-scope URLs on a partial scan, still-queued URLs on a truncation. Even on `complete`, `archives_skipped` (WordPress archives are skipped before their links are read) and `pages_links_unread` (pages that timed out, hit a login wall, or failed to parse) mean the graph was not exhaustive — surface both as caveats beside the result. `ORPHAN_PAGE` concludes that *nothing* links to a page, which is only decidable after crawling the whole site — so a partial scan, a `max_pages` truncation, or a cancellation suppresses the check rather than flagging every page whose only inbound link lives outside the crawl. **A suppressed check returns zero orphans**: clients must branch on `status` and never read an empty result as "no orphans found". The field is `null` on audits crawled before it existed.
 
@@ -786,3 +800,19 @@ the health score.
 Always present, `hidden: 0` when no rules apply. Consumers must render it: 123 of
 170 codes are `info`, so a severity rule removes most findings and a shorter list
 would otherwise read as a healthier site.
+
+## Info detail — the `info_detail` scan setting (2026-09-01)
+
+Unlike F1, this **does** change the health score: it is chosen at scan time, stamped on the
+job, and named beside every number it changes. Summary shape and per-issue fields are under
+"Summary Shape" above. Additional surfaces:
+
+| Surface | What changes |
+|---|---|
+| `GET /api/crawl/{job_id}/pages/issues?url=…` | `by_category` is filtered to the level; `info_filtered: {hidden, by_tier, info_detail}` added; `?info_detail=all` reveals. |
+| `GET /api/crawl/{job_id}/pages` | `citability_grade` follows the level. |
+| `GET /api/crawl/{job_id}/page-priority` | `health_score` / `citability_grade` per row follow the level. |
+| `GET …/export/pdf`, `…/export/excel` | Listed rows follow the level; the Scope & Caveats / Summary sheet carries "Scored at info detail '…': N info notices (…) excluded from this audit and from its health score by the scan setting." |
+| `GET …/export/csv`, `…/export/csv/{category}` | Rows follow the level (no caveat cell, as with F1). |
+| `GET /api/crawl/{job_id}/comparison` | Adds `comparable: bool`, `reason: string|null`, and `info_detail` on `current` / `previous`. `comparable: false` with `reason: "info_detail differs (notable vs all)"` when the two jobs were scanned at different levels; the delta is still returned. |
+| `POST /api/crawl/{job_id}/rescan` | The new job inherits `info_detail` with the other settings. |

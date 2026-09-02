@@ -537,6 +537,74 @@ already delivers the no-double-count outcome across both pipelines.
 noindexed-page scores **rise once** under R5. A before/after crawl (per the R3 precedent) is the manual
 deploy gate; monotonicity is preserved (`test_agent_score_monotonic_non_increasing` stays green).
 
+### 4.0.2 Info tiers and the `info_detail` scan setting (2026-09-01)
+
+123 of the 170 catalogue codes are `info` (72%), and the band is not flat: severity is
+derived from impact (`severity_from_impact`: ≥8 critical · 4–7 warning · ≤3 info), and the
+info band spans impact 0–3. The owner asked for the info codes to be graded and for a scan
+to choose how much info it shows — **and for that choice to move the health score**.
+
+**Tiers (derived, not authored).** `registry.info_tier(impact)` grades an info row from its
+impact: **high / Key** = impact 3 (9 codes: `IMG_ALT_MISSING`, `BROKEN_LINK_5XX`,
+`CONTENT_UNSTRUCTURED`, `QUOTATIONS_MISSING`, …), **medium / Notable** = impact 2 (61 codes:
+`META_DESC_MISSING`, `BROKEN_LINK_404`, `FAQ_SCHEMA_MISSING`, …), **low** = impact 0–1
+(53 codes: `TITLE_TOO_SHORT`, `LLMS_TXT_MISSING`, `REDIRECT_TRAILING_SLASH`, …). No
+`_IssueSpec` field, no hand list: a recalibration moves a code's tier with it. `Issue.info_tier`
+is a computed field over the **stored** impact, so an audit crawled before a recalibration keeps
+the tier it was scored under (P8). `docs/issue-codes.md` renders a **Tier** for every info code.
+→ `tests/test_info_tiers.py::TestTierDefinition` (total over the band, monotonic, 9/61/53 snapshot).
+
+**The setting.** `CrawlSettings.info_detail` ∈ `all` (default) · `notable` (impact ≥ 2) ·
+`key` (impact 3) · `none` (no info row). It names the **scope of the audit**: which info tiers are
+*shown* and which are *charged to the score*. Detection and storage are unchanged — every finding is
+still found and stored — so the excluded rows can always be revealed, and a scan at a different
+level never needs a recrawl to be explained. Chosen in Advanced settings on the home page, stamped on
+the job, inherited by Rescan (Journey A2). `all` is byte-identical to the model before the setting
+existed → `test_score_at_all_is_identical_to_before`.
+
+**One predicate, both sides.** `registry.info_row_excluded(impact, level)` is the single rule.
+The score applies it in `job_store_base.info_detail_rows` in the **same slot as job-level
+`suppressed_codes`** — before site-scope election, R4 cluster suppression and the category cap — so
+an excluded low-tier cluster parent cannot go on silencing children that are still charged
+(`test_excluded_parent_does_not_silence_a_charged_child`), and an excluded site-scoped code is not
+elected anywhere. `compute_impact_health`, `compute_page_health`, `compute_citability_grade`, the
+Agent Health score, the By-Page grade and the page-priority queue all take the job's level, so no
+per-page number disagrees with the site number. The lists apply the same predicate through
+`api/services/info_tier_filter.py` on `/results`, `/results/{category}`, `/pages/issues`, the
+prevalence rows and every export. Measured on livingsystems.ca (46–48 pages): all 83–84 ·
+notable 87–88 · key 96 · none 97 — the Notable tier is where most of the score lives, and `key` is
+nearly `none`. Tightening the level never lowers the score
+(`test_score_never_decreases_as_the_level_tightens`); `none` keeps every warning.
+
+**Why the score follows the setting when the domain filter (F1) does not.** F1 is a
+presentational rule the operator can add and remove in seconds, so it must not move the grade.
+`info_detail` is chosen once, at scan time, is stamped on the job, and is *named beside every number
+it changed* — it is a declared scope, not a hidden filter. The controls that keep it honest:
+
+1. **Disclosure everywhere.** The summary carries `info_detail`, `info_by_tier`, `info_scored`,
+   `info_excluded` with `info_scored + info_excluded == by_severity.info` always; every list
+   response carries `info_filtered: {hidden, by_tier, info_detail}`; every issue carries `info_tier`
+   and `scored`. `by_severity` and `total_issues` are the **stored** counts and never move.
+2. **The score is a property of the scan, not the view.** `?info_detail=all` on the list endpoints
+   is **reveal-only** — it can loosen the job's level, never tighten it (`resolve_info_detail`), and
+   never changes the score. Revealed rows carry `scored: false` and render dimmed with "not counted in
+   the health score". The Results page shows the level under the score ("scored at Notable and key
+   only · 98 info notices excluded"), the Info card shows the scored count with the excluded count
+   beneath it, info badges read "info · Key / Notable / Low", and each category tab, the info severity
+   view and the Page Audit drawer carry a "Show excluded info" toggle or note.
+3. **Exports say it.** PDF and Excel carry "Scored at info detail 'notable': N info notices (…)
+   excluded from this audit and from its health score by the scan setting" through the same caveat
+   channel as F1; CSV is filtered the same way.
+4. **Comparison is guarded.** `/comparison` returns `comparable: false` with
+   `reason: "info_detail differs (notable vs all)"` when the two jobs were scanned at different
+   levels; the delta is still returned. (No frontend consumer of `/comparison` exists today; the flag
+   is there for when one does.)
+
+→ `tests/test_info_tiers.py`, `tests/test_info_tiers_integration.py`,
+`frontend/src/components/__tests__/InfoDetail.test.jsx`,
+`frontend/src/pages/__tests__/Home.infoDetail.test.jsx`. Thresholds: `docs/thresholds.md`
+"Info tiers".
+
 ### 4.1 Metadata category
 
 Title, meta description, OG tags, canonical, favicon. Notable codes:
@@ -1400,7 +1468,9 @@ operator cares about. Three properties define it:
 2. **It never changes the health score.** The score is computed by the store
    from the unfiltered set. This is the whole reason the rules live in
    `domain_issue_filters` and not in `suppressed_issue_codes`, which feeds
-   `compute_impact_health()` and changes scoring *by design*. One table meaning
+   `compute_impact_health()` and changes scoring *by design*. (Contrast the
+   `info_detail` scan setting, §4.0.2, which **does** move the score — chosen
+   once at scan time, stamped on the job, and named beside every number it changes.) One table meaning
    two things depending on whether a column is NULL is how the two get confused
    and a presentational filter starts moving someone's grade.
 3. **It always declares what it removed.** Every filtered response carries

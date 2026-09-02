@@ -75,6 +75,35 @@ Security checks (HTTPS, mixed content, unsafe links) always run regardless of yo
 
 If you only want a quick metadata review, untick everything except **SEO Essentials** — the crawl will be faster and the results list shorter.
 
+### Choosing how much "Info" you see (Info detail)
+
+Most findings are **Info** notices — 123 of the 170 checks — and they are not all worth the
+same. Each Info notice has a tier: **Key** (the nine highest-value ones, such as images with no
+alt text), **Notable** (most of the useful ones, such as a missing meta description), and
+**Low** (small polish items, such as a slightly short title).
+
+Under **Advanced settings** on the start screen, **Info detail** lets a scan choose which tiers
+are part of the audit:
+
+| Level | What the scan shows and counts |
+|---|---|
+| **All info** (default) | Every Info notice — exactly what you have always seen |
+| **Notable and key only** | Leaves out the Low tier |
+| **Key only** | Only the nine Key notices |
+| **Hide info** | Critical and Warning findings define the audit |
+
+**This setting changes the Health Score.** A scan at *Notable and key only* counts fewer
+notices and scores higher — that is the point, but it also means two scans at different levels
+are not comparable, and the results page says so: the level is printed under the score
+("scored at Notable and key only · 98 info notices excluded"), the Info card shows the count
+that was scored with the excluded count beneath it, and the PDF and Excel exports carry the
+same note. **Rescan** re-uses the level, so before-and-after comparisons stay honest.
+
+Nothing is thrown away. Every finding is still recorded; each category tab and the Info view
+has a **Show excluded info** button that reveals the left-out notices, dimmed and marked
+*not counted in the health score*. Revealing them never changes the score — the score belongs
+to the scan, not to the view.
+
 ---
 
 ## Understanding the Results
@@ -87,6 +116,10 @@ The **Health Score** at the top of the Results page gives your site a number fro
 - **0–49** — Significant problems. Start with the red items.
 
 The score is reduced by issue impacts — critical issues reduce it the most.
+
+If the scan was run with an **Info detail** level other than *All info*, the level appears under
+the score together with how many Info notices it left out, and the score counts only the tiers
+you chose (see *Choosing how much "Info" you see* above).
 
 ### Agent Health Score
 
@@ -153,7 +186,7 @@ After the 2026-07 severity recalibration, most issues now surface as **Info** �
 
 - 🔴 **Critical** — Fix these first; they directly harm your search visibility (reserved for page-fatal problems)
 - 🟡 **Warning** — Should be fixed; will improve your results
-- 🔵 **Info** — Worth knowing; low urgency
+- 🔵 **Info** — Worth knowing; low urgency. Each Info badge also shows its tier — **Key**, **Notable** or **Low** — so you can tell a "fix this soon" notice from a polish item at a glance.
 
 ### Page Priority queue
 

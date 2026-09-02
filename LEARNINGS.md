@@ -58,6 +58,21 @@
 
 ## Open risks (found by review, not yet bitten)
 
+- **The health score is now a function of a scan setting (`info_detail`, 2026-09-01).** By owner
+  decision, a scan at `notable` / `key` / `none` charges fewer info rows and scores higher — the
+  exact direction LEARNINGS flagged as wrong when suppressing `ORPHAN_PAGE` raised the score. The
+  difference is that this one is *declared*: chosen at scan time, stamped on the job, printed under
+  the score, in the Info card, in every list's `info_filtered`, in the PDF/Excel caveat, and
+  `/comparison` refuses to call two levels comparable. Those disclosures are the whole defence.
+  **Risks to watch:** (1) a new surface that renders `health_score` without `info_detail` beside it
+  — the S1 score-basis lesson again; the contract test for that surface must assert the label.
+  (2) a new scoring path that reconstructs `(code, impact, category)` rows and calls
+  `compute_page_health` without passing the job's level — it will disagree with the site score by
+  page. `grep compute_page_health\|compute_citability_grade` when adding one. (3) `by_severity.info`
+  is the stored count and `info_scored` the charged one; a UI that adds them, or shows the stored
+  count beside the scored score, double-counts or contradicts. (4) `/comparison` has no frontend
+  consumer today, so the `comparable` guard is unrendered until one exists.
+
 - **RESOLVED — the "blank robots/sitemap panels in production" symptom never happened.** Closed
   2026-08-31 after investigation, and the way it closed matters more than the result. The symptom
   was **never observed**: the entry that reported it says so in its own words — *"Found by a parity

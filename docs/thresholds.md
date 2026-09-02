@@ -66,6 +66,8 @@ impossible.
 | Priority-rank formula | `impact×10 − effort×6` | `api/crawler/checkers/registry.py` `make_issue` | — |
 | Quick-win threshold | impact ≥ 4 and effort ≤ 1 | `api/models/issue.py` `Issue.quick_win` | — |
 | Severity from impact | ≥8 critical · 4–7 warning · ≤3 info | `registry.py` `severity_from_impact` | — |
+| Info tier from impact (2026-09-01) | 3 high (Key) · 2 medium (Notable) · 0–1 low | `registry.py` `INFO_TIER_HIGH_MIN_IMPACT` / `INFO_TIER_MEDIUM_MIN_IMPACT` / `info_tier` | — |
+| `info_detail` → lowest info impact shown **and scored** | all 0 · notable 2 · key 3 · none (no info row) | `registry.py` `INFO_DETAIL_MIN_IMPACT` / `info_row_excluded` | — |
 
 ## HTML / page size
 
@@ -282,6 +284,22 @@ same of 20-of-5,000. Prevalence is a reporting lens only — it does not enter a
 score. The `TT_PERF_STALE_DAYS` window is distinct from the 35-day ingest
 staleness above: that one flags a bundle at ingest, this one governs how the
 report *presents* data whose reporting period has aged.
+
+---
+
+## Info tiers and the `info_detail` scan setting (2026-09-01)
+
+| Threshold | Value | Source |
+|---|---|---|
+| Info tier boundaries | impact 3 → high (Key) · impact 2 → medium (Notable) · impact 0–1 → low | `api/crawler/checkers/registry.py` `INFO_TIER_HIGH_MIN_IMPACT = 3`, `INFO_TIER_MEDIUM_MIN_IMPACT = 2` |
+| Catalogue split at these bounds | 9 high · 61 medium · 53 low (of 123 info codes) | `tests/test_info_tiers.py::test_counts_snapshot_9_61_53` |
+| `info_detail` levels, loosest → tightest | `all` (min impact 0) · `notable` (2) · `key` (3) · `none` (no info row) | `registry.py` `INFO_DETAIL_MIN_IMPACT`; order = `INFO_DETAIL_LEVELS` |
+| Default level | `all` — byte-identical to the pre-setting model | `api/models/job.py` `CrawlSettings.info_detail` |
+
+The tier is a function of impact, never a catalogue field, so these two constants are the
+only place the grading lives. The setting is applied to the score in the same slot as
+job-level `suppressed_codes` (before site-scope election, cluster suppression and the category
+cap) and to every list and export through the same predicate. See functional-specification §4.0.2.
 
 ---
 
