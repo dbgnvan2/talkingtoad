@@ -71,6 +71,24 @@ user replaces the old image in the post by hand.
 - [ ] `/pages?min_severity=info` is level-blind.
 - [ ] Nested card containers (E6): choose between nested candidates deliberately.
 - [ ] `rechecked` is a field no consumer reads — wire or delete.
+- [ ] **`NEAR_DUPLICATE_BODY` stores its cluster twice, O(N²) across a cluster** — ND1 keeps
+  `members` (N urls) beside `near_identical_to` (N−1) on each of N rows, and `_issue_dict`
+  serialises `extra` whole and uncapped, so a 50-page doorway cluster carries ~5,000 urls.
+  Kept because the approved micro-spec specifies both keys, and `members` is now what every
+  pre-ND1 stored row renders from. Nothing in `api/` or `frontend/src` reads `members` on a
+  NEW row: once historical rows no longer matter, drop it from the emitter and keep the
+  renderer's supersede rule for the old ones. (Cold sweep, 2026-09-02.)
+- [ ] **`/comparison` will report a one-off delta across the ND1/ND3 deploy** — the first crawl
+  after it shows +(N−1) warnings per near-duplicate cluster and, on a bare-origin site, one
+  fewer page, with nothing changed on the site. `comparable` only knows about `info_detail`
+  and partial analysis. `SCORING_MODEL_VERSION` was not bumped because the scoring MODEL did
+  not change (the tiebreak fix restores the pre-ND1 site score); the row COUNT did. Either
+  teach `comparable` about the issue-emission shape or stamp an emission version.
+  No frontend consumer today. (Cold sweep, 2026-09-02.)
+- [ ] **`perf_join.match_key` collides on pre-ND3 jobs that stored both home-page spellings** —
+  both fold to `//site.ca/` and `build_crawled_key_map` is last-wins, so GSC/GA4 data attaches
+  to only one of the two duplicate rows in those old jobs. Going forward the duplicate cannot
+  exist. Harmless unless someone re-reads an old job's ledger join. (Cold sweep, 2026-09-02.)
 - [ ] `page_size_limit_kb` defined twice; `cryptography` pinned by venv match, not audit.
 - [ ] GSC ingest: unmatched rows stored as silent orphans; fold-collision last-wins.
 - [ ] Resolve-then-fetch TOCTOU in `is_ssrf_safe` (needs IP pinning — a design change).

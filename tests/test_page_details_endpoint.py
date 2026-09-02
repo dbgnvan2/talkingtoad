@@ -404,6 +404,33 @@ class TestClientContract:
         assert r.status_code == 404
         assert r.json()["error"]["code"] == "PAGE_NOT_FOUND"
 
+    async def test_a_home_page_stored_under_the_bare_origin_still_opens(
+            self, api_client, auth_headers, test_store):
+        """P8 — ND3 (2026-09-02) made `normalise_url` map the bare origin to the
+        root path, and this endpoint normalises before an EXACT store lookup.
+        Every job crawled before that change stored its home page under the bare
+        spelling — 43 pages across 39 jobs in the development database — so the
+        normalised lookup misses and the button that worked yesterday returns
+        PAGE_NOT_FOUND. The stored spelling has to be tried too."""
+        bare = "https://e.test"          # exactly as pre-ND3 jobs stored it
+        await test_store.create_job(CrawlJob(job_id="old", target_url=bare))
+        await test_store.save_pages([CrawledPage(
+            job_id="old", url=bare, status_code=200, title="Home")])
+        await test_store.save_issues([Issue(
+            job_id="old", page_url=bare, category="security", severity="warning",
+            issue_code="UNSAFE_CROSS_ORIGIN_LINK", description="seeded",
+            recommendation="add rel=noopener", impact=1,
+            extra={"unsafe_links": [{"href": "https://stored.example.com/a"}],
+                   "unsafe_links_total": 1})])
+
+        with respx.mock(assert_all_mocked=False, assert_all_called=False) as rx:
+            rx.route().mock(return_value=httpx.Response(
+                200, text=HTML, headers={"content-type": "text/html"}))
+            r = await api_client.get(
+                f"/api/crawl/old/page-details?url={bare}", headers=auth_headers)
+        assert r.status_code == 200, (
+            f"a page stored under the bare origin no longer opens: {r.text[:200]}")
+
 
 class TestAGonePageIsNotACleanPage:
     """A 404 is conclusive, so this took the LIVE branch and returned details

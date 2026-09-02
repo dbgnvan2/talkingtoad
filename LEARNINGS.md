@@ -178,6 +178,30 @@ Newest first. Format: **Issue → Root cause → What would have caught it → F
   - *Scale:* **19 of the 37 `NEAR_DUPLICATE_BODY` rows in the development database** were the single cluster `['https://livingsystems.ca', 'https://livingsystems.ca/']` — more than half of every near-duplicate finding ever recorded, an artifact of our own URL handling. The other 18 were five genuine clusters (`/about/contact` ↔ `/contact` ↔ `/contact_us`, `/about` ↔ `/bowen-theory`, …), each reported on one page with its partners unnamed.
   - *What would have caught it:* an engine-level crawl from the **bare origin**. Every existing normaliser test passed a URL with a path — `https://example.com/about/`, `https://example.com/page#x` — so the one input shape that breaks the rule was the one shape never tested, and asserting `normalise_url` against itself could not have shown the consequence anyway (P26). The near-duplicate suite had the mirror-image gap: it asserted `len(issues) == 1` per cluster, which pins the defect as the specification.
   - *Fix:* the finding is emitted on **every** member with `extra.near_identical_to` = the other members (never itself), rendered under "Near-identical to", with `members` moved to `_NOISE_KEYS` so the same URLs are not printed twice; `normalise_url` maps an empty path to `/`. The code stays site-scoped, so R5.1 still charges the health score once per cluster — `tests/test_site_scope.py` pins the score against the old one-row shape so the extra rows cannot start costing points. `tests/test_normaliser.py::TestBareOriginCrawlsAsOnePage` drives the real engine and reproduced the exact `members` pair from the database before the fix.
+  - *And what the cold sweep of the FIX then found — four more, three of them in the fix itself:*
+    **(a)** the R5.1 representative election broke impact ties by the order of `page_norm_urls`,
+    which is `SELECT url FROM crawled_pages` with **no `ORDER BY`** — crawl order — and only a
+    strictly higher impact displaced the incumbent. So the elected page was a function of *how
+    many pages carried the code*, and ND1 moved it from the alphabetically-first member to the
+    first-crawled one. Where that page already sat at its 20-point ai_readiness cap the 4-point
+    deduction was absorbed and **the site health score ROSE by 1 with nothing changed on the
+    site** — reproduced against the real scorer, and 1,124 page-rows in the development database
+    are already at or over that cap. This is the ORPHAN_PAGE lesson arriving from the other
+    direction, in a commit whose own message asserted the score does not move. My new
+    `test_site_scope.py` guard could not see it: every member in its fixture carried only that
+    one row, so the election was indifferent and `after == before` held by construction (P26).
+    Tiebreak now sorts by URL, which also makes the docstring's long-standing promise of a
+    choice "stable across runs" true for the first time. **(b)** putting `members` in
+    `_NOISE_KEYS` blanked the evidence on **every `NEAR_DUPLICATE_BODY` row already in the
+    database** — all 37 of them have `members` and no `near_identical_to`, so the Page Audit
+    would print "No specific items were recorded for this finding" over a cluster it recorded
+    perfectly well (P8). `members` is now *superseded by* `near_identical_to`, not retired.
+    **(c)** `/rescan-url` and `/page-details` normalise before an **exact** store lookup, so
+    ND3 broke both buttons for the home page of every job crawled before it — **43 pages across
+    39 jobs** measured in the dev store — returning `PAGE_NOT_FOUND` where they worked the day
+    before. Both now try the stored spelling too, and both tests were mutation-checked against
+    the fix. **(d)** not fixed, recorded in TODO: the cluster is stored twice (O(N²) per
+    cluster) because the approved spec specifies both keys and the old rows now need `members`.
   - *Pattern:* **P25 again, in its quietest form — evidence that renders under the name of the variable that holds it.** "Members" is not a false statement; it is a field name reaching a client report, and a reader who cannot tell a set from a relationship reads it as nonsense and stops trusting the finding. A list key that reaches a human needs a label that says what the list *is to this page*. Second, generalising the trailing-slash lesson of 2026-08-30: **a URL rule written for the shapes in front of you is a rule with an untested shape** — the empty path is not an edge case, it is what a user types.
 
 - **2026-09-02 — Phase 4 sweep: the WordPress audit panel would always have opened empty on reload, and a "not checked" state erased the user's tick.**

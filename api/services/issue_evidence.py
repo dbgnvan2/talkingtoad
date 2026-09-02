@@ -55,12 +55,17 @@ _NOISE_KEYS = frozenset({
     "mixed_content_items_total", "nofollow_links_total", "missing_fields_total",
     "unresolved", "is_lazy_loaded", "faq_heading", "page_type", "year",
     "total_occurrences", "empty_anchor_hrefs",
-    # ND2 (2026-09-02): NEAR_DUPLICATE_BODY carries the whole cluster in
-    # `members` AND this page's partners in `near_identical_to`. Rendering both
-    # prints the same URLs twice and includes the page's own URL, which reads as
-    # "this page duplicates itself". `near_identical_to` is the one to show.
-    "members",
 })
+
+# Keys that are hidden ONLY when a better key is present. ND2 (2026-09-02):
+# NEAR_DUPLICATE_BODY carries the whole cluster in `members` AND this page's
+# partners in `near_identical_to`. Rendering both prints the same URLs twice,
+# and `members` also holds the page's OWN url, so it reads as "this page
+# duplicates itself". But `members` is not retired: every row stored before ND1
+# has only that key, and blanking it would strip the evidence off every
+# historical finding (P8) — the Page Audit would then print "No specific items
+# were recorded" over a cluster it recorded perfectly well.
+_SUPERSEDED_BY: dict[str, str] = {"members": "near_identical_to"}
 
 # Prose keys: a sentence already written for a human. Rendered verbatim.
 _PROSE_KEYS = ("diagnosis", "caveat", "reason", "sentence")
@@ -201,6 +206,9 @@ def evidence_summary(
     #    (headings, outlines, URL lists). Ordered so the most specific run first.
     for key, value in extra.items():
         if key in _NOISE_KEYS or not isinstance(value, list) or not value:
+            continue
+        # Hidden only because a better key for the same URLs is present.
+        if extra.get(_SUPERSEDED_BY.get(key, "")):
             continue
         rendered = [
             line for line in (_row_to_line(row) for row in value) if line

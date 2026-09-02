@@ -318,3 +318,34 @@ class TestTheOutcomeSetsAreNotHardwiredEmpty:
             "the clean page raises findings the seed did not have, so "
             "newly_found_codes must not be empty")
         assert "THIN_CONTENT" not in res["newly_found_codes"]
+
+
+class TestAPreNd3HomePageStillRechecks:
+    """P8 — `/rescan-url` normalises before an EXACT store lookup, and ND3
+    (2026-09-02) changed what normalisation does to a bare origin: it now maps
+    to the root path. Every job crawled before that stored its home page under
+    the bare spelling — 43 pages across 39 jobs in the development database —
+    so "Re-check this page" on a home page that worked yesterday would look up
+    `https://site.ca/`, miss, and return PAGE_NOT_FOUND. The stored spelling
+    must still resolve.
+    """
+
+    BARE = "https://e.test"          # exactly as pre-ND3 jobs stored it
+
+    async def test_re_check_finds_the_page_stored_under_the_bare_origin(self, store):
+        await store.create_job(CrawlJob(job_id="j", target_url=self.BARE))
+        await store.save_pages([CrawledPage(
+            job_id="j", url=self.BARE, status_code=200,
+            title="An Entirely Reasonable Home Page Title")])
+        await store.save_issues([Issue(
+            job_id="j", page_url=self.BARE, category="metadata", severity="warning",
+            issue_code="TITLE_DUPLICATE", description="seeded",
+            recommendation="fix it", impact=5)])
+
+        with respx.mock(assert_all_mocked=False, assert_all_called=False) as rx:
+            rx.route().mock(return_value=httpx.Response(
+                200, text=CLEAN_HTML, headers={"content-type": "text/html"}))
+            res = await rescan_url("j", url=self.BARE, store=store)
+
+        assert isinstance(res, dict), (
+            f"a home page stored under the bare origin no longer re-checks: {res!r}")

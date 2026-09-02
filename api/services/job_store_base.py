@@ -219,11 +219,30 @@ def _site_scope_representatives(
     """Elect ONE representative page per site-scoped code (the worst-affected).
 
     "Worst-affected" = the page where the code carries the highest impact; ties
-    broken deterministically by URL order in ``page_norm_urls`` so the choice is
-    stable across runs. Returns ``{code: representative_url}`` covering only the
-    site-scoped codes actually present after job-level suppression.
+    broken by the LOWEST URL, so the choice is a function of the affected pages
+    alone. Returns ``{code: representative_url}`` covering only the site-scoped
+    codes actually present after job-level suppression.
+
+    The tiebreak used to be "first in ``page_norm_urls``", and that list is
+    ``SELECT url FROM crawled_pages`` with no ``ORDER BY`` — crawl order. Two
+    things followed, both found by the cold sweep of the ND1 change
+    (2026-09-02) and neither visible in a test that gives every candidate the
+    same rows:
+
+    * the elected page depended on **how many pages carried the code**, so
+      ND1 (one ``NEAR_DUPLICATE_BODY`` row per cluster member instead of one per
+      cluster) moved it from the alphabetically-first member to the
+      first-crawled one; and
+    * where the new representative was already at its category cap the
+      deduction was absorbed, so **the site health score rose with nothing
+      changed on the site** — the ORPHAN_PAGE suppression failure in LEARNINGS,
+      arriving from the other direction.
+
+    Sorting the tiebreak fixes both and makes the docstring's old promise of a
+    choice "stable across runs" true for the first time.
+    Tests: tests/test_site_scope.py::test_site_scope_representative_does_not_move_when_more_pages_carry_the_code
     """
-    # code -> (best_impact, best_url) with URL order as the tiebreak.
+    # code -> (best_impact, best_url); higher impact wins, lowest URL breaks ties.
     best: dict[str, tuple[int, str]] = {}
     for url in page_norm_urls:
         for c, imp, _cat in per_page_issues.get(url, []):
@@ -232,7 +251,7 @@ def _site_scope_representatives(
             if not _is_site_scoped(c):
                 continue
             cur = best.get(c)
-            if cur is None or imp > cur[0]:
+            if cur is None or imp > cur[0] or (imp == cur[0] and url < cur[1]):
                 best[c] = (imp, url)
     return {code: url for code, (_, url) in best.items()}
 

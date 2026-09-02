@@ -162,3 +162,77 @@ def test_near_duplicate_cluster_is_charged_once_however_many_members():
     # (P32: an oracle computed from the code under test proves nothing).
     rep_score = 100 - _imp("NEAR_DUPLICATE_BODY")
     assert after == round((rep_score + 100 * 9) / 10)
+
+
+def test_site_scope_representative_does_not_move_when_more_pages_carry_the_code():
+    """Cold-sweep finding (2026-09-02): the R5.1 election broke impact ties by
+    the ORDER OF `page_norm_urls` — which is `SELECT url FROM crawled_pages`
+    with no ORDER BY, i.e. crawl order — and only a STRICTLY higher impact
+    displaced the incumbent. So the elected page depended on how many pages
+    carried the code.
+
+    ND1 changed exactly that: `NEAR_DUPLICATE_BODY` went from one row (on the
+    alphabetically-first member) to a row on every member, moving the
+    representative to the first-CRAWLED member. Where that page is already at
+    its category cap the 4-point deduction is absorbed and **the site health
+    score RISES with nothing changed on the site** — the failure LEARNINGS
+    records against suppressing ORPHAN_PAGE, arriving from the other direction.
+
+    The election must therefore be a function of the affected pages, not of the
+    row count or the crawl order.
+    """
+    loaded = [_row("AI_BOT_SEARCH_BLOCKED"), _row("RAW_HTML_JS_DEPENDENT"),
+              _row("SCHEMA_VISIBLE_MISMATCH")]   # 24 ai_readiness — over the cap
+    # /zeta is crawled first; /alpha is the alphabetically-first cluster member.
+    pages = ["https://x/zeta", "https://x/alpha", "https://x/p1", "https://x/p2"]
+
+    one_row = {"https://x/zeta": list(loaded),
+               "https://x/alpha": [_row("NEAR_DUPLICATE_BODY")],
+               "https://x/p1": [], "https://x/p2": []}
+    every_member = {"https://x/zeta": loaded + [_row("NEAR_DUPLICATE_BODY")],
+                    "https://x/alpha": [_row("NEAR_DUPLICATE_BODY")],
+                    "https://x/p1": [], "https://x/p2": []}
+
+    before, _ = compute_impact_health(pages, one_row, dict(_NO_SEV))
+    after, _ = compute_impact_health(pages, every_member, dict(_NO_SEV))
+    assert after == before, (
+        f"the site score moved {before} -> {after} because the cluster's row now "
+        "appears on a page that absorbs the deduction at its category cap")
+
+
+def test_site_scope_representative_is_stable_against_crawl_order():
+    """The docstring promises a choice "stable across runs". `crawled_pages` has
+    no ORDER BY, so two crawls of the same site that visit pages in a different
+    order must still score the same."""
+    loaded = [_row("AI_BOT_SEARCH_BLOCKED"), _row("RAW_HTML_JS_DEPENDENT"),
+              _row("SCHEMA_VISIBLE_MISMATCH")]
+    per_page = {"https://x/zeta": loaded + [_row("NEAR_DUPLICATE_BODY")],
+                "https://x/alpha": [_row("NEAR_DUPLICATE_BODY")],
+                "https://x/p1": [], "https://x/p2": []}
+
+    order_a = ["https://x/zeta", "https://x/alpha", "https://x/p1", "https://x/p2"]
+    order_b = ["https://x/p2", "https://x/alpha", "https://x/p1", "https://x/zeta"]
+
+    a, _ = compute_impact_health(order_a, per_page, dict(_NO_SEV))
+    b, _ = compute_impact_health(order_b, per_page, dict(_NO_SEV))
+    assert a == b, f"the same site scored {a} and {b} depending on crawl order"
+
+
+def test_every_cluster_member_now_scores_as_having_the_problem_on_its_own_page():
+    """The declared per-page consequence of ND1, pinned so it is a decision and
+    not a surprise.
+
+    `compute_page_health` scores ONE page from its own rows and knows nothing
+    about site scope — it cannot, having no job context. So the extra rows do
+    lower the individual health of the other cluster members, and that feeds the
+    Page Priority queue, the striking-distance list and the citability grade.
+    That is the intended reading of ND1: five of six near-identical pages used
+    to be invisible, and a page that is one of six doorway pages genuinely has a
+    content problem worth ranking. What must NOT move is the site score, which
+    R5.1 governs — asserted above.
+    """
+    from api.services.job_store_base import compute_page_health
+
+    member_rows = [_row("NEAR_DUPLICATE_BODY")]
+    assert compute_page_health(member_rows) == 100 - _imp("NEAR_DUPLICATE_BODY")
+    assert compute_page_health([]) == 100, "a page outside the cluster is untouched"

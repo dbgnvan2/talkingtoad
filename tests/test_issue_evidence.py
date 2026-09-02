@@ -44,6 +44,7 @@ from api.services.issue_evidence import (
     evidence_for_excel,
     evidence_lines,
 )
+from api.services.issue_evidence import evidence_summary as mod_evidence_summary
 from api.services.report_generator import generate_pdf_report
 
 PAGE = "https://livingsystems.ca/"
@@ -262,6 +263,21 @@ class TestEvidenceLines:
             "the page's own URL must not appear in its evidence")
         assert sum(1 for line in lines if "https://x/b" in line) == 1, (
             f"the partner list is printed twice: {lines}")
+
+    def test_ev_a_stored_row_from_before_nd1_still_renders_its_cluster(self):
+        """P8 — every `NEAR_DUPLICATE_BODY` row already in the database carries
+        `members` and NO `near_identical_to`; there were 37 of them in the
+        development store when this shipped. Suppressing `members` outright
+        blanks the evidence on every one of those historical findings, and the
+        Page Audit then prints "No specific items were recorded for this
+        finding" over a cluster it recorded perfectly well. `members` is
+        superseded by `near_identical_to`, not retired."""
+        lines, total, _ = mod_evidence_summary("NEAR_DUPLICATE_BODY", {
+            "members": ["https://x/a", "https://x/b"],
+        })
+        assert lines, "a pre-ND1 stored row lost its evidence"
+        assert any("https://x/b" in line for line in lines)
+        assert total == 2
 
 
 # ── The guard ───────────────────────────────────────────────────────────────

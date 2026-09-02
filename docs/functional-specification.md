@@ -978,7 +978,17 @@ set** = shingles appearing on ≥ max(3, 20% of eligible) pages:
   representative election still charges the health score **once per cluster**;
   only the stored row count rises, which is the truth (each of those pages has
   the problem). `tests/test_site_scope.py` pins that the score is unchanged by
-  the extra rows.
+  the extra rows. Two consequences, both declared rather than incidental:
+  **(a)** each member's own **per-page** health now reflects the duplication
+  (`compute_page_health` scores a page from its own rows and has no job context
+  to apply R5.1), so the other members enter the Page Priority queue and the
+  striking-distance list — which is the point: five of six doorway pages used to
+  be invisible. **(b)** the R5.1 representative election breaks impact ties by
+  the **lowest URL**; it used to take the first page in `crawled_pages` order
+  (crawl order, no `ORDER BY`), so the elected page depended on how many pages
+  carried the code, and where the new representative sat at its category cap the
+  deduction was absorbed and the site score *rose* with nothing changed on the
+  site. The tiebreak is now a function of the affected pages alone.
 - `BOILERPLATE_RATIO_HIGH` (page) — ≥ 60% of a page's shingles are the shared
   template — mostly boilerplate, low citability.
 
