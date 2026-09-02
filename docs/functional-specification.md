@@ -1003,6 +1003,16 @@ in the development database were that one artifact.
 → `tests/test_normaliser.py::TestBareOriginCrawlsAsOnePage` (drives the real
 engine: asserting the normaliser against itself could not catch the consequence).
 
+Jobs crawled **before** ND3 keep whatever spelling they stored — 43 home pages
+under the bare form alone, and 71 jobs holding both forms as separate rows with
+different findings. `/rescan-url` and `/page-details` therefore resolve a page by
+the **caller's own spelling first** (`_lookup_crawled_page`), then the normalised
+form, then the other trailing-slash spelling. The frontend passes the url
+straight from the page list, so the exact match is by construction the row the
+operator is looking at: normalising first made the endpoints answer for — and
+rewrite — the twin row on those 71 jobs, with `/pages/issues` (which does not
+normalise) reloading the untouched original so the button looked inert.
+
 All thresholds are config (env-overridable, `docs/thresholds.md`); old crawls
 missing `schema_blocks`/`first_1500_words` degrade to no findings, never a crash
 (P8); site-scoped checks skip sites under 3 pages. Adversarial guards written

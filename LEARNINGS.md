@@ -197,10 +197,10 @@ Newest first. Format: **Issue → Root cause → What would have caught it → F
     would print "No specific items were recorded for this finding" over a cluster it recorded
     perfectly well (P8). `members` is now *superseded by* `near_identical_to`, not retired.
     **(c)** `/rescan-url` and `/page-details` normalise before an **exact** store lookup, so
-    ND3 broke both buttons for the home page of every job crawled before it — **43 pages across
-    39 jobs** measured in the dev store — returning `PAGE_NOT_FOUND` where they worked the day
-    before. Both now try the stored spelling too, and both tests were mutation-checked against
-    the fix. **(d)** not fixed, recorded in TODO: the cluster is stored twice (O(N²) per
+    ND3 broke both buttons for the home page of jobs crawled before it, returning
+    `PAGE_NOT_FOUND` where they worked the day before. I measured **43 pages across 39 jobs**
+    and treated that as the affected population; it is only the bare-only half — see (e)
+    below, which is that mistake being paid for. **(d)** not fixed, recorded in TODO: the cluster is stored twice (O(N²) per
     cluster) because the approved spec specifies both keys and the old rows now need `members`.
   - *And what a second cold sweep, of the FIX TO THE FIX, then found — two more, both of them
     the same defect I had just "fixed", one level deeper:* **(e)** the store lookup I added
