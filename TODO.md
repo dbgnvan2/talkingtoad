@@ -50,14 +50,12 @@ user replaces the old image in the post by hand.
 
 ## Phase 4 — three features with real user value
 
-- [ ] **Striking-distance pages into the rewriter** (Performance Bundle PB3): pages ranking
-  8–20 from the ledger, one click to the Content Rewriter with the target query.
-- [ ] **Compare view**: render `/comparison`, strike the Health delta through with `reason`
-  when `comparable` is false (different `info_detail`, partial scan).
-- [ ] **Rescan all pages in place** (re-check stored pages without a fresh crawl) and a button
-  for the WordPress configuration audit (`POST /api/wp-audit/{job_id}` has no caller today).
-- [ ] **Fix Focus third state** `not_checked` for codes the re-check could not evaluate
-  (schema change to the persisted snapshot).
+- [x] **Striking-distance pages** (PB3; band 5–15, floor 50, per the original spec) — 2026-09-02.
+- [x] **Compare card** with struck-through delta and reason — 2026-09-02.
+- [x] **Re-check all pages in place** and the **WordPress audit** button — 2026-09-02.
+- [x] **Fix Focus third state** `not_checked` — 2026-09-02.
+- [ ] **Striking-distance queries** come only from the GSC priority seed; persisting `top_queries`
+  in the ledger (PB3's original intent) would give every scan a target query.
 
 ## Adjacent, when touched
 

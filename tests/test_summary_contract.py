@@ -135,3 +135,13 @@ class TestImageSummaryCarriesTheMeasurementDisclosure:
             "the counters did not survive update_job -> get_job. A claim that "
             "does not reach the artifact is the orphan_detection bug again (P6)")
 
+
+
+class TestSummaryCarriesTheWpAudit:
+    async def test_u44_summary_carries_wp_audit_for_the_panel(self, store):
+        """WpAuditPanel.jsx reads summary.wp_audit on reload (Phase 4 sweep, P25)."""
+        job = CrawlJob(job_id="w1", target_url="https://example.com/", status="complete")
+        await store.create_job(job)
+        assert (await store.get_summary("w1"))["wp_audit"] is None
+        await store.update_job("w1", wp_audit={"plugins_total": 2})
+        assert (await store.get_summary("w1"))["wp_audit"] == {"plugins_total": 2}

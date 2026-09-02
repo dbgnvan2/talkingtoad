@@ -195,3 +195,54 @@ async def test_ff3_snapshot_persists_and_no_rebuild():
 # Guard: the scoring source-of-truth the snapshot relies on is intact.
 def test_ff2b_priority_rank_source_exists():
     assert "TITLE_MISSING" in _ISSUE_SCORING
+
+
+# ── Phase 4 U4.5 — the third state: not_checked ───────────────────────────
+def test_u45_unchecked_codes_are_neither_verified_nor_still_present():
+    """A code the single-page re-scan cannot evaluate (needs a full crawl) is
+    reported as not checked — never as a pass, never as a fail (P31)."""
+    from api.services.fix_focus import STATUS_NOT_CHECKED
+    snap = build_snapshot(
+        [_issue("https://x.org/a", "TITLE_MISSING"),
+         _issue("https://x.org/a", "ORPHAN_PAGE")],
+        generated_at=NOW, scoring_model_version="v")
+    outcome = apply_verify(snap, "https://x.org/a", present_codes=["ORPHAN_PAGE"],
+                           unchecked_codes=["ORPHAN_PAGE"])
+    assert outcome["verified"] == ["TITLE_MISSING"]
+    assert outcome["still_present"] == []
+    assert outcome["not_checked"] == ["ORPHAN_PAGE"]
+    assert outcome["newly_found"] == [], "an unchecked code carried over is not 'newly found'"
+    codes = {it["issue_code"]: it for p in snap["seo"]["pages"] for it in p["items"]}
+    assert codes["ORPHAN_PAGE"]["status"] == STATUS_NOT_CHECKED
+
+
+def test_u45_absent_unchecked_still_not_verified():
+    """The carried-over code is absent from the live set (it was never looked
+    for). Without the third state it would have read as verified."""
+    from api.services.fix_focus import STATUS_NOT_CHECKED
+    snap = build_snapshot([_issue("https://x.org/a", "ORPHAN_PAGE")], generated_at=NOW, scoring_model_version="v")
+    outcome = apply_verify(snap, "https://x.org/a", present_codes=[], unchecked_codes=["ORPHAN_PAGE"])
+    assert outcome["verified"] == [] and outcome["not_checked"] == ["ORPHAN_PAGE"]
+    codes = {it["issue_code"]: it for p in snap["seo"]["pages"] for it in p["items"]}
+    assert codes["ORPHAN_PAGE"]["status"] == STATUS_NOT_CHECKED
+
+
+def test_u45_default_is_the_old_behaviour():
+    snap = build_snapshot([_issue("https://x.org/a", "TITLE_MISSING")], generated_at=NOW, scoring_model_version="v")
+    outcome = apply_verify(snap, "https://x.org/a", present_codes=[])
+    assert outcome["not_checked"] == [] and outcome["verified"] == ["TITLE_MISSING"]
+
+
+def test_u45_checked_item_keeps_its_tick_when_not_checked():
+    """Sweep finding: the user's tick is their claim, not the scan's. A code the
+    re-scan could not evaluate must not erase it, and Regenerate must not reset it."""
+    from api.services.fix_focus import STATUS_CHECKED, merge_checked_state, set_checked
+    snap = build_snapshot([_issue("https://x.org/a", "ORPHAN_PAGE")], generated_at=NOW, scoring_model_version="v")
+    set_checked(snap, "https://x.org/a", "ORPHAN_PAGE", checked=True, at=NOW)
+    outcome = apply_verify(snap, "https://x.org/a", present_codes=[], unchecked_codes=["ORPHAN_PAGE"])
+    item = next(it for p in snap["seo"]["pages"] for it in p["items"])
+    assert item["status"] == STATUS_CHECKED and item["rechecked"] == "not_checked"
+    assert outcome["not_checked"] == ["ORPHAN_PAGE"]
+    fresh = build_snapshot([_issue("https://x.org/a", "ORPHAN_PAGE")], generated_at=NOW, scoring_model_version="v")
+    merged = merge_checked_state(fresh, snap)
+    assert next(it for p in merged["seo"]["pages"] for it in p["items"])["status"] == STATUS_CHECKED

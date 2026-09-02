@@ -305,6 +305,19 @@ cap) and to every list and export through the same predicate. See functional-spe
 
 ---
 
+## Striking distance (PB3, Phase 4 U4.1, 2026-09-02)
+
+| Threshold | Value | Source |
+|---|---|---|
+| Position band (inclusive) | 5 – 15 | `api/config/striking_distance.json` `position_min` / `position_max` |
+| Impressions floor (monthly) | 50 | `api/config/striking_distance.json` `impressions_min` |
+
+A crawled page whose latest ledger row sits in the band with at least the floor's impressions
+is listed by `GET /api/crawl/{job_id}/striking-distance`; `tests/test_striking_distance.py` pins
+the three values (P29).
+
+---
+
 ## Fix Focus checklist
 
 | Threshold | Value | Source |

@@ -10,6 +10,9 @@ import Top10Pages from './Top10Pages.jsx'
 import FixFocusPanel from './FixFocusPanel.jsx'
 import FixFocusItemsHelp from './FixFocusItemsHelp.jsx'
 import LLMSTxtGenerator from './LLMSTxtGenerator.jsx'
+import StrikingDistancePanel from './StrikingDistancePanel.jsx'
+import ComparisonCard from './ComparisonCard.jsx'
+import WpAuditPanel from './WpAuditPanel.jsx'
 import StatCard from './StatCard.jsx'
 import Spinner from './Spinner.jsx'
 // CATEGORIES (the Issues-by-Category grid) comes from the single source of truth
@@ -156,6 +159,9 @@ export default function SummaryPanel({ summary, domain, jobId, onCategoryClick, 
           />
         )}
       </div>
+
+      {/* Phase 4 U4.2 — compared with the previous scan of this site */}
+      <ComparisonCard jobId={jobId} refreshKey={summary.health_score} />
 
       {/* E4 — systemic defects: one template or setting is responsible, so one
           fix resolves many pages. Shown only when something actually qualifies.
@@ -316,7 +322,11 @@ export default function SummaryPanel({ summary, domain, jobId, onCategoryClick, 
       </div>
 
       <Top10Pages jobId={jobId} onPageClick={onPageClick} />
+      {/* Phase 4 U4.1 — pages one rewrite away from page one */}
+      <StrikingDistancePanel jobId={jobId} onPageClick={onPageClick} refreshKey={summary.health_score} />
       <LLMSTxtGenerator jobId={jobId} />
+      {/* Phase 4 U4.4 — the read-only WordPress configuration audit, on demand */}
+      <WpAuditPanel jobId={jobId} initial={summary.wp_audit || null} />
     </div>
   )
 }

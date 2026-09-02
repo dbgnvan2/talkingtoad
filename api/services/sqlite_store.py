@@ -681,6 +681,9 @@ class SQLiteJobStore:
             "health_score_basis": health_score_basis(job.analysis_coverage, job.settings),
             "robots_txt": robots_info,
             "sitemap": sitemap_info,
+            # Phase 4 U4.4: the panel shows a stored audit on reload (P25 —
+            # the job had it, the PDF printed it, the summary never carried it).
+            "wp_audit": job.wp_audit,
         }
 
     async def _info_tier_counts(self, job_id: str, info_detail: str) -> tuple[dict, int, int]:

@@ -1,0 +1,6 @@
+{
+  "_comment": "PB3 (Performance Bundle) striking-distance band. A page ranking inside [position_min, position_max] with at least impressions_min monthly impressions is the highest-leverage rewriter input. docs/thresholds.md records these.",
+  "position_min": 5,
+  "position_max": 15,
+  "impressions_min": 50
+}

@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useMemo, Suspense } from 'reac
 import { useParams, useNavigate } from 'react-router-dom'
 import CATEGORIES from '../data/categories.generated.json'
 import SeverityBadge from '../components/SeverityBadge.jsx'
+import RecheckAllButton from '../components/RecheckAllButton.jsx'
 import IssueHelpPanel from '../components/IssueHelpPanel.jsx'
 import FixManager from '../components/FixManager.jsx'
 import FixInlinePanel, { FIXABLE_CODES } from '../components/FixInlinePanel.jsx'
@@ -185,6 +186,7 @@ export default function Results() {
         </div>
         <div className="flex gap-2">
           {csvError && <span className="text-red-600 text-xs self-center mr-2">{csvError}</span>}
+          <RecheckAllButton jobId={jobId} onFinished={() => loadSummary()} />
           <button onClick={() => setShowSettings(true)} className="px-3 py-1.5 bg-white border border-gray-300 rounded-lg text-xs font-bold shadow-sm" title="Display Settings" aria-label="Display settings">⚙</button>
           <button onClick={() => setShowConnections(true)} className="px-3 py-1.5 bg-white border border-gray-300 rounded-lg text-xs font-bold shadow-sm" title="Test Connections" aria-label="Connections">Connections</button>
           <button onClick={() => setShowGeoSettings(true)} className="px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-bold shadow-sm" title="GEO Settings">GEO</button>

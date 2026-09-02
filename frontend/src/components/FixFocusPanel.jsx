@@ -20,9 +20,12 @@ const STATUS_STYLE = {
   checked: 'text-indigo-600',
   verified: 'text-emerald-600 font-semibold',
   still_present: 'text-red-600 font-semibold',
+  not_checked: 'text-amber-700 font-semibold',
 }
 const STATUS_LABEL = {
   open: '', checked: 'checked', verified: 'verified ✓', still_present: 'still present',
+  // Phase 4 U4.5 — the re-check could not evaluate this code (needs a full crawl)
+  not_checked: 'not re-checked',
 }
 
 function FocusSection({ title, focus, jobId, onChange, onError, onNotice }) {
@@ -101,6 +104,9 @@ function FocusSection({ title, focus, jobId, onChange, onError, onNotice }) {
                   <span className="px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700 text-[10px]">
                     quick win
                   </span>
+                )}
+                {item.rechecked === 'not_checked' && item.status === 'checked' && (
+                  <span className="ml-2 text-xs text-amber-700" data-testid="not-rechecked">not re-checked</span>
                 )}
                 {STATUS_LABEL[item.status] && (
                   <span className={`text-[10px] ${STATUS_STYLE[item.status]}`}>

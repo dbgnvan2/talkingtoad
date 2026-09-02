@@ -359,6 +359,20 @@ class TestComparison:
         assert body["previous"]["info_detail"] == "all"
         assert body["delta"]["health_score"] == 1  # still returned, struck through by the UI
 
+    async def test_compare_carries_both_score_bases_and_flags_a_partial_scan(self, api_client, auth_headers, test_store):
+        """Phase 4 U4.2 — the compare card strikes the delta through for a partial analysis too."""
+        old = datetime(2026, 1, 1, tzinfo=timezone.utc)
+        await _job(test_store, job_id="old", info_detail="all", started_at=old)
+        job = CrawlJob(job_id="new", target_url=BASE, status="complete", pages_crawled=1,
+                       settings=CrawlSettings(enabled_analyses=["link_integrity"]),
+                       started_at=datetime.now(timezone.utc))
+        await test_store.create_job(job)
+        await test_store.save_pages([CrawledPage(job_id="new", url=PAGE, status_code=200,
+                                                 crawled_at=datetime.now(timezone.utc))])
+        body = (await api_client.get("/api/crawl/new/comparison", headers=auth_headers)).json()
+        assert "health_score_basis" in body["current"] and "health_score_basis" in body["previous"]
+        assert body["comparable"] is False and "partial analysis" in body["reason"]
+
     async def test_compare_same_level_is_comparable(self, api_client, auth_headers, test_store):
         old = datetime(2026, 1, 1, tzinfo=timezone.utc)
         await _job(test_store, job_id="old", info_detail="key", started_at=old)

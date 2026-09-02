@@ -195,6 +195,12 @@ user re-uploading the file).
 
 ### Journey B — Review and triage issues
 
+**Compared with the previous scan (Phase 4 U4.2, 2026-09-02).** The Summary tab shows a
+`ComparisonCard` when an earlier completed scan of the same site exists: health then → now with
+the delta, issues then → now, critical and warning deltas. When the two scans are not the same
+measurement — different `info_detail`, or either was a partial analysis — the delta is struck
+through and the reason printed; a bare delta is never shown.
+
 **Goal:** User wants to understand and prioritize the issues found.
 
 **Steps:**
@@ -1854,6 +1860,32 @@ button that collapses and clears the ranked table; re-opening the panel re-ranks
 current crawl. (It replaced a misleading "Refresh" button that only re-displayed the same
 crawl's numbers without re-scanning.) → `frontend`: `PagePriority.test.jsx` "Hide collapses".
 
+### 6.9b Striking-distance pages (PB3, Phase 4 U4.1, 2026-09-02)
+
+`GET /api/crawl/{job_id}/striking-distance` (`api/services/striking_distance.py`) lists the
+crawled pages whose latest Performance Ledger row ranks inside the band (5–15) with at least the
+impressions floor (50) — config in `api/config/striking_distance.json`, recorded in
+`docs/thresholds.md`. Each row carries position, impressions, clicks, the page's health score
+(at the job's `info_detail`), `target_query` from the job's stored GSC priority seed (the
+ledger holds no queries; `null` rather than invented), and a one-sentence `rewrite_brief` for
+the Content Rewriter. `basis` says why a list is empty (no ledger vs nothing in band — P31).
+Surface: `StrikingDistancePanel` on the Summary tab with **Open page** (the Page Audit, where
+the rewriter lives) and **Copy brief**. No auto-rewrite. → `tests/test_striking_distance.py`.
+
+### 6.9c Re-check all pages in place (Phase 4 U4.3)
+
+`POST /api/crawl/{job_id}/recheck-all` re-fetches every stored page of a finished job through
+`rescan_url` — the one hardened single-page path — sequentially, honouring `crawl_delay_ms`, as a
+background task; `GET …/recheck-all/status` reports progress from an in-process table (lost on
+restart by design; each page's findings are written as it goes). 409 while the job or another
+re-check runs. Distinct from Rescan (Journey A2): Rescan is a new crawl comparable to the old
+one; re-check updates this job without discovering new pages. The politeness guard works both
+ways: a re-check refuses while a crawl of the host runs, and `/start` / `/rescan` refuse while
+a re-check of the host runs. Surface: **Re-check all pages** in the Results header, polling
+every 2 s and refreshing the summary (and the compare card and striking-distance list, keyed on
+the score) when done.
+→ `tests/test_recheck_all.py`.
+
 ### 6.10 AI-error contract (P14) and Connections panel
 
 **Error contract.** `analyze_with_ai` (`api/services/ai_analyzer.py`) and `geo_llm._call_llm`
@@ -1922,6 +1954,14 @@ and **AI/GEO** — grouped by page and capped at **10 pages per focus**, ordered
   `tests/test_crawl_router_contracts.py::TestFixFocusEndpoints`, `frontend`:
   `FixFocusPanel.test.jsx`, `FixFocusItemsHelp.test.jsx`. *(Spec: this section supersedes the
   pending micro-specs `2026-08-13_fix-focus-checklist.md` and `2026-08-13_fix-focus-summary-and-help.md`.)*
+
+**Third state (Phase 4 U4.5, 2026-09-02).** `apply_verify` takes `unchecked_codes` — the
+re-scan's `carried_over_codes` (the `needs_full_crawl` set) — and marks those items
+`not_checked`: neither verified nor still present, because the single-page path never looked.
+Before this the snapshot wrote `still_present` for codes it had not evaluated (D5 sweep
+finding). A tick the user made survives (`checked` is their claim, not the scan's; the item
+carries `rechecked: "not_checked"` beside it) and Regenerate preserves it. The panel shows
+"not re-checked" in amber. → `tests/test_fix_focus.py::test_u45_*`.
 
 ### 6.12 GSC priority upload — seed the crawl + rank by Search Console (2026-08-14)
 
@@ -2208,6 +2248,12 @@ through `AIRouter`, so usage and cost stay centralised, and nothing in the path
 touches WordPress. → `tests/test_blueprints.py` (27 tests).
 
 ### 7.8 WordPress configuration audit (D3, 2026-08-29)
+
+**Run from the app (Phase 4 U4.4, 2026-09-02).** `WpAuditPanel` on the Summary tab posts to
+`/api/wp-audit/{job_id}` and renders plugins total / active / inactive, pending updates, inactive
+plugins and the `not_inspected` boundary; `NO_CREDENTIALS`, `DOMAIN_MISMATCH` and
+`WP_AUTH_FAILED` render their message. The result is stored on the job so the PDF prints it.
+Until this the route had no caller. → `tests/test_wp_audit.py::TestPanelContract`.
 
 `api/services/wp_audit.py`, surfaced by `POST /api/wp-audit/{job_id}`.
 **Read-only, opt-in, post-scan.** It reports the operational facts no crawler can

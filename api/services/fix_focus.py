@@ -28,8 +28,9 @@ STATUS_OPEN = "open"              # not yet touched
 STATUS_CHECKED = "checked"        # user ticked it (says "done")
 STATUS_VERIFIED = "verified"      # a re-scan confirmed it cleared
 STATUS_STILL_PRESENT = "still_present"  # a re-scan found it NOT cleared
+STATUS_NOT_CHECKED = "not_checked"      # the re-scan could not evaluate this code (needs a full crawl)
 
-_TERMINAL_ON_REGEN = {STATUS_CHECKED, STATUS_VERIFIED, STATUS_STILL_PRESENT}
+_TERMINAL_ON_REGEN = {STATUS_CHECKED, STATUS_VERIFIED, STATUS_STILL_PRESENT, STATUS_NOT_CHECKED}
 
 
 def _item_from_issue(issue: Issue) -> dict:
@@ -173,7 +174,8 @@ def merge_checked_state(new_snapshot: dict, old_snapshot: dict | None) -> dict:
     return new_snapshot
 
 
-def apply_verify(snapshot: dict, page_url: str, *, present_codes: Iterable[str]) -> dict:
+def apply_verify(snapshot: dict, page_url: str, *, present_codes: Iterable[str],
+                 unchecked_codes: Iterable[str] = ()) -> dict:
     """Reconcile one page against a re-scan's ABSOLUTE current issue set (FF4.D/FF5).
 
     ``present_codes`` = every issue code the re-scan currently sees on the page
@@ -190,22 +192,35 @@ def apply_verify(snapshot: dict, page_url: str, *, present_codes: Iterable[str])
     (surfaced so the user can regenerate — they do NOT silently enter the list).
     """
     present = set(present_codes)
+    unchecked = set(unchecked_codes)
     verified: list[str] = []
     still_present: list[str] = []
+    not_checked: list[str] = []
     snap_codes_on_page: set[str] = set()
     for _focus, page, item in _iter_items(snapshot):
         if page["url"] != page_url:
             continue
         snap_codes_on_page.add(item["issue_code"])
-        if item["issue_code"] in present:
+        if item["issue_code"] in unchecked:
+            # Phase 4 U4.5 — the re-scan did not look for this code (it needs
+            # a full crawl). Neither a pass nor a fail: say so (P31). A tick
+            # the user made survives: "checked" is their claim, not the scan's.
+            if item["status"] != STATUS_CHECKED:
+                item["status"] = STATUS_NOT_CHECKED
+            item["rechecked"] = "not_checked"
+            not_checked.append(item["issue_code"])
+        elif item["issue_code"] in present:
             item["status"] = STATUS_STILL_PRESENT
+            item.pop("rechecked", None)
             still_present.append(item["issue_code"])
         else:
             item["status"] = STATUS_VERIFIED
+            item.pop("rechecked", None)
             verified.append(item["issue_code"])
-    newly_found = sorted(present - snap_codes_on_page)
+    newly_found = sorted((present - unchecked) - snap_codes_on_page)
     return {
         "verified": sorted(verified),
         "still_present": sorted(still_present),
         "newly_found": newly_found,
+        "not_checked": sorted(not_checked),
     }

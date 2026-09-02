@@ -84,6 +84,10 @@ _VALID_CATEGORIES: frozenset[str] = frozenset(
 
 # Per-job cancel events (job_id → asyncio.Event)
 _cancel_events: dict[str, asyncio.Event] = {}
+# Phase 4 (2026-09-02) — in-process progress of a "re-check all pages" run,
+# keyed by job_id. Lost on restart by design: the stored issues are updated
+# page by page as it goes, so a forgotten counter loses nothing.
+_recheck_progress: dict[str, dict] = {}
 
 # CSV column order (spec §4.4)
 _CSV_FIELDS = ["url", "issue_code", "severity", "info_tier", "category", "phase", "description", "recommendation"]
@@ -1022,6 +1026,15 @@ async def _launch_crawl(
     # Two at once halve the crawl delay against the target's server, and the
     # second would be measuring a site under load from the first.
     host = (urlparse(target_url).hostname or "").lower().removeprefix("www.")
+    # A running re-check (Phase 4) fetches the same host at the same delay.
+    for jid, prog in _recheck_progress.items():
+        if prog.get("running") and prog.get("host") == host:
+            return _err(
+                "RECHECK_IN_PROGRESS",
+                f"A re-check of {host} is running (job {jid}, {prog['done']} of {prog['total']} pages). "
+                f"Wait for it to finish before starting a crawl.",
+                409,
+            )
     active = await store.active_jobs_for_domain(host) if host else []
     if active:
         running = active[0]
@@ -2555,10 +2568,110 @@ async def verify_fix_focus_page(
         for i in issues
         if i.get("impact", 0) >= FIX_FOCUS_MIN_IMPACT
     }
-    outcome = apply_verify(snapshot, rescan["url"], present_codes=present_codes)
+    # Phase 4 U4.5: codes the single-page path cannot evaluate are neither
+    # verified nor still present — they were not checked, and the snapshot
+    # must say so rather than over-claim in either direction.
+    outcome = apply_verify(snapshot, rescan["url"], present_codes=present_codes,
+                           unchecked_codes=rescan.get("carried_over_codes") or [])
     await store.update_job(job_id, fix_focus=snapshot)
     return {"url": rescan["url"], "reconciled": True,
             "page_status": rescan["status_code"], **outcome}
+
+
+@router.get("/{job_id}/striking-distance", response_model=None)
+async def get_striking_distance(
+    job_id: str,
+    store: SQLiteJobStore = Depends(get_store),
+) -> dict | JSONResponse:
+    """Pages ranking inside the striking-distance band with real impressions —
+    the highest-leverage inputs to the Content Rewriter (PB3, Phase 4 U4.1)."""
+    job = await store.get_job(job_id)
+    if job is None:
+        return _err("JOB_NOT_FOUND", "No crawl job found with the given ID.", 404)
+    from api.services.striking_distance import build_striking_distance
+    return await build_striking_distance(store, job_id)
+
+
+async def _run_recheck_all(job_id: str, urls: list[str], delay_ms: int, store) -> None:
+    """Re-fetch every stored page through the single-page rescan path, in order,
+    honouring the job's politeness delay. Progress lives in ``_recheck_progress``."""
+    prog = _recheck_progress[job_id]
+    try:
+          for url in urls:
+            try:
+                res = await rescan_url(job_id, url=url, store=store)
+                if isinstance(res, JSONResponse) or res.get("page_unreadable"):
+                    prog["unreadable"] += 1
+                else:
+                    prog["resolved"] += int(res.get("resolved") or 0)
+                    prog["added"] += int(res.get("added") or 0)
+            except Exception as exc:  # one bad page must not end the run
+                logger.warning("recheck_all_page_failed", extra={"job_id": job_id, "url": url, "error": str(exc)})
+                prog["unreadable"] += 1
+            prog["done"] += 1
+            if delay_ms and url is not urls[-1]:
+                await asyncio.sleep(delay_ms / 1000)
+
+    finally:
+        # Whatever ended the loop (including cancellation at shutdown), the
+        # entry must not stay running:true and 409 every later start.
+        prog["running"] = False
+        prog["finished_at"] = datetime.now(timezone.utc).isoformat()
+
+
+@router.post("/{job_id}/recheck-all", status_code=202, response_model=None)
+async def recheck_all_pages(
+    job_id: str,
+    background_tasks: BackgroundTasks,
+    store: SQLiteJobStore = Depends(get_store),
+) -> dict | JSONResponse:
+    """Re-check every stored page of a finished job in place (Phase 4 U4.3).
+
+    Distinct from Rescan (a fresh crawl, a new job): this updates the current
+    job's findings and score page by page without discovering new pages.
+    """
+    job = await store.get_job(job_id)
+    if job is None:
+        return _err("JOB_NOT_FOUND", "No crawl job found with the given ID.", 404)
+    if job.status in ("queued", "running"):
+        return _err("CRAWL_IN_PROGRESS", "This scan is still running; re-check it when it finishes.", 409)
+    prog = _recheck_progress.get(job_id)
+    if prog and prog.get("running"):
+        return _err("RECHECK_IN_PROGRESS", f"A re-check of this scan is already running ({prog['done']} of {prog['total']} pages).", 409)
+    host = (urlparse(job.target_url).hostname or "").lower().removeprefix("www.")
+    # Both directions of the politeness guard: no crawl of this host may be
+    # running, and no other re-check of it either.
+    if await store.active_jobs_for_domain(host):
+        return _err("CRAWL_IN_PROGRESS_FOR_DOMAIN", f"A scan of {host} is running; re-check when it finishes.", 409)
+    for jid, other in _recheck_progress.items():
+        if jid != job_id and other.get("running") and other.get("host") == host:
+            return _err("RECHECK_IN_PROGRESS", f"A re-check of {host} is already running (job {jid}).", 409)
+    pages = await store.get_pages(job_id)
+    urls = [p.url for p in pages]
+    _recheck_progress[job_id] = {
+        "running": True, "done": 0, "total": len(urls), "resolved": 0, "added": 0,
+        "unreadable": 0, "started_at": datetime.now(timezone.utc).isoformat(), "finished_at": None,
+        "host": host,
+    }
+    background_tasks.add_task(_run_recheck_all, job_id, urls, job.settings.crawl_delay_ms, store)
+    return {"job_id": job_id, "total": len(urls), "status": "started"}
+
+
+@router.get("/{job_id}/recheck-all/status", response_model=None)
+async def recheck_all_status(
+    job_id: str,
+    store: SQLiteJobStore = Depends(get_store),
+) -> dict | JSONResponse:
+    """Progress of the in-place re-check. ``running: false, total: 0`` when none
+    has run since the process started (progress is not persisted)."""
+    job = await store.get_job(job_id)
+    if job is None:
+        return _err("JOB_NOT_FOUND", "No crawl job found with the given ID.", 404)
+    prog = _recheck_progress.get(job_id)
+    if not prog:
+        return {"job_id": job_id, "running": False, "done": 0, "total": 0, "resolved": 0,
+                "added": 0, "unreadable": 0, "started_at": None, "finished_at": None}
+    return {"job_id": job_id, **{k: v for k, v in prog.items() if k != "host"}}
 
 
 @router.get("/{job_id}/comparison", response_model=None)
@@ -2594,6 +2707,13 @@ async def get_crawl_comparison(
     prev_level = prev_job.settings.info_detail
     comparable = cur_level == prev_level
     reason = None if comparable else f"info_detail differs ({cur_level} vs {prev_level})"
+    # A partial analysis scores 100 for what it never ran (S1); two scores over
+    # different category sets are not the same measurement either.
+    for label, summ in (("this scan", current_summary), ("the previous scan", prev_summary)):
+        basis = summ.get("health_score_basis") or {}
+        if basis.get("comparable") is False and comparable:
+            comparable = False
+            reason = f"{label} was a partial analysis ({len(basis.get('categories_scored') or [])} categories scored)"
 
     return {
         "comparison_available": True,
@@ -2602,6 +2722,7 @@ async def get_crawl_comparison(
         "current": {
             "job_id": job_id,
             "info_detail": cur_level,
+            "health_score_basis": current_summary.get("health_score_basis"),
             "crawled_at": job.started_at.isoformat() if job.started_at else None,
             "health_score": current_summary.get("health_score", 0),
             "pages_crawled": current_summary.get("pages_crawled", 0),
@@ -2611,6 +2732,7 @@ async def get_crawl_comparison(
         "previous": {
             "job_id": prev_job.job_id,
             "info_detail": prev_level,
+            "health_score_basis": prev_summary.get("health_score_basis"),
             "crawled_at": prev_job.started_at.isoformat() if prev_job.started_at else None,
             "health_score": prev_summary.get("health_score", 0),
             "pages_crawled": prev_summary.get("pages_crawled", 0),

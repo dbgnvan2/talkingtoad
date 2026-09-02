@@ -1105,3 +1105,27 @@ export async function gscPerformance(url) {
   })
   return checkResponse(res)
 }
+
+// ---------------------------------------------------------------------------
+// Phase 4 (2026-09-02) — striking distance, re-check all, WordPress audit
+// ---------------------------------------------------------------------------
+
+export async function getStrikingDistance(jobId) {
+  const res = await fetch(`/api/crawl/${jobId}/striking-distance`, { headers: authHeaders() })
+  return checkResponse(res)
+}
+
+export async function startRecheckAll(jobId) {
+  const res = await fetch(`/api/crawl/${jobId}/recheck-all`, { method: 'POST', headers: authHeaders() })
+  return checkResponse(res)
+}
+
+export async function getRecheckAllStatus(jobId) {
+  const res = await fetch(`/api/crawl/${jobId}/recheck-all/status`, { headers: authHeaders() })
+  return checkResponse(res)
+}
+
+export async function runWpAudit(jobId) {
+  const res = await fetch(`/api/wp-audit/${jobId}`, { method: 'POST', headers: authHeaders() })
+  return checkResponse(res)
+}

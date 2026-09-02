@@ -43,6 +43,13 @@ what the before-and-after comparison uses. A scan that is still running shows
 *View Progress* instead — there is nothing to re-run until it finishes. A
 single-page scan re-runs as a single page.
 
+### Re-checking all pages in place
+
+On the Results page, **Re-check all pages** re-fetches every page of *this* scan and updates
+its findings and score without starting a new scan or discovering new pages. Use it after a
+batch of fixes when you want the current report refreshed. Use **Rescan** on the home page
+instead when you want a fresh, comparable scan (new pages included).
+
 ### Attaching a GSC priority file (optional)
 
 If you use the companion **GSC reporting app**, it produces a `priority_pages.json` listing your
@@ -107,6 +114,25 @@ to the scan, not to the view.
 ---
 
 ## Understanding the Results
+
+### Compared with the previous scan
+
+When an earlier scan of the same site exists, the Summary tab shows the health score and
+issue count then and now. If the two scans measured different things — a different *Info
+detail* level, or one was a partial scan — the change is struck through with the reason.
+
+### Striking distance
+
+Pages ranking 5–15 in Google with at least 50 monthly impressions are one good rewrite away
+from page one. The **Striking distance** section lists them with the search query from your
+GSC priority file (when you attached one). **Open page** takes you to the page's audit and
+rewriter; **Copy brief** copies a one-sentence instruction you can paste into the rewriter.
+
+### WordPress configuration
+
+**Run WordPress audit** reads your plugins, theme and pending updates through the WordPress
+API (read-only; it needs the stored admin credentials). Pending updates and inactive plugins
+are worth a look: both are common maintenance gaps.
 
 ### Health Score
 

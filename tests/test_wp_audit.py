@@ -323,3 +323,67 @@ class TestReportRendering:
         assert "Not inspected" in text
         assert "CMS configuration was read" in text
         assert "never signs in to WordPress" not in text
+
+
+
+class TestPanelContract:
+    """Phase 4 U4.4 — the WordPress audit is triggered from the app; the panel
+    (frontend/src/components/WpAuditPanel.jsx) reads these keys."""
+
+    async def test_response_carries_the_keys_the_panel_reads(self, api_client, auth_headers, test_store,
+                                                             monkeypatch, tmp_path):
+        import json
+        from contextlib import asynccontextmanager
+        from datetime import datetime, timezone
+        from api.models.job import CrawlJob
+        await test_store.create_job(CrawlJob(job_id="wp1", target_url="https://example.com",
+                                             status="complete", started_at=datetime.now(timezone.utc)))
+
+        async def ok(*a, **k):
+            return None
+        monkeypatch.setattr("api.routers.wp_audit_router._validate_wp_domain_for_job", ok)
+        creds = tmp_path / "wp-credentials.json"
+        creds.write_text(json.dumps({"site_url": "https://example.com", "username": "u", "app_password": "p"}))
+        monkeypatch.setattr("api.routers.wp_audit_router._CREDS_PATH", creds)
+
+        class _FakeWP:
+            @staticmethod
+            @asynccontextmanager
+            async def from_credentials_file(path):
+                yield object()
+        monkeypatch.setattr("api.routers.wp_audit_router.WPClient", _FakeWP)
+
+        # Only the WordPress read is faked; the real serializer runs, so a
+        # renamed key in report_to_dict fails here (sweep: the first version
+        # pinned the keys of its own fixture — P32).
+        from api.services.wp_audit import PluginRow, WPAuditReport
+
+        async def fake_collect(wp):
+            return WPAuditReport(
+                plugins=[PluginRow("a", "A", "1", "active", True, "2"), PluginRow("c", "C", "1", "active"),
+                         PluginRow("b", "B", "1", "inactive")],
+                not_inspected=["backup contents"])
+        monkeypatch.setattr("api.services.wp_audit.collect_wp_audit", fake_collect)
+
+        r = await api_client.post("/api/wp-audit/wp1", headers=auth_headers)
+        assert r.status_code == 200, r.text
+        body = r.json()
+        for key in ("plugins_total", "plugins_active", "plugins_inactive", "pending_updates",
+                    "inactive_plugins", "not_inspected", "job_id"):
+            assert key in body, f"WpAuditPanel reads {key}"
+        assert body["pending_updates"][0]["new_version"] == "2"
+        # ...and the PDF's copy is stored on the job.
+        assert (await test_store.get_job("wp1")).wp_audit["plugins_total"] == 3
+
+    async def test_no_credentials_is_a_named_400(self, api_client, auth_headers, test_store, monkeypatch, tmp_path):
+        from datetime import datetime, timezone
+        from api.models.job import CrawlJob
+        await test_store.create_job(CrawlJob(job_id="wp2", target_url="https://example.com",
+                                             status="complete", started_at=datetime.now(timezone.utc)))
+
+        async def ok(*a, **k):
+            return None
+        monkeypatch.setattr("api.routers.wp_audit_router._validate_wp_domain_for_job", ok)
+        monkeypatch.setattr("api.routers.wp_audit_router._CREDS_PATH", tmp_path / "missing.json")
+        r = await api_client.post("/api/wp-audit/wp2", headers=auth_headers)
+        assert r.status_code == 400 and r.json()["error"]["code"] == "NO_CREDENTIALS"
