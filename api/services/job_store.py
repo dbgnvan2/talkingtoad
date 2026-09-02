@@ -50,7 +50,8 @@ def get_job_store() -> SQLiteJobStore:
 
     Selection order:
       1. DATABASE_URL set (sqlite:///... or path) → SQLiteJobStore at that path
-      2. Unset → SQLiteJobStore at SQLITE_PATH (default: talkingtoad.db)
+      2. Unset → SQLiteJobStore at the default path (talkingtoad.db). There is
+         no SQLITE_PATH variable: set DATABASE_URL=sqlite:///path to relocate.
 
     Raises if the environment still configures the removed Redis backend. Falling
     back to SQLite silently would start cleanly and serve 200s while writing the

@@ -32,8 +32,12 @@ from tests.golden_site.manifest import EXPECT, FORBID, ENV_ARTIFACTS, MIN_DISTIN
 def golden():
     """Run the real crawl once against the served golden site."""
     build_pages()
-    orig = fetcher.is_ssrf_safe
-    fetcher.is_ssrf_safe = lambda url: True  # allow the loopback fixture host
+    # Admit the loopback fixture host through the real guard (Phase 3), not
+    # around it — the flag is the same one the Playwright happy path uses.
+    import os
+    prev = os.environ.get("TT_ALLOW_LOCAL_TARGETS")
+    os.environ["TT_ALLOW_LOCAL_TARGETS"] = "1"
+    fetcher._SSRF_CACHE.clear()
     try:
         with GoldenSiteServer() as srv:
             base = srv.base_url.rstrip("/")
@@ -41,7 +45,11 @@ def golden():
                 "golden", srv.base_url,
                 CrawlSettings(crawl_delay_ms=0, max_pages=100)))
     finally:
-        fetcher.is_ssrf_safe = orig
+        if prev is None:
+            os.environ.pop("TT_ALLOW_LOCAL_TARGETS", None)
+        else:
+            os.environ["TT_ALLOW_LOCAL_TARGETS"] = prev
+        fetcher._SSRF_CACHE.clear()
 
     by_page = collections.defaultdict(set)
     for iss in res.issues:

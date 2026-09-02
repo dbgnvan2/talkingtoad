@@ -79,12 +79,8 @@ def _is_production() -> bool:
     - RENDER=true             (Render)
     - ENV=production          (generic)
     """
-    return any([
-        os.getenv("VERCEL") == "1",
-        os.getenv("RAILWAY_ENVIRONMENT"),
-        os.getenv("RENDER") == "true",
-        os.getenv("ENV", "").lower() == "production",
-    ])
+    from api.env import is_production
+    return is_production()
 
 
 def _assert_production_safe() -> None:
@@ -138,7 +134,12 @@ async def lifespan(app: FastAPI):
     global _store
     _store = get_job_store()
     await _store.init()
-    logger.info("app_startup", extra={"db_path": _store._db_path})
+    # Phase 3 (2026-09-02): a crawl cannot survive a restart, so any job still
+    # queued/running at boot is orphaned. Left alone it blocks its domain for
+    # ever (the one-crawl-per-domain guard) and shows as running on the home
+    # page. Mark it failed, and say why.
+    reaped = await _store.fail_orphaned_jobs("The server restarted while this scan was running.")
+    logger.info("app_startup", extra={"db_path": _store._db_path, "orphaned_jobs_failed": reaped})
     yield
     # v2.6 M2.5 / Cycle DD: drain in-flight ai_usage writes before close.
     # Without this, fire-and-forget tasks scheduled by AIRouter._log_usage

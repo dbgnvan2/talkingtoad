@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import aiosqlite
 import json
+from datetime import datetime, timezone
 import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -235,6 +236,44 @@ class SQLiteJobStore:
         ) as cursor:
             rows = await cursor.fetchall()
         return [_row_to_job(dict(r)) for r in rows]
+
+    async def fail_orphaned_jobs(self, reason: str) -> int:
+        """Mark every queued/running job failed. Called once at startup.
+
+        A crawl runs in the process that started it; after a restart there is
+        nothing to resume, and a row left `running` blocks its domain in the
+        politeness guard and reads as live on the home page. Returns the count.
+        """
+        now = datetime.now(timezone.utc).isoformat()
+        cur = await self._db.execute(
+            "UPDATE crawl_jobs SET status='failed', error_message=?, completed_at=? "
+            "WHERE status IN ('queued', 'running')",
+            (reason, now),
+        )
+        await self._db.commit()
+        return cur.rowcount or 0
+
+    async def active_jobs_for_domain(self, domain: str) -> list[CrawlJob]:
+        """Queued or running jobs whose target host is ``domain`` (www stripped).
+
+        Phase 3 (2026-09-02): the politeness guard. Two crawls of one domain
+        at once halve the effective ``crawl_delay_ms`` against a nonprofit's
+        server, and both doorways (/start, /rescan) share the launcher that
+        asks this question.
+        """
+        from urllib.parse import urlparse as _up
+        async with self._db.execute(
+            "SELECT * FROM crawl_jobs WHERE status IN ('queued', 'running') ORDER BY started_at DESC"
+        ) as cursor:
+            rows = await cursor.fetchall()
+        want = domain.lower().removeprefix("www.")
+        out = []
+        for r in rows:
+            job = _row_to_job(dict(r))
+            host = (_up(job.target_url).hostname or "").lower().removeprefix("www.")
+            if host == want:
+                out.append(job)
+        return out
 
     async def list_jobs_by_domain(self, domain: str, limit: int = 10) -> list[CrawlJob]:
         """Return completed jobs for URLs containing the given domain, newest first."""

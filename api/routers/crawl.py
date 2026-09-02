@@ -1018,6 +1018,20 @@ async def _launch_crawl(
     """
     scope_notes: list[str] = []
 
+    # Politeness guard (Phase 3, 2026-09-02): one crawl per domain at a time.
+    # Two at once halve the crawl delay against the target's server, and the
+    # second would be measuring a site under load from the first.
+    host = (urlparse(target_url).hostname or "").lower().removeprefix("www.")
+    active = await store.active_jobs_for_domain(host) if host else []
+    if active:
+        running = active[0]
+        return _err(
+            "CRAWL_IN_PROGRESS_FOR_DOMAIN",
+            f"A scan of {host} is already {running.status} (job {running.job_id}). "
+            f"Wait for it to finish, or cancel it, before starting another.",
+            409,
+        )
+
     # Partial scan: resolve the content-type selection into an authoritative URL
     # allowlist now, so a bad/empty selection fails fast with a clear message
     # rather than silently running a full crawl (P2/P6).
@@ -1355,10 +1369,18 @@ async def cancel_job(
             completed_at=datetime.now(timezone.utc),
         )
     else:
-        # Signal the running engine
+        # Signal the running engine. After a restart there is no engine and
+        # no event; the row is orphaned, so write the cancellation directly —
+        # returning "cancelled" without writing it left the domain blocked
+        # and the user told otherwise (Phase 3 sweep, 2026-09-02).
         event = _cancel_events.get(job_id)
         if event:
             event.set()
+        else:
+            await store.update_job(
+                job_id, status="cancelled", completed_at=datetime.now(timezone.utc),
+                error_message="Cancelled after a server restart; the scan was no longer running.",
+            )
 
     return {"job_id": job_id, "status": "cancelled"}
 

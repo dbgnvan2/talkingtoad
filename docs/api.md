@@ -504,6 +504,7 @@ Only the fields you include are updated.
 | `INVALID_URL` | 422 | Malformed or unreachable URL |
 | `BLOCKED_URL` | 403 | URL targets a private or internal network (SSRF protection) |
 | `INVALID_CATEGORY` | 422 | Unrecognised category slug |
+| `CRAWL_IN_PROGRESS_FOR_DOMAIN` | 409 | A queued or running crawl of the same domain exists (www stripped); both `/start` and `/rescan` refuse. Names the job. (Phase 3, 2026-09-02) |
 | `RATE_LIMITED` | 429 | Rate limit reached — every limited route; body carries `message` with the limit and a `Retry-After` header (2026-09-02) |
 | `CRAWL_FAILED` | 500 | Unrecoverable crawler error |
 | `TARGET_UNREACHABLE` | 502 | Target website unreachable |

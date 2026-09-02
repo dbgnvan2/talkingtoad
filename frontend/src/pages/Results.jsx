@@ -1966,8 +1966,27 @@ function ImageFixPanel({ jobId, pageUrl, imageUrl: initialImageUrl, issueCode, a
   )
 }
 
-function ExportReportModal({ onClose, onDownload }) {
-  const [opts, setOpts] = useState({ includeHelp: true, includePages: true, summaryOnly: false })
+// Phase 3 (2026-09-02): the export options persist per browser so the
+// operator's preferred report shape survives a reload. A corrupt or absent
+// value falls back to the defaults.
+export const PDF_OPTS_KEY = 'talkingtoad_pdf_opts'
+const PDF_OPTS_DEFAULT = { includeHelp: true, includePages: true, summaryOnly: false }
+
+export function loadPdfOpts() {
+  try {
+    const raw = localStorage.getItem(PDF_OPTS_KEY)
+    const parsed = raw ? JSON.parse(raw) : null
+    if (!parsed || typeof parsed !== 'object') return { ...PDF_OPTS_DEFAULT }
+    return { ...PDF_OPTS_DEFAULT, ...Object.fromEntries(Object.entries(parsed).filter(([k, v]) => k in PDF_OPTS_DEFAULT && typeof v === 'boolean')) }
+  } catch { return { ...PDF_OPTS_DEFAULT } }
+}
+
+export function ExportReportModal({ onClose, onDownload }) {
+  const [opts, setOptsState] = useState(loadPdfOpts)
+  const setOpts = (next) => {
+    setOptsState(next)
+    try { localStorage.setItem(PDF_OPTS_KEY, JSON.stringify(next)) } catch { /* storage unavailable */ }
+  }
   return (
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={onClose}>
       <div role="dialog" aria-modal="true" aria-label="PDF report options" className="bg-white rounded-3xl shadow-2xl max-w-sm w-full p-8" onClick={e => e.stopPropagation()}>

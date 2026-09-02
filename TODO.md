@@ -41,16 +41,12 @@ user replaces the old image in the post by hand.
 
 ## Phase 3 — reliability of the happy path
 
-- [ ] **Playwright happy path** in CI: start crawl → results → export PDF.
-- [ ] **CI builds the Docker image**, so the Playwright/JS-render install is exercised.
-- [ ] **Concurrent-crawl politeness guard** in `_launch_crawl`: two crawls of one domain at
-  once halve `crawl_delay_ms` against a nonprofit's server.
-- [ ] **Four routes have auth-only coverage** (`tests/test_auth_matrix.py::_AUTH_ONLY_COVERAGE`):
-  one behavioural contract test each.
-- [ ] **Placeholder constraints that still need a real test:** image scan uses HEAD not GET;
-  scan never triggers fetch; GEO analysis refuses without configuration; `LLMS_TXT_MISSING`
-  end to end.
-- [ ] **Persistent PDF export options** in localStorage.
+- [x] **Playwright happy path** in CI (`frontend/e2e/happy-path.spec.js`, job `e2e`) — 2026-09-02.
+- [x] **CI builds the Docker image** (job `docker`) — 2026-09-02.
+- [x] **Concurrent-crawl politeness guard** — 409 `CRAWL_IN_PROGRESS_FOR_DOMAIN` — 2026-09-02.
+- [x] **Four auth-only routes** have contract tests — 2026-09-02.
+- [x] **Placeholder constraints** are real tests (`tests/test_scan_constraints.py`) — 2026-09-02.
+- [x] **Persistent PDF export options** — 2026-09-02.
 
 ## Phase 4 — three features with real user value
 

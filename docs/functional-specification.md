@@ -2292,6 +2292,37 @@ first in the suite. A 429 carries the spec error shape (`error.code = RATE_LIMIT
 
 ### 8.3 Reliability
 
+**Phase 3 (2026-09-02) — the happy path is proven, not assumed.**
+
+- **End to end in a browser.** `frontend/e2e/happy-path.spec.js` (Playwright, CI job `e2e`)
+  types the golden fixture site's URL, starts a crawl, waits through Progress to Results,
+  checks a health score and a non-zero finding count, opens PDF Report and asserts the
+  export response is a real PDF of non-trivial size. `frontend/playwright.config.js` starts
+  the fixture site (`tests/golden_site/server.py --port 8765`), uvicorn in dev mode and Vite.
+  `TT_ALLOW_LOCAL_TARGETS=1` admits loopback in `is_ssrf_safe` — loopback only, never the
+  private ranges, and inert under any production marker (`tests/test_local_targets_flag.py`).
+- **The image that ships is built.** CI job `docker` builds the Dockerfile and imports the
+  app inside it; the pytest legs install `requirements.txt` only and copy nothing, so this
+  is the one place a forgotten `COPY` or the Playwright layer fails.
+- **One crawl per domain.** `_launch_crawl` refuses a second queued/running crawl of the same
+  host (409 `CRAWL_IN_PROGRESS_FOR_DOMAIN`), on both doorways, so the politeness delay is
+  never halved against a nonprofit's server (`tests/test_concurrent_crawl_guard.py`). A crawl
+  cannot outlive its process: at startup every queued/running row is marked failed with the
+  reason (`fail_orphaned_jobs`), and `/cancel` writes the cancellation directly when no live
+  engine holds the cancel event — before this, a restart left the row `running`, the domain
+  blocked, and cancel answered "cancelled" without writing anything
+  (`tests/test_orphaned_jobs.py`). Production detection is one function, `api.env.is_production`,
+  shared by the app and the fetcher's loopback flag.
+- **The scan's architecture rules have tests, not placeholders**
+  (`tests/test_scan_constraints.py`): every image is HEADed before any body pass and the body
+  pass is bounded by `_IMAGE_DIMENSION_MAX_COUNT`; a scan never reaches image optimisation or
+  the WP client; GEO endpoints refuse without configuration and make no AI call;
+  `LLMS_TXT_MISSING` is emitted once at the start URL and not at all for a valid file.
+- **Every route has a behavioural test** — the four that had only the 401 matrix
+  (`tests/test_auth_only_routes_contracts.py`); `_AUTH_ONLY_COVERAGE` is empty.
+- **PDF export options persist** per browser (`talkingtoad_pdf_opts`, defaults on corruption).
+
+
 - **Test suite:** Over 1380 passing tests on `main` as of v2.6.0 baseline.
 - Parity tests enforce structural synchronization among the `_CATALOGUE`, numeric scores, `issueHelp.js` metadata, and dynamically generated documentation (`issue-codes.md`).
 - Contract coverage for `AIRouter` fallback configurations and multi-provider models.

@@ -57,6 +57,9 @@ If you are a developer looking to contribute or deploy TalkingToad:
 - **[Documentation Index](docs/README.md)** — The central hub for all technical documentation (Architecture, API, Security, Deployment).
 - **[Functional Specification](docs/functional-specification.md)** — Detailed description of all observable behaviour and acceptance criteria.
 - **[TODO.md](TODO.md)** — Current technical debt and upcoming tasks.
+- **Run the happy path end to end** (starts the fixture site, the backend and Vite itself):
+  `cd frontend && npx playwright install chromium && E2E_PYTHON=$PWD/../venv/bin/python npm run e2e`.
+  CI runs the same spec on every push (job `e2e`), and builds the Docker image (job `docker`).
 
 ---
 

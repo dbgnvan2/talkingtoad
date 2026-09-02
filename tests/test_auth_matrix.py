@@ -72,12 +72,7 @@ async def test_wrong_token_is_401(api_client, method, path):
 # replaced hid that fact — a path in a list looked covered. Each entry is a
 # behavioural contract test still to write (TODO.md, 2026-09-02); the text-
 # based guard in test_endpoint_coverage.py needs the literal path to see it.
-_AUTH_ONLY_COVERAGE = [
-    "/api/crawl/recent",
-    "/api/crawl/{job_id}/export/ai-images-pdf",
-    "/api/crawl/{job_id}/fix-focus/regenerate",
-    "/api/crawl/{job_id}/images/analyze-ai",
-]
+_AUTH_ONLY_COVERAGE: list[str] = []  # emptied 2026-09-02 — tests/test_auth_only_routes_contracts.py
 
 
 def test_auth_only_routes_still_exist():

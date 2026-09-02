@@ -63,3 +63,7 @@ repo_map.md
 
 # Generated advisor/audit report artifacts (keep binaries out of git history)
 Advisor-Report_*.pdf
+
+# Playwright (Phase 3 E2E)
+frontend/playwright-report/
+frontend/test-results/

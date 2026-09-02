@@ -60,6 +60,17 @@ _SSRF_CACHE_TTL_S = float(os.getenv("TT_SSRF_CACHE_TTL_S", "120"))
 _SSRF_CACHE_MAX = 2048
 
 
+def _local_targets_allowed() -> bool:
+    """True only for TT_ALLOW_LOCAL_TARGETS=1 outside production.
+
+    Production is ``api.env.is_production`` — the one definition the app
+    itself uses — so the two cannot drift (a hand-copied list here had
+    already lost Render's marker before it shipped).
+    """
+    from api.env import is_production
+    return os.getenv("TT_ALLOW_LOCAL_TARGETS", "").strip() == "1" and not is_production()
+
+
 def is_ssrf_safe(url: str) -> bool:
     """Return True if the URL's hostname does **not** resolve to a private IP.
 
@@ -99,9 +110,13 @@ def is_ssrf_safe(url: str) -> bool:
     if cached and now - cached[0] < _SSRF_CACHE_TTL_S:
         return cached[1]
 
-    # Quick check for obvious private hostnames
+    # Quick check for obvious private hostnames. Phase 3 (2026-09-02): the
+    # Playwright happy path crawls the golden fixture site on loopback, so
+    # TT_ALLOW_LOCAL_TARGETS=1 admits LOOPBACK ONLY (never 10/172/192 space),
+    # and only when no production marker is set — the flag is inert in the
+    # container even if someone exports it there.
     if hostname in ("localhost", "127.0.0.1", "0.0.0.0", "::1"):
-        return False
+        return hostname != "0.0.0.0" and _local_targets_allowed()
 
     try:
         infos = socket.getaddrinfo(hostname, None)

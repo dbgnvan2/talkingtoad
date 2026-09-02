@@ -129,13 +129,16 @@ class _Handler(http.server.BaseHTTPRequestHandler):
 class GoldenSiteServer:
     """Context manager: starts the site on a free localhost port."""
 
-    def __init__(self):
+    def __init__(self, port: int = 0):
+        """``port`` 0 = any free port (the pytest fixture); the Playwright
+        happy path pins one so the spec can type the URL."""
+        self.port = port
         self._httpd = None
         self._thread = None
-        self.port = None
+
 
     def __enter__(self):
-        self._httpd = http.server.ThreadingHTTPServer(("127.0.0.1", 0), _Handler)
+        self._httpd = http.server.ThreadingHTTPServer(("127.0.0.1", self.port), _Handler)
         self.port = self._httpd.server_address[1]
         self._thread = threading.Thread(target=self._httpd.serve_forever, daemon=True)
         self._thread.start()
@@ -151,9 +154,23 @@ class GoldenSiteServer:
             self._httpd.server_close()
 
 
-if __name__ == "__main__":  # manual: python tests/golden_site/server.py
-    with GoldenSiteServer() as s:
-        print(f"Golden site at {s.base_url} (Ctrl-C to stop)")
+if __name__ == "__main__":  # manual: python tests/golden_site/server.py [--port N]
+    # Phase 3 (2026-09-02): the Playwright happy path needs a FIXED port so the
+    # spec can type the URL; --port (or GOLDEN_SITE_PORT) pins it and the pages
+    # are (re)built first so a fresh checkout serves a complete site.
+    import argparse
+    import os
+    import sys
+    # Run as a script, the file's own directory is on sys.path but the repo
+    # root is not; put it there so the package import works from anywhere.
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+    from tests.golden_site.build_pages import main as _build
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--port", type=int, default=int(os.getenv("GOLDEN_SITE_PORT", "0")))
+    args = ap.parse_args()
+    _build()
+    with GoldenSiteServer(port=args.port) as s:
+        print(f"Golden site at {s.base_url} (Ctrl-C to stop)", flush=True)
         try:
             threading.Event().wait()
         except KeyboardInterrupt:

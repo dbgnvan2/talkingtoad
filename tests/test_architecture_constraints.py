@@ -345,35 +345,26 @@ class TestIssueCodeParity:
 
     @staticmethod
     def _issue_help_path() -> str:
+        # Phase 2 (2026-09-02): the authored source is the JSON; issueHelp.js
+        # is a thin loader over it.
         project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        return os.path.join(project_root, "frontend", "src", "data", "issueHelp.js")
+        return os.path.join(project_root, "frontend", "src", "data", "issueHelp.json")
+
+    @staticmethod
+    def _load_issue_help() -> dict:
+        import json
+        with open(TestIssueCodeParity._issue_help_path(), encoding="utf-8") as f:
+            return json.load(f)
 
     @staticmethod
     def _parse_issue_help_codes() -> set[str]:
-        """Extract issue code keys from frontend/src/data/issueHelp.js."""
-        with open(TestIssueCodeParity._issue_help_path()) as f:
-            content = f.read()
-        # Match patterns like "  CODE_NAME: {" at the start of a line
-        codes = re.findall(r"^\s+([A-Z][A-Z0-9_]+):\s*\{", content, re.MULTILINE)
-        return set(codes)
+        """Issue code keys of frontend/src/data/issueHelp.json."""
+        return set(TestIssueCodeParity._load_issue_help())
 
     @staticmethod
     def _parse_issue_help_severities() -> dict[str, str]:
-        """Map each issueHelp.js code to its first ``severity:`` value."""
-        code_re = re.compile(r"^  ([A-Z][A-Z0-9_]+):\s*\{")
-        sev_re = re.compile(r'^\s*severity:\s*"(\w+)"')
-        out: dict[str, str] = {}
-        code = None
-        with open(TestIssueCodeParity._issue_help_path()) as f:
-            for line in f:
-                m = code_re.match(line)
-                if m:
-                    code = m.group(1)
-                    continue
-                s = sev_re.match(line)
-                if s and code and code not in out:
-                    out[code] = s.group(1)
-        return out
+        """Map each help code to its ``severity`` value."""
+        return {c: e.get("severity") for c, e in TestIssueCodeParity._load_issue_help().items()}
 
     def test_frontend_help_severity_matches_catalogue(self):
         """issueHelp.js per-code `severity:` labels must equal the backend
