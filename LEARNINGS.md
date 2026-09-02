@@ -2,13 +2,12 @@
 
 > **What this is:** institutional memory of how *this* codebase has failed, so the same
 > **class** of bug is caught in review instead of production. After fixing any real bug,
-> add a **Fix log** entry and, if it's a new generic pattern, fold it into the global
-> catalogue (below).
+> add a **Fix log** entry and, if it's a new generic pattern, give it the next P-number in
+> the **Pattern index** below.
 >
-> **Generic pattern catalogue + full review checklist live globally** at
-> `~/.claude/standards/learnings.md` (auto-loaded by Claude Code for every repo). This file
-> keeps the **TalkingToad-specific** open risks and fix log, plus an inline copy of the
-> checklist for convenience. Read the checklist before reviewing or writing any
+> This file is the only home of the review checklist and the pattern vocabulary. (Until
+> 2026-09-02 it pointed at a global `~/.claude/standards/learnings.md` that did not exist on
+> the development machine.) Read the checklist before reviewing or writing any
 > **checker, fetch, scoring, or report** code.
 
 ---
@@ -52,7 +51,36 @@
     completeness in as data, and report the suppressed state as "skipped, covered N of M" — never as
     zero, which every surface renders as a clean bill of health.
 
-> Pattern definitions (P1–P10) and the reasoning behind each item: `~/.claude/standards/learnings.md`.
+## Pattern index
+
+The numbers used in the checklist and the fix log. Each is defined by the entries that cite it;
+this index is the one-line meaning.
+
+| # | Pattern |
+|---|---|
+| P1 | A transient failure written as a permanent negative |
+| P2 | A partial failure that leaves no trace — "found nothing" indistinguishable from "the call failed" |
+| P3 | Scope enumerated incompletely — a source, location or page type missed |
+| P4 | A hardcoded number that belongs in config / `docs/thresholds.md` |
+| P5 | An outbound call without SSRF guard, timeout, or bounded retry |
+| P6 | A status trusted without re-verifying the artifact |
+| P7 | A score or match that can be high for the wrong reason (gameable) |
+| P8 | Dirty state — reading what persists between runs as if it were this run's |
+| P9 | A cap that silently drops input on a real, large site |
+| P10 | A fix with no test, or the risky fix tested last |
+| P12 | A default value that reaches a surface and reads as a real measurement |
+| P13 | Two implementations of one rule that drift |
+| P14 | An error reported to the user as a different kind of error |
+| P16 | A capability added at one front end only |
+| P24 | A false green from output parsing that cannot tell pass from fail |
+| P25 | A field computed and never rendered — evidence nobody can check |
+| P26 | A test that asserts internal consistency instead of the thing in doubt |
+| P27 | A test that cannot fail against the defect it names |
+| P28 | A test that touches the real database or environment |
+| P29 | A tolerance band so wide the value can drift unnoticed — pin the exact value |
+| P30 | A resource acquired and not released |
+| P31 | An absence-proof computed over a deliberately narrowed population |
+| P32 | A test oracle computed from the code under test |
 
 ---
 

@@ -2234,6 +2234,16 @@ traffic or revenue. A cap that did not bite is not mentioned.
 - **AIRouter Isolation:** Drivers do not contain explicit arithmetic; modules cannot bypass `AIRouter` bounds.
 - **Encrypted Secrets:** OAuth tokens (GSC) and AI credentials are encrypted at rest using Fernet.
 
+**Rate limits are bounds (Phase 1, 2026-09-02).** `api/services/rate_limiter.py` keys every
+slowapi limit on the SHA-256 of the bearer token (`rate_limit_key`), falling back to the direct
+socket address only when no token is presented. Before this, the container's
+`--forwarded-allow-ips=*` made the key the first client-supplied `X-Forwarded-For` entry, so a
+token holder rotating that header got a fresh bucket per request and no limit ever fired. The
+limit strings are constants (10 crawl starts, 30 exports, 60 AI analyses, 60 live page-details
+per hour); `RATE_LIMIT_ENABLED` controls only `limiter.enabled`, which is how
+`tests/test_rate_limits.py` switches the limiter on at runtime and observes a real 429 — the
+first in the suite. The token itself is never a storage key or a log line.
+
 ### 8.2 Performance
 
 - Async crawl engine with concurrent fetches.

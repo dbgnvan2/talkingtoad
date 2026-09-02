@@ -242,9 +242,11 @@ A function without at least one adversarial test case is not done.
 
 Before reviewing or writing any **checker, fetch, scoring, or report** code, read
 [`LEARNINGS.md`](LEARNINGS.md) — TalkingToad's failure-pattern review checklist, open risks,
-and fix log. After fixing any real bug, add a Fix-log entry there. The generic pattern
-catalogue (P1–P10) is shared across repos in `~/.claude/standards/learnings.md` (auto-loaded
-by Claude Code); `LEARNINGS.md` holds the TalkingToad-specific risks and history.
+and fix log. After fixing any real bug, add a Fix-log entry there. The pattern vocabulary
+(P1–P32) is defined in `LEARNINGS.md` itself — the checklist and the "Pattern index" — and
+nowhere else. (Until 2026-09-02 this rulebook pointed at a `~/.claude/standards/` directory
+that did not exist on the development machine; the references were dropped rather than left
+as an instruction nobody could follow.)
 
 ### Code Quality Standards
 
@@ -318,11 +320,12 @@ pytest tests/ -v
 
 ## Global standards
 
-Read the relevant file from `~/.claude/standards/` before starting work:
+These four rules used to live in external files that are no longer present; they are stated
+here so nothing load-bearing depends on a file outside the repo.
 
-| Standard | When |
+| Standard | Rule |
 |---|---|
-| `llm-integration.md` | Any prompt building, model selection, or coaching response handling |
-| `external-api.md` | Any LLM API call — timeouts, error handling, retry logic |
-| `security.md` | API keys must be in config/env — never in source |
-| `file-maintainability.md` | Any new module or significant refactor |
+| LLM integration | Every prompt goes through `AIRouter`; model choice is config, not a literal; a model's answer is parsed defensively and a parse failure degrades to a stated "could not analyse", never to a fabricated finding. |
+| External APIs | Every outbound call has a timeout, bounded retry with backoff, and treats 429/5xx/timeouts as retryable, not as a negative result. All fetches pass `is_ssrf_safe()`. |
+| Security | Keys and tokens live in env/config only, are never logged or persisted, and every `/api` route except `/api/health` requires the bearer token (`tests/test_auth_matrix.py`). |
+| File maintainability | A new module states its purpose, spec and tests in its docstring; one number lives in one place (`docs/thresholds.md` owns it); a function without an adversarial test is not done. |
