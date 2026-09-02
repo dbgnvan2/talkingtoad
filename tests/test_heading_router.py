@@ -297,12 +297,6 @@ class TestConvertHeadingToBoldService:
 
 
 class TestFindHeadingEndpoint:
-    @pytest.mark.asyncio
-    async def test_requires_auth(self, api_client):
-        r = await api_client.get(
-            "/api/fixes/find-heading?job_id=x&heading_text=y"
-        )
-        assert r.status_code == 401
 
     @pytest.mark.asyncio
     async def test_missing_required_param_returns_422(self, api_client, auth_headers):
@@ -357,20 +351,6 @@ class TestFindHeadingEndpoint:
 
 
 class TestHeadingRouterAuthAndValidation:
-    @pytest.mark.parametrize("method,path", [
-        ("post", "/api/fixes/change-heading-level"),
-        ("post", "/api/fixes/change-heading-text"),
-        ("post", "/api/fixes/bulk-replace-heading"),
-        ("post", "/api/fixes/heading-to-bold"),
-        ("get",  "/api/fixes/analyze-heading-sources"),
-    ])
-    @pytest.mark.asyncio
-    async def test_requires_auth(self, api_client, method, path):
-        if method == "post":
-            r = await api_client.post(path)
-        else:
-            r = await api_client.get(path)
-        assert r.status_code == 401
 
     @pytest.mark.parametrize("method,path", [
         ("post", "/api/fixes/change-heading-level"),

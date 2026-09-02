@@ -31,23 +31,6 @@ async def seeded_job(api_client, test_store):
 # ---------------------------------------------------------------------------
 
 
-class TestBatchRouterAuth:
-    @pytest.mark.parametrize("method,path", [
-        ("post", "/api/fixes/batch-optimize/start"),
-        ("get",  "/api/fixes/batch-optimize/some-id/status"),
-        ("post", "/api/fixes/batch-optimize/some-id/pause"),
-        ("post", "/api/fixes/batch-optimize/some-id/resume"),
-        ("post", "/api/fixes/batch-optimize/some-id/cancel"),
-        ("get",  "/api/fixes/batch-optimize/list"),
-    ])
-    @pytest.mark.asyncio
-    async def test_endpoint_requires_auth(self, api_client, method, path):
-        if method == "post":
-            r = await api_client.post(path)
-        else:
-            r = await api_client.get(path)
-        assert r.status_code == 401
-
 
 # ---------------------------------------------------------------------------
 # Validation

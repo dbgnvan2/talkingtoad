@@ -42,49 +42,6 @@ AI_ENDPOINTS = [
 ]
 
 
-class TestAIRouterAuth:
-    """Every endpoint on /api/ai/* must require bearer auth.
-
-    Pre-Cycle-X, none of these endpoints had a 401 contract test —
-    even though the router-level dependency was already in place, the
-    invariant was unprotected: a future commit could have removed
-    `dependencies=[...]` from the router declaration and every test
-    would still pass.
-    """
-
-    @pytest.mark.parametrize("method,path,body", AI_ENDPOINTS)
-    async def test_endpoint_rejects_missing_auth(
-        self, api_client, method, path, body
-    ):
-        """Calling without an Authorization header → 401 UNAUTHORIZED."""
-        if method == "post":
-            r = await api_client.post(path, json=body)
-        else:
-            r = await api_client.get(path)
-
-        assert r.status_code == 401, (
-            f"{method.upper()} {path} returned {r.status_code} without auth; "
-            f"expected 401. Body: {r.text[:200]}"
-        )
-        assert r.json()["error"]["code"] == "UNAUTHORIZED"
-
-    @pytest.mark.parametrize("method,path,body", AI_ENDPOINTS)
-    async def test_endpoint_rejects_wrong_bearer_token(
-        self, api_client, method, path, body
-    ):
-        """Calling with the wrong bearer token → 401 UNAUTHORIZED."""
-        bad_headers = {"Authorization": "Bearer not-the-token"}
-        if method == "post":
-            r = await api_client.post(path, json=body, headers=bad_headers)
-        else:
-            r = await api_client.get(path, headers=bad_headers)
-
-        assert r.status_code == 401, (
-            f"{method.upper()} {path} returned {r.status_code} with bad token; "
-            f"expected 401."
-        )
-        assert r.json()["error"]["code"] == "UNAUTHORIZED"
-
 
 class TestAIRouterRegistration:
     """Architecture test — protect the router declaration itself.

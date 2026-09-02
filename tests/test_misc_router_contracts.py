@@ -29,23 +29,6 @@ import pytest
 # ===================================================================
 
 
-class TestAIRouterAuth:
-    @pytest.mark.parametrize("method,path", [
-        ("post", "/api/ai/analyze"),
-        ("get",  "/api/ai/test"),
-        ("post", "/api/ai/page-advisor"),
-        ("post", "/api/ai/site-advisor"),
-        ("post", "/api/ai/image/analyze-geo"),
-        ("post", "/api/ai/image/apply-geo-metadata"),
-    ])
-    @pytest.mark.asyncio
-    async def test_endpoint_requires_auth(self, api_client, method, path):
-        if method == "post":
-            r = await api_client.post(path)
-        else:
-            r = await api_client.get(path)
-        assert r.status_code == 401
-
 
 class TestAIRouterValidation:
     @pytest.mark.asyncio
@@ -63,22 +46,6 @@ class TestAIRouterValidation:
 # Verified-links router
 # ===================================================================
 
-
-class TestVerifiedLinksAuth:
-    @pytest.mark.parametrize("method,path", [
-        ("get",    "/api/verified-links"),
-        ("post",   "/api/verified-links"),
-        ("delete", "/api/verified-links?url=https://example.com/x"),
-    ])
-    @pytest.mark.asyncio
-    async def test_endpoint_requires_auth(self, api_client, method, path):
-        if method == "post":
-            r = await api_client.post(path)
-        elif method == "delete":
-            r = await api_client.delete(path)
-        else:
-            r = await api_client.get(path)
-        assert r.status_code == 401
 
 
 class TestVerifiedLinksCRUD:
@@ -148,20 +115,6 @@ class TestVerifiedLinksCRUD:
 
 
 class TestSuppressedCodes:
-    @pytest.mark.parametrize("method,path", [
-        ("get",    "/api/suppressed-codes"),
-        ("post",   "/api/suppressed-codes?code=TEST_CODE"),
-        ("delete", "/api/suppressed-codes?code=TEST_CODE"),
-    ])
-    @pytest.mark.asyncio
-    async def test_endpoint_requires_auth(self, api_client, method, path):
-        if method == "post":
-            r = await api_client.post(path)
-        elif method == "delete":
-            r = await api_client.delete(path)
-        else:
-            r = await api_client.get(path)
-        assert r.status_code == 401
 
     @pytest.mark.asyncio
     async def test_list_returns_array_or_dict(self, api_client, auth_headers):
@@ -173,17 +126,6 @@ class TestSuppressedCodes:
 
 
 class TestExemptAnchorUrls:
-    @pytest.mark.parametrize("method", ["get", "post", "delete"])
-    @pytest.mark.asyncio
-    async def test_endpoint_requires_auth(self, api_client, method):
-        path = "/api/exempt-anchor-urls"
-        if method == "post":
-            r = await api_client.post(f"{path}?url=https://example.com/x")
-        elif method == "delete":
-            r = await api_client.delete(f"{path}?url=https://example.com/x")
-        else:
-            r = await api_client.get(path)
-        assert r.status_code == 401
 
     @pytest.mark.asyncio
     async def test_list_returns_valid_json(self, api_client, auth_headers):
@@ -192,25 +134,8 @@ class TestExemptAnchorUrls:
         assert isinstance(r.json(), (list, dict))
 
 
-class TestIgnoredImagePatterns:
-    @pytest.mark.parametrize("method", ["get", "post", "delete"])
-    @pytest.mark.asyncio
-    async def test_endpoint_requires_auth(self, api_client, method):
-        path = "/api/ignored-image-patterns"
-        if method == "post":
-            r = await api_client.post(f"{path}?pattern=/icon.svg")
-        elif method == "delete":
-            r = await api_client.delete(f"{path}?pattern=/icon.svg")
-        else:
-            r = await api_client.get(path)
-        assert r.status_code == 401
-
 
 class TestSaveLLMSTxt:
-    @pytest.mark.asyncio
-    async def test_requires_auth(self, api_client):
-        r = await api_client.post("/api/utility/save-llms-txt")
-        assert r.status_code == 401
 
     @pytest.mark.asyncio
     async def test_missing_body_returns_422(self, api_client, auth_headers):
@@ -219,10 +144,6 @@ class TestSaveLLMSTxt:
 
 
 class TestGenerateLLMSTxt:
-    @pytest.mark.asyncio
-    async def test_requires_auth(self, api_client):
-        r = await api_client.get("/api/utility/generate-llms-txt?job_id=x")
-        assert r.status_code == 401
 
     @pytest.mark.asyncio
     async def test_unknown_job_returns_404(self, api_client, auth_headers):
@@ -238,36 +159,8 @@ class TestGenerateLLMSTxt:
 # ===================================================================
 
 
-class TestGeoRouter:
-    @pytest.mark.parametrize("method,path", [
-        ("get",  "/api/geo/ai-model"),
-        ("post", "/api/geo/ai-model"),
-        ("get",  "/api/geo/test"),
-    ])
-    @pytest.mark.asyncio
-    async def test_endpoint_requires_auth(self, api_client, method, path):
-        if method == "post":
-            r = await api_client.post(path)
-        else:
-            r = await api_client.get(path)
-        assert r.status_code == 401
-
 
 # ===================================================================
 # Crawl router — endpoints not covered in test_crawl_router_contracts.py
 # ===================================================================
 
-
-class TestCrawlExtraEndpoints:
-    @pytest.mark.parametrize("method,path", [
-        ("get",  "/api/crawl/recent"),
-        ("post", "/api/crawl/some-id/images/analyze-ai"),
-        ("get",  "/api/crawl/some-id/export/ai-images-pdf"),
-    ])
-    @pytest.mark.asyncio
-    async def test_endpoint_requires_auth(self, api_client, method, path):
-        if method == "post":
-            r = await api_client.post(path)
-        else:
-            r = await api_client.get(path)
-        assert r.status_code == 401

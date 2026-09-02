@@ -34,25 +34,6 @@ async def seeded_job(api_client, test_store):
 # ---------------------------------------------------------------------------
 
 
-class TestLinkRouterAuth:
-    @pytest.mark.parametrize("method,path", [
-        ("get",  "/api/fixes/link-sources?job_id=x&target_url=https://x/y"),
-        ("post", "/api/fixes/replace-link"),
-        ("post", "/api/fixes/verify-broken-links/some-job"),
-        ("post", "/api/fixes/mark-broken-link-fixed"),
-        ("post", "/api/fixes/mark-anchor-fixed"),
-        ("post", "/api/fixes/mark-issue-fixed"),
-        ("post", "/api/fixes/apply-one"),
-        ("get",  "/api/fixes/wp-value?page_url=https://x/y&field=title"),
-    ])
-    @pytest.mark.asyncio
-    async def test_endpoint_requires_auth(self, api_client, method, path):
-        if method == "post":
-            r = await api_client.post(path)
-        else:
-            r = await api_client.get(path)
-        assert r.status_code == 401
-
 
 # ---------------------------------------------------------------------------
 # Validation

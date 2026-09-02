@@ -25,6 +25,7 @@ from api.services.advisor import evaluate_page
 CALIBRATION_DIR = Path("tests/fixtures/calibration")
 
 
+@pytest.mark.integration  # 4 real LLM calls (~37 s, costs money); run with `pytest -m integration`
 @pytest.mark.asyncio
 async def test_run_all_calibration_pages():
     """Run Advisor on all calibration pages and print reports."""

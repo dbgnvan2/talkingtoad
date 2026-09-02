@@ -222,20 +222,6 @@ class TestRewriteFlowIntegration:
         # Frontend CANNOT get content from here (it doesn't exist)
         assert "content" not in pages[0]
 
-    def test_frontend_flow_step2_fetches_via_advisor_or_direct_url(self):
-        """
-        Step 2: Frontend must fetch page content from the actual URL or via Advisor.
-
-        This test documents that the frontend must NOT assume the pages endpoint
-        has content, and instead fetch it separately using either:
-        - Direct fetch with potential CORS handling (no-cors mode)
-        - Or through the Advisor service which fetches server-side
-
-        The advisor service has URL fetching capability via httpx.
-        """
-        # This is verified in test_rewriter_integration_flow above
-        # where we show the frontend must call the URL separately
-        pass
 
     @pytest.mark.asyncio
     async def test_frontend_flow_step3_rewrite(self, client):

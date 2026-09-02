@@ -72,6 +72,8 @@ same doc's §9 verification matrix.
 
 ## Fix Manager (WordPress integration)
 
+> **Auth (2026-09-02):** every `/api/*` route except `/api/health` requires the bearer token, enforced per router and verified for every registered route by `tests/test_auth_matrix.py`. `POST /api/wp-audit/{job_id}` (D3 WordPress configuration audit) had shipped without the guard and now has it; it has no frontend caller — see TODO.
+
 | Method | Endpoint | Description |
 |---|---|---|
 | POST | `/api/fixes/generate/{job_id}` | Connect to WordPress, generate proposed fixes from crawl issues. |

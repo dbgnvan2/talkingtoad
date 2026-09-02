@@ -176,12 +176,6 @@ class TestAiParser:
 # Engine / llms.txt validation
 # ---------------------------------------------------------------------------
 
-@pytest.mark.asyncio
-async def test_llms_txt_missing_issue():
-    # Mocking fetch_page in engine is complex, but we can test the logic 
-    # if we were to unit test the specific block. 
-    # For now, this is a placeholder for an integration test.
-    pass
 
 
 # ---------------------------------------------------------------------------

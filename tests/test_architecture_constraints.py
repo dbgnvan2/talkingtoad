@@ -116,51 +116,7 @@ async def test_scan_never_calls_wordpress_api():
         )
 
 
-@pytest.mark.asyncio
-async def test_image_scan_uses_head_requests_not_full_download():
-    """
-    Test that image scanning uses HEAD requests to get metadata efficiently.
 
-    Scan should:
-    - Use HEAD request to get Content-Length and Content-Type headers
-    - NOT download the full image file during scan
-    - Full download happens in Level 2 (Fetch) only when user requests it
-    """
-    # This test ensures we're not wasting bandwidth downloading images
-    # during the scan phase when we only need size and format metadata
-
-    # Implementation similar to test_scan_never_calls_wordpress_api
-    # but specifically verifying HEAD requests are used for images
-    pass  # TODO: Implement when HEAD request logic is in place
-
-
-def test_fetch_endpoint_requires_explicit_user_action():
-    """
-    Test that fetch (Level 2) is never triggered automatically by scan.
-
-    Fetch should ONLY happen when:
-    - User clicks "Fetch" button on an image
-    - User clicks "Fetch All" (explicit action)
-    - NEVER automatically during scan
-
-    This ensures:
-    - Scan stays fast (no WP API or image downloads)
-    - User controls when expensive operations happen
-    - Works on non-WordPress sites
-    """
-    pass  # TODO: Implement by checking that scan completion doesn't trigger fetch
-
-
-def test_geo_analysis_requires_user_configuration():
-    """
-    Test that GEO analysis cannot run without domain configuration.
-
-    This ensures:
-    - No AI costs without explicit user setup
-    - Clear error messages guide user to configure GEO first
-    - No silent failures or confusing behavior
-    """
-    pass  # TODO: Implement (partially covered in test_geo_integration.py)
 
 
 def test_three_level_architecture_data_sources():
@@ -205,18 +161,6 @@ def test_three_level_architecture_data_sources():
     )
     assert img_geo.data_source == "geo_analyzed"
 
-
-def test_scan_performance_constraint():
-    """
-    Test that scan completes within reasonable time for small sites.
-
-    Performance regression test:
-    - 10-page site should scan in < 30 seconds
-    - If scan takes > 30 seconds, likely calling slow APIs (WP, AI, etc.)
-
-    This is a smoke test for performance regressions.
-    """
-    pass  # TODO: Implement with timing assertions
 
 
 def test_url_normalization_is_consistent():

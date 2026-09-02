@@ -58,25 +58,6 @@ def mismatched_creds(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-class TestImageRouterAuth:
-    @pytest.mark.parametrize("method,path", [
-        ("get",  "/api/fixes/image-info?image_url=https://x/y.jpg"),
-        ("post", "/api/fixes/update-image-meta?image_url=https://x/y.jpg"),
-        ("post", "/api/fixes/refresh-image-from-wp?image_url=https://x/y.jpg&job_id=x"),
-        ("post", "/api/fixes/optimize-image?job_id=x&image_url=https://x/y.jpg"),
-        ("post", "/api/fixes/optimize-existing-preview?job_id=x&image_url=https://x/y.jpg"),
-        ("post", "/api/fixes/optimize-existing"),
-        ("post", "/api/fixes/optimize-upload-preview"),
-        ("post", "/api/fixes/optimize-upload"),
-    ])
-    @pytest.mark.asyncio
-    async def test_endpoint_requires_auth(self, api_client, method, path):
-        if method == "post":
-            r = await api_client.post(path)
-        else:
-            r = await api_client.get(path)
-        assert r.status_code == 401
-
 
 # ---------------------------------------------------------------------------
 # Validation

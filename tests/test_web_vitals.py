@@ -161,6 +161,16 @@ class TestParsing:
 
 
 class TestHardening:
+    @pytest.fixture(autouse=True)
+    def _fast_backoff(self, monkeypatch):
+        """The retry path is under test, not the wall clock: three of these
+        tests slept a real 2 + 4 seconds each (18 s of a 200 s suite) to prove
+        a retry happened. The retry count is still the config's; only the
+        pause between attempts is shortened."""
+        import api.services.web_vitals as wv
+        real = wv._cfg
+        monkeypatch.setattr(wv, "_cfg", lambda: {**real(), "retry_backoff_s": 0.01})
+
     @pytest.mark.asyncio
     async def test_d2_2b_quota_exhaustion_is_retryable_not_terminal(self):
         """A 429 on page 8 of 10 must not make pages 9 and 10 look fine. This is
@@ -340,6 +350,7 @@ class TestLiveApiContract:
     moment a key exists.
     """
 
+    @pytest.mark.integration  # real call to Google PageSpeed (~35 s); run with `pytest -m integration`
     @pytest.mark.asyncio
     async def test_d2_live_psi_response_parses(self):
         async with httpx.AsyncClient(timeout=120) as client:

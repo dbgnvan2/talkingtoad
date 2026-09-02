@@ -33,6 +33,26 @@ This file tracks infrastructure improvements, testing gaps, and future features 
 - [ ] **Persistent Settings:** Save the user's preferred PDF export options (Help Text ON/OFF) in localStorage.
 - [ ] **Real-time Log Streaming:** Instead of just a progress bar, show a "Live Console" during the crawl for power users.
 
+### From the 2026-09-02 test-suite review
+
+- [ ] **Four routes have auth-only coverage.** `/api/crawl/recent`, `…/export/ai-images-pdf`,
+  `…/fix-focus/regenerate`, `…/images/analyze-ai` are exercised only by the 401 matrix
+  (`tests/test_auth_matrix.py::_AUTH_ONLY_COVERAGE`). The per-router lists that used to name
+  them made them look covered. Write one behavioural contract test each (404 on unknown job,
+  happy-path shape) and delete the entry.
+- [ ] **`POST /api/wp-audit/{job_id}` has no frontend caller.** The PDF/Excel read `job.wp_audit`,
+  but nothing in `frontend/src` posts to the route, so the D3 WordPress configuration audit can
+  only be triggered by hand. Either wire a button (GUI change — owner sign-off) or document it
+  as an operator/API-only step.
+- [ ] **`DELETE /api/fixes/media/{id}` was removed in 6bd2db5 (v2.0 refactor) and its
+  domain-validation test sat skipped for a year with the reason "not yet registered — re-enables
+  in M8".** Test deleted 2026-09-02. If orphaned-media deletion comes back, it needs the
+  `_validate_wp_domain_for_job` guard and a test in `test_wp_domain_validation.py` first.
+- [ ] **Placeholder tests were pinned to real constraints that still have no test:** image scan
+  must use HEAD not GET (`test_image_scan_uses_head_requests_not_full_download`), fetch is never
+  triggered by scan, GEO analysis refuses without configuration, `LLMS_TXT_MISSING` end-to-end.
+  Six `pass`-only bodies deleted 2026-09-02; the constraints remain worth a real test each.
+
 ### From the 2026-09-02 info-tiers /csdp sweep (1 cold pass; 5 findings, 3 fixed in-session)
 
 - [ ] **Category cards and PDF per-page rows show stored counts beside a scored score.** `SummaryPanel`

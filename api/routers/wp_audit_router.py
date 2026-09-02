@@ -27,7 +27,14 @@ from api.services.wp_client import WPAuthError, WPClient
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api/wp-audit", tags=["wp-audit"])
+# Auth (2026-09-02): this router shipped without `require_auth` — the only /api
+# route besides /health that answered an anonymous caller, found by the
+# route-derived matrix in tests/test_auth_matrix.py the day it replaced the
+# hand-maintained per-router lists (none of which had ever listed this path).
+from api.services.auth import require_auth  # noqa: E402
+
+router = APIRouter(prefix="/api/wp-audit", tags=["wp-audit"],
+                   dependencies=[Depends(require_auth)])
 
 
 @router.post("/{job_id}", response_model=None)

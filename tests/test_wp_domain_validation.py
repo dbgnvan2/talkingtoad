@@ -100,35 +100,17 @@ class TestJobIdEndpoints:
         r = await client.post(f"/api/fixes/generate/{job_id}", headers=AUTH)
         _assert_domain_mismatch(r)
 
-    @pytest.mark.skip(reason=(
-        "GET /api/fixes/orphaned-media/{job_id} not yet registered — the "
-        "fixes.py refactor (v2.0) is partial; only fix_manager_router is "
-        "split out so far. orphaned_media_router is a TODO in fixes.py:31. "
-        "Test re-enables in M8 (endpoint contract backfill)."
-    ))
     async def test_orphaned_media_rejects_mismatch(self, seeded):
         client, store, job_id = seeded
         r = await client.get(f"/api/fixes/orphaned-media/{job_id}", headers=AUTH)
         _assert_domain_mismatch(r)
 
-    @pytest.mark.skip(reason=(
-        "DELETE /api/fixes/media/{id} not yet registered — see fixes.py:31. "
-        "Re-enables in M8."
-    ))
-    async def test_delete_media_rejects_mismatch(self, seeded):
-        client, store, job_id = seeded
-        r = await client.delete("/api/fixes/media/123", params={"job_id": job_id}, headers=AUTH)
-        _assert_domain_mismatch(r)
 
     async def test_apply_fixes_rejects_mismatch(self, seeded):
         client, store, job_id = seeded
         r = await client.post(f"/api/fixes/apply/{job_id}", headers=AUTH)
         _assert_domain_mismatch(r)
 
-    @pytest.mark.skip(reason=(
-        "POST /api/fixes/batch-optimize/start not yet registered — "
-        "batch_optimizer_router is a TODO in fixes.py:32. Re-enables in M8."
-    ))
     async def test_batch_optimize_rejects_mismatch(self, seeded):
         client, store, job_id = seeded
         r = await client.post("/api/fixes/batch-optimize/start", json={"job_id": job_id, "image_urls": ["https://example.com/img.jpg"]}, headers=AUTH)
@@ -143,20 +125,12 @@ class TestUrlOnlyEndpoints:
         with patch("api.routers.fixes_shared._CREDS_PATH", creds_path):
             yield
 
-    @pytest.mark.skip(reason=(
-        "POST /api/fixes/trim-title-one not yet registered — title_router is "
-        "a TODO in fixes.py:28. Re-enables in M8."
-    ))
     async def test_trim_title_one_rejects_wrong_url_domain(self, seeded):
         client, store, job_id = seeded
         r = await client.post("/api/fixes/trim-title-one", params={"page_url": "https://wrong-domain.com/page"}, headers=AUTH)
         assert r.status_code == 403
         assert r.json()["error"]["code"] == "DOMAIN_MISMATCH"
 
-    @pytest.mark.skip(reason=(
-        "GET /api/fixes/image-info not yet registered — image_router is "
-        "a TODO in fixes.py:30. Re-enables in M8."
-    ))
     async def test_image_info_rejects_wrong_url_domain(self, seeded):
         client, store, job_id = seeded
         r = await client.get("/api/fixes/image-info", params={"image_url": "https://wrong-domain.com/img.jpg"}, headers=AUTH)

@@ -66,39 +66,6 @@ async def seeded_job(api_client, test_store):
 # ===================================================================
 
 
-class TestCrawlRouterAuth:
-    """Every endpoint must require bearer auth. Parametrize so adding new
-    endpoints to the list catches missing auth at a glance."""
-
-    @pytest.mark.parametrize("method,path", [
-        ("post", "/api/crawl/some-job-id/rescan-url"),
-        ("post", "/api/crawl/scan-page"),
-        ("post", "/api/crawl/some-job-id/mark-fixed"),
-        ("get",  "/api/crawl/some-job-id/fix-history"),
-        ("get",  "/api/crawl/some-job-id/comparison"),
-        ("get",  "/api/crawl/some-job-id/executive-summary"),
-        ("get",  "/api/crawl/some-job-id/export/csv"),
-        ("get",  "/api/crawl/some-job-id/export/csv/metadata"),
-        ("get",  "/api/crawl/some-job-id/export/pdf"),
-        ("get",  "/api/crawl/some-job-id/export/excel"),
-        ("get",  "/api/crawl/some-job-id/images"),
-        ("get",  "/api/crawl/some-job-id/images/summary"),
-        ("get",  "/api/crawl/some-job-id/fix-focus"),
-        ("post", "/api/crawl/some-job-id/fix-focus/regenerate"),
-        ("post", "/api/crawl/some-job-id/fix-focus/check"),
-        ("post", "/api/crawl/some-job-id/fix-focus/verify-page"),
-        # Note: /api/crawl/{id}/orphaned-images doesn't exist on the crawl
-        # router; the frontend uses /api/fixes/orphaned-media/{id} which
-        # ships via orphaned_media_router (M0.12.4).
-    ])
-    @pytest.mark.asyncio
-    async def test_endpoint_requires_auth(self, api_client, method, path):
-        if method == "post":
-            r = await api_client.post(path)
-        else:
-            r = await api_client.get(path)
-        assert r.status_code == 401
-
 
 # ===================================================================
 # JOB_NOT_FOUND coverage
