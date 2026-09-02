@@ -22,6 +22,8 @@ TalkingToad helps you identify technical SEO issues on your website and — for 
   confirms a fix without re-crawling, and reports what it found — resolved, still
   present, newly found, or *not re-checked* for the checks that need a whole-site crawl.
   It never marks a finding fixed on the strength of a check it could not run.
+  A finding that is about *other* pages says which ones: near-identical pages are
+  reported on every page in the group and each one names its partners.
 - **Every finding teaches:** all 170 checks carry a seven-part plain-language explanation —
   why it matters to a nonprofit, what it is, why it matters, good vs bad examples, an honest
   "how this can mislead" caveat with its evidence tier, and the fix — on screen and in the PDF.
@@ -72,4 +74,4 @@ If you are a developer looking to contribute or deploy TalkingToad:
 ---
 
 **GitHub:** [https://github.com/dbgnvan2/talkingtoad](https://github.com/dbgnvan2/talkingtoad)  
-**Last Updated:** 2026-09-01
+**Last Updated:** 2026-09-02
