@@ -278,6 +278,15 @@ class TestEvidenceLines:
         assert lines, "a pre-ND1 stored row lost its evidence"
         assert any("https://x/b" in line for line in lines)
         assert total == 2
+        # ...and it must not come back under the FIELD NAME. "Members:" is the
+        # exact string this whole change exists to remove: a variable name in a
+        # client report, listing a set that includes the page's own URL, so the
+        # finding reads as though the page duplicates itself. 19 of the 37
+        # stored rows are the self-duplicate artifact, where the list is only
+        # the two spellings of one page.
+        assert not any(line.startswith("Members:") for line in lines), lines
+        assert any(line.startswith("Pages in this duplicate group:")
+                   for line in lines), lines
 
 
 # ── The guard ───────────────────────────────────────────────────────────────

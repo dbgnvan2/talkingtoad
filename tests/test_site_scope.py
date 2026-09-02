@@ -199,6 +199,12 @@ def test_site_scope_representative_does_not_move_when_more_pages_carry_the_code(
         f"the site score moved {before} -> {after} because the cluster's row now "
         "appears on a page that absorbs the deduction at its category cap")
 
+    # Pin the absolute value too, so a scoring change cannot drift both sides
+    # together and leave the equality vacuously true (P32). /zeta is capped at
+    # _CATEGORY_IMPACT_CAP (20) by its three loaded codes -> 80; /alpha is the
+    # elected representative and pays NEAR_DUPLICATE_BODY -> 96; p1/p2 -> 100.
+    assert after == round((80 + (100 - _imp("NEAR_DUPLICATE_BODY")) + 100 + 100) / 4)
+
 
 def test_site_scope_representative_is_stable_against_crawl_order():
     """The docstring promises a choice "stable across runs". `crawled_pages` has

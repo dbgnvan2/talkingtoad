@@ -81,10 +81,15 @@ user replaces the old image in the post by hand.
 - [ ] **`/comparison` will report a one-off delta across the ND1/ND3 deploy** — the first crawl
   after it shows +(N−1) warnings per near-duplicate cluster and, on a bare-origin site, one
   fewer page, with nothing changed on the site. `comparable` only knows about `info_detail`
-  and partial analysis. `SCORING_MODEL_VERSION` was not bumped because the scoring MODEL did
-  not change (the tiebreak fix restores the pre-ND1 site score); the row COUNT did. Either
-  teach `comparable` about the issue-emission shape or stamp an emission version.
-  No frontend consumer today. (Cold sweep, 2026-09-02.)
+  and partial analysis. `SCORING_MODEL_VERSION` was not bumped: the R5.1 tiebreak change
+  restores the pre-ND1 site score for `NEAR_DUPLICATE_BODY`, and measured over all 149
+  complete jobs in the development store it moves the elected representative on 2 (both
+  `MISSING_HSTS`) and changes the site score on **0**. It is not score-neutral by
+  construction for the other eleven site-scoped codes, though — their impacts are constant
+  per code, so the tiebreak always decides the election; it happens not to bite on this
+  corpus. What definitely changed across the deploy is the row COUNT. Either teach
+  `comparable` about the issue-emission shape or stamp an emission version. No frontend
+  consumer today. (Cold sweep, 2026-09-02.)
 - [ ] **`perf_join.match_key` collides on pre-ND3 jobs that stored both home-page spellings** —
   both fold to `//site.ca/` and `build_crawled_key_map` is last-wins, so GSC/GA4 data attaches
   to only one of the two duplicate rows in those old jobs. Going forward the duplicate cannot

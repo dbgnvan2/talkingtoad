@@ -349,3 +349,40 @@ class TestAPreNd3HomePageStillRechecks:
 
         assert isinstance(res, dict), (
             f"a home page stored under the bare origin no longer re-checks: {res!r}")
+
+    async def test_a_job_holding_both_spellings_rechecks_the_row_asked_for(self, store):
+        """The larger half of the same regression (P8): 71 jobs in the
+        development database hold BOTH `https://site.ca` and `https://site.ca/`
+        as separate rows with different issue sets. There the normalised lookup
+        does not miss — it hits the TWIN. `delete_issues_for_url` then deletes a
+        page the operator is not looking at, `save_issues` writes fresh rows
+        under it, and the panel reloads via `/pages/issues` (which does not
+        normalise) showing the original row untouched: the button appears to do
+        nothing while quietly rewriting another page."""
+        bare, slashed = "https://e.test", "https://e.test/"
+        await store.create_job(CrawlJob(job_id="j", target_url=bare))
+        await store.save_pages([
+            CrawledPage(job_id="j", url=bare, status_code=200,
+                        title="An Entirely Reasonable Home Page Title"),
+            CrawledPage(job_id="j", url=slashed, status_code=200,
+                        title="An Entirely Reasonable Home Page Title"),
+        ])
+        await store.save_issues([
+            Issue(job_id="j", page_url=bare, category="metadata", severity="warning",
+                  issue_code="TITLE_DUPLICATE", description="on the bare row",
+                  recommendation="fix it", impact=5),
+            Issue(job_id="j", page_url=slashed, category="crawlability",
+                  severity="warning", issue_code="ORPHAN_PAGE",
+                  description="on the slashed row", recommendation="fix it", impact=5),
+        ])
+
+        with respx.mock(assert_all_mocked=False, assert_all_called=False) as rx:
+            rx.route().mock(return_value=httpx.Response(
+                200, text=CLEAN_HTML, headers={"content-type": "text/html"}))
+            res = await rescan_url("j", url=bare, store=store)
+        assert isinstance(res, dict), f"expected a payload, got {res!r}"
+
+        _, twin_by_cat = await store.get_page_issues_by_url("j", slashed)
+        twin_codes = {i.issue_code for v in twin_by_cat.values() for i in v}
+        assert twin_codes == {"ORPHAN_PAGE"}, (
+            f"re-checking {bare} rewrote the OTHER row: {sorted(twin_codes)}")

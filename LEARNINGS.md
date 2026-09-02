@@ -202,6 +202,31 @@ Newest first. Format: **Issue → Root cause → What would have caught it → F
     before. Both now try the stored spelling too, and both tests were mutation-checked against
     the fix. **(d)** not fixed, recorded in TODO: the cluster is stored twice (O(N²) per
     cluster) because the approved spec specifies both keys and the old rows now need `members`.
+  - *And what a second cold sweep, of the FIX TO THE FIX, then found — two more, both of them
+    the same defect I had just "fixed", one level deeper:* **(e)** the store lookup I added
+    tried the NORMALISED spelling first, so it only helped the 43 rows where the normalised
+    form misses entirely. **71 jobs hold BOTH spellings** as separate rows with different
+    issue sets — constructive.co, 38 findings on the bare row and 21 on the slashed one — and
+    there the normalised lookup does not miss, it hits the TWIN. The operator opens one row's
+    Page Audit and the endpoint reads, deletes, rewrites and ledgers the OTHER; `/pages/issues`
+    does not normalise, so the reload shows the original row untouched and the button looks
+    inert. I measured 43 and treated it as the population; the query that produced it had
+    `NOT EXISTS (… twin)` written into it, so it could only ever return the smaller half.
+    Resolving the caller's own spelling first fixes both halves, and is right by construction:
+    the frontend passes the url straight from the page list. **(f)** un-suppressing `members`
+    for the historical rows restored, character for character, the render this whole change
+    exists to remove — `_KEY_LABELS` had no entry, so `_label` title-cased the field name and
+    the 37 stored rows printed "Members:" over a list containing the page's own url. Fixing
+    "no evidence" by reinstating "wrong evidence" is a trade, not a win. Now labelled "Pages
+    in this duplicate group".
+  - *Pattern from the two sweeps together:* **a measurement whose query encodes the shape you
+    already believe in cannot report the shape you missed.** `NOT EXISTS (twin)` answered the
+    question "how many are bare-only", and I read the answer as "how many are affected". The
+    number was right and the noun was wrong, and it went into a commit message, a spec and a
+    LEARNINGS entry before a second reader ran the complementary query. Corollary for the
+    endpoint tests: both of mine asserted only `200` / `isinstance(res, dict)` — they pass
+    while the endpoint answers for the wrong row, which is precisely P26 again. They now
+    assert WHICH row came back.
   - *Pattern:* **P25 again, in its quietest form — evidence that renders under the name of the variable that holds it.** "Members" is not a false statement; it is a field name reaching a client report, and a reader who cannot tell a set from a relationship reads it as nonsense and stops trusting the finding. A list key that reaches a human needs a label that says what the list *is to this page*. Second, generalising the trailing-slash lesson of 2026-08-30: **a URL rule written for the shapes in front of you is a rule with an untested shape** — the empty path is not an edge case, it is what a user types.
 
 - **2026-09-02 — Phase 4 sweep: the WordPress audit panel would always have opened empty on reload, and a "not checked" state erased the user's tick.**

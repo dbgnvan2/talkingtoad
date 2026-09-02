@@ -185,32 +185,49 @@ class _PageCheckResult:
     page_unreadable: bool = False
 
 
-async def _lookup_crawled_page(store, job_id: str, url: str):
-    """``(crawled_page, issues_by_category, url_as_stored)`` for *url*, tolerant
-    of the trailing-slash spelling the row was actually written under.
+async def _lookup_crawled_page(store, job_id: str, requested_url: str):
+    """``(crawled_page, issues_by_category, url_as_stored)`` for *requested_url*.
 
-    The store looks a page up by an EXACT url match, and callers normalise
-    first so the lookup matches how the crawl stored it. ND3 (2026-09-02) then
-    changed what "normalised" means for one shape: a bare origin
-    (``https://site.ca``) now normalises to ``https://site.ca/``. Every job
-    crawled BEFORE that change stored its home page under the bare spelling —
-    43 pages across 39 jobs in the development database — so a normalised
-    lookup misses and "Re-check this page" on a home page that worked yesterday
-    returns PAGE_NOT_FOUND (P8).
+    The store looks a page up by an EXACT url match. Callers used to normalise
+    first, so the lookup matched how the crawl had stored the page — and ND3
+    (2026-09-02) changed what "normalised" means for exactly one shape: a bare
+    origin (``https://site.ca``) now normalises to ``https://site.ca/``. Two
+    populations of existing jobs broke, in opposite ways (P8):
 
-    So try the normalised form first (new jobs, and what the caller asked for),
-    then the other spelling. Returns ``(None, {}, url)`` when neither is stored.
-    Tests: tests/test_page_details_endpoint.py::TestClientContract::test_a_home_page_stored_under_the_bare_origin_still_opens
+    * **43 pages across 39 jobs** stored the home page under the BARE spelling
+      only. The normalised lookup misses, and "Re-check this page" on a home
+      page that worked yesterday returns PAGE_NOT_FOUND.
+    * **71 jobs** stored BOTH spellings as separate rows with different issue
+      sets (constructive.co: 38 findings on the bare row, 21 on the slashed
+      one). There the normalised lookup does not miss — it hits the TWIN. The
+      panel is opened on one row and the endpoint answers for, and rewrites,
+      the other; ``/pages/issues`` does not normalise, so the reload shows the
+      original row untouched and the button looks inert. Silently reading the
+      wrong page is worse than the 404, which at least showed.
+
+    So the CALLER'S OWN spelling is tried first — the frontend passes the url
+    straight from the page list, so an exact match is by construction the row
+    the operator is looking at — then the normalised form (a hand-typed or
+    tracking-param url), then the other trailing-slash spelling. Returns
+    ``(None, {}, requested_url)`` when none is stored.
+
+    Tests: tests/test_page_details_endpoint.py::TestClientContract (both bare-origin cases)
     """
-    candidates = [url]
-    alt = url[:-1] if url.endswith("/") else url + "/"
-    if alt not in candidates:
-        candidates.append(alt)
+    candidates = [requested_url]
+    try:
+        normalised = normalise_url(requested_url)
+    except ValueError as exc:
+        logger.debug(f"Could not normalize URL {requested_url}: {exc}")
+        normalised = requested_url
+    for candidate in (normalised,
+                      normalised[:-1] if normalised.endswith("/") else normalised + "/"):
+        if candidate not in candidates:
+            candidates.append(candidate)
     for candidate in candidates:
         crawled_page, by_cat = await store.get_page_issues_by_url(job_id, candidate)
         if crawled_page is not None:
             return crawled_page, by_cat, candidate
-    return None, {}, url
+    return None, {}, requested_url
 
 
 async def _fetch_and_check_page(
@@ -1689,13 +1706,9 @@ async def rescan_url(
     Useful for verifying that a fix worked. Replaces the stored issues for
     this URL with the results from a fresh fetch and issue check.
     """
-    # Normalize the URL to match how it was stored during the original crawl.
-    try:
-        url = normalise_url(url)
-    except ValueError as e:
-        logger.debug(f"Could not normalize URL {url}: {e}")
-        # fall through with original url if normalisation fails
-
+    # `_lookup_crawled_page` owns the normalisation: it must try the caller's
+    # own spelling BEFORE the normalised one, or a job holding both spellings of
+    # its home page is re-checked on the row the operator is not looking at.
     job = await store.get_job(job_id)
     if job is None:
         return _err("JOB_NOT_FOUND", "No crawl job found with the given ID.", 404)
@@ -2021,11 +2034,8 @@ async def get_page_details(
 
     Spec:  docs/functional-specification.md (D6)
     """
-    try:
-        url = normalise_url(url)
-    except ValueError as e:
-        logger.debug(f"Could not normalize URL {url}: {e}")
-
+    # Normalisation lives in `_lookup_crawled_page` — the caller's own spelling
+    # is resolved first, so the panel and the endpoint agree on which row.
     job = await store.get_job(job_id)
     if job is None:
         return _err("JOB_NOT_FOUND", "No crawl job found with the given ID.", 404)

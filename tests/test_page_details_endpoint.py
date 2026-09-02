@@ -430,6 +430,54 @@ class TestClientContract:
                 f"/api/crawl/old/page-details?url={bare}", headers=auth_headers)
         assert r.status_code == 200, (
             f"a page stored under the bare origin no longer opens: {r.text[:200]}")
+        assert r.json()["url"] == bare, (
+            "the endpoint resolved a different row than the one asked for")
+
+    async def test_a_job_holding_BOTH_home_page_spellings_answers_for_the_one_asked_for(
+            self, api_client, auth_headers, test_store):
+        """The larger half of the same regression (P8). 71 jobs in the
+        development database stored BOTH `https://site.ca` and
+        `https://site.ca/` as separate rows with DIFFERENT issue sets — e.g.
+        constructive.co, 38 issues on the bare row and 21 on the slashed one.
+        There the normalised lookup does not miss, it HITS THE TWIN: pre-ND3 the
+        bare spelling normalised to itself and resolved the bare row; now it
+        normalises to the slashed one, so the panel is opened on one row and the
+        endpoint answers for the other. Nothing 404s — it silently reads the
+        wrong page, which is the failure mode a 404 at least made visible.
+
+        The row the caller asked for is the row that must be answered."""
+        bare, slashed = "https://e.test", "https://e.test/"
+        await test_store.create_job(CrawlJob(job_id="twin", target_url=bare))
+        await test_store.save_pages([
+            CrawledPage(job_id="twin", url=bare, status_code=200, title="Home"),
+            CrawledPage(job_id="twin", url=slashed, status_code=200, title="Home"),
+        ])
+        await test_store.save_issues([
+            Issue(job_id="twin", page_url=bare, category="security",
+                  severity="warning", issue_code="UNSAFE_CROSS_ORIGIN_LINK",
+                  description="on the bare row", recommendation="fix", impact=1,
+                  extra={"unsafe_links": [{"href": "https://bare.example.com/a"}],
+                         "unsafe_links_total": 1}),
+            Issue(job_id="twin", page_url=slashed, category="security",
+                  severity="warning", issue_code="MIXED_CONTENT",
+                  description="on the slashed row", recommendation="fix", impact=1,
+                  extra={"mixed_content_items": [{"href": "http://twin.example.com/x"}],
+                         "mixed_content_items_total": 1}),
+        ])
+
+        with respx.mock(assert_all_mocked=False, assert_all_called=False) as rx:
+            rx.route().mock(return_value=httpx.Response(
+                200, text=HTML, headers={"content-type": "text/html"}))
+            r = await api_client.get(
+                f"/api/crawl/twin/page-details?url={bare}", headers=auth_headers)
+
+        assert r.status_code == 200, r.text[:200]
+        body = r.json()
+        assert body["url"] == bare, (
+            f"asked for {bare}, answered for {body['url']} — the twin row")
+        codes = {d["issue_code"] for d in body["details"]}
+        assert "MIXED_CONTENT" not in codes, (
+            "the twin row's findings were reported against the page asked for")
 
 
 class TestAGonePageIsNotACleanPage:

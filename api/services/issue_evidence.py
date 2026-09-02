@@ -98,6 +98,13 @@ _KEY_LABELS = {
     "missing_tags": "Missing tags",
     "duplicate_urls": "Also on",
     "near_identical_to": "Near-identical to",
+    # Only reached by rows stored before ND1 (2026-09-02), which carry the whole
+    # cluster and no `near_identical_to`. Without an entry here `_label` fell
+    # through to the title-cased field name — "Members:" — which is a variable
+    # name in a client report naming a SET that includes the page's own url, so
+    # the finding read as though the page duplicated itself. That render is the
+    # owner report this change answers; it must not survive on the old rows.
+    "members": "Pages in this duplicate group",
     "groups": "Duplicate link groups",
     "img_missing_alt_srcs": "Images without alt text",
     "empty_anchors": "Links with no accessible name",
@@ -207,8 +214,11 @@ def evidence_summary(
     for key, value in extra.items():
         if key in _NOISE_KEYS or not isinstance(value, list) or not value:
             continue
-        # Hidden only because a better key for the same URLs is present.
-        if extra.get(_SUPERSEDED_BY.get(key, "")):
+        # Hidden only because a better key for the same URLs is present. Keyed
+        # membership first: `_SUPERSEDED_BY.get(key, "")` would look up `""`,
+        # so a payload carrying an empty-string key with a truthy value would
+        # suppress EVERY list on that issue and render it evidence-free.
+        if key in _SUPERSEDED_BY and extra.get(_SUPERSEDED_BY[key]):
             continue
         rendered = [
             line for line in (_row_to_line(row) for row in value) if line
