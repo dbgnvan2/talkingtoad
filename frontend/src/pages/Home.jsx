@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useCrawl } from '../hooks/useCrawl.js'
 import { getRecentJobs, scanPage, discoverScope, rescanJob } from '../api.js'
+import { INFO_DETAIL_OPTIONS } from '../data/infoDetail.js'
 
 const ANALYSIS_TOGGLES = [
   { key: 'link_integrity', label: 'Link Integrity',  desc: 'Broken links, redirects, and status codes' },
@@ -30,6 +31,8 @@ export default function Home() {
   const [suppressH1Input, setSuppressH1Input] = useState('')
   const [suppressBannerH1, setSuppressBannerH1] = useState(true)
   const [singlePageMode, setSinglePageMode] = useState(false)
+  // Info detail (2026-09-01): which info tiers this scan shows AND scores.
+  const [infoDetail, setInfoDetail] = useState('all')
   // All analyses enabled by default (null = all on)
   const [analyses, setAnalyses] = useState(() =>
     Object.fromEntries(ANALYSIS_TOGGLES.map(t => [t.key, true]))
@@ -167,6 +170,7 @@ export default function Home() {
     if (suppressH1s.length) settings.suppress_h1_strings = suppressH1s
     if (suppressBannerH1) settings.suppress_banner_h1 = true
     if (singlePageMode) settings.single_page = true
+    if (infoDetail !== 'all') settings.info_detail = infoDetail
     const enabled = ANALYSIS_TOGGLES.filter(t => analyses[t.key]).map(t => t.key)
     // Only send if not all selected (null means all)
     if (enabled.length < ANALYSIS_TOGGLES.length) {
@@ -570,6 +574,26 @@ export default function Home() {
                     className="w-full border border-gray-300 rounded px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
                   />
                   <p className="text-xs text-gray-400 mt-1">Images larger than this are flagged</p>
+                </div>
+                <div className="col-span-2">
+                  <label htmlFor="info-detail" className="block text-xs font-medium text-gray-600 mb-1">
+                    Info detail
+                  </label>
+                  <select
+                    id="info-detail"
+                    value={infoDetail}
+                    onChange={e => setInfoDetail(e.target.value)}
+                    className="w-full border border-gray-300 rounded px-3 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-green-500"
+                  >
+                    {INFO_DETAIL_OPTIONS.map(o => (
+                      <option key={o.value} value={o.value}>{o.label}</option>
+                    ))}
+                  </select>
+                  <p className="text-xs text-gray-400 mt-1">
+                    Sets what this scan shows <span className="font-semibold">and</span> what counts toward the health score.
+                    {' '}{INFO_DETAIL_OPTIONS.find(o => o.value === infoDetail)?.hint}
+                    {' '}Every finding is still recorded and can be revealed on the results page.
+                  </p>
                 </div>
                 <div className="col-span-2">
                   <label className="block text-xs font-medium text-gray-600 mb-1">

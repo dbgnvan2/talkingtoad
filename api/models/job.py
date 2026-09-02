@@ -33,6 +33,9 @@ class ContentScope(BaseModel):
     category_ids: list[int] = Field(default_factory=list)   # posts-by-category
 
 
+InfoDetail = Literal["all", "notable", "key", "none"]
+
+
 class CrawlSettings(BaseModel):
     """Per-job crawler configuration (spec §5.1)."""
 
@@ -61,6 +64,12 @@ class CrawlSettings(BaseModel):
     # Report customization
     client_name: str = ""
     prepared_by: str = ""
+    # Info detail (2026-09-01 spec): which info tiers this scan SHOWS and
+    # SCORES. all = every info row (default, byte-identical to before the
+    # setting existed) · notable = impact ≥ 2 · key = impact 3 only ·
+    # none = critical + warning define the audit. Detection is unaffected —
+    # every finding is still stored, so the excluded rows can be revealed.
+    info_detail: InfoDetail = "all"
 
 
 JobStatus = Literal["queued", "running", "complete", "failed", "cancelled"]

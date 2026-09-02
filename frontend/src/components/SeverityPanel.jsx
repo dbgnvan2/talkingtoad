@@ -3,19 +3,22 @@ import { getResults } from '../api.js'
 import SeverityBadge from './SeverityBadge.jsx'
 import IssueHelpPanel from './IssueHelpPanel.jsx'
 import Spinner from './Spinner.jsx'
+import InfoDetailDisclosure from './InfoDetailDisclosure.jsx'
 
 export default function SeverityPanel({ jobId, severity, domain, onPageClick, onBack }) {
   const [data, setData] = useState(null)
   const [expandedCode, setExpandedCode] = useState(null)
+  // Info detail (2026-09-01): reveal-only. The score never moves with this.
+  const [revealInfo, setRevealInfo] = useState(false)
 
   const labels = { critical: 'Critical Issues', warning: 'Warnings', info: 'Info Notices' }
 
   useEffect(() => {
     setData(null)
-    getResults(jobId, { severity, limit: 100 })
+    getResults(jobId, { severity, limit: 100, infoDetail: revealInfo ? 'all' : undefined })
       .then(d => setData(d))
       .catch(() => setData({ issues: [] }))
-  }, [jobId, severity])
+  }, [jobId, severity, revealInfo])
 
   const sortedGroups = useMemo(() => {
     if (!data?.issues) return []
@@ -38,17 +41,20 @@ export default function SeverityPanel({ jobId, severity, domain, onPageClick, on
         <button onClick={onBack} className="text-xs font-bold text-green-600 uppercase tracking-widest hover:underline">← Back to Summary</button>
         <h2 className="text-xl font-bold text-gray-800">{labels[severity]}{domain ? ` - ${domain}` : ''}</h2>
       </div>
+      {severity === 'info' && (
+        <InfoDetailDisclosure infoFiltered={data.info_filtered} revealed={revealInfo} onToggle={() => setRevealInfo(v => !v)} />
+      )}
       {sortedGroups.length === 0 ? (
         <div className="py-12 bg-white rounded-2xl border border-gray-100 text-center text-gray-400 font-medium font-serif italic">No {severity} issues found.</div>
       ) : (
         sortedGroups.map(group => (
-          <div key={group.issue_code} className="bg-white border border-gray-200 rounded-2xl overflow-hidden shadow-sm hover:border-gray-300 transition-colors">
+          <div key={group.issue_code} className={`bg-white border border-gray-200 rounded-2xl overflow-hidden shadow-sm hover:border-gray-300 transition-colors ${group.scored === false ? 'opacity-60' : ''}`}>
             <button
               onClick={() => setExpandedCode(expandedCode === group.issue_code ? null : group.issue_code)}
               className="w-full flex items-center justify-between px-6 py-5"
             >
               <div className="flex items-center gap-4">
-                <SeverityBadge severity={group.severity} />
+                <SeverityBadge severity={group.severity} infoTier={group.info_tier} scored={group.scored !== false} />
                 <div className="text-left">
                   <p className="font-bold text-gray-800 leading-none text-base">{group.human_description || group.issue_code}</p>
                   <p className="text-sm font-bold text-gray-400 mt-1 uppercase tracking-widest">{group.count} Affected Pages</p>

@@ -34,6 +34,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from api.crawler.checkers.authority import authority_for  # noqa: E402
+from api.crawler.checkers.registry import info_tier  # noqa: E402
 from api.crawler.issue_checker import (  # noqa: E402
     _AI_READINESS_CONFIDENCE,
     _CATALOGUE,
@@ -152,6 +153,10 @@ def _render_code_entry(code: str) -> str:
     ]
     if confidence:
         pieces.insert(1, f"**Confidence:** {confidence}")
+    # Info tiers (2026-09-01): the info band is graded by impact. Derived here
+    # from the same function the runtime uses, so the doc cannot drift.
+    if spec.severity == "info":
+        pieces.insert(1, f"**Tier:** {info_tier(impact)}")
     if spec.fixability and spec.fixability != "developer_needed":
         pieces.append(f"**Fixability:** {spec.fixability}")
 

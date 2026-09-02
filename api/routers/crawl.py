@@ -66,7 +66,7 @@ from api.services.gsc_priority import (
     parse_priority_upload,
     seed_urls,
 )
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 logger = logging.getLogger(__name__)
 
@@ -476,9 +476,27 @@ async def _filter_issue_models_for_domain(store, target_url: str, issues: list):
     return kept, filter_caveat_note(report)
 
 
+def _filter_issue_models_for_info_detail(job, issues: list, note: str | None = None):
+    """Apply the scan's ``info_detail`` to Issue MODELS for the export paths.
+
+    Returns ``(kept, combined_note)``. The note names what the level excluded
+    from the document AND from its score — the PDF's reader is usually not the
+    operator who chose the level.
+    """
+    from api.services.info_tier_filter import combine_notes, filter_issue_models, info_caveat_note
+    kept, report = filter_issue_models(issues, job.settings.info_detail)
+    return kept, combine_notes(note, info_caveat_note(report))
+
+
 async def _paginate_filtered(store, job, *, severity=None, category=None,
-                             page: int, limit: int, exempt_urls):
-    """Fetch, filter, THEN slice. Returns (page_dicts, total, filtered_report).
+                             page: int, limit: int, exempt_urls,
+                             info_detail: str | None = None):
+    """Fetch, filter, THEN slice. Returns (page_dicts, total, filtered_report,
+    info_report).
+
+    ``info_detail`` is the LEVEL TO SERVE AT (already resolved against the
+    job's own level by ``resolve_info_detail``); ``scored`` on each row is
+    always relative to the job's level.
 
     The filter must run before pagination, not after. Filtering the already-
     sliced page produced: empty pages behind a live pager (60 findings, one
@@ -491,29 +509,36 @@ async def _paginate_filtered(store, job, *, severity=None, category=None,
     When the domain has no rules this defers to the store's own pagination, so
     the common path keeps its SQL LIMIT/OFFSET.
     """
+    from api.services.info_tier_filter import annotate_scored, apply_info_detail
+    job_level = job.settings.info_detail
+    level = info_detail or job_level
     rules = []
     try:
         rules = await store.get_domain_filters(job.target_url)
     except Exception as exc:
         logger.warning("domain_filter_load_failed", extra={"error": str(exc)})
 
-    if not rules:
+    if not rules and level == "all":
         issues, total = await store.get_issues(
             job_id=job.job_id, severity=severity, category=category,
             page=page, limit=limit)
         dicts = _apply_exempt_anchors([_issue_dict(i) for i in issues], exempt_urls)
+        annotate_scored(dicts, job_level)
         from api.services.domain_filter import normalise_filter_domain
-        return dicts, total, {"hidden": 0, "by_rule": {},
-                              "domain": normalise_filter_domain(job.target_url)}
+        return (dicts, total,
+                {"hidden": 0, "by_rule": {}, "domain": normalise_filter_domain(job.target_url)},
+                {"hidden": 0, "by_tier": {}, "info_detail": level})
 
-    # Rules exist: the kept set cannot be known without seeing every row.
+    # Rules or an info level exist: the kept set cannot be known without
+    # seeing every row.
     all_issues, _ = await store.get_issues(
         job_id=job.job_id, severity=severity, category=category,
         page=1, limit=100_000)
     dicts = _apply_exempt_anchors([_issue_dict(i) for i in all_issues], exempt_urls)
     kept, report = await _filter_for_domain(store, job.target_url, dicts)
+    kept, info_report = apply_info_detail(annotate_scored(kept, job_level), level)
     start = (page - 1) * limit
-    return kept[start:start + limit], len(kept), report
+    return kept[start:start + limit], len(kept), report, info_report
 
 
 def _rescan_is_conclusive(status_code: int) -> bool:
@@ -776,6 +801,15 @@ async def _prevalence_for_display(store, job, job_id: str) -> list:
     rows = await _prevalence_for(store, job_id)
     if not rows:
         return rows
+    # Info detail (2026-09-01): same rule as the lists. A prevalence row is
+    # code-level (no stored impact), so the tier comes from the catalogue —
+    # the same value every row of that code was stored with.
+    level = job.settings.info_detail
+    if level != "all":
+        from api.crawler.checkers.registry import derive_impact, info_row_excluded
+        rows = [r for r in rows
+                if not (getattr(r, "severity", None) == "info"
+                        and info_row_excluded(derive_impact(r.code), level))]
     try:
         from api.services.domain_filter import _rule_sets
         rules = await store.get_domain_filters(job.target_url)
@@ -1097,7 +1131,12 @@ async def start_crawl(
         return err
 
     settings_data: dict = body.get("settings") or {}
-    settings = CrawlSettings(**{k: v for k, v in settings_data.items() if v is not None})
+    try:
+        settings = CrawlSettings(**{k: v for k, v in settings_data.items() if v is not None})
+    except ValidationError as exc:
+        # A bad setting value (e.g. info_detail="some") used to escape as a 500;
+        # it is the caller's input, so say which field and why (P2).
+        return _err("INVALID_SETTINGS", f"Invalid crawl settings: {exc.errors()[0].get('msg', exc)}", 422)
 
     # GSC priority upload (U1/U2, optional): the browser sends the parsed
     # priority_pages.json object in the body as `gsc_priority`. Domain-guarded; a
@@ -1255,6 +1294,8 @@ async def get_job(
         "status": job.status,
         "pages_crawled": job.pages_crawled,
         "pages_total": job.pages_total,
+        # Info detail (2026-09-01): the level the scan was run and scored at.
+        "settings": job.settings.model_dump(),
     }
 
 
@@ -1328,6 +1369,7 @@ async def get_results(
     page: int = Query(1, ge=1),
     limit: int = Query(50, ge=1, le=100),
     severity: str | None = Query(None),
+    info_detail: str | None = Query(None, description="Reveal-only override of the scan's info detail (e.g. 'all')"),
     store: SQLiteJobStore = Depends(get_store),
 ) -> dict | JSONResponse:
     """Paginated results for a completed job (spec §6.4 GET /results)."""
@@ -1335,9 +1377,12 @@ async def get_results(
     if job is None:
         return _err("JOB_NOT_FOUND", "No crawl job found with the given ID.", 404)
 
+    from api.services.info_tier_filter import resolve_info_detail
+    level = resolve_info_detail(job.settings.info_detail, info_detail)
     exempt_urls = await store.get_exempt_anchor_url_set()
-    issue_dicts, total, filtered = await _paginate_filtered(
-        store, job, severity=severity, page=page, limit=limit, exempt_urls=exempt_urls)
+    issue_dicts, total, filtered, info_filtered = await _paginate_filtered(
+        store, job, severity=severity, page=page, limit=limit, exempt_urls=exempt_urls,
+        info_detail=level)
     summary = await store.get_summary(job_id)
     total_pages = max(1, math.ceil(total / limit)) if total else 1
 
@@ -1369,6 +1414,9 @@ async def get_results(
         # F1 — what the domain filter removed. Always present, so a shorter
         # list can never be mistaken for a cleaner site.
         "filtered": filtered,
+        # Info detail (2026-09-01) — what the scan's level left out of this
+        # list AND the score. Always present, for the same reason.
+        "info_filtered": info_filtered,
     }
 
 
@@ -1379,6 +1427,7 @@ async def get_results_by_category(
     page: int = Query(1, ge=1),
     limit: int = Query(50, ge=1, le=5000),
     severity: str | None = Query(None),
+    info_detail: str | None = Query(None, description="Reveal-only override of the scan's info detail (e.g. 'all')"),
     store: SQLiteJobStore = Depends(get_store),
 ) -> dict | JSONResponse:
     """Paginated results filtered by category (spec §6.4 GET /results/{category})."""
@@ -1393,10 +1442,14 @@ async def get_results_by_category(
     if job is None:
         return _err("JOB_NOT_FOUND", "No crawl job found with the given ID.", 404)
 
-    issues, total = await store.get_issues(job_id, category=category, severity=severity, page=page, limit=limit)
+    from api.services.info_tier_filter import resolve_info_detail
+    level = resolve_info_detail(job.settings.info_detail, info_detail)
     exempt_urls = await store.get_exempt_anchor_url_set()
-    issue_dicts = _apply_exempt_anchors([_issue_dict(i) for i in issues], exempt_urls)
-    issue_dicts, filtered = await _filter_for_domain(store, job.target_url, issue_dicts)
+    # Same fetch-filter-slice path as /results, so a category page can never
+    # advertise pages the info level emptied.
+    issue_dicts, total, filtered, info_filtered = await _paginate_filtered(
+        store, job, severity=severity, category=category, page=page, limit=limit,
+        exempt_urls=exempt_urls, info_detail=level)
     summary = await store.get_summary(job_id)
     total_pages = max(1, math.ceil(total / limit))
 
@@ -1408,6 +1461,7 @@ async def get_results_by_category(
         # F1 — what the domain filter removed. Always present, so a shorter
         # list can never be mistaken for a cleaner site.
         "filtered": filtered,
+        "info_filtered": info_filtered,
     }
 
 
@@ -1453,7 +1507,8 @@ async def get_pages(
             )
     for pg in pages:
         pg["citability_grade"] = compute_citability_grade(
-            rows_by_url.get((pg.get("url") or "").rstrip("/"), [])
+            rows_by_url.get((pg.get("url") or "").rstrip("/"), []),
+            info_detail=job.settings.info_detail,
         )
 
     return {
@@ -1472,6 +1527,7 @@ async def get_pages(
 async def get_page_issues(
     job_id: str,
     url: str = Query(..., description="Exact URL of the crawled page"),
+    info_detail: str | None = Query(None, description="Reveal-only override of the scan's info detail (e.g. 'all')"),
     store: SQLiteJobStore = Depends(get_store),
 ) -> dict | JSONResponse:
     """All issues for one specific page, grouped by category (spec §6.1, By Page view)."""
@@ -1490,6 +1546,18 @@ async def get_page_issues(
         cat: _apply_exempt_anchors([_issue_dict(i) for i in issues], exempt_urls)
         for cat, issues in by_category.items()
     }
+    # Info detail (2026-09-01): the drawer shows the scan's audit scope, same
+    # predicate as the score; the excluded count travels with the response.
+    from api.services.info_tier_filter import annotate_scored, apply_info_detail, resolve_info_detail
+    level = resolve_info_detail(job.settings.info_detail, info_detail)
+    info_hidden = 0
+    info_by_tier: dict[str, int] = {}
+    for cat, issues in list(filtered_by_category.items()):
+        kept, rep_ = apply_info_detail(annotate_scored(issues, job.settings.info_detail), level)
+        filtered_by_category[cat] = kept
+        info_hidden += rep_["hidden"]
+        for t, n in rep_["by_tier"].items():
+            info_by_tier[t] = info_by_tier.get(t, 0) + n
     # Drop empty categories after filtering
     filtered_by_category = {cat: issues for cat, issues in filtered_by_category.items() if issues}
 
@@ -1542,6 +1610,7 @@ async def get_page_issues(
         "page_data": page_data,
         "by_category": filtered_by_category,
         "agent_issues": agent_issues,
+        "info_filtered": {"hidden": info_hidden, "by_tier": info_by_tier, "info_detail": level},
     }
 
 
@@ -2495,10 +2564,21 @@ async def get_crawl_comparison(
     current_summary = await store.get_summary(job_id)
     prev_summary = await store.get_summary(prev_job.job_id)
 
+    # Info detail (2026-09-01): two scores earned at different info levels are
+    # not the same measurement. The delta is still returned — the UI strikes
+    # it through with the reason — but a bare comparison is never implied.
+    cur_level = job.settings.info_detail
+    prev_level = prev_job.settings.info_detail
+    comparable = cur_level == prev_level
+    reason = None if comparable else f"info_detail differs ({cur_level} vs {prev_level})"
+
     return {
         "comparison_available": True,
+        "comparable": comparable,
+        "reason": reason,
         "current": {
             "job_id": job_id,
+            "info_detail": cur_level,
             "crawled_at": job.started_at.isoformat() if job.started_at else None,
             "health_score": current_summary.get("health_score", 0),
             "pages_crawled": current_summary.get("pages_crawled", 0),
@@ -2507,6 +2587,7 @@ async def get_crawl_comparison(
         },
         "previous": {
             "job_id": prev_job.job_id,
+            "info_detail": prev_level,
             "crawled_at": prev_job.started_at.isoformat() if prev_job.started_at else None,
             "health_score": prev_summary.get("health_score", 0),
             "pages_crawled": prev_summary.get("pages_crawled", 0),
@@ -2694,6 +2775,7 @@ async def export_csv_full(
     # from the absence of a row is not.
     _unfiltered_issues = list(issues)
     issues, _ = await _filter_issue_models_for_domain(store, job.target_url, issues)
+    issues, _ = _filter_issue_models_for_info_detail(job, issues)
     from urllib.parse import urlparse
     domain = urlparse(job.target_url).netloc.replace("www.", "")
     return _csv_response(issues, filename=f"TalkingToad-Audit-{domain}.csv")
@@ -2744,6 +2826,7 @@ async def export_pdf_report(
     # from the absence of a row is not.
     _unfiltered_issues = list(issues)
     issues, _filter_note = await _filter_issue_models_for_domain(store, job.target_url, issues)
+    issues, _filter_note = _filter_issue_models_for_info_detail(job, issues, _filter_note)
     summary = await store.get_summary(job_id)
 
     # Fetch top 10 pages for the report
@@ -2888,6 +2971,7 @@ async def export_excel_report(
     # from the absence of a row is not.
     _unfiltered_issues = list(issues)
     issues, _filter_note = await _filter_issue_models_for_domain(store, job.target_url, issues)
+    issues, _filter_note = _filter_issue_models_for_info_detail(job, issues, _filter_note)
     summary = await store.get_summary(job_id)
 
     # Fetch image data for the report
@@ -2956,6 +3040,7 @@ async def export_csv_category(
     issues, _ = await store.get_issues(job_id, category=category, limit=10_000)
     # F1 — same filter as the on-screen category view.
     issues, _ = await _filter_issue_models_for_domain(store, job.target_url, issues)
+    issues, _ = _filter_issue_models_for_info_detail(job, issues)
     from urllib.parse import urlparse as _up
     cat_domain = _up(job.target_url).netloc.replace("www.", "")
     return _csv_response(issues, filename=f"TalkingToad-Audit-{cat_domain}-{category}.csv")
@@ -2990,6 +3075,9 @@ def _issue_dict(issue: Issue) -> dict:
         # model (computed_field) so it is always consistent with impact/effort;
         # serialised here so both list endpoints can surface a Quick-Wins badge.
         "quick_win": issue.quick_win,
+        # Info detail (2026-09-01) — sub-grade of an info row (high | medium |
+        # low), None otherwise. Derived on the model from the STORED impact.
+        "info_tier": issue.info_tier,
         # EV (2026-08-29) — the rendered "what to look for" lines, computed
         # SERVER-side from `extra`. Deliberately not ported to JS: a second
         # implementation of a 15-shape renderer is a drift waiting to happen

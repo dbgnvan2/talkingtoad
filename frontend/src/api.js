@@ -109,18 +109,20 @@ export async function cancelCrawl(jobId) {
   return checkResponse(res)
 }
 
-export async function getResults(jobId, { page = 1, limit = 50, severity } = {}) {
+export async function getResults(jobId, { page = 1, limit = 50, severity, infoDetail } = {}) {
   const params = new URLSearchParams({ page, limit })
   if (severity) params.set('severity', severity)
+  if (infoDetail) params.set('info_detail', infoDetail)
   const res = await fetch(`/api/crawl/${jobId}/results?${params}`, {
     headers: authHeaders(),
   })
   return checkResponse(res)
 }
 
-export async function getResultsByCategory(jobId, category, { page = 1, limit = 50, severity } = {}) {
+export async function getResultsByCategory(jobId, category, { page = 1, limit = 50, severity, infoDetail } = {}) {
   const params = new URLSearchParams({ page, limit })
   if (severity) params.set('severity', severity)
+  if (infoDetail) params.set('info_detail', infoDetail)
   const res = await fetch(`/api/crawl/${jobId}/results/${category}?${params}`, {
     headers: authHeaders(),
   })
@@ -136,8 +138,9 @@ export async function getPages(jobId, { page = 1, limit = 50, minSeverity } = {}
   return checkResponse(res)
 }
 
-export async function getPageIssues(jobId, url) {
+export async function getPageIssues(jobId, url, { infoDetail } = {}) {
   const params = new URLSearchParams({ url })
+  if (infoDetail) params.set('info_detail', infoDetail)
   const res = await fetch(`/api/crawl/${jobId}/pages/issues?${params}`, {
     headers: authHeaders(),
   })

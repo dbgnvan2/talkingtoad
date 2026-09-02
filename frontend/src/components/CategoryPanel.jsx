@@ -10,6 +10,7 @@ import Spinner from './Spinner.jsx'
 // can render it too. Re-exported here because existing importers and tests
 // reference CategoryPanel's named export.
 import { IssueEvidence } from './IssueEvidence.jsx'
+import InfoDetailDisclosure from './InfoDetailDisclosure.jsx'
 export { IssueEvidence }
 
 export default function CategoryPanel({ jobId, category, domain, onPageClick, onShowHelp, onSummaryRefresh, focusIssueCode = null }) {
@@ -23,6 +24,10 @@ export default function CategoryPanel({ jobId, category, domain, onPageClick, on
   const [orphanedMedia, setOrphanedMedia] = useState(null)
   const [loadingOrphans, setLoadingOrphans] = useState(false)
   const [filterBusy, setFilterBusy] = useState(null)
+  // Info detail (2026-09-01): reveal-only. Every reload in this panel passes
+  // the same option so a refresh after a fix cannot silently drop the reveal.
+  const [revealInfo, setRevealInfo] = useState(false)
+  const revealOpts = revealInfo ? { infoDetail: 'all' } : {}
 
   // F1 — add or remove a filter rule for THIS domain, then reload so the list
   // and the disclosure move together. Both come from the same response, so
@@ -33,7 +38,7 @@ export default function CategoryPanel({ jobId, category, domain, onPageClick, on
     try {
       if (remove) await removeDomainFilter(domain, rule)
       else await addDomainFilter(domain, rule)
-      setData(await getResultsByCategory(jobId, category.key))
+      setData(await getResultsByCategory(jobId, category.key, revealOpts))
       onSummaryRefresh?.()
     } catch (e) {
       toast?.error?.(`Could not update the filter: ${e.message || e}`)
@@ -46,8 +51,9 @@ export default function CategoryPanel({ jobId, category, domain, onPageClick, on
     setData(null)
     setVerifyResult(null)
     setMarkedFixed(new Set())
-    getResultsByCategory(jobId, category.key).then(setData).catch(() => setData({ issues: [] }))
-  }, [jobId, category.key])
+    getResultsByCategory(jobId, category.key, revealOpts).then(setData).catch(() => setData({ issues: [] }))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [jobId, category.key, revealInfo])
 
   // E4: when the reader clicked a systemic defect, open that issue rather than
   // dropping them at the top of a category with a dozen collapsed rows.
@@ -102,7 +108,7 @@ export default function CategoryPanel({ jobId, category, domain, onPageClick, on
     setMarkedFixed(newMarked)
     setMarkingFixed(false)
 
-    getResultsByCategory(jobId, category.key).then(setData).catch(() => {})
+    getResultsByCategory(jobId, category.key, revealOpts).then(setData).catch(() => {})
     onSummaryRefresh?.()
   }
 
@@ -110,7 +116,7 @@ export default function CategoryPanel({ jobId, category, domain, onPageClick, on
     try {
       await markBrokenLinkFixed(jobId, url)
       setMarkedFixed(prev => new Set([...prev, url]))
-      getResultsByCategory(jobId, category.key).then(setData).catch(() => {})
+      getResultsByCategory(jobId, category.key, revealOpts).then(setData).catch(() => {})
       onSummaryRefresh?.()
     } catch (err) {
       toast.error('Failed to mark as fixed: ' + err.message)
@@ -402,17 +408,19 @@ export default function CategoryPanel({ jobId, category, domain, onPageClick, on
         </div>
       )}
 
+      <InfoDetailDisclosure infoFiltered={data?.info_filtered} revealed={revealInfo} onToggle={() => setRevealInfo(v => !v)} />
+
       {Object.values(groups).length === 0 ? (
         <div className="py-12 bg-white rounded-2xl border border-gray-100 text-center text-gray-400 font-medium font-serif italic">No issues found in this category.</div>
       ) : (
         Object.values(groups).map(group => (
-          <div key={group.issue_code} id={`issue-${group.issue_code}`} className="bg-white border border-gray-200 rounded-2xl overflow-hidden shadow-sm hover:border-gray-300 transition-colors">
+          <div key={group.issue_code} id={`issue-${group.issue_code}`} className={`bg-white border border-gray-200 rounded-2xl overflow-hidden shadow-sm hover:border-gray-300 transition-colors ${group.scored === false ? 'opacity-60' : ''}`}>
             <button
               onClick={() => setExpandedCode(expandedCode === group.issue_code ? null : group.issue_code)}
               className="w-full flex items-center justify-between px-6 py-5"
             >
               <div className="flex items-center gap-4">
-                <SeverityBadge severity={group.severity} />
+                <SeverityBadge severity={group.severity} infoTier={group.info_tier} scored={group.scored !== false} />
                 <div className="text-left">
                   <p className="font-bold text-gray-800 leading-none text-base">{group.human_description || group.issue_code}</p>
                   <p className="text-sm font-bold text-gray-400 mt-1 uppercase tracking-widest">{group.count} Affected Pages</p>
@@ -450,7 +458,7 @@ export default function CategoryPanel({ jobId, category, domain, onPageClick, on
                             jobId={jobId}
                             brokenUrl={brokenUrl}
                             onMarkedFixed={() => {
-                              getResultsByCategory(jobId, category.key).then(setData).catch(() => {})
+                              getResultsByCategory(jobId, category.key, revealOpts).then(setData).catch(() => {})
                               onSummaryRefresh?.()
                             }}
                           />

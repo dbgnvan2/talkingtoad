@@ -283,7 +283,7 @@ def _charged_page_rows(rows: list[tuple[str, int, str]]) -> list[tuple[str, int,
     return [(c, imp, cat) for c, imp, cat in rows if c not in drop]
 
 
-def compute_page_health(rows: list[tuple[str, int, str]]) -> int:
+def compute_page_health(rows: list[tuple[str, int, str]], info_detail: str = "all") -> int:
     """Canonical health score (0–100) for ONE page in isolation.
 
     ``rows`` is the list of ``(issue_code, impact, category)`` tuples charged to
@@ -296,10 +296,10 @@ def compute_page_health(rows: list[tuple[str, int, str]]) -> int:
     from the canonical site model (audit R5.0: they previously used raw
     ``100 − Σ impact`` sums that ignored cap + suppression).
     """
-    return max(0, 100 - _page_deduction(_charged_page_rows(rows)))
+    return max(0, 100 - _page_deduction(_charged_page_rows(info_detail_rows(rows, info_detail))))
 
 
-def compute_citability_grade(rows: list[tuple[str, int, str]]) -> int:
+def compute_citability_grade(rows: list[tuple[str, int, str]], info_detail: str = "all") -> int:
     """Per-page GEO / AI-citability grade (0–100) — Search Everywhere E5.
 
     A dedicated lens on how extractable and citable a page is to AI systems,
@@ -312,7 +312,7 @@ def compute_citability_grade(rows: list[tuple[str, int, str]]) -> int:
     that cap exists to stop one category flooring the *overall* score, but here
     ai_readiness IS the whole score, so capping it would collapse the range.
     """
-    charged = _charged_page_rows(rows)
+    charged = _charged_page_rows(info_detail_rows(rows, info_detail))
     ai_deduction = sum(imp for _c, imp, cat in charged if cat == "ai_readiness")
     return max(0, 100 - ai_deduction)
 
@@ -323,6 +323,7 @@ def compute_impact_health(
     by_severity: dict[str, int],
     *,
     suppressed_codes: set[str] | None = None,
+    info_detail: str = "all",
 ) -> tuple[int, int]:
     """Store-agnostic v1.5 impact health with R4 cluster suppression AND
     per-category caps + page-fatal bypass (R3 structural fix).
@@ -354,6 +355,11 @@ def compute_impact_health(
     # page per site-scoped code before scoring, then strip that code from every
     # other page's rows so only the representative is charged (and only it can
     # be floored by a site-scoped page-fatal code such as HTTP_PAGE).
+    # Info detail (2026-09-01): the scan's chosen info tiers are the audit.
+    # Applied here, before the representative election, so a site-scoped
+    # low-tier code excluded from the audit is not elected anywhere either.
+    if info_detail != "all":
+        per_page_issues = {u: info_detail_rows(r, info_detail) for u, r in per_page_issues.items()}
     rep_page = _site_scope_representatives(page_norm_urls, per_page_issues, suppressed_codes)
 
     page_scores: list[int] = []
@@ -434,6 +440,7 @@ async def _compute_v15_health_score(
     by_severity: dict[str, int],
     pages_crawled: int,
     suppressed_codes: set[str] | None = None,
+    info_detail: str = "all",
 ) -> tuple[int, int]:
     """Compute v1.5 page and site health scores (spec §4.1 v1.5).
 
@@ -469,7 +476,8 @@ async def _compute_v15_health_score(
     page_norm_urls = [url.rstrip("/") for (url,) in page_rows]
 
     return compute_impact_health(
-        page_norm_urls, per_page, by_severity, suppressed_codes=suppressed_codes
+        page_norm_urls, per_page, by_severity, suppressed_codes=suppressed_codes,
+        info_detail=info_detail,
     )
 
 
@@ -492,6 +500,22 @@ from api.crawler.checkers.registry import (
     AGENT_READINESS_CATEGORIES as _AGENT_READINESS_CATEGORIES,
     AGENT_READINESS_EXTRA_CODES as _AGENT_READINESS_EXTRA_CODES,
 )
+from api.crawler.checkers.registry import info_row_excluded as _info_row_excluded
+
+
+def info_detail_rows(
+    rows: list[tuple[str, int, str]], info_detail: str
+) -> list[tuple[str, int, str]]:
+    """Drop the info rows a scan's ``info_detail`` leaves out of the audit.
+
+    Runs in the same slot as job-level ``suppressed_codes`` — BEFORE site-scope
+    election, R4 cluster suppression and the category cap — so an excluded
+    low-tier cluster parent does not go on silencing children that are still
+    charged. What is shown is what is scored (spec 2026-09-01 §2).
+    """
+    if info_detail == "all":
+        return rows
+    return [(c, imp, cat) for c, imp, cat in rows if not _info_row_excluded(imp, info_detail)]
 
 
 def _is_agent_issue(category: str, code: str) -> bool:
@@ -511,6 +535,7 @@ async def _compute_agent_health_score(
     job_id: str,
     pages_crawled: int,
     suppressed_codes: set[str] | None = None,
+    info_detail: str = "all",
 ) -> tuple[int, list[dict]]:
     """Compute the Agent Health score and a per-category breakdown.
 
@@ -557,7 +582,8 @@ async def _compute_agent_health_score(
     page_norm_urls = [url.rstrip("/") for (url,) in page_rows]
 
     site, _ = compute_impact_health(
-        page_norm_urls, per_page, {}, suppressed_codes=suppressed_codes
+        page_norm_urls, per_page, {}, suppressed_codes=suppressed_codes,
+        info_detail=info_detail,
     )
     return site, breakdown
 

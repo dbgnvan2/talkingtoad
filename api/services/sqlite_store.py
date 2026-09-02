@@ -569,15 +569,20 @@ class SQLiteJobStore:
 
         suppressed = await self.get_suppressed_codes()
         _suppressed_set = set(suppressed) if suppressed else None
+        # Info detail (2026-09-01): the scan's setting is the audit's scope.
+        # Both scores move under the same rule so they cannot disagree about
+        # what counts. The stored by_severity counts are NOT touched.
+        info_detail = job.settings.info_detail
         health_score, _ = await _compute_v15_health_score(
             self._db, job_id, by_severity, job.pages_crawled,
-            suppressed_codes=_suppressed_set,
+            suppressed_codes=_suppressed_set, info_detail=info_detail,
         )
         # Agent-readiness Phase 1 (WP6): a separate "Agent Health" score.
         agent_health_score, agent_breakdown = await _compute_agent_health_score(
             self._db, job_id, job.pages_crawled,
-            suppressed_codes=_suppressed_set,
+            suppressed_codes=_suppressed_set, info_detail=info_detail,
         )
+        info_by_tier, info_scored, info_excluded = await self._info_tier_counts(job_id, info_detail)
 
         # Load discovery info from job record
         robots_info = None
@@ -610,6 +615,13 @@ class SQLiteJobStore:
             "by_category": by_category,
             "health_score": health_score,
             "agent_health_score": agent_health_score,
+            # Info detail (2026-09-01): what the score counted and what it left
+            # out. `info_scored + info_excluded == by_severity.info`, always —
+            # a higher score must carry the reason it is higher (P31).
+            "info_detail": info_detail,
+            "info_by_tier": info_by_tier,
+            "info_scored": info_scored,
+            "info_excluded": info_excluded,
             "agent_readiness": {
                 "score": agent_health_score,
                 "breakdown": agent_breakdown,
@@ -631,6 +643,31 @@ class SQLiteJobStore:
             "robots_txt": robots_info,
             "sitemap": sitemap_info,
         }
+
+    async def _info_tier_counts(self, job_id: str, info_detail: str) -> tuple[dict, int, int]:
+        """(by_tier, scored, excluded) over the job's STORED info rows.
+
+        Tiered by the stored impact — the same value the score charges — so
+        the breakdown and the score describe the same rows (P8).
+        """
+        from api.crawler.checkers.registry import info_row_excluded, info_tier
+        async with self._db.execute(
+            "SELECT impact, COUNT(*) FROM issues WHERE job_id = ? AND severity = 'info' "
+            "GROUP BY impact",
+            (job_id,),
+        ) as cursor:
+            rows = await cursor.fetchall()
+        by_tier = {"high": 0, "medium": 0, "low": 0}
+        scored = excluded = 0
+        for impact, n in rows:
+            impact = impact or 0
+            tier = info_tier(impact) or "low"
+            by_tier[tier] += n
+            if info_row_excluded(impact, info_detail):
+                excluded += n
+            else:
+                scored += n
+        return by_tier, scored, excluded
 
     # ── By-page views ─────────────────────────────────────────────────────
 

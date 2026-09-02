@@ -879,6 +879,13 @@ function PageDetail({ jobId, pageUrl, onRescan, onRecheckResult }) {
         )}
         helpContent={sectionHelp.issues_found}
       >
+        {/* Info detail (2026-09-01): the drawer shows the scan's audit scope;
+            what the level left out is named here, never silently absent. */}
+        {data.info_filtered?.hidden > 0 && (
+          <p data-testid="page-info-excluded" className="mb-3 text-xs text-blue-800 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2">
+            {data.info_filtered.hidden} info notice{data.info_filtered.hidden === 1 ? '' : 's'} on this page excluded by the scan&apos;s info detail setting — not shown and not counted in the health score.
+          </p>
+        )}
         {Object.keys(grouped).length === 0 ? (
           <div className="py-8 text-center text-gray-400 font-medium">
             <span className="text-2xl block mb-2">✓</span>
@@ -1276,7 +1283,7 @@ export function IssueCard({ issue: iss, jobId, pageUrl, isOpen, onToggleFix, onF
     <div className="bg-gray-50 border border-gray-100 rounded-xl p-4 hover:border-gray-200 transition-colors">
       <div className="flex items-center justify-between mb-2">
         <div className="flex items-center gap-3">
-          <SeverityBadge severity={iss.severity} />
+          <SeverityBadge severity={iss.severity} infoTier={iss.info_tier} scored={iss.scored !== false} />
           <span className="font-bold text-gray-800" style={getFontClass('headingSize')}>{iss.human_description || iss.issue_code}</span>
         </div>
         <div className="flex items-center gap-2">

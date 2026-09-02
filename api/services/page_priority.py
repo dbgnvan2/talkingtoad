@@ -123,6 +123,10 @@ async def build_page_priority(
     """
     pages = await store.get_pages(job_id)
     issues = await store.get_all_issues(job_id)
+    # Info detail (2026-09-01): the per-page grade is the site score's own
+    # model, so it follows the same scan level or the two disagree by page.
+    _job = await store.get_job(job_id)
+    info_detail = _job.settings.info_detail if _job is not None else "all"
 
     # CLN5: drop user-suppressed codes before grading so per-page health AND the
     # citability column reconcile with site health (both previously used raw
@@ -164,9 +168,9 @@ async def build_page_priority(
         # Per-page health via the canonical capped+suppressed model (R5.0) — NOT
         # a raw ``100 − Σ impact`` sum (which ignored the category cap and cluster
         # suppression and diverged from compute_impact_health).
-        health_score = compute_page_health(page_rows)
+        health_score = compute_page_health(page_rows, info_detail=info_detail)
         # E5: per-page GEO/citability grade (rollup of ai_readiness issues).
-        citability_grade = compute_citability_grade(page_rows)
+        citability_grade = compute_citability_grade(page_rows, info_detail=info_detail)
         records = ledger.get(ledger_key(page.url), [])
         flag = evaluate_refresh(records, health_score, today=today)
         latest = sorted(records, key=lambda r: r.period)[-1] if records else None

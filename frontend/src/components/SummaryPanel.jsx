@@ -2,6 +2,7 @@ import React, { useState } from 'react'
 import { useToast } from '../contexts/ToastContext.jsx'
 import { useTheme } from '../contexts/ThemeContext.jsx'
 import { getSiteAdvisor, testAI } from '../api.js'
+import { INFO_DETAIL_LABELS, INFO_TIER_LABELS } from '../data/infoDetail.js'
 import SiteRecommendationsPanel from './SiteRecommendationsPanel.jsx'
 import OrphanedSummaryCards from './OrphanedSummaryCards.jsx'
 import TopPriorityGroups from './TopPriorityGroups.jsx'
@@ -31,6 +32,13 @@ export default function SummaryPanel({ summary, domain, jobId, onCategoryClick, 
   // S2: what the health score was computed over. comparable === false means the
   // number covers only some categories and must not be read as a site score.
   const scoreBasis = summary?.health_score_basis ?? null
+  // Info detail (2026-09-01 spec §7.2/7.3): the score follows the scan's level,
+  // so whenever the level is not "all" the number carries its scope, and the
+  // Info card shows what was counted with what was left out beneath it.
+  const infoDetail = summary?.info_detail || 'all'
+  const infoExcluded = summary?.info_excluded || 0
+  const infoScored = summary?.info_scored ?? (summary?.by_severity?.info || 0)
+  const infoByTier = summary?.info_by_tier || {}
   const toast = useToast()
   const { getFontClass } = useTheme()
   const [aiTesting, setAiTesting] = useState(false)
@@ -128,7 +136,13 @@ export default function SummaryPanel({ summary, domain, jobId, onCategoryClick, 
             ? `Health Score (${scoreBasis.categories_scored.length} of ${scoreBasis.categories_scored.length + scoreBasis.categories_unscored.length} categories)`
             : 'Health Score'}
           value={summary.health_score}
-          color={summary.health_score > 80 ? 'text-green-600' : 'text-amber-500'} />
+          color={summary.health_score > 80 ? 'text-green-600' : 'text-amber-500'}
+          sub={infoDetail !== 'all' ? (
+            <span data-testid="score-info-detail">
+              scored at {INFO_DETAIL_LABELS[infoDetail] || infoDetail}
+              {infoExcluded > 0 ? ` · ${infoExcluded} info notice${infoExcluded === 1 ? '' : 's'} excluded` : ''}
+            </span>
+          ) : null} />
         <StatCard
           label="Agent Health"
           value={summary.agent_health_score ?? '—'}
@@ -223,9 +237,16 @@ export default function SummaryPanel({ summary, domain, jobId, onCategoryClick, 
         />
         <SeverityStatCard
           label="Info Notices"
-          value={summary.by_severity?.info || 0}
+          value={infoScored}
           severity="info"
           onClick={() => onSeverityClick('info')}
+          sub={infoExcluded > 0 ? (
+            <span data-testid="info-excluded">
+              +{infoExcluded} excluded ({['low', 'medium', 'high']
+                .filter(t => (infoByTier[t] || 0) > 0 && (t === 'low' || (t === 'medium' && ['key', 'none'].includes(infoDetail)) || (t === 'high' && infoDetail === 'none')))
+                .map(t => `${INFO_TIER_LABELS[t]} ${infoByTier[t]}`).join(' · ')})
+            </span>
+          ) : null}
         />
       </div>
 
@@ -296,7 +317,7 @@ export default function SummaryPanel({ summary, domain, jobId, onCategoryClick, 
   )
 }
 
-function SeverityStatCard({ label, value, severity, onClick }) {
+function SeverityStatCard({ label, value, severity, onClick, sub = null }) {
   const { getFontClass } = useTheme()
   const colors = {
     critical: { text: 'text-red-600', hoverBorder: 'hover:border-red-400' },
@@ -313,6 +334,7 @@ function SeverityStatCard({ label, value, severity, onClick }) {
     >
       <p className={`font-black uppercase tracking-widest mb-1 ${c.text}`} style={getFontClass('headingSize')}>{label}</p>
       <p className={`font-black ${c.text}`} style={{ ...getFontClass('badgeSize'), fontSize: `${getFontClass('badgeSize').fontSize.replace('px', '') * 2.5}px` }}>{value}</p>
+      {sub && <p className="text-xs text-gray-500 mt-1">{sub}</p>}
     </button>
   )
 }

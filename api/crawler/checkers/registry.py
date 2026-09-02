@@ -650,6 +650,64 @@ def severity_from_impact(impact: int) -> str:
     return "critical" if impact >= 8 else ("warning" if impact >= 4 else "info")
 
 
+# ---------------------------------------------------------------------------
+# Info tiers (2026-09-01 spec: docs/pending/2026-09-01_info-tiers.md §3)
+# The info band (impact 0–3) is graded, not flat. The tier is a pure function
+# of impact — no catalogue field, no hand list — so a recalibration moves a
+# code's tier with it and nothing can drift (LEARNINGS item 11).
+# Config, not logic (P4): folded into docs/thresholds.md on completion.
+# ---------------------------------------------------------------------------
+INFO_TIER_HIGH_MIN_IMPACT: int = 3    # impact 3   → "high"   (Key)
+INFO_TIER_MEDIUM_MIN_IMPACT: int = 2  # impact 2   → "medium" (Notable)
+                                      # impact 0–1 → "low"
+
+# The scan setting → the lowest info impact that is SHOWN and SCORED.
+# ``None`` means no info row survives ("none": critical + warning define the
+# audit). Order matters: later entries are tighter (see info_detail_rank).
+INFO_DETAIL_MIN_IMPACT: dict[str, int | None] = {
+    "all": 0,
+    "notable": INFO_TIER_MEDIUM_MIN_IMPACT,
+    "key": INFO_TIER_HIGH_MIN_IMPACT,
+    "none": None,
+}
+INFO_DETAIL_LEVELS: tuple[str, ...] = tuple(INFO_DETAIL_MIN_IMPACT)
+INFO_TIER_LABELS: dict[str, str] = {"high": "Key", "medium": "Notable", "low": "Low"}
+
+
+def info_tier(impact: int) -> str | None:
+    """Sub-grade for an info-severity finding: ``high`` | ``medium`` | ``low``.
+
+    Returns ``None`` for any impact in the warning/critical band (≥ 4) so a
+    caller can never mislabel a warning as a tier of info. Total over 0–3.
+    """
+    if impact >= 4:
+        return None
+    if impact >= INFO_TIER_HIGH_MIN_IMPACT:
+        return "high"
+    if impact >= INFO_TIER_MEDIUM_MIN_IMPACT:
+        return "medium"
+    return "low"
+
+
+def info_detail_rank(info_detail: str) -> int:
+    """Position in the all → none ordering; higher is tighter. Unknown → 0 (all)."""
+    return INFO_DETAIL_LEVELS.index(info_detail) if info_detail in INFO_DETAIL_MIN_IMPACT else 0
+
+
+def info_row_excluded(impact: int, info_detail: str) -> bool:
+    """Is an info-band row (impact ≤ 3) left out of the audit at this level?
+
+    The ONE predicate shared by the score, the results list, the exports and
+    the summary counts, so "what is shown" and "what is scored" cannot part
+    ways. Rows in the warning/critical band are never excluded, whatever the
+    level — ``none`` still keeps every warning.
+    """
+    if impact >= 4:
+        return False
+    floor = INFO_DETAIL_MIN_IMPACT.get(info_detail, 0)
+    return floor is None or impact < floor
+
+
 # R5.1 — codes whose finding is a property of the whole site, not one page.
 # The scope lives on each ``_IssueSpec`` (below); this frozenset is the
 # authoritative declaration and the catalogue entries must agree with it (an

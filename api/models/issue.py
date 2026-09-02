@@ -88,3 +88,17 @@ class Issue(BaseModel):
         ``impact >= 4 AND effort <= 1``.
         """
         return self.impact >= 4 and self.effort <= 1
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def info_tier(self) -> str | None:
+        """Info sub-grade (``high`` | ``medium`` | ``low``), ``None`` unless info.
+
+        Derived from the STORED impact, not from today's catalogue, so an
+        audit crawled before a recalibration keeps the tier it was scored
+        under (P8: dirty state must not shift underneath the reader).
+        """
+        if self.severity != "info":
+            return None
+        from api.crawler.checkers.registry import info_tier
+        return info_tier(self.impact)
