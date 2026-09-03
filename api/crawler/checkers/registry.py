@@ -912,9 +912,12 @@ _CATALOGUE: dict[str, _IssueSpec] = {
     ),
     "EXTERNAL_LINK_SKIPPED": _IssueSpec(
         category="broken_link", severity="info",
-        description="Link not verified — social media platforms block automated checks",
-        recommendation="Open this link in a browser to confirm it is working correctly.",
-        human_description="Unverified Social Link",
+        description="Link not verified — the destination blocks or refused an automated check",
+        recommendation="Open this link in a browser to confirm it is working correctly. "
+                       "Many large sites — social platforms, retailers, news archives — "
+                       "answer automated requests differently from real visitors, so this "
+                       "says nothing about whether the link works for your audience.",
+        human_description="Unverified Link",
         fixability="developer_needed",
     ),
     "EXTERNAL_LINK_TIMEOUT": _IssueSpec(

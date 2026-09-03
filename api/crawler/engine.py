@@ -199,6 +199,23 @@ _BOT_BLOCKING_DOMAINS: frozenset[str] = frozenset(
     ]
 )
 
+# Matched by registrable suffix as well as exact host, so a country storefront or
+# a regional subdomain of a listed platform is covered without listing twenty of
+# them by hand.
+#
+# WHAT BELONGS HERE, and what does not (BB2, 2026-09-03). This list means "do not
+# even ask" — the link is skipped before any request and reported unverified. That
+# is right for LinkedIn (999), Facebook (login wall) and the rest, where a bot
+# request is reliably useless. It is WRONG for a host that merely blocks us
+# *sometimes*: adding Amazon here was the first attempt at this fix and it made
+# things worse, because it stopped us checking Amazon links at all — a genuinely
+# dead product link would never be caught again. Amazon is handled by BB3
+# instead: make the request, and if it refuses, say the link is unverified.
+#
+# So: list a host only when asking is pointless. Everything else is covered by
+# BB3, which needs no list.
+_BOT_BLOCKING_SUFFIXES: tuple[str, ...] = ()
+
 
 # ---------------------------------------------------------------------------
 # Data types
@@ -1058,6 +1075,48 @@ async def run_crawl(
                     issue.description = f"Link to {target} did not respond — destination may be slow or unavailable"
                     all_issues.append(issue)
                     _record(None)
+                elif link_type == "external" and result.status_code >= 400 and (
+                        result.status_code == 503
+                        or _is_bot_blocking_domain(result.final_url or target)):
+                    # BB1/BB3 (2026-09-03). Two facts the engine used to ignore:
+                    #
+                    # 1. `_is_bot_blocking_domain` was checked BEFORE the request,
+                    #    against the link as written — so a URL shortener hid the
+                    #    destination. `tinyurl.com/x` is not in the list and the
+                    #    amazon.ca it redirects to was never consulted, though
+                    #    `final_url` has been available all along. All nine of the
+                    #    reported findings were that shape.
+                    # 2. For an EXTERNAL host we cannot distinguish "temporarily
+                    #    down" from "blocking us", and `authority.yaml` already
+                    #    records RFC 9110 §15.6.4 against BROKEN_LINK_503: a
+                    #    transient condition, not a broken destination. Reporting
+                    #    it under `broken_link` contradicted our own citation.
+                    #
+                    # Impact 0: the tool learned nothing about this link and must
+                    # not charge the site for it. INTERNAL 503s keep
+                    # BROKEN_LINK_503 — we are already crawling that server, so
+                    # "it blocks bots" is not the explanation there.
+                    #
+                    # The `>= 400` guard matters: the listing explains a FAILURE,
+                    # it does not disqualify a success. Without it, a link to
+                    # Amazon that answered 200 was reported as unverified — the
+                    # check had worked perfectly and we called it inconclusive.
+                    landed = result.final_url or target
+                    issue = make_issue("EXTERNAL_LINK_SKIPPED", source_url)
+                    issue.extra = _broken_link_extra(
+                        target_url=target, sources=source_urls,
+                        first_source=source_url, anchor_texts=anchor_texts,
+                    )
+                    issue.extra["status_code"] = result.status_code
+                    issue.extra["final_url"] = landed
+                    _host = urlparse(landed).hostname or landed
+                    issue.description = (
+                        f"Link to {target} could not be verified — {_host} returned "
+                        f"HTTP {result.status_code} to an automated request. This says "
+                        f"nothing about whether the link works for a visitor."
+                    )
+                    all_issues.append(issue)
+                    _record(result.status_code)
                 elif result.status_code == 429:
                     # EL4: a rate limit says nothing about the destination. It
                     # used to fall through `issue_for_status`, which returns None
@@ -1835,8 +1894,10 @@ def _compute_click_depths(pages: list[ParsedPage], start_url: str | None) -> Non
 
 def _is_bot_blocking_domain(url: str) -> bool:
     """Return True if *url* belongs to a domain known to block automated requests."""
-    host = urlparse(url).hostname or ""
-    return host in _BOT_BLOCKING_DOMAINS
+    host = (urlparse(url).hostname or "").lower()
+    if host in _BOT_BLOCKING_DOMAINS:
+        return True
+    return any(host == sfx or host.endswith("." + sfx) for sfx in _BOT_BLOCKING_SUFFIXES)
 
 
 async def _check_external_link(

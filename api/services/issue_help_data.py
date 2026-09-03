@@ -843,15 +843,15 @@ ISSUE_HELP: dict[str, dict] = {
     },
     "EXTERNAL_LINK_SKIPPED": {
         "confidence": "Measured",
-        "definition": "This link points at a platform that refuses automated checks — LinkedIn, Facebook, Instagram and similar. TalkingToad deliberately did not test it, and records that fact rather than quietly counting it as working.",
-        "fix": "Click each listed link and confirm it opens the right profile. For LinkedIn, sign out first if you can — some profiles show a login wall to signed-out visitors even when they exist.",
+        "definition": "This link points at a destination that refuses automated checks, or that answered ours with a temporary error we cannot tell apart from a refusal. Social platforms like LinkedIn and Facebook do this, and so do large retailers like Amazon and many news archives. TalkingToad either skipped the check or could not complete it, and records that fact rather than quietly counting the link as working. Where a short link redirects, the destination is judged rather than the short link — so a tinyurl pointing at a blocked retailer is reported honestly instead of being called broken.",
+        "fix": "Open each one in a browser and confirm it lands where you meant. If it does, nothing needs changing — this is a note, not a defect.",
         "good_vs_bad": {
             "bad": "It still points to a profile you renamed two years ago and now shows 'This content isn't available'.",
             "good": "The footer's Facebook icon opens your organisation's actual page when you click it."
         },
-        "how_it_can_mislead": "Evidence tier: Measured. This records only that we chose not to check, so it says nothing at all about whether the link works — it is neither a false positive nor a real fault. A correct-looking-but-wrong reading is treating a long list here as a list of problems; equally wrong is assuming these links are fine, which is exactly what we refuse to assume. Once you have confirmed a link, mark it verified so it stops appearing.",
-        "impact": "Nothing is known to be wrong. The value of the finding is honesty: an unverified link is not a verified one, and social buttons are a common place for a typo or a renamed profile to survive for years. If the handle is wrong, every supporter who clicks 'Follow us' lands on a 'page does not exist' screen.",
-        "mission_impact": "We could not confirm this link works, so a wrong address on your Facebook or LinkedIn button could go unnoticed.",
+        "how_it_can_mislead": "Evidence tier: Measured. This records only that the link was not verified, so it says nothing at all about whether it works — it is neither a false positive nor a real fault. The correct-looking-but-wrong reading is to treat a page of these as a page of broken links; they are the opposite, a list of the links we could not speak for. The reverse mistake matters more: a genuinely dead link on one of these hosts looks exactly the same to us, so the only way to know is to open it yourself.",
+        "impact": "Nothing is known to be wrong, and this costs your health score nothing. The value of the finding is honesty: an unverified link is not a verified one. These destinations are common in nonprofit content — a recommended book, a funder's profile, a social button — and a typo in one is invisible until somebody clicks it.",
+        "mission_impact": "We could not confirm this link works, so a wrong address on a donate button, a book link or a social profile could go unnoticed.",
         "title": "Link not checked — please open it yourself"
     },
     "EXTERNAL_LINK_TIMEOUT": {

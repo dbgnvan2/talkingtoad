@@ -682,6 +682,39 @@ This was found while investigating a batch of `BROKEN_LINK_503` findings and is
 bot-block handling below. Both are recorded so neither is mistaken for the other.
 → `tests/test_external_link_politeness.py`
 
+**A destination that blocks bots is unverified, not broken (BB1–BB4, 2026-09-03).**
+A scan produced 9 `BROKEN_LINK_503` findings, all resolving to `amazon.ca` — 7
+directly, 2 via a shortener's own `www` hop. Amazon answers automated clients
+with 503; every link worked for a human. Two faults:
+
+- **The skip list was matched against the link as written, never where it lands.**
+  `_BOT_BLOCKING_DOMAINS` is consulted *before* the request, so a URL shortener
+  hid the destination entirely. The decision now also consults `final_url`, which
+  `fetch_page` has always returned.
+- **The engine contradicted the citation stored against its own code.**
+  `authority.yaml` records RFC 9110 §15.6.4 for `BROKEN_LINK_503`: *a transient
+  condition, not a broken destination*. For an **external** host the tool cannot
+  distinguish "temporarily down" from "blocking us" — both mean *we could not
+  verify* — so an external 503 surviving the retries is now
+  `EXTERNAL_LINK_SKIPPED` (**impact 0**: the tool learned nothing and must not
+  charge the site for it). **Internal 503s keep `BROKEN_LINK_503`** — we are
+  already crawling that server, so "it blocks bots" is not the explanation.
+
+Scoped deliberately: only 503, the one status whose own definition is temporary.
+An external 404 or 403 is a definite answer and stays a finding. A success stays
+a success — the `>= 400` guard means a listed host that actually answers 200 is
+reported as verified, not skipped.
+
+**Amazon is deliberately NOT in the skip list.** Adding it was the first attempt
+and made things worse: the list means "do not even ask", so Amazon links stopped
+being checked at all and a genuinely dead product link would never be caught
+again. The list is for hosts where asking is pointless (LinkedIn's 999,
+Facebook's login wall); everything else is covered by the 503 rule, which needs
+no list and cannot go stale. `EXTERNAL_LINK_SKIPPED`'s wording is
+destination-neutral accordingly, and its evidence names the host and status that
+produced it.
+→ `tests/test_bot_blocked_destinations.py`
+
 - `ANCHOR_TEXT_GENERIC` — anchor text is "click here", "read more", etc.
 
 ### 4.4 Crawlability category

@@ -472,11 +472,11 @@ Link destination returns a server error
 ### EXTERNAL_LINK_SKIPPED
 **Severity:** 🔵 info | **Tier:** low | **Impact:** 0 | **Effort:** 1
 
-Link not verified — social media platforms block automated checks
+Link not verified — the destination blocks or refused an automated check
 
-**Recommendation:** Open this link in a browser to confirm it is working correctly.
+**Recommendation:** Open this link in a browser to confirm it is working correctly. Many large sites — social platforms, retailers, news archives — answer automated requests differently from real visitors, so this says nothing about whether the link works for your audience.
 
-**Plain-English:** Unverified Social Link
+**Plain-English:** Unverified Link
 
 **Basis:** measured during the crawl — not a published claim.
 

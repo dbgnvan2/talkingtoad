@@ -71,6 +71,12 @@ user replaces the old image in the post by hand.
 - [ ] `/pages?min_severity=info` is level-blind.
 - [ ] Nested card containers (E6): choose between nested candidates deliberately.
 - [ ] `rechecked` is a field no consumer reads — wire or delete.
+- [ ] **An internal error page served without a `content-type` header produces no finding at
+  all** — `engine.py` branches on `is_html` / `is_asset`, and a 503/500 with no content-type
+  falls to the "unknown binary" branch where `page_issues = []`. Found while building a test
+  fixture (the fixture, not the product, was what I was debugging — but the behaviour is
+  real). A bare error page from a misconfigured server is exactly the case where the status
+  matters most. Pre-existing; out of scope for BB1-BB4. (2026-09-03.)
 - [ ] **`evidence_summary` picks its render branch from `value[0]` alone** — `issue_evidence.py`
   decides "list of dicts" vs "list of strings" from the FIRST entry, so a mixed list silently
   drops the entries of the other shape AND reports the reduced count as `total`, so no

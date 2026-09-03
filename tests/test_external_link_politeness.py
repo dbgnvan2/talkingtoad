@@ -147,16 +147,28 @@ class TestTheReportedCase:
 
 
 class TestAGenuinelyDeadHostIsStillReported:
-    """The fix must not become 'stop reporting 503'."""
+    """The fix must not become 'stop reporting 503' — the link still has to
+    appear, whatever we call it."""
 
-    async def test_a_host_that_always_503s_is_still_flagged(self):
+    async def test_a_host_that_always_503s_is_still_reported(self):
+        """This asserted `BROKEN_LINK_503` when it was written. BB3 (same day)
+        then established that an EXTERNAL 503 cannot be distinguished from a
+        bot-block and is reported as unverified — so the expectation changed and
+        the guard did not: the link must still be surfaced, never silently
+        counted as working. The "must not stop reporting 503" intent now lives
+        in tests/test_bot_blocked_destinations.py, which pins that an INTERNAL
+        503 keeps `BROKEN_LINK_503`."""
         with respx.mock(assert_all_called=False) as mock:
             _site(mock, _home(n=2))
             mock.route(host="short.test").mock(return_value=httpx.Response(503))
             issues = await _crawl("job-dead")
 
-        assert any(i.code == "BROKEN_LINK_503" for i in issues), (
-            "a host that 503s every single request is a real finding")
+        hits = [i for i in issues if i.code in ("BROKEN_LINK_503", "EXTERNAL_LINK_SKIPPED")]
+        assert hits, (
+            "a host that 503s every single request vanished from the report — "
+            "unverified must not mean unmentioned")
+        assert any(i.extra.get("status_code") == 503 for i in hits), (
+            f"the status that produced it is missing: {[i.extra for i in hits]}")
 
     async def test_a_404_is_unaffected(self):
         with respx.mock(assert_all_called=False) as mock:
