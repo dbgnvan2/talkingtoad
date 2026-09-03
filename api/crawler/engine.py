@@ -128,6 +128,18 @@ _EXT_CONCURRENCY = max(1, int(os.getenv("TT_EXT_CONCURRENCY", "10")))
 # a site whose outbound links are spread across many hosts.
 _EXT_PER_HOST_CONCURRENCY = max(1, int(os.getenv("TT_EXT_PER_HOST_CONCURRENCY", "1")))
 _EXT_PER_HOST_DELAY_S = max(0.0, float(os.getenv("TT_EXT_PER_HOST_DELAY_S", "0.25")))
+
+# Statuses from which we learn NOTHING about an external destination (BL1/BB3).
+# Each is ambiguous in the same way: the link may work perfectly for a visitor
+# and be refused to us.
+#   503 — RFC 9110 §15.6.4 calls it temporary, and it is what most bot walls send
+#   403/401 — a bot wall (Cloudflare, Akamai) or a real permission gate; we
+#             cannot tell, and silence asserts the link is fine, which is the
+#             worst of the three possible answers
+#   999 — LinkedIn's non-standard anti-bot response
+# Reported as EXTERNAL_LINK_SKIPPED at impact 0, with the real status in the
+# evidence. 404/410 are excluded above: a deleted page is a definite answer.
+_UNVERIFIABLE_STATUSES: frozenset[int] = frozenset({401, 403, 503, 999})
 _EXTERNAL_LINK_CAP_PER_JOB = 500
 
 # E2.2 (rule 8) — how many linking pages to carry in an issue's evidence list.
@@ -1092,7 +1104,7 @@ async def run_crawl(
                       # profile is a dead link, not an unverified one, and
                       # calling it unverified drops it to impact 0.
                       and result.status_code not in (404, 410)
-                      and (result.status_code == 503
+                      and (result.status_code in _UNVERIFIABLE_STATUSES
                            or _is_bot_blocking_domain(result.final_url or target))):
                     # BB1/BB3 (2026-09-03). Two facts the engine used to ignore:
                     #

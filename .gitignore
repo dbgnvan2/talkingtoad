@@ -42,6 +42,12 @@ frontend/.env.local
 # WordPress credentials (never commit)
 wp-credentials.json
 talkingtoad.db
+# Any copy of the database is the database (CLAUDE.md: a new file in this class
+# is gitignored in the same change that introduces it). Covers the backups
+# scripts/migrate_collapse_duplicate_origin_rows.py writes before it edits rows.
+talkingtoad.db.*
+*.db.bak
+*.bak
 
 # GEO configuration (domain-specific settings)
 geo_settings.json

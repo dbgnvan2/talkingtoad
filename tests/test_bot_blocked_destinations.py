@@ -195,14 +195,50 @@ class TestItDoesNotBecomeStopReporting503:
             "bb-404", '<a href="https://gone.test/x">Gone</a>', wire))
         assert "BROKEN_LINK_404" in codes, codes
 
-    async def test_an_external_403_is_still_broken(self):
+    @pytest.mark.parametrize("status", [403, 401, 999])
+    async def test_a_refused_external_check_is_unverified_not_silent(self, status):
+        """BL1 (2026-09-03). `issue_for_status` maps 404, 410, 503 and 5xx and
+        returns None for everything else, so an external 403/401/999 produced NO
+        finding and the link was recorded as verified and working. Cloudflare and
+        Akamai bot walls answer 403; LinkedIn answers 999. Same P2 as the 429 and
+        503 work, one status over — and silence is the worst of the three
+        possible answers, because it asserts the link is fine.
+
+        A 403 is genuinely ambiguous: a bot wall (works for humans) or a real
+        permission gate (works for nobody anonymous). We cannot tell, so we say
+        so and name the status."""
+        def wire(mock):
+            mock.route(host="forbidden.test").mock(return_value=httpx.Response(status))
+
+        issues = await _crawl(
+            f"bb-{status}", '<a href="https://forbidden.test/x">Forbidden</a>', wire)
+        hits = [i for i in issues if i.code == "EXTERNAL_LINK_SKIPPED"]
+        assert hits, f"HTTP {status} produced no finding: {_codes(issues)}"
+        assert any(i.extra.get("status_code") == status for i in hits), (
+            f"the status is missing from the evidence: {[i.extra for i in hits]}")
+
+    async def test_a_403_is_never_called_broken(self):
+        """The other half: unverified, not broken. Claiming a bot-walled link is
+        broken is as wrong as claiming it is fine."""
         def wire(mock):
             mock.route(host="forbidden.test").mock(return_value=httpx.Response(403))
 
-        issues = await _crawl(
-            "bb-403", '<a href="https://forbidden.test/x">Forbidden</a>', wire)
+        codes = _codes(await _crawl(
+            "bb-403-notbroken", '<a href="https://forbidden.test/x">F</a>', wire))
+        assert not [c for c in codes if c.startswith("BROKEN_LINK")], codes
+
+    async def test_an_internal_403_is_unchanged(self):
+        """Out of scope and deliberately untouched — a crawler blocked from the
+        site's own page is a different question, and no evidence was gathered."""
+        def wire(mock):
+            mock.get("https://example.com/private").mock(return_value=httpx.Response(
+                403, text="<html><body>Forbidden</body></html>",
+                headers={"content-type": "text/html"}))
+
+        issues = await _crawl("bb-403-internal", '<a href="/private">Private</a>',
+                              wire, max_pages=2)
         assert "EXTERNAL_LINK_SKIPPED" not in _codes(issues), (
-            "a 403 is a definite answer and must not be reclassified as unverified")
+            "an internal page was reclassified as an unverified external link")
 
     async def test_a_listed_host_reached_via_a_redirect_that_answers_200_is_verified(self):
         """The `>= 400` guard. The first version of the condition was
