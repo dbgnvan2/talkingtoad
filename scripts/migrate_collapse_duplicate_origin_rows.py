@@ -200,7 +200,11 @@ def _repoint_evidence(con: sqlite3.Connection, job: str, bare: str, slashed: str
         # A "duplicate of another page" finding whose other page was this page's
         # own second spelling is now a cluster of one. It is not a finding.
         if code in _CROSS_PAGE_DUPLICATE_CODES:
-            partners = [u for k in ("members", "duplicate_urls")
+            # `near_identical_to` included: D3 stopped storing `members`, so a
+            # row written after it has neither of the other two keys and would
+            # slip past this guard entirely — leaving exactly the "page is a
+            # near-duplicate of itself" row this rule exists to delete (P3/P13).
+            partners = [u for k in ("members", "duplicate_urls", "near_identical_to")
                         for u in (payload.get(k) or []) if isinstance(u, str)]
             # Delete ONLY when the finding names no page other than this one.
             # The first version counted distinct partners and deleted anything

@@ -232,6 +232,26 @@ class TestTheFailureStatesAreDistinguishable:
         assert body["can_run_wp_audit"] is False, (
             "allcaps said activate_plugins; WordPress refused the plugin list")
 
+    async def test_a_200_that_is_not_a_plugin_list_is_not_a_yes(self, api_client, auth_headers, creds):
+        """The probe overrides the capability map, so a 200 that is not actually
+        a plugin list converts a correct "no" into a wrong "yes". This file
+        already rejects a bare 200 on `users/me` for exactly this reason — a
+        cache interstitial, a WAF challenge or a maintenance page all answer 200
+        with HTML — and the probe was added with no body check (cold sweep)."""
+        me = _Resp(200, {"id": 4, "roles": ["editor"],
+                         "capabilities": {"edit_posts": True, "edit_pages": True,
+                                          "upload_files": True,
+                                          "manage_options": False,
+                                          "activate_plugins": False}})
+        for body in ("<html>Attention Required! | Cloudflare</html>",
+                     {"code": "rest_no_route"}, None):
+            fake = _FakeWP(me)
+            fake.plugins = _Resp(200, body)
+            with _patch_client(fake):
+                r = await api_client.get(ENDPOINT, headers=auth_headers)
+            assert r.json()["can_run_wp_audit"] is False, (
+                f"a 200 carrying {type(body).__name__} was read as a plugin list")
+
     async def test_a_working_admin_still_reports_true(self, api_client, auth_headers, creds):
         """Adversarial: the probe must not turn every account into a 'no'."""
         with _patch_client(_FakeWP()):

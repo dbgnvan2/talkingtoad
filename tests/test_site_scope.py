@@ -15,6 +15,7 @@ from api.crawler.checkers.registry import (
     _SITE_SCOPED_CODES,
     issue_scope,
 )
+from api.models.job import CrawlJob
 from api.services.job_store_base import compute_impact_health
 
 _NO_SEV = {"critical": 0, "warning": 0, "info": 0}
@@ -262,6 +263,61 @@ class TestComparabilityAcrossAnEmissionChange:
         job = CrawlJob(job_id="j", target_url="https://x/")
         assert job.issue_emission_version == ISSUE_EMISSION_VERSION
         assert ISSUE_EMISSION_VERSION, "the stamp must not be empty"
+
+    async def test_the_stamp_survives_a_store_round_trip(self, tmp_path):
+        """The one that matters. The column was added, the model field was
+        added, the write was added — and `_row_to_job` was not, so every job
+        read back carried the model DEFAULT, i.e. the current stamp. The guard
+        could never fire, on any pair, ever. Four unit tests of the comparison
+        helper all passed against a feature that did nothing (P10/P26 — the
+        template for this existed in test_scoring_version.py and was not used).
+        """
+        from api.services.sqlite_store import SQLiteJobStore
+
+        store = SQLiteJobStore(str(tmp_path / "t.db"))
+        await store.init()
+        job = CrawlJob(job_id="j", target_url="https://x/")
+        job.issue_emission_version = "2026-01-01-e0"
+        await store.create_job(job)
+        back = await store.get_job("j")
+        await store.close()
+        assert back.issue_emission_version == "2026-01-01-e0", (
+            f"the stamp did not survive the round trip: {back.issue_emission_version}")
+
+    async def test_a_legacy_job_reads_back_as_unstamped_not_as_current(self, tmp_path):
+        """Adversarial partner: a row written before the column existed must read
+        back as None. Defaulting it to the current stamp is what made the guard
+        inert, and it is the same P12 the helper's docstring warns about."""
+        import sqlite3
+
+        from api.services.sqlite_store import SQLiteJobStore
+
+        db = tmp_path / "t.db"
+        store = SQLiteJobStore(str(db))
+        await store.init()
+        await store.create_job(CrawlJob(job_id="old", target_url="https://x/"))
+        await store.close()
+        con = sqlite3.connect(db)
+        con.execute("UPDATE crawl_jobs SET issue_emission_version = NULL")
+        con.commit(); con.close()
+
+        store = SQLiteJobStore(str(db))
+        await store.init()
+        back = await store.get_job("old")
+        await store.close()
+        assert back.issue_emission_version is None, (
+            "a pre-stamp job claims the current emission version")
+
+    def test_two_unstamped_jobs_are_not_comparable(self):
+        """The pair that separates the real implementation from a naive
+        `current == previous`: two legacy jobs, which is every job in the store
+        today. The cold sweep proved the naive version passes all the other
+        cases (P27)."""
+        from api.routers.crawl import _emission_comparability
+
+        ok, reason = _emission_comparability(None, None)
+        assert ok is False, "two unstamped jobs were declared comparable"
+        assert reason
 
     def test_two_jobs_with_different_stamps_are_not_comparable(self):
         from api.routers.crawl import _emission_comparability

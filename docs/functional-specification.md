@@ -1109,10 +1109,15 @@ set** = shingles appearing on ≥ max(3, 20% of eligible) pages:
   Clustered via union-find; exact all-pairs Jaccard ≤ 400 eligible pages, MinHash
   prefilter above (announced in logs, P9). **The finding is emitted on every
   member of a cluster** (ND1, 2026-09-02): each row carries
-  `extra.near_identical_to` — the *other* members, never the page itself — and
-  `extra.members`, the whole cluster. `near_identical_to` renders under
-  "Near-identical to"; `members` is a noise key so the same list is not printed
-  twice (`issue_evidence.py`). Until then the check emitted one row, on the
+  `extra.near_identical_to` — the *other* members, never the page itself. The
+  cluster is `near_identical_to` plus the row's own `page_url`; **`members` is no
+  longer stored** (D3, 2026-09-03), because repeating the whole cluster on every
+  row is O(N²) — ~5,000 urls for a 50-page cluster, serialised uncapped — and the
+  ND1 spec kept it on a rationale ("the score's representative election reads
+  it") that a later sweep disproved: the election never reads `extra`. Rows
+  written *before* ND1 carry only `members` and still render, under "Pages in
+  this duplicate group"; where both keys are present `members` is superseded so
+  the same list is not printed twice (`issue_evidence.py`). Until then the check emitted one row, on the
   sorted-first member: the other pages' own Page Audit said nothing, and no
   surface named the page a flagged page duplicated — the partners were computed
   and never rendered (P25). The code stays **site-scoped**, so R5.1's
@@ -2552,7 +2557,8 @@ same wrong strings the code passed, so it could only ever agree with it),
 
 ### 7.8a WordPress connection check (WA5, 2026-09-02)
 
-`GET /api/wp/connection` — auth required, read-only, one call (`users/me`). The
+`GET /api/wp/connection` — auth required, read-only, two calls: `users/me`, then
+a one-row `plugins` probe. The
 Connections panel tested the AI provider and Google Search Console; nothing
 tested WordPress, so the first sign of a stale credential was a failed fix or a
 502 from the audit. When livingsystems.ca moved its login page, every WordPress
@@ -2581,12 +2587,18 @@ every capability read False and produced a specific, wrong, actionable verdict
 about the account — in the green box. A body that is not a user object (no `id`)
 is reported as "nothing was verified", the same rule WA3 applies to the audit.
 
-`can_run_wp_audit` reads **`activate_plugins`**, which is what
-`WP_REST_Plugins_Controller` gates on, falling back to `manage_options` only
-when the install does not report it; an explicit `false` is never overridden by
-the fallback. Caveat recorded in TODO: `users/me` returns `allcaps`, the raw
-role map, not the result of `current_user_can()`, so a role plugin filtering at
-the meta layer can still make this optimistic.
+`can_run_wp_audit` is **probed, not inferred** (D4, 2026-09-03): the endpoint
+asks for one plugin and reports what WordPress answered. `users/me` returns
+`allcaps` — the raw role map, unfiltered by `map_meta_cap` — so a role plugin or
+a multisite subsite filtering `activate_plugins` produced a green tick and then a
+403 from the button it had just promised (P6). A 200 alone is not a yes: the body
+must be a JSON list, because a cache interstitial or WAF challenge answers 200
+with HTML and the probe *overrides* the capability map, so accepting one would
+turn a correct "no" into a wrong "yes". The old inference —
+`activate_plugins`, falling back to `manage_options`, an explicit `false` never
+overridden — remains only for an install where the probe could not be made. The
+probe is issued with `expect_denial`, so its 403 (the normal answer for an
+editor) does not invalidate the session or log as a rejected credential.
 
 Domain safety: the endpoint takes no address, so with no `job_id` it can only
 ever contact the site named in the credentials file. An optional `job_id` is

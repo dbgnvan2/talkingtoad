@@ -2767,21 +2767,32 @@ async def get_crawl_comparison(
     # it through with the reason — but a bare comparison is never implied.
     cur_level = job.settings.info_detail
     prev_level = prev_job.settings.info_detail
+    # Collect EVERY reason, not the first. An info_detail mismatch is fixable by
+    # re-scanning; an emission-version mismatch is permanent. Reporting only the
+    # first told the operator to do something that cannot work (cold sweep).
+    reasons: list[str] = []
     comparable = cur_level == prev_level
-    reason = None if comparable else f"info_detail differs ({cur_level} vs {prev_level})"
+    if not comparable:
+        reasons.append(f"info_detail differs ({cur_level} vs {prev_level})")
     # D5: a change in what the crawler EMITS moves the row count for reasons
     # that are not the site. `scoring_model_version` covers how we score; this
     # covers what we produce, and the two are not the same question.
-    if comparable:
-        comparable, reason = _emission_comparability(
-            job.issue_emission_version, prev_job.issue_emission_version)
+    emission_ok, emission_reason = _emission_comparability(
+        job.issue_emission_version, prev_job.issue_emission_version)
+    if not emission_ok:
+        comparable = False
+        reasons.append(emission_reason or "the issue-emission rules differ")
+    reason = "; ".join(reasons) if reasons else None
     # A partial analysis scores 100 for what it never ran (S1); two scores over
     # different category sets are not the same measurement either.
     for label, summ in (("this scan", current_summary), ("the previous scan", prev_summary)):
         basis = summ.get("health_score_basis") or {}
-        if basis.get("comparable") is False and comparable:
+        if basis.get("comparable") is False:
             comparable = False
-            reason = f"{label} was a partial analysis ({len(basis.get('categories_scored') or [])} categories scored)"
+            reasons.append(
+                f"{label} was a partial analysis "
+                f"({len(basis.get('categories_scored') or [])} categories scored)")
+    reason = "; ".join(reasons) if reasons else None
 
     return {
         "comparison_available": True,

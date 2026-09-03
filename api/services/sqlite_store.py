@@ -1877,6 +1877,11 @@ def _row_to_job(row: dict) -> CrawlJob:
         priority_seed=json.loads(row["priority_seed"]) if row.get("priority_seed") else None,
         # R5.6 — legacy rows predate this column; .get() yields None (no crash).
         scoring_model_version=row.get("scoring_model_version"),
+        # D5: read it back explicitly. Without this the model DEFAULT wins
+        # and every job claims the CURRENT stamp, so the comparability
+        # guard can never fire — the column, the field and the write all
+        # shipped and the feature did nothing (P12).
+        issue_emission_version=row.get("issue_emission_version"),
         # E1.4 — legacy rows predate these columns; None means "not recorded",
         # which surfaces must render as such rather than as full coverage.
         images_seen_total=row.get("images_seen_total"),

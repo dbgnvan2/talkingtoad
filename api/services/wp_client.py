@@ -301,15 +301,25 @@ class WPClient:
                 extra={"site_url": self.site_url, "status": response.status_code},
             )
 
-    async def get(self, endpoint: str, **kwargs: object) -> httpx.Response:
-        """Authenticated GET to ``/wp-json/wp/v2/{endpoint}``."""
+    async def get(self, endpoint: str, *, expect_denial: bool = False,
+                  **kwargs: object) -> httpx.Response:
+        """Authenticated GET to ``/wp-json/wp/v2/{endpoint}``.
+
+        ``expect_denial`` suppresses the session-invalidation side effect for a
+        call whose 403 is a normal answer rather than a rejected credential. The
+        capability probe asks a question an editor is SUPPOSED to be refused;
+        without this every editor connection test logged `wp_session_invalidated`
+        at WARNING, implying the credentials had failed, and threw away the
+        session it had just established so the next WP fix had to log in again.
+        """
         assert self._client is not None
         r = await self._client.get(
             f"{self.site_url}/wp-json/wp/v2/{_wp_v2_endpoint(endpoint)}",
             headers=self._auth_headers,
             **kwargs,
         )
-        self._check_auth(r)
+        if not expect_denial:
+            self._check_auth(r)
         return r
 
     async def get_route(self, route: str, **kwargs: object) -> httpx.Response:

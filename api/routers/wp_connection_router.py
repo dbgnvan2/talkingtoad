@@ -147,7 +147,22 @@ async def wp_connection(
                 # the failure the fix/audit split exists to prevent. One extra
                 # read-only call settles it (P6).
                 try:
-                    plugins_status = (await wp.get("plugins?per_page=1")).status_code
+                    probe = await wp.get("plugins?per_page=1", expect_denial=True)
+                    # A 200 is not by itself a yes. This endpoint already refuses
+                    # a bare 200 on `users/me` because a cache interstitial, a
+                    # WAF challenge or a maintenance page all answer 200 with
+                    # HTML — and because the probe OVERRIDES the capability map,
+                    # accepting one here converts a correct "no" into a wrong
+                    # "yes". WordPress answers this route with a JSON list.
+                    probe_ok = probe.status_code == 200
+                    if probe_ok:
+                        try:
+                            probe_ok = isinstance(probe.json(), list)
+                        except Exception:  # noqa: BLE001
+                            probe_ok = False
+                    plugins_status = 200 if probe_ok else (probe.status_code or 0)
+                    if probe_ok is False and probe.status_code == 200:
+                        plugins_status = 0      # answered, but not with plugins
                 except Exception:  # noqa: BLE001 — the probe must never be fatal
                     plugins_status = None
     except WPAuthError as exc:

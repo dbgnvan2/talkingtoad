@@ -842,7 +842,33 @@ async def run_crawl(
             if result.status_code >= 400 and not is_html:
                 broken = issue_for_status(result.status_code, url)
                 if broken:
+                    # Same evidence as the HTML branch below. Without it the row
+                    # rendered with NO evidence at all in every surface — the
+                    # PDF, the Excel export and "Show Source Pages" — so the
+                    # operator was told a file is broken and not which page
+                    # links to it (P25).
+                    _src = discovered_from.get(url)
+                    _all = [x for x in discovered_from_all.get(url, [])
+                            if x and x != "(sitemap)"]
+                    if _src and _src != "(sitemap)" and _src not in _all:
+                        _all.insert(0, _src)
+                    broken.extra = _broken_link_extra(
+                        target_url=url, sources=_all,
+                        first_source=_src if _src != "(sitemap)" else None,
+                    )
+                    broken.extra["status_code"] = result.status_code
+                    if _all:
+                        broken.page_url = _all[0]
                     all_issues.append(broken)
+                # An error page is not content. The HTML branch has always
+                # skipped its checks on >=400 ("they are error pages, not real
+                # content"); the asset branch did not, so a 404 carrying
+                # `content-type: application/pdf` and a Content-Length produced
+                # PDF_TOO_LARGE about a file that does not exist, beside the
+                # BROKEN_LINK_404 saying so.
+                page_issues = []
+                all_issues.extend(page_issues)
+                continue
 
             if is_html:
                 # Skip SEO checks on 4xx/5xx pages — they are error pages, not real content.

@@ -118,8 +118,11 @@ class CrawlJob(BaseModel):
     # stamped at creation from a single source of truth. Legacy audits saved
     # before this field existed read back as None.
     scoring_model_version: str | None = SCORING_MODEL_VERSION
-    # D5: what the crawl EMITTED, so /comparison can refuse a delta that
-    # is a change in the tool rather than in the site.
+    # D5: what the crawl EMITTED, so /comparison can refuse a delta that is a
+    # change in the tool rather than in the site. Defaults to the current stamp
+    # for a NEW job; a row read back from the store passes its own value (which
+    # is None for every job crawled before the column existed) and must not
+    # inherit this default — see `_row_to_job`.
     issue_emission_version: str | None = ISSUE_EMISSION_VERSION
     # E1.4 (2026-08-29) — image-cap disclosure. `images_seen_total` counts every
     # DISTINCT image URL the crawl found; `images_collected` is how many survived
