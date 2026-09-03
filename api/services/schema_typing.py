@@ -1,4 +1,3 @@
-import logging
 """Schema typing validation for JSON-LD appropriateness.
 
 Validates that JSON-LD schemas match page type, detects mismatches,
@@ -7,6 +6,9 @@ conflicts, and deprecated/missing schema patterns.
 Spec: docs/specs/ai-readiness/v2-extended-module.md § 3.4
 Tests: tests/test_schema_typing.py
 """
+
+import html
+import logging
 
 from api.crawler.parser import ParsedPage
 from api.services.page_classifier import infer_page_type
@@ -147,8 +149,32 @@ _SCHEMA_FIELDS_TO_CHECK: dict[str, list[tuple[str, str]]] = {
 
 
 def _normalize(text: str) -> str:
-    """Lowercase, collapse whitespace, strip — used for substring comparison."""
-    return " ".join(text.lower().split())
+    """Decode HTML entities, lowercase, collapse whitespace — for substring compare.
+
+    SV1 (2026-09-03). The two sides of this comparison arrive through DIFFERENT
+    decoders, and until now only one of them was decoded:
+
+    * visible text comes from ``soup.get_text()``, so entities are already
+      resolved — the page reads ``don’t``;
+    * the schema value comes from inside ``<script type="application/ld+json">``,
+      and script content is **raw text**: an HTML parser does not decode entities
+      there. Yoast writes ``&#8217;``, so the parsed JSON string literally holds
+      ``don&#8217;t``.
+
+    So ``SCHEMA_VISIBLE_MISMATCH`` reported text that is identical to a reader as
+    missing from the page. Every one of the 98 ``Article.headline`` findings in
+    the development store carried an entity — a 100% false-positive rate, on a
+    check with impact 6 that cites Google's markup-must-match rule.
+
+    This does NOT loosen the check: the only strings it newly matches are ones
+    that differ solely by encoding, i.e. the same text. A value whose words are
+    genuinely absent still fails — asserted by
+    ``TestHtmlEntitiesInTheSchemaValue::test_a_genuinely_absent_headline_is_still_flagged``.
+
+    Spec:  docs/functional-specification.md §4.6 (SV1)
+    Tests: tests/test_schema_visible_mismatch.py::TestHtmlEntitiesInTheSchemaValue
+    """
+    return " ".join(html.unescape(text).lower().split())
 
 
 # Max characters kept for a mismatched schema value shown in the report.
@@ -162,7 +188,12 @@ def _truncate_value(value: str) -> str:
     Values longer than ``_MISMATCH_VALUE_MAX_CHARS`` are cut and given a
     trailing '…' so a long FAQ answer or address doesn't bloat the report.
     """
-    collapsed = " ".join(value.split())
+    # SV2: decode before display. The raw string put `Emotions don&#8217;t take a
+    # vacation` in a client report — markup leaking into the artifact, and
+    # unmatchable against what the operator sees in the WordPress editor.
+    # Decoding first also means the 120-character budget is spent on characters
+    # rather than on `&#8217;`.
+    collapsed = " ".join(html.unescape(value).split())
     if len(collapsed) > _MISMATCH_VALUE_MAX_CHARS:
         return collapsed[:_MISMATCH_VALUE_MAX_CHARS] + "…"
     return collapsed

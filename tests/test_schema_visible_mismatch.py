@@ -240,6 +240,105 @@ class TestAdversarialNormalization:
         assert result == []
 
 
+class TestHtmlEntitiesInTheSchemaValue:
+    """SV1 (2026-09-03) — the two sides came through different decoders.
+
+    Owner report on livingsystems.ca/emotional-process-on-vacation: *"schema says
+    'Emotions don&#8217;t take a vacation' — not on the page."* It is on the page.
+
+    Visible text comes from `soup.get_text()`, so entities are already decoded.
+    The schema value comes from inside `<script type="application/ld+json">`, and
+    script content is RAW TEXT — an HTML parser does not decode entities there.
+    Yoast writes `&#8217;`, so the parsed JSON string literally contains it, and
+    the substring test fails on text that is identical to a reader.
+
+    Every one of the 98 `Article.headline` findings in the development database
+    carried an entity — a 100% false-positive rate on an impact-6 check that
+    cites Google.
+
+    Spec: docs/functional-specification.md §4.6 (SV1-SV2, folded 2026-09-03)
+    """
+
+    # Captured verbatim from the live page, not written to suit the normaliser
+    # (P32 — the existing fixtures all pass because they use one encoding).
+    REAL_HEADLINE = "Emotions don&#8217;t take a vacation"
+    REAL_VISIBLE = (
+        "Skip to content Emotions don\u2019t take a vacation "
+        "Family systems do not pause for the summer."
+    )
+
+    def test_the_reported_page_is_not_flagged(self):
+        blocks = [{"@type": "Article", "headline": self.REAL_HEADLINE}]
+        assert check_schema_visible_mismatch(blocks, self.REAL_VISIBLE) == []
+
+    @pytest.mark.parametrize("entity,char", [
+        ("&#8217;", "\u2019"),   # right single quote — the reported case
+        ("&#038;", "&"),         # ampersand, as Yoast writes it
+        ("&#8211;", "\u2013"),   # en dash
+        ("&amp;", "&"),          # named forms
+        ("&rsquo;", "\u2019"),
+        ("&ndash;", "\u2013"),
+        ("&#x2019;", "\u2019"),  # hex numeric
+    ])
+    def test_every_entity_seen_in_the_field(self, entity, char):
+        blocks = [{"@type": "Article", "headline": f"Bowen Theory {entity} Relationships"}]
+        visible = f"Article: Bowen Theory {char} Relationships, a discussion."
+        assert check_schema_visible_mismatch(blocks, visible) == []
+
+    def test_entities_on_the_visible_side_too(self):
+        """Both sides normalise the same way, so an entity in either is fine."""
+        blocks = [{"@type": "Article", "headline": "Fathers &amp; Sons"}]
+        assert check_schema_visible_mismatch(blocks, "About Fathers &#038; Sons here") == []
+
+    # ── The point of the check has to survive (adversarial) ─────────────────
+
+    def test_a_genuinely_absent_headline_is_still_flagged(self):
+        """Decoding must not become 'match anything'. This is the true positive
+        the check exists for, and it must fail before AND after the change."""
+        blocks = [{"@type": "Article", "headline": "Emotions don&#8217;t take a vacation"}]
+        visible = "An entirely different page about tax clinic opening hours."
+        assert _fields(check_schema_visible_mismatch(blocks, visible)) == ["Article.headline"]
+
+    def test_decoding_does_not_match_a_different_word(self):
+        """`&#038;` decodes to '&', not to the word 'and' — the check must not
+        start passing on a paraphrase."""
+        blocks = [{"@type": "Article", "headline": "Fathers &#038; Sons"}]
+        visible = "A page about Fathers and Sons."
+        assert _fields(check_schema_visible_mismatch(blocks, visible)) == ["Article.headline"]
+
+    def test_a_partial_overlap_is_still_a_mismatch(self):
+        blocks = [{"@type": "Article", "headline": "Emotions don&#8217;t take a holiday"}]
+        visible = "Emotions don\u2019t take a vacation."
+        assert _fields(check_schema_visible_mismatch(blocks, visible)) == ["Article.headline"]
+
+
+class TestTheReportedValueIsReadable:
+    """SV2 — the report printed `Emotions don&#8217;t take a vacation`. Even on a
+    true positive that is markup leaking into a client report, and the operator
+    cannot match it against what they see in the WordPress editor."""
+
+    def test_the_stored_value_is_decoded(self):
+        blocks = [{"@type": "Article", "headline": "Grief &amp; Loss &#8211; A Guide"}]
+        result = check_schema_visible_mismatch(blocks, "A page about something else.")
+        assert result, "the adversarial value should still be flagged"
+        value = result[0]["value"]
+        assert value == "Grief & Loss \u2013 A Guide", value
+        assert "&" in value and "&amp;" not in value and "&#" not in value
+
+    def test_truncation_counts_decoded_characters(self):
+        """The 120-char cap must not be spent on `&#8217;`. Eight entities cost
+        56 raw characters and 8 real ones."""
+        from api.services.schema_typing import _MISMATCH_VALUE_MAX_CHARS
+
+        headline = "A" * 115 + "&#8217;" * 8          # 115 real + 8 real = 123 decoded
+        blocks = [{"@type": "Article", "headline": headline}]
+        result = check_schema_visible_mismatch(blocks, "unrelated visible text")
+        value = result[0]["value"]
+        assert "&#" not in value, f"raw entity survived truncation: {value!r}"
+        assert len(value) == _MISMATCH_VALUE_MAX_CHARS + 1, len(value)  # + the ellipsis
+        assert value.endswith("\u2026")
+
+
 class TestEmptyMissingFields:
     """Empty or missing field values should NOT be flagged (absence ≠ mismatch)."""
 
