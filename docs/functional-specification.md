@@ -652,6 +652,36 @@ External link checking, redirect chain detection, login redirects.
 - `REDIRECT_LOOP` (critical), `_CHAIN`, `_301`, `_302`
 - `EXTERNAL_LINK_TIMEOUT`, `EXTERNAL_LINK_SKIPPED`
 - `LINK_EMPTY_ANCHOR` — `<a>` tag with no link text and no `aria-label`
+
+**Politeness when verifying somebody else's host (EL1–EL4, 2026-09-03).**
+`crawl_delay_ms` — robots-aware — governs how gently the crawler treats the site
+being audited, and governed nothing at all about the third-party hosts it fires
+HEAD requests at to verify that site's outbound links. External checks ran behind
+one global semaphore of 10 with **no per-host bound**, so ten links to one host
+meant ten simultaneous connections to a stranger's server — a footprint we would
+not accept pointed at us, whatever it does to our findings. Now:
+
+- **one request per host at a time** (`_EXT_PER_HOST_CONCURRENCY`), with the
+  global cap of 10 unchanged, so links to *different* hosts still go in parallel;
+- **0.25 s between checks to the same host** (`_EXT_PER_HOST_DELAY_S`) — free on
+  a site whose links are spread across many hosts, decisive on a repeated one;
+- **429 is retryable** (`fetcher._RETRYABLE_STATUSES`) and `Retry-After` is
+  honoured in both RFC 9110 forms, **capped at 5 s** so a hostile header cannot
+  stall a crawl. 429 is the canonical rate-limit response and LEARNINGS' review
+  checklist names it first among retryable failures; the retry set was 5xx only,
+  on the reasoning that 4xx is deterministic;
+- **a rate limit that survives the retries is reported as unverified, never as
+  fine.** `issue_for_status` returns `None` for 429, so a throttled link used to
+  produce no finding at all and was counted as verified and working — "we could
+  not check" rendered as "checked, it works" (P2). It now emits
+  `EXTERNAL_LINK_TIMEOUT` (impact 1, info, documented in `authority.yaml` as
+  "recorded as unverified, not as broken") carrying the real `status_code: 429`.
+
+This was found while investigating a batch of `BROKEN_LINK_503` findings and is
+**not** their cause — those destinations block automated clients; see the
+bot-block handling below. Both are recorded so neither is mistaken for the other.
+→ `tests/test_external_link_politeness.py`
+
 - `ANCHOR_TEXT_GENERIC` — anchor text is "click here", "read more", etc.
 
 ### 4.4 Crawlability category

@@ -44,6 +44,10 @@ impossible.
 | Default crawl delay | 500 ms | `api/crawler/engine.py:104` `CrawlSettings.crawl_delay_ms` | — |
 | External link cap per page | 50 | `api/crawler/engine.py:49` `_EXTERNAL_LINK_CAP_PER_PAGE` | — |
 | External link cap per job | 500 | `api/crawler/engine.py:50` `_EXTERNAL_LINK_CAP_PER_JOB` | — |
+| External-link check concurrency (global) | 10 | `engine.py` `_EXT_CONCURRENCY` | `TT_EXT_CONCURRENCY` |
+| External-link check concurrency **per host** | 1 | `engine.py` `_EXT_PER_HOST_CONCURRENCY` | `TT_EXT_PER_HOST_CONCURRENCY` |
+| Delay between checks to the **same** host | 0.25 s | `engine.py` `_EXT_PER_HOST_DELAY_S` | `TT_EXT_PER_HOST_DELAY_S` |
+| `Retry-After` honoured, capped at | 5 s | `fetcher.py` `_RETRY_AFTER_MAX_S` | `CRAWL_RETRY_AFTER_MAX_S` |
 | Query variant cap per path | 50 | `api/crawler/normaliser.py` (variant limit) | — |
 | Image HEAD-fetch timeout | 3 seconds | `api/crawler/engine.py:900` | — |
 | Content-discovery REST timeout | 6 seconds | `api/crawler/content_discovery.py` `_REST_TIMEOUT` | — |

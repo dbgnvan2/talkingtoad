@@ -10,6 +10,7 @@ import inspect
 import logging
 import os
 import re
+import time
 from collections import OrderedDict, deque
 from dataclasses import dataclass, field
 from typing import Callable
@@ -112,6 +113,19 @@ except Exception:                                   # noqa: BLE001
     pass
 _MIN_CRAWL_DELAY_MS = 200
 _EXTERNAL_LINK_CAP_PER_PAGE = 50
+
+# External-link verification politeness (EL1/EL2, 2026-09-03). The global cap is
+# unchanged; the per-host bound is what stops the crawler throttling itself and
+# reporting the result as the audited site's defect. Values in docs/thresholds.md.
+_EXT_CONCURRENCY = int(os.getenv("TT_EXT_CONCURRENCY", "10"))
+# One at a time per host. Two was the first choice and it still tripped a host
+# that throttles on the second concurrent request — and rather than relax the
+# test to match the code, the honest answer is that we have no permission to
+# open parallel connections to a third party we are only verifying a link
+# against. Serial-per-host costs ~0.25 s per repeated link and nothing at all on
+# a site whose outbound links are spread across many hosts.
+_EXT_PER_HOST_CONCURRENCY = int(os.getenv("TT_EXT_PER_HOST_CONCURRENCY", "1"))
+_EXT_PER_HOST_DELAY_S = float(os.getenv("TT_EXT_PER_HOST_DELAY_S", "0.25"))
 _EXTERNAL_LINK_CAP_PER_JOB = 500
 
 # E2.2 (rule 8) — how many linking pages to carry in an issue's evidence list.
@@ -953,15 +967,46 @@ async def run_crawl(
             links_to_check.append(ext)
             external_checked += 1
 
-        # Check remaining links concurrently (10 at a time)
-        _EXT_CONCURRENCY = 10
+        # Check remaining links concurrently (10 at a time), but never more than
+        # `_EXT_PER_HOST_CONCURRENCY` at once against ONE host, and never faster
+        # than `_EXT_PER_HOST_DELAY_S` apart on a repeated host.
+        #
+        # EL1/EL2 (2026-09-03). `crawl_delay_ms` — robots-aware, 500 ms on a
+        # typical site — governs how gently we treat the site being audited and
+        # governed NOTHING about the third parties whose links we verify. With a
+        # single global semaphore, ten links to one host meant ten simultaneous
+        # connections to a stranger's server: a footprint we would not accept
+        # pointed at us. Found while investigating a batch of BROKEN_LINK_503
+        # findings; it was NOT their cause (those destinations block bots — see
+        # _BOT_BLOCKING_DOMAINS). Fixed on its own merits.
+        # Spec:  docs/functional-specification.md §4.3 (EL1-EL4, folded 2026-09-03)
+        # Tests: tests/test_external_link_politeness.py
         sem = asyncio.Semaphore(_EXT_CONCURRENCY)
+        _host_sems: dict[str, asyncio.Semaphore] = {}
+        _host_next_ok: dict[str, float] = {}
+
+        def _host_of(u: str) -> str:
+            try:
+                return urlparse(u).netloc.lower()
+            except Exception:  # noqa: BLE001
+                return ""
 
         async def _check_one(ext: dict) -> tuple[dict, FetchResult | None]:
-            async with sem:
-                if cancel_event and cancel_event.is_set():
-                    return ext, None
-                return ext, await _check_external_link(ext["target_url"], client)
+            host = _host_of(ext["target_url"])
+            host_sem = _host_sems.setdefault(host, asyncio.Semaphore(_EXT_PER_HOST_CONCURRENCY))
+            # Host semaphore FIRST, then the global one: a task queued behind its
+            # own host must not sit on a global slot and starve other hosts. One
+            # fixed acquisition order, so no deadlock.
+            async with host_sem:
+                async with sem:
+                    if cancel_event and cancel_event.is_set():
+                        return ext, None
+                    now = time.monotonic()
+                    wait = _host_next_ok.get(host, 0.0) - now
+                    if wait > 0:
+                        await asyncio.sleep(wait)
+                    _host_next_ok[host] = time.monotonic() + _EXT_PER_HOST_DELAY_S
+                    return ext, await _check_external_link(ext["target_url"], client)
 
         tasks = [_check_one(ext) for ext in links_to_check]
         completed = 0
@@ -1013,6 +1058,23 @@ async def run_crawl(
                     issue.description = f"Link to {target} did not respond — destination may be slow or unavailable"
                     all_issues.append(issue)
                     _record(None)
+                elif result.status_code == 429:
+                    # EL4: a rate limit says nothing about the destination. It
+                    # used to fall through `issue_for_status`, which returns None
+                    # for 429 — so the link was counted as verified and working.
+                    # "We could not check" rendered as "checked, it works" (P2).
+                    issue = make_issue("EXTERNAL_LINK_TIMEOUT", source_url)
+                    issue.extra = _broken_link_extra(
+                        target_url=target, sources=source_urls,
+                        first_source=source_url, anchor_texts=anchor_texts,
+                    )
+                    issue.extra["status_code"] = 429
+                    issue.description = (
+                        f"Link to {target} was rate-limited (HTTP 429) and could not be "
+                        f"verified — this says nothing about whether the link works"
+                    )
+                    all_issues.append(issue)
+                    _record(429)
                 else:
                     issue = issue_for_status(result.status_code, target)
                     if issue:

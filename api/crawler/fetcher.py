@@ -29,6 +29,43 @@ _RESCAN_TIMEOUT = float(os.getenv("RESCAN_TIMEOUT_S", "20"))
 # to disable.
 _MAX_RETRIES = int(os.getenv("CRAWL_MAX_RETRIES", "1"))
 _RETRY_BACKOFF_S = float(os.getenv("CRAWL_RETRY_BACKOFF_S", "0.5"))
+
+# EL3 (2026-09-03) — 429 is the canonical rate-limit response and LEARNINGS'
+# review checklist names it FIRST in the retryable list, but the retry set was
+# 5xx only ("4xx is deterministic"), so a throttled host was never retried. A
+# 429 is not a statement about the destination; it is a statement about us.
+_RETRYABLE_STATUSES = frozenset({429})
+# `Retry-After` is honoured when present, but bounded: a host answering
+# "Retry-After: 3600" must not stall a crawl for an hour.
+_RETRY_AFTER_MAX_S = float(os.getenv("CRAWL_RETRY_AFTER_MAX_S", "5"))
+
+
+def _retry_after_seconds(response) -> float | None:
+    """Seconds to wait per a ``Retry-After`` header, capped, or None.
+
+    Accepts both forms RFC 9110 §10.2.3 allows: delta-seconds and an HTTP date.
+    """
+    raw = (response.headers.get("retry-after") or "").strip()
+    if not raw:
+        return None
+    try:
+        return max(0.0, min(float(int(raw)), _RETRY_AFTER_MAX_S))
+    except ValueError:
+        pass
+    try:
+        from email.utils import parsedate_to_datetime
+
+        when = parsedate_to_datetime(raw)
+        if when is None:
+            return None
+        from datetime import datetime, timezone
+
+        now = datetime.now(timezone.utc)
+        if when.tzinfo is None:
+            when = when.replace(tzinfo=timezone.utc)
+        return max(0.0, min((when - now).total_seconds(), _RETRY_AFTER_MAX_S))
+    except Exception:  # noqa: BLE001 — a malformed header is not a crawl failure
+        return None
 _DEFAULT_USER_AGENT = os.getenv(
     "CRAWLER_USER_AGENT",
     "NonprofitCrawler/1.0 (+https://github.com/dbgnvan2/talkingtoad)",
@@ -250,6 +287,10 @@ async def fetch_page(
                 follow_redirects=True,
                 headers=extra_headers,
             ) as response:
+                # Captured inside the block: `response` outlives the `with` in
+                # Python, but its stream is closed by then and reading off a
+                # closed object later is a trap waiting for a refactor (EL3).
+                retry_after_hdr = _retry_after_seconds(response)
                 redirect_chain = [str(r.url) for r in response.history]
                 final_url = str(response.url)
 
@@ -325,13 +366,19 @@ async def fetch_page(
             logger.warning("fetch_error", extra={"url": url, "error": str(exc)})
             return FetchResult(url=url, final_url=url, status_code=0, error=str(exc))
 
-        # Got a response. Retry only transient 5xx responses.
-        if 500 <= result.status_code <= 599 and attempt < _MAX_RETRIES:
+        # Got a response. Retry transient 5xx responses and rate limits (EL3).
+        _transient = (500 <= result.status_code <= 599
+                      or result.status_code in _RETRYABLE_STATUSES)
+        if _transient and attempt < _MAX_RETRIES:
+            wait = retry_after_hdr
+            if wait is None:
+                wait = _RETRY_BACKOFF_S * (2 ** attempt)
             logger.info(
-                "fetch_retry_5xx",
-                extra={"url": url, "attempt": attempt + 1, "status": result.status_code},
+                "fetch_retry_transient",
+                extra={"url": url, "attempt": attempt + 1,
+                       "status": result.status_code, "wait_s": wait},
             )
-            await asyncio.sleep(_RETRY_BACKOFF_S * (2 ** attempt))
+            await asyncio.sleep(wait)
             continue
 
         logger.debug(
