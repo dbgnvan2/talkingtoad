@@ -1,10 +1,16 @@
 import { useEffect, useState } from 'react'
-import { testLlmConnection, gscStatus } from '../api'
+import { testLlmConnection, gscStatus, wpConnection } from '../api'
 
 /**
  * ConnectionsPanel — modal that tests the app's two external integrations:
  *   1. LLM / AI provider  -> GET /api/ai/test
  *   2. Google Search Console -> GET /api/gsc/status
+ *   3. WordPress -> GET /api/wp/connection  (WA5, 2026-09-02)
+ *
+ * The WordPress row exists because the site moved its login page and every
+ * WordPress feature broke at once with nothing in the app able to say why.
+ * "Not configured", "credentials rejected" and "logged in but under-privileged"
+ * render differently on purpose: they are three problems with three fixes.
  *
  * Each row has its own idle/loading/success/error state. Mirrors SettingsPanel's
  * modal shell and adds a11y (role="dialog", aria-modal, Escape + backdrop close).
@@ -15,6 +21,7 @@ export default function ConnectionsPanel({ onClose }) {
   // Hooks must run before any early return (react-hooks/rules-of-hooks).
   const [llm, setLlm] = useState({ status: 'idle', message: '', sample: '' })
   const [gsc, setGsc] = useState({ status: 'idle', data: null, error: '' })
+  const [wp, setWp] = useState({ status: 'idle', data: null, error: '' })
 
   useEffect(() => {
     function onKey(e) {
@@ -45,6 +52,16 @@ export default function ConnectionsPanel({ onClose }) {
       setGsc({ status: 'success', data, error: '' })
     } catch (err) {
       setGsc({ status: 'error', data: null, error: err.message || 'GSC check failed.' })
+    }
+  }
+
+  async function handleTestWp() {
+    setWp({ status: 'loading', data: null, error: '' })
+    try {
+      const data = await wpConnection()
+      setWp({ status: 'success', data, error: '' })
+    } catch (err) {
+      setWp({ status: 'error', data: null, error: err.message || 'WordPress check failed.' })
     }
   }
 
@@ -139,6 +156,47 @@ export default function ConnectionsPanel({ onClose }) {
             {gsc.status === 'error' && (
               <div className="text-sm text-red-700 bg-red-50 border border-red-100 rounded-lg p-3">
                 <p className="font-bold">✗ {gsc.error}</p>
+              </div>
+            )}
+          </ConnectionRow>
+
+          {/* WordPress */}
+          <ConnectionRow
+            title="WordPress"
+            desc="Logs in with the stored credentials and reads the account. Changes nothing."
+            buttonLabel="Test connection"
+            loading={wp.status === 'loading'}
+            onTest={handleTestWp}
+          >
+            {wp.status === 'success' && wp.data && (
+              wp.data.configured === false ? (
+                <div className="text-sm text-amber-700 bg-amber-50 border border-amber-100 rounded-lg p-3">
+                  <p className="font-bold">WordPress not configured</p>
+                  <p className="mt-1 text-xs text-amber-800">{wp.data.message}</p>
+                </div>
+              ) : wp.data.authenticated ? (
+                <div className="text-sm text-green-700 bg-green-50 border border-green-100 rounded-lg p-3">
+                  <p className="font-bold">✓ {wp.data.message}</p>
+                  <p className="mt-1 text-xs text-green-800 break-words">
+                    {wp.data.site_url}
+                    {wp.data.roles?.length ? ` — ${wp.data.roles.join(', ')}` : ''}
+                  </p>
+                  {wp.data.can_run_wp_audit === false && (
+                    <p className="mt-1 text-xs text-green-800">
+                      The configuration audit needs an administrator account.
+                    </p>
+                  )}
+                </div>
+              ) : (
+                <div className="text-sm text-red-700 bg-red-50 border border-red-100 rounded-lg p-3">
+                  <p className="font-bold">✗ Not connected</p>
+                  <p className="mt-1 text-xs text-red-800 break-words">{wp.data.message}</p>
+                </div>
+              )
+            )}
+            {wp.status === 'error' && (
+              <div className="text-sm text-red-700 bg-red-50 border border-red-100 rounded-lg p-3">
+                <p className="font-bold">✗ {wp.error}</p>
               </div>
             )}
           </ConnectionRow>

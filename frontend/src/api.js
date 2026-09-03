@@ -620,6 +620,15 @@ export async function testLlmConnection() {
   return checkResponse(res)
 }
 
+// WA5 (2026-09-02) — does WordPress still answer us? Read-only: the server
+// logs in and calls users/me. Contract: tests/test_wp_connection_endpoint.py.
+export async function wpConnection() {
+  const res = await fetch('/api/wp/connection', {
+    headers: authHeaders(),
+  })
+  return checkResponse(res)
+}
+
 // v1.9image: Image Analysis API
 export async function getImages(jobId, { page = 1, limit = 50, sortBy = 'score' } = {}) {
   const params = new URLSearchParams({ page, limit, sort_by: sortBy })
