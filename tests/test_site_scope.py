@@ -242,3 +242,46 @@ def test_every_cluster_member_now_scores_as_having_the_problem_on_its_own_page()
     member_rows = [_row("NEAR_DUPLICATE_BODY")]
     assert compute_page_health(member_rows) == 100 - _imp("NEAR_DUPLICATE_BODY")
     assert compute_page_health([]) == 100, "a page outside the cluster is untouched"
+
+
+class TestComparabilityAcrossAnEmissionChange:
+    """D5 (2026-09-03) — two scans either side of a change in what the crawler
+    EMITS differ in row count for reasons that are not the site.
+
+    ND1 started emitting one `NEAR_DUPLICATE_BODY` row per cluster member; BB3
+    reclassified external 503s out of `broken_link`. `comparable` knew only about
+    `info_detail` and partial analysis, so a before/after delta read as a change
+    in the site. `scoring_model_version` exists for exactly this shape and was
+    not extended when emission changed.
+    """
+
+    def test_the_emission_version_is_stamped_on_a_new_job(self):
+        from api.crawler.checkers.registry import ISSUE_EMISSION_VERSION
+        from api.models.job import CrawlJob
+
+        job = CrawlJob(job_id="j", target_url="https://x/")
+        assert job.issue_emission_version == ISSUE_EMISSION_VERSION
+        assert ISSUE_EMISSION_VERSION, "the stamp must not be empty"
+
+    def test_two_jobs_with_different_stamps_are_not_comparable(self):
+        from api.routers.crawl import _emission_comparability
+
+        ok, reason = _emission_comparability("2026-09-03-e1", "2026-08-01-e0")
+        assert ok is False
+        assert "emission" in (reason or "").lower(), reason
+
+    def test_equal_stamps_stay_comparable(self):
+        from api.routers.crawl import _emission_comparability
+
+        ok, reason = _emission_comparability("2026-09-03-e1", "2026-09-03-e1")
+        assert ok is True and reason is None
+
+    def test_a_missing_stamp_is_not_treated_as_equal(self):
+        """Adversarial: every job crawled before today has NULL here. Reading
+        that as "same as mine" is how a silent false comparison happens (P12 —
+        a default reaching a surface and reading as a real measurement)."""
+        from api.routers.crawl import _emission_comparability
+
+        ok, reason = _emission_comparability("2026-09-03-e1", None)
+        assert ok is False, "an unstamped job was declared comparable"
+        assert reason

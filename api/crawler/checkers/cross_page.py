@@ -879,8 +879,17 @@ def _check_body_uniqueness(pages) -> list[Issue]:
                 # rises, which is the truth: each of these pages has the problem.
                 # Tests: tests/test_near_duplicate_body.py, tests/test_site_scope.py
                 for url in members:
+                    # D3 (2026-09-03): `members` is no longer stored. It repeated
+                    # the whole cluster on every row — O(N^2) across a cluster,
+                    # ~5,000 urls for a 50-page one, serialised uncapped by
+                    # `_issue_dict` — and `near_identical_to` plus this row's own
+                    # `page_url` reconstructs it exactly. The ND1 spec kept it
+                    # "for the score's representative election and existing
+                    # tests"; the cold sweep established the election never reads
+                    # `extra`, so the rationale was wrong. The renderer's
+                    # supersede rule stays: rows written before ND1 carry only
+                    # `members` and are all a client has for those jobs.
                     issues.append(make_issue(
                         "NEAR_DUPLICATE_BODY", url,
-                        extra={"members": list(members),
-                               "near_identical_to": [m for m in members if m != url]}))
+                        extra={"near_identical_to": [m for m in members if m != url]}))
     return issues

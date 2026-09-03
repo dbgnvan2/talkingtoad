@@ -93,10 +93,14 @@ class TestNearDuplicateBody:
         # The distinct page is not dragged in by the cluster.
         assert "https://x.org/anxiety" not in {i.page_url for i in issues}
         for iss in issues:
-            assert set(iss.extra.get("members") or []) == cluster
             partners = iss.extra.get("near_identical_to") or []
             assert iss.page_url not in partners, "a page is never its own near-duplicate"
             assert set(partners) == cluster - {iss.page_url}, "the row names its partners"
+            # D3 (2026-09-03): `members` is no longer stored — it repeated the
+            # whole cluster on every row while `near_identical_to` plus this
+            # row's own url reconstructs it exactly.
+            assert "members" not in iss.extra, iss.extra
+            assert set(partners) | {iss.page_url} == cluster, "the cluster is recoverable"
 
     def test_e2_3_config_threshold(self, monkeypatch):
         """Threshold is config-driven: a strict threshold that the pair no longer
@@ -163,10 +167,10 @@ class TestClusterMonotonicity:
         assert {i.page_url for i in issues} == cluster
         assert "https://x.org/distinct" not in {i.page_url for i in issues}
         for iss in issues:
-            assert set(iss.extra.get("members") or []) == cluster, "members is the whole cluster"
             partners = iss.extra.get("near_identical_to") or []
             assert len(partners) == 4 and iss.page_url not in partners
             assert set(partners) == cluster - {iss.page_url}
+            assert set(partners) | {iss.page_url} == cluster, "the cluster is recoverable"
 
 
 class TestScale:
@@ -186,8 +190,8 @@ class TestScale:
         assert len(issues) == 2, "the planted pair — and only it — is flagged, on both pages"
         assert {i.page_url for i in issues} == cluster
         for iss in issues:
-            assert set(iss.extra.get("members") or []) == cluster
             assert set(iss.extra.get("near_identical_to") or []) == cluster - {iss.page_url}
+            assert set(iss.extra["near_identical_to"]) | {iss.page_url} == cluster
 
 
 class TestTwoClustersDoNotCrossContaminate:

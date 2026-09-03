@@ -220,11 +220,22 @@ def evidence_summary(
         # suppress EVERY list on that issue and render it evidence-free.
         if key in _SUPERSEDED_BY and extra.get(_SUPERSEDED_BY[key]):
             continue
-        rendered = [
-            line for line in (_row_to_line(row) for row in value) if line
-        ] if isinstance(value[0], dict) else [
-            _clip(v) for v in value if isinstance(v, str) and v.strip()
-        ]
+        # D2 (2026-09-03): decide PER ITEM, not from `value[0]`. Choosing the
+        # branch from the first entry meant a list mixing dicts and strings
+        # silently dropped every entry of the other shape — and then reported
+        # the reduced count as `total`, so the "... and N more" disclosure never
+        # fired either. Every `extra` list is homogeneous today, so this is
+        # latent; the failure mode is silent data loss in a client report.
+        rendered = []
+        for row in value:
+            if isinstance(row, dict):
+                line = _row_to_line(row)
+            elif isinstance(row, str) and row.strip():
+                line = _clip(row)
+            else:
+                line = None
+            if line:
+                rendered.append(line)
         if not rendered:
             continue
         declared_total = extra.get(f"{key}_total")

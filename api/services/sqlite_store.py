@@ -97,6 +97,7 @@ class SQLiteJobStore:
             ("fix_focus", "TEXT"),
             ("priority_seed", "TEXT"),
             ("scoring_model_version", "TEXT"),
+            ("issue_emission_version", "TEXT"),
             # E1.4 — image-cap disclosure (analysed N of M)
             ("images_seen_total", "INTEGER"),
             ("images_collected", "INTEGER"),
@@ -200,8 +201,8 @@ class SQLiteJobStore:
             INSERT INTO crawl_jobs
               (job_id, target_url, sitemap_url, status, pages_crawled, pages_total,
                current_url, started_at, completed_at, error_message, settings_json,
-               scoring_model_version)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+               scoring_model_version, issue_emission_version)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 job.job_id,
@@ -216,6 +217,7 @@ class SQLiteJobStore:
                 job.error_message,
                 job.settings.model_dump_json(),
                 job.scoring_model_version,
+                job.issue_emission_version,
             ),
         )
         await self._db.commit()
@@ -304,6 +306,7 @@ class SQLiteJobStore:
             "fix_focus",
             "priority_seed",
             "scoring_model_version",
+            "issue_emission_version",
             "images_seen_total",
             "images_collected",
             "images_measured",

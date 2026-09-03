@@ -337,3 +337,48 @@ class TestTheDomainListIsAConvenienceNotTheMechanism:
         for host in ("https://example.org/x", "https://notamazon.test/y",
                      "https://amazonia-charity.org/z"):
             assert not _is_bot_blocking_domain(host), host
+
+
+class TestAnErrorPageWithNoContentTypeIsStillReported:
+    """D1 — `engine.py` branches on `is_html` / `is_asset`, and a response with
+    no `content-type` header fell to the "unknown binary" arm where
+    `page_issues = []`. A bare 503 or 500 from a misconfigured server — the case
+    where the status matters MOST — was crawled, stored and reported as nothing
+    (P2). The content-type branch decides which CONTENT checks run; it must not
+    decide whether the STATUS is reported.
+
+    Spec: docs/functional-specification.md §4.3 (D1, 2026-09-03)
+    """
+
+    async def test_a_503_with_no_content_type_is_reported(self):
+        def wire(mock):
+            mock.get("https://example.com/down").mock(return_value=httpx.Response(503))
+
+        issues = await _crawl("d1-503", '<a href="/down">Down</a>', wire, max_pages=2)
+        assert "BROKEN_LINK_503" in [i.code for i in issues], (
+            "a bare 503 with no content-type produced no finding")
+
+    async def test_a_404_with_no_content_type_is_reported(self):
+        def wire(mock):
+            mock.get("https://example.com/gone").mock(return_value=httpx.Response(404))
+
+        issues = await _crawl("d1-404", '<a href="/gone">Gone</a>', wire, max_pages=2)
+        assert "BROKEN_LINK_404" in [i.code for i in issues]
+
+    async def test_an_html_error_page_still_behaves_as_before(self):
+        def wire(mock):
+            mock.get("https://example.com/down").mock(return_value=httpx.Response(
+                503, text="<html><body>Down</body></html>",
+                headers={"content-type": "text/html"}))
+
+        issues = await _crawl("d1-html", '<a href="/down">Down</a>', wire, max_pages=2)
+        assert "BROKEN_LINK_503" in [i.code for i in issues]
+
+    async def test_a_200_with_no_content_type_is_not_a_broken_link(self):
+        """Adversarial: the change is scoped to error statuses. A body we cannot
+        classify is not a broken link."""
+        def wire(mock):
+            mock.get("https://example.com/blob").mock(return_value=httpx.Response(200))
+
+        issues = await _crawl("d1-200", '<a href="/blob">Blob</a>', wire, max_pages=2)
+        assert not [i for i in issues if i.code.startswith("BROKEN_LINK")]

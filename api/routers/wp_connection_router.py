@@ -134,9 +134,22 @@ async def wp_connection(
     # of WPClient legitimately wants the cache; this one must not have it.
     invalidate_session(creds.get("login_url") or "", creds.get("username") or "")
 
+    plugins_status: int | None = None
     try:
         async with client as wp:
             me = await wp.get("users/me?context=edit")
+            if me.status_code == 200:
+                # D4 (2026-09-03): PROBE the audit capability, do not infer it.
+                # `users/me` returns `allcaps` — the raw role map, unfiltered by
+                # `map_meta_cap` — so a role plugin or a multisite subsite that
+                # filters `activate_plugins` at the meta layer still reports it
+                # true, and the panel then promises an audit that 403s: exactly
+                # the failure the fix/audit split exists to prevent. One extra
+                # read-only call settles it (P6).
+                try:
+                    plugins_status = (await wp.get("plugins?per_page=1")).status_code
+                except Exception:  # noqa: BLE001 — the probe must never be fatal
+                    plugins_status = None
     except WPAuthError as exc:
         # WA4's diagnosis reaches the screen verbatim. It names the URL it tried,
         # whether the POST was redirected, and what it cannot tell apart —
@@ -184,10 +197,14 @@ async def wp_connection(
     caps = {k: bool(v) for k, v in (body.get("capabilities") or {}).items()}
     roles = [str(r) for r in (body.get("roles") or [])]
     can_fix = all(caps.get(c) for c in _FIX_CAPS)
-    # An explicit False is an answer; an absent key is not. Only fall back to
-    # `manage_options` when the install does not report `activate_plugins` at
-    # all — otherwise the fallback would override the real gate with a laxer one.
-    if "activate_plugins" in caps:
+    # What WordPress ACTUALLY answered beats what the role map claims. The
+    # capability inference below is only the fallback for an install where the
+    # probe could not be made at all.
+    if plugins_status is not None:
+        can_audit = plugins_status == 200
+    elif "activate_plugins" in caps:
+        # An explicit False is an answer; an absent key is not. Only fall back to
+        # `manage_options` when the install does not report `activate_plugins`.
         can_audit = bool(caps["activate_plugins"])
     else:
         can_audit = bool(caps.get("manage_options"))

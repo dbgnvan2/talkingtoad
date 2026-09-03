@@ -831,6 +831,19 @@ async def run_crawl(
             is_html = "html" in ct
             is_asset = "pdf" in ct or ct.startswith("image/")
 
+            # D1 (2026-09-03): the status is reported whatever the content type.
+            # A response with no `content-type` header used to fall through to
+            # the "unknown binary" arm below, where `page_issues = []` — so a
+            # bare 503 or 500 from a misconfigured server, the case where the
+            # status matters most, was crawled, stored and reported as nothing
+            # (P2). The branch below still decides which CONTENT checks run; it
+            # no longer decides whether the STATUS is heard.
+            # Tests: tests/test_bot_blocked_destinations.py::TestAnErrorPageWithNoContentTypeIsStillReported
+            if result.status_code >= 400 and not is_html:
+                broken = issue_for_status(result.status_code, url)
+                if broken:
+                    all_issues.append(broken)
+
             if is_html:
                 # Skip SEO checks on 4xx/5xx pages — they are error pages, not real content.
                 # Emit a BROKEN_LINK_404 (or 5xx variant) issue so the user knows this internal

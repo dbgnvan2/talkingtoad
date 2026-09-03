@@ -2712,6 +2712,30 @@ async def recheck_all_status(
     return {"job_id": job_id, **{k: v for k, v in prog.items() if k != "host"}}
 
 
+def _emission_comparability(current: str | None,
+                            previous: str | None) -> tuple[bool, str | None]:
+    """``(comparable, reason)`` for two jobs' issue-emission stamps.
+
+    A missing stamp is NOT treated as equal. Every job crawled before the stamp
+    existed has NULL here, and reading that as "same as mine" is exactly how a
+    silent false comparison happens (P12 — a default reaching a surface and
+    reading as a real measurement).
+
+    Spec:  docs/functional-specification.md (D5, 2026-09-03)
+    Tests: tests/test_site_scope.py::TestComparabilityAcrossAnEmissionChange
+    """
+    if current and previous and current == previous:
+        return True, None
+    if not previous:
+        return False, ("the previous scan predates issue-emission versioning, so "
+                       "its issue counts were produced by different rules")
+    if not current:
+        return False, "this scan carries no issue-emission version"
+    return False, (f"the issue-emission rules changed between the two scans "
+                   f"({previous} vs {current}), so a change in issue count is "
+                   f"partly a change in what is reported, not in the site")
+
+
 @router.get("/{job_id}/comparison", response_model=None)
 async def get_crawl_comparison(
     job_id: str,
@@ -2745,6 +2769,12 @@ async def get_crawl_comparison(
     prev_level = prev_job.settings.info_detail
     comparable = cur_level == prev_level
     reason = None if comparable else f"info_detail differs ({cur_level} vs {prev_level})"
+    # D5: a change in what the crawler EMITS moves the row count for reasons
+    # that are not the site. `scoring_model_version` covers how we score; this
+    # covers what we produce, and the two are not the same question.
+    if comparable:
+        comparable, reason = _emission_comparability(
+            job.issue_emission_version, prev_job.issue_emission_version)
     # A partial analysis scores 100 for what it never ran (S1); two scores over
     # different category sets are not the same measurement either.
     for label, summ in (("this scan", current_summary), ("the previous scan", prev_summary)):

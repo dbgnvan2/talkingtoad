@@ -10,7 +10,7 @@ from uuid import uuid4
 
 from pydantic import BaseModel, Field
 
-from api.crawler.checkers.registry import SCORING_MODEL_VERSION
+from api.crawler.checkers.registry import SCORING_MODEL_VERSION, ISSUE_EMISSION_VERSION
 
 
 class ContentScope(BaseModel):
@@ -118,6 +118,9 @@ class CrawlJob(BaseModel):
     # stamped at creation from a single source of truth. Legacy audits saved
     # before this field existed read back as None.
     scoring_model_version: str | None = SCORING_MODEL_VERSION
+    # D5: what the crawl EMITTED, so /comparison can refuse a delta that
+    # is a change in the tool rather than in the site.
+    issue_emission_version: str | None = ISSUE_EMISSION_VERSION
     # E1.4 (2026-08-29) — image-cap disclosure. `images_seen_total` counts every
     # DISTINCT image URL the crawl found; `images_collected` is how many survived
     # the per-job cap and were analysed. When they differ, every surface must say

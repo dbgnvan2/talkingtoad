@@ -139,15 +139,43 @@ class TestTheReportedCase:
         assert all(g >= delay * 0.8 for g in gaps), (
             f"requests to one host were not spaced by ~{delay}s: {gaps}")
 
-    # NOT TESTED, deliberately and recorded rather than faked: that the per-host
-    # spacing sleep happens OUTSIDE the global semaphore. The cold sweep found it
-    # inside, where a host serving out its politeness debt occupies a slot
-    # another host could use; it is now outside, measured at 0.56s vs 0.79s over
-    # 50 links / 25 hosts. Two test shapes were tried — wall-clock and peak
-    # concurrent requests — and BOTH passed with the defect reinstated. A test
-    # that passes either way is worse than none, because it claims a guard that
-    # does not exist (the P27 this file exists to avoid). Recorded in TODO.md
-    # instead. If you move that sleep, nothing here will stop you.
+    def test_the_spacing_sleep_is_outside_the_global_semaphore(self):
+        """D6 — a STRUCTURAL guard, and honest about being one.
+
+        The spacing sleep must not be held inside the global semaphore: a host
+        serving out its politeness debt would occupy a slot another host could
+        use (measured 0.79s vs 0.56s over 50 links / 25 hosts). Two behavioural
+        shapes were tried first — wall clock and peak concurrent requests — and
+        BOTH passed with the defect reinstated, so neither was kept: a test that
+        passes either way claims a guard that does not exist (P27).
+
+        This reads the source instead, the way `test_wp_audit.py::TestReadOnly`
+        asserts the audit never writes. It cannot prove the timing. It catches
+        the one edit that reintroduces the defect, which is what was actually
+        wanted.
+        """
+        import inspect
+        import re
+
+        from api.crawler import engine
+
+        src = inspect.getsource(engine.run_crawl)
+        body = src[src.index("async def _check_one"):]
+        body = body[:body.index("tasks = [_check_one")]
+
+        sleep_at = body.index("await asyncio.sleep(slot - now)")
+        sem_at = body.index("async with sem:")
+        assert sleep_at < sem_at, (
+            "the per-host spacing sleep is inside `async with sem` — a host "
+            "waiting out its politeness debt is holding a global slot")
+        # And the host semaphore IS held across it, or the spacing spaces nothing.
+        host_at = body.index("async with host_sem:")
+        assert host_at < sleep_at, "the spacing sleep is outside the per-host lock"
+        # The slot is reserved before the await, not recomputed after it: the
+        # read-modify-write used to straddle the sleep, so a per-host bound above
+        # 1 turned the delay into bursts.
+        assert body.index("_host_next_ok[host] = slot") < sleep_at, (
+            "the next-slot reservation happens after the sleep, not before")
 
     async def test_different_hosts_still_overlap(self):
         """Adversarial partner: serialising per host must not serialise the whole

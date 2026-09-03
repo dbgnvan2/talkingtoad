@@ -739,6 +739,25 @@ destination-neutral accordingly, and its evidence names the host and status that
 produced it.
 → `tests/test_bot_blocked_destinations.py`
 
+**A status is reported whatever the content type (D1, 2026-09-03).** The crawl
+branches on `is_html` / `is_asset`, and a response with **no `content-type`
+header** fell to the "unknown binary" arm where no checks run — so a bare 503 or
+500 from a misconfigured server, the case where the status matters most, was
+crawled, stored and reported as nothing (P2). The branch still decides which
+*content* checks run; it no longer decides whether the *status* is heard.
+
+**Comparability across a change in what we emit (D5, 2026-09-03).**
+`ISSUE_EMISSION_VERSION` is stamped on every job beside `scoring_model_version`,
+and `/comparison` declares two jobs **not comparable** when the stamps differ,
+naming the reason. The two questions are distinct: the scoring model is *how we
+score*, the emission version is *what we produce*. ND1 (one row per cluster
+member) and BB3 (external 503s out of `broken_link`) both moved row counts for
+reasons that are not the site, and `comparable` knew only about `info_detail` and
+partial analysis. A **missing** stamp is never read as equal — every job crawled
+before this existed has NULL, and treating that as "same as mine" is how a silent
+false comparison happens (P12). Bump the constant whenever a change alters which
+rows a crawl produces for an unchanged site.
+
 - `ANCHOR_TEXT_GENERIC` — anchor text is "click here", "read more", etc.
 
 ### 4.4 Crawlability category

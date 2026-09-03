@@ -41,6 +41,14 @@ from typing import Literal
 # Spec: docs/pending/2026-08-30_score-coverage-basis.md#S3
 SCORING_MODEL_VERSION = "2026-08-30-r6"
 
+# What the crawler EMITS, as distinct from how it scores. Two scans either side
+# of a change here differ in row count for reasons that are not the site — ND1
+# began emitting one NEAR_DUPLICATE_BODY row per cluster member, BB3 moved
+# external 503s out of `broken_link` — and `/comparison` had no way to say so
+# (D5, 2026-09-03). Bump this whenever a change alters which rows a crawl
+# produces for an unchanged site.
+ISSUE_EMISSION_VERSION = "2026-09-03-e1"
+
 # ---------------------------------------------------------------------------
 # Category display order + labels — SINGLE SOURCE OF TRUTH (CLN2)
 # ---------------------------------------------------------------------------

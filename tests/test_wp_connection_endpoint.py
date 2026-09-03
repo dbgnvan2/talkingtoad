@@ -68,6 +68,8 @@ class _FakeWP:
 
     async def get(self, endpoint, **_kw):
         self.calls.append(endpoint)
+        if endpoint.startswith("plugins"):
+            return getattr(self, "plugins", _Resp(200, [{"plugin": "x"}]))
         return self.me
 
 
@@ -119,12 +121,17 @@ class TestResponseContract:
         assert body["can_run_wp_audit"] is True
         assert body["site_url"] == "https://example.com"
 
-    async def test_it_calls_users_me_and_nothing_else(self, api_client, auth_headers, creds):
-        """Read-only by construction — a connection check must never write."""
+    async def test_it_makes_only_read_only_calls(self, api_client, auth_headers, creds):
+        """Read-only by construction — a connection check must never write.
+
+        Two GETs since D4: the account, then a one-row `plugins` probe, because
+        `allcaps` is the role map rather than the effective capability and the
+        panel must not promise an audit that 403s."""
         fake = _FakeWP()
         with _patch_client(fake):
             await api_client.get(ENDPOINT, headers=auth_headers)
-        assert fake.calls == ["users/me?context=edit"], fake.calls
+        assert fake.calls == ["users/me?context=edit", "plugins?per_page=1"], fake.calls
+        assert all(not hasattr(fake, verb) for verb in ("post", "patch", "delete"))
 
 
 # ── The states the panel has to render ──────────────────────────────────────
@@ -172,7 +179,9 @@ class TestTheFailureStatesAreDistinguishable:
                                           "upload_files": True,
                                           "manage_options": False,
                                           "activate_plugins": False}})
-        with _patch_client(_FakeWP(me)):
+        fake = _FakeWP(me)
+        fake.plugins = _Resp(403, {})      # what an editor actually gets (D4)
+        with _patch_client(fake):
             r = await api_client.get(ENDPOINT, headers=auth_headers)
         body = r.json()
         assert body["authenticated"] is True
@@ -191,12 +200,49 @@ class TestTheFailureStatesAreDistinguishable:
                                           "upload_files": True,
                                           "manage_options": True,
                                           "activate_plugins": False}})
-        with _patch_client(_FakeWP(me)):
+        fake = _FakeWP(me)
+        fake.plugins = _Resp(403, {})
+        with _patch_client(fake):
             r = await api_client.get(ENDPOINT, headers=auth_headers)
         body = r.json()
         assert body["can_run_fixes"] is True
         assert body["can_run_wp_audit"] is False, (
             "manage_options is not what /wp/v2/plugins checks")
+
+    async def test_the_audit_capability_is_probed_not_inferred(self, api_client, auth_headers, creds):
+        """D4 (2026-09-03). `users/me` returns `allcaps` — the raw role map,
+        unfiltered by `map_meta_cap` — so a role plugin or a multisite subsite
+        that filters `activate_plugins` at the meta layer still reports it true,
+        and the panel promises an audit that then 403s. That is exactly the
+        failure the fix/audit split exists to prevent (P6: a status trusted
+        without exercising the artifact).
+
+        One extra read-only call settles it."""
+        me = _Resp(200, {"id": 1, "roles": ["administrator"],
+                         "capabilities": {"edit_posts": True, "edit_pages": True,
+                                          "upload_files": True,
+                                          "manage_options": True,
+                                          "activate_plugins": True}})
+        fake = _FakeWP(me)
+        fake.plugins = _Resp(403, {})      # WordPress disagrees with allcaps
+        with _patch_client(fake):
+            r = await api_client.get(ENDPOINT, headers=auth_headers)
+        body = r.json()
+        assert body["authenticated"] is True
+        assert body["can_run_wp_audit"] is False, (
+            "allcaps said activate_plugins; WordPress refused the plugin list")
+
+    async def test_a_working_admin_still_reports_true(self, api_client, auth_headers, creds):
+        """Adversarial: the probe must not turn every account into a 'no'."""
+        with _patch_client(_FakeWP()):
+            r = await api_client.get(ENDPOINT, headers=auth_headers)
+        assert r.json()["can_run_wp_audit"] is True
+
+    async def test_the_probe_is_read_only(self, api_client, auth_headers, creds):
+        fake = _FakeWP()
+        with _patch_client(fake):
+            await api_client.get(ENDPOINT, headers=auth_headers)
+        assert fake.calls == ["users/me?context=edit", "plugins?per_page=1"], fake.calls
 
     async def test_a_403_on_users_me_is_authenticated_false_not_a_crash(
             self, api_client, auth_headers, creds):

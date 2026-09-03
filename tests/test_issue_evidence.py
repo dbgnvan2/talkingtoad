@@ -233,6 +233,29 @@ class TestEvidenceLines:
     def test_ev_degenerate_input_is_not_a_crash(self, extra):
         assert evidence_lines("ANY_CODE", extra) == ([], 0)
 
+    def test_ev_a_mixed_shape_list_renders_every_entry(self):
+        """D2 — the branch was chosen from `value[0]` alone, so a list mixing
+        dicts and strings silently dropped every entry of the other shape AND
+        reported the reduced count as `total`, so the "... and N more"
+        disclosure never fired. Latent (every `extra` list is homogeneous
+        today), but the failure mode is silent data loss in a client report."""
+        lines, total, _ = mod_evidence_summary("X", {
+            "examples": ["a plain string", {"href": "https://x/a", "text": "A link"}],
+        })
+        blob = "\n".join(lines)
+        assert "a plain string" in blob, blob
+        assert "https://x/a" in blob, blob
+        assert total == 2, f"total under-reports the rows: {total}"
+
+    def test_ev_homogeneous_lists_are_unchanged(self):
+        """Adversarial: the fix must not alter the shapes that already worked."""
+        dicts, dt, _ = mod_evidence_summary("X", {
+            "examples": [{"href": "https://x/1"}, {"href": "https://x/2"}]})
+        strs, st, _ = mod_evidence_summary("X", {"h2_headings": ["One", "Two"]})
+        assert dt == 2 and st == 2
+        assert any("https://x/1" in l for l in dicts)
+        assert any("One" in l for l in strs)
+
     def test_ev_unknown_keys_are_skipped_not_dumped(self):
         """Raw JSON in a client report is worse than nothing."""
         lines, _ = evidence_lines("X", {"some_internal_flag": True, "nested": {"a": 1}})
