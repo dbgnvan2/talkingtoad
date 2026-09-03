@@ -58,11 +58,35 @@ class _FakeWP:
         self.calls: list[str] = []
 
     async def get(self, endpoint, **_kw):
+        """WA1 (2026-09-02): endpoints are `wp/v2`-relative, exactly as
+        `WPClient.get` documents. This stub used to key on `/wp/v2/plugins` —
+        the form the code passed and the real client turns into
+        `/wp-json/wp/v2//wp/v2/plugins`, a 404 on every WordPress install. Stub
+        and code agreed with each other about a URL that does not exist, and
+        the audit shipped broken with this file green (P26/P32). A stub cannot
+        police URL construction; tests/test_wp_client_routes.py does that over
+        a real transport. What it CAN do is refuse to answer a spelling the
+        real client would not produce.
+        """
+        assert not endpoint.startswith("/"), (
+            f"endpoint {endpoint!r} is not wp/v2-relative — WPClient.get would "
+            f"request /wp-json/wp/v2/{endpoint.lstrip('/')} and 404")
+        assert not endpoint.startswith("wp/v2/"), (
+            f"endpoint {endpoint!r} repeats the namespace WPClient.get adds")
         self.calls.append(endpoint)
-        if endpoint.startswith("/wp/v2/users/me"):
+        if endpoint.startswith("users/me"):
             return _Resp(self.me_status, {"id": 1})
         for prefix, resp in self.routes.items():
             if endpoint.startswith(prefix):
+                return resp
+        return _Resp(404, {})
+
+    async def get_route(self, route, **_kw):
+        """WA2 — Site Health is in the `wp-site-health/v1` namespace, which
+        `get()` structurally cannot reach."""
+        self.calls.append(f"route:{route}")
+        for prefix, resp in self.routes.items():
+            if route.startswith(prefix):
                 return resp
         return _Resp(404, {})
 
@@ -91,7 +115,7 @@ class TestReadOnly:
     async def test_d3_1a_only_get_is_ever_called(self):
         """Behavioural, not just textual: exercise the collector and confirm the
         client saw nothing but reads."""
-        wp = _FakeWP({"/wp/v2/plugins": _Resp(200, [_plugin("wordpress-seo", "Yoast")])})
+        wp = _FakeWP({"plugins": _Resp(200, [_plugin("wordpress-seo", "Yoast")])})
         await collect_wp_audit(wp)
         assert wp.calls, "the audit must actually call something"
         assert not hasattr(wp, "posted")
@@ -109,19 +133,19 @@ class TestAccessControl:
         with pytest.raises(WPAuditError) as excinfo:
             await collect_wp_audit(wp)
         assert excinfo.value.code == "WP_INSUFFICIENT_CAPABILITY"
-        assert wp.calls[0].startswith("/wp/v2/users/me")
+        assert wp.calls[0].startswith("users/me")
 
     @pytest.mark.asyncio
     async def test_d3_1d_plugin_403_is_not_an_empty_audit(self):
         """P2: 'we could not look' must never render as 'nothing to report'."""
-        wp = _FakeWP({"/wp/v2/plugins": _Resp(403, {})})
+        wp = _FakeWP({"plugins": _Resp(403, {})})
         with pytest.raises(WPAuditError) as excinfo:
             await collect_wp_audit(wp)
         assert excinfo.value.code == "WP_INSUFFICIENT_CAPABILITY"
 
     @pytest.mark.asyncio
     async def test_d3_1d_unexpected_status_raises(self):
-        wp = _FakeWP({"/wp/v2/plugins": _Resp(500, {})})
+        wp = _FakeWP({"plugins": _Resp(500, {})})
         with pytest.raises(WPAuditError) as excinfo:
             await collect_wp_audit(wp)
         assert excinfo.value.code == "WP_UNEXPECTED_RESPONSE"
@@ -130,7 +154,7 @@ class TestAccessControl:
     async def test_d3_1d_themes_and_health_are_best_effort(self):
         """Neither is available on every install; their absence must degrade the
         report rather than fail it."""
-        wp = _FakeWP({"/wp/v2/plugins": _Resp(200, [_plugin("wordpress-seo", "Yoast")])})
+        wp = _FakeWP({"plugins": _Resp(200, [_plugin("wordpress-seo", "Yoast")])})
         report = await collect_wp_audit(wp)
         assert len(report.plugins) == 1
         assert report.themes_inactive == []
@@ -232,7 +256,7 @@ class TestBoundary:
 
     @pytest.mark.asyncio
     async def test_d3_2f_boundary_travels_in_the_payload(self):
-        wp = _FakeWP({"/wp/v2/plugins": _Resp(200, [_plugin("wordpress-seo", "Yoast")])})
+        wp = _FakeWP({"plugins": _Resp(200, [_plugin("wordpress-seo", "Yoast")])})
         payload = report_to_dict(await collect_wp_audit(wp))
         assert payload["not_inspected"], "the report must state what it did not read"
 
@@ -387,3 +411,162 @@ class TestPanelContract:
         monkeypatch.setattr("api.routers.wp_audit_router._CREDS_PATH", tmp_path / "missing.json")
         r = await api_client.post("/api/wp-audit/wp2", headers=auth_headers)
         assert r.status_code == 400 and r.json()["error"]["code"] == "NO_CREDENTIALS"
+
+
+# ── WA1/WA2/WA3 (2026-09-02) — the audit against a real client ──────────────
+
+
+class TestTheAuditAgainstARealClient:
+    """The audit shipped 2026-09-02 and never returned a report against a real
+    site: every call went to `/wp-json/wp/v2//wp/v2/...` and 404ed. This file
+    stayed green because `_FakeWP` was keyed by the same wrong strings.
+
+    These drive `collect_wp_audit` through a real `WPClient` over a mocked
+    transport, so the URL is part of what is asserted.
+
+    Spec: docs/functional-specification.md §7.8 (WA1-WA5, folded 2026-09-02)
+    """
+
+    SITE = "https://wp.test"
+    NONCE = "abc123def456"
+
+    def _login(self, mock):
+        import httpx as _httpx
+        admin = ("<html><script>wp.apiFetch.use( wp.apiFetch.createNonceMiddleware( "
+                 f'"{self.NONCE}" ) );</script></html>')
+        mock.get(f"{self.SITE}/wp-login.php").mock(
+            return_value=_httpx.Response(200, text="<form/>"))
+        mock.post(f"{self.SITE}/wp-login.php").mock(return_value=_httpx.Response(
+            302, headers={"location": f"{self.SITE}/wp-admin/",
+                          "set-cookie": "wordpress_logged_in_x=y; Path=/"}))
+        mock.get(f"{self.SITE}/wp-admin/").mock(
+            return_value=_httpx.Response(200, text=admin))
+
+    def _client(self):
+        from api.services.wp_client import WPClient
+        return WPClient(site_url=self.SITE, login_url=f"{self.SITE}/wp-login.php",
+                        username="u", password="p")
+
+    async def test_a_real_client_reaches_every_route_the_audit_needs(self):
+        """The regression, end to end. Only the CORRECT urls are mocked; any
+        doubled namespace falls through to the catch-all 404 and the audit
+        raises, exactly as it did in production."""
+        import httpx as _httpx
+        import respx as _respx
+        from api.services.wp_client import invalidate_session
+
+        invalidate_session(f"{self.SITE}/wp-login.php", "u")
+        with _respx.mock(assert_all_called=False) as mock:
+            self._login(mock)
+            mock.get(f"{self.SITE}/wp-json/wp/v2/users/me?context=edit").mock(
+                return_value=_httpx.Response(200, json={"id": 1}))
+            mock.get(f"{self.SITE}/wp-json/wp/v2/plugins").mock(
+                return_value=_httpx.Response(200, json=[_plugin("wordpress-seo", "Yoast")]))
+            mock.get(f"{self.SITE}/wp-json/wp/v2/themes").mock(
+                return_value=_httpx.Response(200, json=[
+                    {"stylesheet": "twentytwenty", "status": "inactive",
+                     "name": {"raw": "Twenty Twenty"}}]))
+            mock.get(f"{self.SITE}/wp-json/wp-site-health/v1/tests/background-updates").mock(
+                return_value=_httpx.Response(200, json=REAL_SITE_HEALTH))
+            # Anything else on the host is a wrong URL.
+            mock.route(host="wp.test").mock(return_value=_httpx.Response(404, json={}))
+
+            async with self._client() as wp:
+                report = await collect_wp_audit(wp)
+
+        assert len(report.plugins) == 1
+        assert report.themes_inactive == ["Twenty Twenty"], (
+            "themes are best-effort, so a wrong URL there degrades SILENTLY — "
+            "this assertion is the only thing that would notice")
+        assert report.site_health, (
+            "Site Health is in the wp-site-health/v1 namespace and never rendered")
+        invalidate_session(f"{self.SITE}/wp-login.php", "u")
+
+    async def test_the_doubled_namespace_url_is_never_requested(self):
+        import httpx as _httpx
+        import respx as _respx
+        from api.services.wp_client import invalidate_session
+
+        invalidate_session(f"{self.SITE}/wp-login.php", "u")
+        with _respx.mock(assert_all_called=False) as mock:
+            self._login(mock)
+            mock.route(host="wp.test").mock(return_value=_httpx.Response(200, json=[]))
+            async with self._client() as wp:
+                try:
+                    await collect_wp_audit(wp)
+                except Exception:
+                    pass
+            urls = [str(c.request.url) for c in mock.calls if "/wp-json/" in str(c.request.url)]
+        assert urls, "no REST call was made"
+        for u in urls:
+            assert "/wp/v2//" not in u, f"doubled namespace: {u}"
+        invalidate_session(f"{self.SITE}/wp-login.php", "u")
+
+
+class TestTheCapabilityProbeCannotPassOnA404:
+    """WA3 — the probe checked `status_code in (401, 403)`. A 404 is neither, so
+    it passed on a response that proved nothing: the route was wrong and the
+    audit carried on as though the account had been verified (P2). 'Could not
+    look' must never be indistinguishable from 'looked, and it was fine'."""
+
+    async def test_a_404_probe_raises_rather_than_continuing(self):
+        wp = _FakeWP({}, me_status=404)
+        with pytest.raises(WPAuditError) as excinfo:
+            await collect_wp_audit(wp)
+        assert excinfo.value.code != "WP_INSUFFICIENT_CAPABILITY", (
+            "a 404 is a wrong route or REST disabled, not a permissions answer")
+        assert "404" in str(excinfo.value)
+
+    async def test_a_500_probe_raises_too(self):
+        wp = _FakeWP({}, me_status=500)
+        with pytest.raises(WPAuditError):
+            await collect_wp_audit(wp)
+
+    async def test_a_200_probe_still_proceeds(self):
+        wp = _FakeWP({"plugins": _Resp(200, [_plugin("wordpress-seo", "Yoast")])})
+        report = await collect_wp_audit(wp)
+        assert len(report.plugins) == 1
+
+
+# Captured verbatim from `GET /wp-json/wp-site-health/v1/tests/background-updates`
+# on a live WordPress install (livingsystems.ca, 2026-09-02). WordPress returns
+# ONE test result — not the `{"recommended": [...], "critical": [...]}` aggregate
+# `parse_site_health` was written for, which is why the section rendered empty
+# even once the route was reachable. Fixtures invented from the parser's own
+# expectations cannot catch that (P32); this one came off the wire.
+REAL_SITE_HEALTH = {
+    "test": "background_updates",
+    "label": "Background updates are not working as expected",
+    "status": "critical",
+    "badge": {"label": "Security", "color": "blue"},
+    "description": "<p>Background updates ensure that WordPress can auto-update.</p>",
+    "actions": "",
+}
+
+
+class TestSiteHealthParsesWhatWordPressActuallySends:
+    """WA2, second half. Reaching the route is not the same as reading it."""
+
+    def test_the_single_test_shape_is_parsed(self):
+        rows = parse_site_health(REAL_SITE_HEALTH)
+        assert rows, "the real WordPress payload parsed to nothing"
+        assert rows[0]["label"] == "Background updates are not working as expected"
+        assert rows[0]["status"] == "critical"
+        assert rows[0]["source"] == "WordPress Site Health"
+
+    def test_a_passing_test_is_not_reported_as_a_finding(self):
+        """Adversarial: `status: "good"` is WordPress saying the check PASSED.
+        Listing it beside the critical ones turns a clean result into a
+        recommendation the operator will go and act on."""
+        ok = dict(REAL_SITE_HEALTH, status="good",
+                  label="Background updates are working")
+        assert parse_site_health(ok) == []
+
+    def test_the_aggregate_shape_still_parses(self):
+        """Kept for any endpoint that does return the grouped form."""
+        rows = parse_site_health({"critical": [{"label": "A thing", "status": "critical"}]})
+        assert rows and rows[0]["label"] == "A thing"
+
+    def test_junk_is_not_a_crash(self):
+        for payload in (None, [], "text", {}, {"critical": None}, {"label": ""}):
+            assert parse_site_health(payload) == []

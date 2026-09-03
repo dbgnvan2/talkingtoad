@@ -42,6 +42,25 @@ class WPAuthError(Exception):
     """Raised when authentication with WordPress fails."""
 
 
+# WA1 (2026-09-02) — `get`/`post`/`patch`/`delete` join `{site_url}/wp-json/wp/v2/`
+# to the endpoint, so an endpoint that already carries the namespace produces
+# `/wp-json/wp/v2//wp/v2/plugins`, a 404 on every WordPress install. Four call
+# sites in `wp_audit.py` did exactly that and the audit never worked. Writing a
+# REST route with its namespace is the natural thing to do, so the client
+# accepts either spelling rather than leaving the trap armed for the next caller.
+# Spec:  docs/functional-specification.md §7.8 (WA1)
+# Tests: tests/test_wp_client_routes.py::TestBothSpellingsAgree
+_WP_V2_PREFIX = "wp/v2/"
+
+
+def _wp_v2_endpoint(endpoint: str) -> str:
+    """Return *endpoint* relative to the ``wp/v2`` namespace, however it was written."""
+    e = endpoint.lstrip("/")
+    if e.startswith(_WP_V2_PREFIX):
+        e = e[len(_WP_V2_PREFIX):]
+    return e
+
+
 class WPClient:
     """Async WordPress REST API client using cookie-based authentication.
 
@@ -144,7 +163,7 @@ class WPClient:
         client.cookies.set("wordpress_test_cookie", "WP Cookie check")
 
         # Step 2: POST credentials to the login form
-        await client.post(
+        response = await client.post(
             self.login_url,
             data={
                 "log": self.username,
@@ -158,10 +177,7 @@ class WPClient:
         # Verify we received a logged-in session cookie
         cookie_names = [c.name for c in client.cookies.jar]
         if not any("wordpress_logged_in" in name for name in cookie_names):
-            raise WPAuthError(
-                "Login failed — no wordpress_logged_in cookie received. "
-                "Check username and password in wp-credentials.json."
-            )
+            raise WPAuthError(self._login_failure_message(response))
 
         logger.info("wp_login_success", extra={"site_url": self.site_url})
 
@@ -183,6 +199,48 @@ class WPClient:
             "cached_at": time.monotonic(),
         }
         logger.info("wp_session_cached", extra={"site_url": self.site_url})
+
+    def _login_failure_message(self, response: httpx.Response) -> str:
+        """Say what was observed, and name the causes this cannot tell apart.
+
+        WA4 (2026-09-02). The message used to be "Login failed — no
+        wordpress_logged_in cookie received. Check username and password in
+        wp-credentials.json." for every failure. On livingsystems.ca the
+        password was correct: the site had moved its login page, and the stored
+        pretty URL 302s to ``wp-login.php?sgs-token=...``. httpx replays a 302
+        on a POST as a GET, so the credentials were dropped in flight and never
+        reached WordPress. The message sent the reader to the one thing that was
+        not wrong (P14), and cost a diagnostic round.
+
+        Tests: tests/test_wp_client_routes.py::TestTheLoginErrorNamesWhatItSaw
+        """
+        parts = [f"Login failed at {self.login_url} — WordPress did not set a "
+                 f"wordpress_logged_in cookie."]
+
+        if response.history:
+            # The POST was redirected. A 302 on a POST is replayed as a GET, so
+            # the credentials were never submitted — this is a URL fault, not a
+            # credential one, and it is invisible from the status code alone.
+            parts.append(
+                f"The request was redirected to {response.url} and arrived as a GET, "
+                f"so the credentials were not submitted. Point login_url at the "
+                f"final address (the one the browser lands on), not the one that "
+                f"redirects."
+            )
+
+        m = re.search(r'id=["\']login_error["\'][^>]*>(.*?)</', response.text or "",
+                      re.S | re.I)
+        if m:
+            detail = " ".join(re.sub(r"<[^>]+>", " ", m.group(1)).split())
+            if detail:
+                parts.append(f'WordPress said: "{detail[:200]}"')
+
+        parts.append(
+            "Causes this check cannot tell apart: a wrong password, a wrong login URL, "
+            "a login URL that redirects, or two-factor/CAPTCHA protection on the login "
+            "form (which this client cannot complete)."
+        )
+        return " ".join(parts)
 
     async def _fetch_nonce(self) -> str | None:
         """Return the WP REST API nonce by parsing the wp-admin page inline script.
@@ -238,7 +296,27 @@ class WPClient:
         """Authenticated GET to ``/wp-json/wp/v2/{endpoint}``."""
         assert self._client is not None
         r = await self._client.get(
-            f"{self.site_url}/wp-json/wp/v2/{endpoint}",
+            f"{self.site_url}/wp-json/wp/v2/{_wp_v2_endpoint(endpoint)}",
+            headers=self._auth_headers,
+            **kwargs,
+        )
+        self._check_auth(r)
+        return r
+
+    async def get_route(self, route: str, **kwargs: object) -> httpx.Response:
+        """Authenticated GET to ``/wp-json/{route}`` — a route in ANY namespace.
+
+        WA2 (2026-09-02). :meth:`get` hard-codes ``wp/v2``, so Site Health
+        (``wp-site-health/v1/tests/background-updates``) was unreachable by any
+        endpoint string — a structural fault, not a typo. It sat behind a bare
+        ``except Exception`` in the audit, so the missing section read as
+        "checked, nothing to report".
+
+        Tests: tests/test_wp_client_routes.py::TestANamespaceThatIsNotWpV2
+        """
+        assert self._client is not None
+        r = await self._client.get(
+            f"{self.site_url}/wp-json/{route.lstrip('/')}",
             headers=self._auth_headers,
             **kwargs,
         )
@@ -249,7 +327,7 @@ class WPClient:
         """Authenticated POST to ``/wp-json/wp/v2/{endpoint}``."""
         assert self._client is not None
         r = await self._client.post(
-            f"{self.site_url}/wp-json/wp/v2/{endpoint}",
+            f"{self.site_url}/wp-json/wp/v2/{_wp_v2_endpoint(endpoint)}",
             headers=self._auth_headers,
             **kwargs,
         )
@@ -260,7 +338,7 @@ class WPClient:
         """Authenticated PATCH to ``/wp-json/wp/v2/{endpoint}``."""
         assert self._client is not None
         r = await self._client.patch(
-            f"{self.site_url}/wp-json/wp/v2/{endpoint}",
+            f"{self.site_url}/wp-json/wp/v2/{_wp_v2_endpoint(endpoint)}",
             headers=self._auth_headers,
             **kwargs,
         )
@@ -271,7 +349,7 @@ class WPClient:
         """Authenticated DELETE to ``/wp-json/wp/v2/{endpoint}``."""
         assert self._client is not None
         r = await self._client.delete(
-            f"{self.site_url}/wp-json/wp/v2/{endpoint}",
+            f"{self.site_url}/wp-json/wp/v2/{_wp_v2_endpoint(endpoint)}",
             headers=self._auth_headers,
             **kwargs,
         )

@@ -178,6 +178,24 @@ def parse_site_health(payload) -> list[dict]:
     if not isinstance(payload, dict):
         return []
     out = []
+
+    # WA2 (2026-09-02): a single-test route — which is what
+    # `wp-site-health/v1/tests/<test>` actually returns — answers with one
+    # result object, NOT the grouped form below. Every real response parsed to
+    # nothing, so the section would have rendered empty even once the route was
+    # reachable. A `status` of "good"/"passed" is WordPress reporting a PASS and
+    # must not be listed as a finding.
+    # Tests: tests/test_wp_audit.py::TestSiteHealthParsesWhatWordPressActuallySends
+    if payload.get("label") and not any(k in payload for k in ("recommended", "critical")):
+        status = str(payload.get("status") or "").lower()
+        if status not in ("good", "passed", "ok", ""):
+            out.append({
+                "label": str(payload["label"]),
+                "status": status,
+                "source": "WordPress Site Health",
+            })
+        return out
+
     for key in ("recommended", "critical"):
         for item in payload.get(key) or []:
             if isinstance(item, dict) and item.get("label"):
@@ -212,8 +230,13 @@ async def collect_wp_audit(wp) -> WPAuditReport:
     """
     # Capability probe FIRST. A half-audit presented as a whole one is the P2
     # shape: the reader cannot tell "no problems" from "we could not look".
+    #
+    # WA1 (2026-09-02): endpoints are wp/v2-RELATIVE. These four calls used to
+    # carry the namespace (`/wp/v2/users/me`), which `WPClient.get` prefixes
+    # again — every request went to `/wp-json/wp/v2//wp/v2/...` and 404ed, so
+    # this audit never returned a report against a real site.
     try:
-        me = await wp.get("/wp/v2/users/me?context=edit")
+        me = await wp.get("users/me?context=edit")
     except Exception as exc:  # noqa: BLE001
         raise WPAuditError(f"could not authenticate to WordPress: {exc}",
                            code="WP_AUTH_FAILED") from exc
@@ -221,10 +244,20 @@ async def collect_wp_audit(wp) -> WPAuditReport:
         raise WPAuditError(
             "the stored WordPress credentials cannot read site configuration",
             code="WP_INSUFFICIENT_CAPABILITY")
+    # WA3: anything else non-200 means the probe established NOTHING. The old
+    # check was `in (401, 403)`, so the 404 the broken route produced sailed
+    # through and the audit continued as though the account had been verified —
+    # "could not look" indistinguishable from "looked, and it was fine" (P2).
+    if me.status_code != 200:
+        raise WPAuditError(
+            f"the WordPress capability probe returned HTTP {me.status_code}. "
+            f"That is not a permissions answer — the REST route is wrong or the "
+            f"REST API is disabled, so nothing about this site was verified.",
+            code="WP_UNEXPECTED_RESPONSE")
 
     report = WPAuditReport(not_inspected=list(NOT_INSPECTED))
 
-    resp = await wp.get("/wp/v2/plugins")
+    resp = await wp.get("plugins")
     if resp.status_code in (401, 403):
         raise WPAuditError(
             "the stored WordPress user lacks the capability to list plugins "
@@ -239,7 +272,7 @@ async def collect_wp_audit(wp) -> WPAuditReport:
     # Themes and Site Health are best-effort: neither is available on every
     # install, and their absence must degrade the report rather than fail it.
     try:
-        themes = await wp.get("/wp/v2/themes")
+        themes = await wp.get("themes")
         if themes.status_code == 200 and isinstance(themes.json(), list):
             report.themes_inactive = [
                 str(t.get("name", {}).get("raw") or t.get("stylesheet") or "")
@@ -250,7 +283,9 @@ async def collect_wp_audit(wp) -> WPAuditReport:
         logger.info("wp_themes_unavailable", exc_info=True)
 
     try:
-        health = await wp.get("/wp-site-health/v1/tests/background-updates")
+        # WA2: Site Health is in the `wp-site-health/v1` namespace, which
+        # `get()` (hard-coded to wp/v2) cannot reach by any spelling.
+        health = await wp.get_route("wp-site-health/v1/tests/background-updates")
         if health.status_code == 200:
             report.site_health = parse_site_health(health.json())
     except Exception:  # noqa: BLE001
