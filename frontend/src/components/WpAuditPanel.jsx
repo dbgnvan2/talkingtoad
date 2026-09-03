@@ -2,7 +2,12 @@ import { useState } from 'react'
 import { runWpAudit } from '../api.js'
 
 // Phase 4 U4.4 — run the read-only WordPress configuration audit from the app.
-// Spec: docs/pending/2026-09-02_phase4-user-value.md#U4.4
+// AP1-AP3 (2026-09-03): Site Health, plugin overlaps and inactive themes have
+// always been in the payload and reached only the PDF, so the audit's most
+// actionable output was invisible in the app (P25/P16). Each block renders only
+// when it has content — a heading over an empty list reads as 'checked, all
+// clear', and Site Health can simply fail to load (see `not_inspected`).
+// Spec: docs/functional-specification.md §7.8
 export default function WpAuditPanel({ jobId, initial = null }) {
   const [report, setReport] = useState(initial)
   const [busy, setBusy] = useState(false)
@@ -42,6 +47,49 @@ export default function WpAuditPanel({ jobId, initial = null }) {
             <div className="mt-3">
               <p className="text-xs font-bold uppercase tracking-widest text-gray-500">Inactive plugins (consider removing)</p>
               <ul className="mt-1 space-y-1">{report.inactive_plugins.map(p => <li key={p.slug} className="text-gray-700">{p.name}</li>)}</ul>
+            </div>
+          )}
+          {report.site_health?.length > 0 && (
+            <div className="mt-3">
+              <p className="text-xs font-bold uppercase tracking-widest text-gray-500">WordPress Site Health says</p>
+              <ul className="mt-1 space-y-1">
+                {report.site_health.map((h, i) => {
+                  // The status is preserved by `parse_site_health` precisely so a
+                  // critical can be told from a recommendation. The PDF dropped it
+                  // and printed them identically; this must not.
+                  const critical = String(h.status).toLowerCase() === 'critical'
+                  return (
+                    <li
+                      key={`${h.label}-${i}`}
+                      data-testid={critical ? 'wp-health-critical' : 'wp-health-recommended'}
+                      className={critical ? 'text-red-700 font-semibold' : 'text-amber-700'}
+                    >
+                      {h.label}
+                      <span className="text-gray-400 text-xs"> · {h.source}</span>
+                    </li>
+                  )
+                })}
+              </ul>
+            </div>
+          )}
+          {report.overlaps?.length > 0 && (
+            <div className="mt-3">
+              <p className="text-xs font-bold uppercase tracking-widest text-gray-500">Two plugins doing one job</p>
+              <ul className="mt-1 space-y-2">
+                {report.overlaps.map(o => (
+                  <li key={o.responsibility} className="text-gray-700">
+                    <span className="font-semibold">{o.responsibility}</span>
+                    <span className="text-gray-500"> — {o.plugins.join(', ')}</span>
+                    {o.why_one_owner && <p className="text-xs text-gray-500 mt-0.5">{o.why_one_owner}</p>}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {report.inactive_themes?.length > 0 && (
+            <div className="mt-3">
+              <p className="text-xs font-bold uppercase tracking-widest text-gray-500">Inactive themes (consider removing)</p>
+              <ul className="mt-1 space-y-1">{report.inactive_themes.map(t => <li key={t} className="text-gray-700">{t}</li>)}</ul>
             </div>
           )}
           {report.not_inspected?.length > 0 && (
