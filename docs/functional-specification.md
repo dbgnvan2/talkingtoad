@@ -709,11 +709,18 @@ the `>= 400` guard means a listed host reached through a redirect that answers
 200 is reported as verified, not skipped — a *direct* link to a listed host is
 never requested at all, which is what listing one means.
 
-**Known gap, recorded rather than implied:** an external **403 / 401 / 999** still
-produces no finding — `issue_for_status` maps 404, 410, 503 and 5xx and returns
-`None` for the rest — so a Cloudflare or Akamai bot wall, which answers 403, is
-counted as a verified working link. That is the same P2 the 429 work closed, and
-it is pre-existing and unaddressed here; see TODO.
+An external **403, 401 or 999** is also unverified (BL1, 2026-09-03). These
+produced **no finding at all** — `issue_for_status` maps 404, 410, 503 and 5xx and
+returns `None` for the rest — so a Cloudflare or Akamai bot wall, which answers
+403, was counted as a verified working link. The decision this needed, made
+explicitly: a 403 is genuinely ambiguous, a bot wall (works for a visitor) or a
+real permission gate (works for nobody anonymous), and we cannot distinguish
+them. "Unverified, here is the status, open it yourself" is true under both
+readings; "broken" is false under one and "fine" is false under the other.
+Silence was the worst of the three, because it asserted the link was fine. The
+set lives in `engine._UNVERIFIABLE_STATUSES`. **Internal 401/403 is unchanged
+and out of scope** — a crawler blocked from the site's own page is a different
+question, and no evidence has been gathered on it.
 
 Reclassified rows stay in `PER_TARGET_CODES`, so many unverified links on one
 page collapse to a single row. Without that, moving them out of `BROKEN_LINK_503`
@@ -1117,6 +1124,20 @@ crawled the home page twice and this check reported it as a near-duplicate of
 in the development database were that one artifact.
 → `tests/test_normaliser.py::TestBareOriginCrawlsAsOnePage` (drives the real
 engine: asserting the normaliser against itself could not catch the consequence).
+
+**Collapsing the rows already stored (LR, 2026-09-03).**
+`scripts/migrate_collapse_duplicate_origin_rows.py` re-points a pre-ND3 job's
+bare-origin issues, links and images at the slashed row and deletes the bare
+`crawled_pages` row. It matters because `_compute_v15_health_score` merges the
+two rows' issues under `RTRIM(page_url,'/')` while counting the page **twice** in
+the denominator, so the home page is double-weighted at a merged deduction: 71
+jobs affected in the development store, **24 with a score 1–2 points wrong**, and
+all 71 showing the home page twice in By Page. Dry run is the default; `--apply`
+backs the database up first and refuses to proceed if the backup cannot be
+written; a second run is a no-op. It does **not** rewrite stored `health_score`
+columns — the score is recomputed from rows on read, so collapsing the rows fixes
+it, and writing a derived value would create a second source of truth.
+→ `tests/test_migrate_duplicate_origin_rows.py`
 
 Jobs crawled **before** ND3 keep whatever spelling they stored — 43 home pages
 under the bare form alone, and 71 jobs holding both forms as separate rows with
@@ -2408,7 +2429,15 @@ touches WordPress. → `tests/test_blueprints.py` (27 tests).
 
 **Run from the app (Phase 4 U4.4, 2026-09-02).** `WpAuditPanel` on the Summary tab posts to
 `/api/wp-audit/{job_id}` and renders plugins total / active / inactive, pending updates, inactive
-plugins and the `not_inspected` boundary; `NO_CREDENTIALS`, `DOMAIN_MISMATCH` and
+plugins, **WordPress Site Health rows (a `critical` styled distinctly from a `recommended`,
+since `parse_site_health` preserves the status precisely so the two can be told apart), plugin
+overlaps (the responsibility and the plugins claiming it) and inactive themes** (AP1–AP3,
+2026-09-03 — all three had always been in the payload and reached only the PDF, so the audit's
+most actionable output was invisible in the app, P25/P16), and the `not_inspected` boundary;
+each block renders only when it has content, because a heading over an empty list reads as
+"checked, all clear" and Site Health can simply fail to load. → `WpAuditPanel.test.jsx`, which
+did not exist: the panel is the only consumer of this payload and nothing asserted it rendered
+any of it. `NO_CREDENTIALS`, `DOMAIN_MISMATCH` and
 `WP_AUTH_FAILED` render their message. The result is stored on the job so the PDF prints it.
 Until this the route had no caller. → `tests/test_wp_audit.py::TestPanelContract`.
 
