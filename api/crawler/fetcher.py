@@ -49,8 +49,18 @@ def _retry_after_seconds(response) -> float | None:
     if not raw:
         return None
     try:
-        return max(0.0, min(float(int(raw)), _RETRY_AFTER_MAX_S))
-    except ValueError:
+        # `float(int(raw))` raised OverflowError on a 309-to-4300-digit header —
+        # int() succeeds, float() cannot represent it — and OverflowError is not
+        # a ValueError, so it escaped `fetch_page` (whose try catches only httpx
+        # errors) and aborted the whole crawl. The header is parsed on EVERY
+        # response, so the audited site's own home page carrying one returned a
+        # silent zero-page audit. Third-party controllable via any outbound link.
+        # Cap on the INT before converting; never let this function raise.
+        seconds = int(raw)
+        if seconds >= int(_RETRY_AFTER_MAX_S):
+            return _RETRY_AFTER_MAX_S
+        return max(0.0, min(float(seconds), _RETRY_AFTER_MAX_S))
+    except (ValueError, OverflowError):
         pass
     try:
         from email.utils import parsedate_to_datetime
@@ -64,7 +74,7 @@ def _retry_after_seconds(response) -> float | None:
         if when.tzinfo is None:
             when = when.replace(tzinfo=timezone.utc)
         return max(0.0, min((when - now).total_seconds(), _RETRY_AFTER_MAX_S))
-    except Exception:  # noqa: BLE001 — a malformed header is not a crawl failure
+    except Exception:  # noqa: BLE001 — a malformed header is never a crawl failure
         return None
 _DEFAULT_USER_AGENT = os.getenv(
     "CRAWLER_USER_AGENT",

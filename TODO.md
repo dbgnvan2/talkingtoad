@@ -71,6 +71,18 @@ user replaces the old image in the post by hand.
 - [ ] `/pages?min_severity=info` is level-blind.
 - [ ] Nested card containers (E6): choose between nested candidates deliberately.
 - [ ] `rechecked` is a field no consumer reads — wire or delete.
+- [ ] **The per-host spacing sleep must stay OUTSIDE the global external-link semaphore, and
+  nothing enforces it.** Inside, a host waiting out its politeness debt occupies a global slot
+  another host could use (measured 0.79s vs 0.56s over 50 links / 25 hosts). Two test shapes
+  were tried — wall clock and peak concurrent requests — and both passed with the defect
+  reinstated, so no guard was written rather than a fake one. The gap is ~40%, too tight for a
+  CI threshold; a real guard probably means instrumenting the semaphore's free-slot count.
+  (Cold sweep, 2026-09-03.)
+- [ ] **An external 403 / 401 / 999 produces no finding at all** — `issue_for_status` maps 404,
+  410, 503 and 5xx and returns None for everything else, so a Cloudflare or Akamai bot wall
+  (which answers 403) is counted as a verified working link. That is the same P2 the 429 work
+  closed. Pre-existing and out of scope for EL/BB; the question is whether a 403 should be
+  "unverified" like a 503 or stay silent, and it needs its own spec. (Cold sweep, 2026-09-03.)
 - [ ] **An internal error page served without a `content-type` header produces no finding at
   all** — `engine.py` branches on `is_html` / `is_asset`, and a 503/500 with no content-type
   falls to the "unknown binary" branch where `page_issues = []`. Found while building a test

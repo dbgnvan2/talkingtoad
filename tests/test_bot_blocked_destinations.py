@@ -122,6 +122,41 @@ class TestABotBlockedDestinationIsUnverified:
         assert "BROKEN_LINK_503" not in codes, codes
         assert "EXTERNAL_LINK_SKIPPED" in codes, codes
 
+    async def test_many_unverified_links_on_one_page_collapse_to_one_row(self):
+        """Cold sweep, and the consequence the impact-0 assertion below does NOT
+        guard. `PER_TARGET_CODES` (links.py) lists BROKEN_LINK_503 but not
+        EXTERNAL_LINK_SKIPPED, so reclassifying moved these rows OUT of
+        `collapse_per_target_occurrences`: 10 findings on one page went from 1
+        stored row to 10. `by_category.broken_link` is the big number rendered
+        under the label "Broken Links" in SummaryPanel and the PDF, so a page of
+        50 Amazon links would show 50 "broken links" — after a change made to
+        stop calling them broken (P16)."""
+        def wire(mock):
+            mock.route(host="nobody.test").mock(return_value=httpx.Response(503))
+
+        body = "".join(f'<a href="https://nobody.test/l{i}">l{i}</a>' for i in range(10))
+        issues = await _crawl("bb-collapse", body, wire)
+        skipped = [i for i in issues if i.code == "EXTERNAL_LINK_SKIPPED"]
+        assert len(skipped) == 1, (
+            f"{len(skipped)} rows for one page's unverified links — they are not "
+            f"collapsing, and the Broken Links tile counts every one")
+        assert skipped[0].extra.get("occurrence_urls_total") or \
+            skipped[0].extra.get("count") or len(skipped[0].extra.get("occurrence_urls") or []), \
+            f"the collapsed row does not disclose how many links it covers: {skipped[0].extra}"
+
+    async def test_a_dead_link_on_a_listed_host_is_still_broken(self):
+        """Finding 10: the branch treated EVERY status >= 400 from a listed host
+        as unverified, including the definite ones — so a shortener landing on a
+        LinkedIn profile that 404s became impact 0. A 404 is an answer."""
+        def wire(mock):
+            mock.route(host="short.test").mock(return_value=httpx.Response(
+                301, headers={"location": "https://www.linkedin.com/in/gone"}))
+            mock.route(host="www.linkedin.com").mock(return_value=httpx.Response(404))
+
+        codes = _codes(await _crawl(
+            "bb-listed-404", f'<a href="{SHORTENER}/abc">Profile</a>', wire))
+        assert "BROKEN_LINK_404" in codes, codes
+
     def test_an_unverified_link_costs_the_site_nothing(self):
         """Impact 0, asserted against the scoring table so a future recalibration
         cannot quietly start charging for a link nobody checked."""
@@ -169,17 +204,39 @@ class TestItDoesNotBecomeStopReporting503:
         assert "EXTERNAL_LINK_SKIPPED" not in _codes(issues), (
             "a 403 is a definite answer and must not be reclassified as unverified")
 
-    async def test_a_listed_host_that_actually_answers_is_verified_not_skipped(self):
-        """Self-caught before the sweep: the first version of the condition was
-        `status == 503 OR host is listed`, so a link to Amazon that answered 200
-        was reported as unverified. A successful check is a successful check —
-        the listing exists to explain a FAILURE, not to disqualify a success."""
+    async def test_a_listed_host_reached_via_a_redirect_that_answers_200_is_verified(self):
+        """The `>= 400` guard. The first version of the condition was
+        `status == 503 OR host is listed`, with no requirement that anything had
+        failed — so a listed host that answered 200 was reported as unverified.
+        A successful check is a successful check; the listing explains a FAILURE,
+        it does not disqualify a success.
+
+        The shortener shape is the only one that reaches this branch: a DIRECT
+        link to a listed host is skipped before any request, so a test using one
+        is vacuous — which the cold sweep caught in the first version of this
+        test, written against amazon.ca, a host deliberately not on the list."""
         def wire(mock):
-            mock.route(host="www.amazon.ca").mock(return_value=httpx.Response(200))
+            mock.route(host="short.test").mock(return_value=httpx.Response(
+                301, headers={"location": "https://www.linkedin.com/in/someone"}))
+            mock.route(host="www.linkedin.com").mock(return_value=httpx.Response(200))
 
         codes = _codes(await _crawl(
-            "bb-listed-ok", f'<a href="{BLOCKER}/book/dp/123">A book</a>', wire))
+            "bb-listed-ok", f'<a href="{SHORTENER}/abc">Profile</a>', wire))
         assert codes == [], f"a link that answered 200 was reported: {codes}"
+
+    async def test_a_direct_link_to_a_listed_host_is_skipped_without_asking(self):
+        """The other half, stated so the two are not confused: a listed host is
+        never requested at all, whatever it would have answered. That is what
+        the list means, and why Amazon does not belong on it."""
+        def wire(mock):
+            asked = mock.route(host="www.linkedin.com").mock(
+                return_value=httpx.Response(200))
+            wire.asked = asked
+
+        codes = _codes(await _crawl(
+            "bb-listed-direct", '<a href="https://www.linkedin.com/in/x">P</a>', wire))
+        assert "EXTERNAL_LINK_SKIPPED" in codes, codes
+        assert wire.asked.call_count == 0, "a listed host was requested anyway"
 
     async def test_a_shortener_to_a_LISTED_host_is_still_caught_after_the_fetch(self):
         """BB1's remaining job now that Amazon is not listed: a short link that

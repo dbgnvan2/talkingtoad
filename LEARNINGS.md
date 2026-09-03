@@ -178,6 +178,35 @@ Newest first. Format: **Issue → Root cause → What would have caught it → F
   - *What would have caught it:* asking, for each status the engine maps, whether the mapping agrees with the citation stored against that code. That comparison is mechanical and nobody had run it.
   - *Fix:* the bot-block decision consults `final_url` as well as the requested URL; an external 503 that survives the retries is `EXTERNAL_LINK_SKIPPED` (impact 0 — the tool learned nothing and must not charge the site); internal 503s keep `BROKEN_LINK_503`. Live: 10 → 0 on the reported site, the links now correctly listed as unverified.
   - *And the design I got wrong first, twice, in one sitting:* **(a)** I added Amazon to the skip list. That list means "do not even ask", so Amazon links stopped being checked at all and a genuinely dead product link would never be caught again — strictly worse than the bug. Removed, with an assertion that it stays removed and a comment saying why, because re-adding it looks like a fix. **(b)** my condition was `status == 503 OR host is listed`, with no requirement that anything had failed — so a link to a listed host that answered **200** was reported as unverified. A successful check is a successful check; the listing exists to explain a failure, not to disqualify a success. Caught by writing the test for the case rather than for the code.
+  - *And what the cold sweep of BOTH fixes then found — nine, one of them a crash:*
+    **(a)** `_retry_after_seconds` did `float(int(raw))` and caught only `ValueError`. A
+    `Retry-After` of 309–4300 digits converts to `int` fine and **overflows on `float`**;
+    `OverflowError` is not a `ValueError`, so it escaped `fetch_page` — whose `try` catches only
+    httpx errors — and **aborted the entire crawl**. The header is parsed on every response, so
+    the audited site's own home page carrying one returned a silent zero-page audit. Any
+    outbound link on the site can point at a host that sends it.
+    **(b)** reclassifying external 503s moved them out of `PER_TARGET_CODES`, so they stopped
+    collapsing: 10 links on one page went from 1 stored row to 10, and `by_category.broken_link`
+    is the figure rendered under the label **"Broken Links"**. A page of 50 Amazon links would
+    have shown **50 "broken links" immediately after the change made to stop calling them
+    broken** (P16). The impact-0 assertion I wrote guarded the constant and not the consequence.
+    **(c)** I filed 429 under `EXTERNAL_LINK_TIMEOUT`, whose entire help surface says the
+    destination did not answer — "Slow External Link", "may be leaving supporters staring at a
+    blank screen". It answered instantly and told us to slow down (P14, the very pattern the
+    commit existed to fix for 503).
+    **(d)** the spacing sleep sat inside the global semaphore; **(e)** its read-modify-write
+    straddled the `await`, so raising the env-tunable per-host bound converted the delay into
+    bursts — worse for the host than no delay; **(f)** `Semaphore(0)` from a stray env var hangs
+    the crawl for ever; **(g)** a 404 from a listed host reached via a redirect became impact 0;
+    **(h)** `_BOT_BLOCKING_SUFFIXES` was left as dead code; **(i)** the flagship politeness test
+    could not fail — after BB3, an external 503 never produces `BROKEN_LINK_503`, so the whole
+    fix could be reverted and it stayed green while the crawler self-throttled 17 times.
+  - *And a near-miss worth more than any of them:* measuring (d) once showed the fix **3× slower
+    than the defect**, and I was one command from reverting a correct change. Three repeats
+    showed 0.56s vs 0.79s — the first reading was a cold-start artifact of the very first run in
+    a fresh process. **One measurement is an anecdote.** Then two different test shapes for that
+    property both passed with the defect reinstated, so the guard was deleted and the gap
+    recorded in TODO rather than left as a test that claims coverage it does not have.
   - *Pattern:* **a list of known-bad hosts is a convenience; the rule that needs no list is the mechanism.** Reach for the general rule first and let the list be an optimisation, because the list is always one entry behind the web — and check which way a listing cuts: "do not even ask" and "explain a refusal" look similar and are opposites.
 
 - **2026-09-03 — the crawler opened ten parallel connections to strangers' servers, and counted a rate-limited link as a working one. Found while chasing a different bug, and NOT the cause of it.**

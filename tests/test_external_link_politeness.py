@@ -91,8 +91,16 @@ async def _crawl(job: str) -> list:
 
 
 class TestTheReportedCase:
-    async def test_ten_links_to_one_host_are_not_reported_as_broken(self):
-        """The livingsystems.ca case, reproduced in miniature."""
+    async def test_ten_links_to_one_host_produce_no_finding_at_all(self):
+        """The self-throttling case. This asserted `BROKEN_LINK_503 not in codes`
+        when it was written, and the cold sweep proved that cannot fail: BB3
+        (same day) means an external 503 never produces that code whatever the
+        concurrency, so the whole EL1/EL2 fix could be reverted and this stayed
+        green while the crawler throttled itself 17 times (P27).
+
+        The assertion is now the outcome that actually depends on the fix: a host
+        that only refuses CONCURRENT requests answers every one of them when we
+        ask politely, so there is nothing to report."""
         throttle = _Throttle(allowed=1)
         with respx.mock(assert_all_called=False) as mock:
             _site(mock, _home())
@@ -100,30 +108,46 @@ class TestTheReportedCase:
             issues = await _crawl("job-throttle")
 
         codes = [i.code for i in issues if i.code.startswith(("BROKEN_LINK", "EXTERNAL_LINK"))]
-        assert "BROKEN_LINK_503" not in codes, (
-            f"the crawler throttled itself and blamed the site: {codes} "
-            f"(max concurrent requests to one host: {throttle.max_inflight})")
+        assert codes == [], (
+            f"the crawler throttled itself and reported it: {codes} "
+            f"(max concurrent to one host: {throttle.max_inflight}, "
+            f"throttled responses: {throttle.throttled})")
+        assert throttle.throttled == 0, (
+            f"{throttle.throttled} requests were refused for concurrency")
 
-    async def test_the_host_never_sees_more_than_the_per_host_bound(self):
+    async def test_repeated_requests_to_one_host_are_actually_spaced(self):
+        """`_EXT_PER_HOST_DELAY_S` had no test at all — setting it to 0.0 left
+        the whole suite green (cold sweep)."""
+        import time as _t
+
         from api.crawler import engine
 
-        throttle = _Throttle(allowed=99)      # never throttles; just counts
-        with respx.mock(assert_all_called=False) as mock:
-            _site(mock, _home())
-            mock.route(host="short.test").mock(side_effect=throttle)
-            await _crawl("job-inflight")
+        stamps: list[float] = []
 
-        bound = getattr(engine, "_EXT_PER_HOST_CONCURRENCY", 1)
-        assert throttle.max_inflight <= bound, (
-            f"{throttle.max_inflight} simultaneous requests to one host (bound {bound})")
-        # Pin the VALUE too. The assertion above takes its oracle from the
-        # constant, so it stays green if someone raises the bound to 10 — it
-        # proves the bound is honoured, not that the bound is right (P32).
-        # Raising this is a deliberate edit to a test, with the politeness
-        # argument in docs/thresholds.md to argue with.
-        assert bound == 1, (
-            f"per-host concurrency is {bound}; opening parallel connections to a "
-            f"third party we are only verifying a link against needs a reason")
+        async def clock(request):
+            stamps.append(_t.monotonic())
+            return httpx.Response(200, headers={"content-type": "text/html"})
+
+        with respx.mock(assert_all_called=False) as mock:
+            _site(mock, _home(n=4))
+            mock.route(host="short.test").mock(side_effect=clock)
+            await _crawl("job-spacing")
+
+        assert len(stamps) >= 4, stamps
+        gaps = [b - a for a, b in zip(stamps, stamps[1:])]
+        delay = engine._EXT_PER_HOST_DELAY_S
+        assert all(g >= delay * 0.8 for g in gaps), (
+            f"requests to one host were not spaced by ~{delay}s: {gaps}")
+
+    # NOT TESTED, deliberately and recorded rather than faked: that the per-host
+    # spacing sleep happens OUTSIDE the global semaphore. The cold sweep found it
+    # inside, where a host serving out its politeness debt occupies a slot
+    # another host could use; it is now outside, measured at 0.56s vs 0.79s over
+    # 50 links / 25 hosts. Two test shapes were tried — wall-clock and peak
+    # concurrent requests — and BOTH passed with the defect reinstated. A test
+    # that passes either way is worse than none, because it claims a guard that
+    # does not exist (the P27 this file exists to avoid). Recorded in TODO.md
+    # instead. If you move that sleep, nothing here will stop you.
 
     async def test_different_hosts_still_overlap(self):
         """Adversarial partner: serialising per host must not serialise the whole
@@ -207,6 +231,54 @@ class TestRateLimitStatusIsRetriedAndDisclosed:
         assert calls["n"] >= 2, "a 429 was not retried"
         assert r.status_code == 200
 
+    async def test_a_short_retry_after_is_actually_waited(self):
+        """The "honoured" half of the bounded-Retry-After test was unguarded:
+        ignoring the header entirely also satisfies "did not wait an hour"."""
+        import time as _t
+
+        from api.crawler.fetcher import fetch_page, make_client
+
+        with respx.mock(assert_all_called=False) as mock:
+            mock.route(host="rl.test").mock(
+                return_value=httpx.Response(429, headers={"retry-after": "2"}))
+            started = _t.monotonic()
+            async with make_client() as c:
+                await fetch_page("https://rl.test/slow", c, is_head=True)
+            elapsed = _t.monotonic() - started
+        assert elapsed >= 1.5, (
+            f"Retry-After: 2 was ignored — returned in {elapsed:.2f}s")
+
+    @pytest.mark.parametrize("header", [
+        "9" * 400,          # 309-4300 digits: int() succeeds, float() overflows
+        "9" * 320,
+        "-5", "0", "5.5", "not-a-number", "", "   ",
+        "Wed, 21 Oct 2015 07:28:00 GMT",      # a date in the past
+        "Fri, 31 Dec 2199 23:59:59 GMT",      # far future — must still cap
+    ])
+    async def test_a_hostile_retry_after_never_crashes_the_crawl(self, header):
+        """`float(int(raw))` caught only ValueError. A 309-to-4300-digit header
+        raises OverflowError, which escapes `fetch_page` — whose `try` catches
+        only httpx errors — and aborts the entire crawl. The header is parsed on
+        EVERY response, so the audited site's own home page carrying it returned
+        a silent zero-page audit. Third-party controllable: any outbound link on
+        the site can point at a host that sends it (P5/P2)."""
+        from api.crawler import fetcher
+        from api.crawler.fetcher import _retry_after_seconds
+
+        class _R:
+            headers = {"retry-after": header}
+
+        got = _retry_after_seconds(_R())
+        assert got is None or 0.0 <= got <= fetcher._RETRY_AFTER_MAX_S, got
+
+    async def test_a_hostile_retry_after_does_not_abort_a_crawl(self):
+        with respx.mock(assert_all_called=False) as mock:
+            _site(mock, _home(n=1))
+            mock.route(host="short.test").mock(return_value=httpx.Response(
+                503, headers={"retry-after": "9" * 400}))
+            issues = await _crawl("job-hostile-header")
+        assert issues, "the crawl produced nothing — it aborted"
+
     async def test_retry_after_is_honoured_but_bounded(self):
         """An hour-long `Retry-After` must not stall the crawl."""
         from api.crawler import fetcher
@@ -230,12 +302,30 @@ class TestRateLimitStatusIsRetriedAndDisclosed:
             mock.route(host="short.test").mock(return_value=httpx.Response(429))
             issues = await _crawl("job-429")
 
-        hits = [i for i in issues if i.code == "EXTERNAL_LINK_TIMEOUT"]
+        hits = [i for i in issues if i.code == "EXTERNAL_LINK_SKIPPED"]
         assert hits, (
             "a rate-limited link produced no finding at all — it was counted as "
             "verified and working")
         assert any(i.extra.get("status_code") == 429 for i in hits), (
             f"the real status is missing from the evidence: {[i.extra for i in hits]}")
+
+    async def test_a_rate_limit_is_not_filed_as_a_slow_link(self):
+        """Cold sweep (P14). 429 was routed to EXTERNAL_LINK_TIMEOUT, whose whole
+        help surface says the destination did not answer: "Slow External Link",
+        "did not respond — destination may be slow or unavailable", "may be
+        leaving supporters staring at a blank screen". The destination answered
+        instantly and told us to slow down. Worse, the honest inline description
+        did not survive: collapsed with a genuine connect-failure on the same
+        page, one row absorbed the other and which `status_code` won was decided
+        by completion order. A rate limit means the same thing as a bot-block —
+        we could not verify — so it belongs with it."""
+        with respx.mock(assert_all_called=False) as mock:
+            _site(mock, _home(n=2))
+            mock.route(host="short.test").mock(return_value=httpx.Response(429))
+            issues = await _crawl("job-429-not-slow")
+
+        assert not [i for i in issues if i.code == "EXTERNAL_LINK_TIMEOUT"], (
+            "a rate limit is reported under a code that says the link was slow")
 
     async def test_a_429_is_not_reported_as_broken(self):
         with respx.mock(assert_all_called=False) as mock:

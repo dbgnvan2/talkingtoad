@@ -20,6 +20,14 @@ from api.crawler.checkers.registry import Issue, make_issue, _ISSUE_SCORING
 PER_TARGET_CODES: frozenset[str] = frozenset({
     "BROKEN_LINK_404", "BROKEN_LINK_410", "BROKEN_LINK_503", "BROKEN_LINK_5XX",
     "EXTERNAL_LINK_TIMEOUT", "REDIRECT_301", "REDIRECT_302",
+    # BB3 (2026-09-03): an external 503 is now reported here instead of as
+    # BROKEN_LINK_503. Without this entry the reclassification silently moved
+    # those rows OUT of the collapse — 10 links on a page went from 1 stored row
+    # to 10, and `by_category.broken_link` is the figure rendered under the
+    # label "Broken Links" in SummaryPanel and the PDF. A page of 50 Amazon
+    # links would have shown 50 "broken links" immediately after the change made
+    # to stop calling them broken (P16).
+    "EXTERNAL_LINK_SKIPPED",
 })
 _OCC_STEP = float(os.getenv("TT_OCCURRENCE_STEP", "0.25"))
 _OCC_CEIL = float(os.getenv("TT_OCCURRENCE_CEIL", "2.0"))

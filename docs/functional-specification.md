@@ -700,10 +700,27 @@ with 503; every link worked for a human. Two faults:
   charge the site for it). **Internal 503s keep `BROKEN_LINK_503`** — we are
   already crawling that server, so "it blocks bots" is not the explanation.
 
-Scoped deliberately: only 503, the one status whose own definition is temporary.
-An external 404 or 403 is a definite answer and stays a finding. A success stays
-a success — the `>= 400` guard means a listed host that actually answers 200 is
-reported as verified, not skipped.
+Scoped deliberately: only 503, plus 429 (a rate limit means the same thing — we
+could not verify — and is filed with it rather than under "slow link", whose help
+text says the destination did not answer). An external **404 or 410 stays a
+finding even from a listed host**, because a deleted page is a definite answer
+and calling it unverified would drop it to impact 0. A success stays a success:
+the `>= 400` guard means a listed host reached through a redirect that answers
+200 is reported as verified, not skipped — a *direct* link to a listed host is
+never requested at all, which is what listing one means.
+
+**Known gap, recorded rather than implied:** an external **403 / 401 / 999** still
+produces no finding — `issue_for_status` maps 404, 410, 503 and 5xx and returns
+`None` for the rest — so a Cloudflare or Akamai bot wall, which answers 403, is
+counted as a verified working link. That is the same P2 the 429 work closed, and
+it is pre-existing and unaddressed here; see TODO.
+
+Reclassified rows stay in `PER_TARGET_CODES`, so many unverified links on one
+page collapse to a single row. Without that, moving them out of `BROKEN_LINK_503`
+would have turned 10 findings into 10 stored rows, and `by_category.broken_link`
+is the figure rendered under the label **"Broken Links"** — a page of 50 Amazon
+links would have shown 50 "broken links" immediately after the change made to
+stop calling them broken (P16).
 
 **Amazon is deliberately NOT in the skip list.** Adding it was the first attempt
 and made things worse: the list means "do not even ask", so Amazon links stopped

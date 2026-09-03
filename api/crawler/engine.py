@@ -117,15 +117,17 @@ _EXTERNAL_LINK_CAP_PER_PAGE = 50
 # External-link verification politeness (EL1/EL2, 2026-09-03). The global cap is
 # unchanged; the per-host bound is what stops the crawler throttling itself and
 # reporting the result as the audited site's defect. Values in docs/thresholds.md.
-_EXT_CONCURRENCY = int(os.getenv("TT_EXT_CONCURRENCY", "10"))
+# `max(1, ...)`: `asyncio.Semaphore(0)` never acquires, so a stray 0 in the
+# environment hangs the external-link phase for ever rather than failing.
+_EXT_CONCURRENCY = max(1, int(os.getenv("TT_EXT_CONCURRENCY", "10")))
 # One at a time per host. Two was the first choice and it still tripped a host
 # that throttles on the second concurrent request — and rather than relax the
 # test to match the code, the honest answer is that we have no permission to
 # open parallel connections to a third party we are only verifying a link
 # against. Serial-per-host costs ~0.25 s per repeated link and nothing at all on
 # a site whose outbound links are spread across many hosts.
-_EXT_PER_HOST_CONCURRENCY = int(os.getenv("TT_EXT_PER_HOST_CONCURRENCY", "1"))
-_EXT_PER_HOST_DELAY_S = float(os.getenv("TT_EXT_PER_HOST_DELAY_S", "0.25"))
+_EXT_PER_HOST_CONCURRENCY = max(1, int(os.getenv("TT_EXT_PER_HOST_CONCURRENCY", "1")))
+_EXT_PER_HOST_DELAY_S = max(0.0, float(os.getenv("TT_EXT_PER_HOST_DELAY_S", "0.25")))
 _EXTERNAL_LINK_CAP_PER_JOB = 500
 
 # E2.2 (rule 8) — how many linking pages to carry in an issue's evidence list.
@@ -199,22 +201,17 @@ _BOT_BLOCKING_DOMAINS: frozenset[str] = frozenset(
     ]
 )
 
-# Matched by registrable suffix as well as exact host, so a country storefront or
-# a regional subdomain of a listed platform is covered without listing twenty of
-# them by hand.
+# WHAT BELONGS IN THE LIST ABOVE, and what does not (BB2, 2026-09-03). It means
+# "do not even ask" — the link is skipped before any request and reported
+# unverified. That is right for LinkedIn (999), Facebook (login wall) and the
+# rest, where a bot request is reliably useless. It is WRONG for a host that
+# blocks us only *sometimes*: adding Amazon was the first attempt at this fix and
+# it made things worse, because it stopped us checking Amazon links at all and a
+# genuinely dead product link would never be caught again. Amazon is handled by
+# BB3 instead — make the request, and if it refuses, say the link is unverified.
 #
-# WHAT BELONGS HERE, and what does not (BB2, 2026-09-03). This list means "do not
-# even ask" — the link is skipped before any request and reported unverified. That
-# is right for LinkedIn (999), Facebook (login wall) and the rest, where a bot
-# request is reliably useless. It is WRONG for a host that merely blocks us
-# *sometimes*: adding Amazon here was the first attempt at this fix and it made
-# things worse, because it stopped us checking Amazon links at all — a genuinely
-# dead product link would never be caught again. Amazon is handled by BB3
-# instead: make the request, and if it refuses, say the link is unverified.
-#
-# So: list a host only when asking is pointless. Everything else is covered by
-# BB3, which needs no list.
-_BOT_BLOCKING_SUFFIXES: tuple[str, ...] = ()
+# So list a host only when asking is pointless. Everything else is covered by
+# BB3, which needs no list and cannot go stale.
 
 
 # ---------------------------------------------------------------------------
@@ -1015,14 +1012,27 @@ async def run_crawl(
             # own host must not sit on a global slot and starve other hosts. One
             # fixed acquisition order, so no deadlock.
             async with host_sem:
+                if cancel_event and cancel_event.is_set():
+                    return ext, None
+                # Spacing is owed to THIS host and is paid OUTSIDE the global
+                # semaphore. Held inside it, one repeated host's politeness
+                # capped total throughput at `_EXT_CONCURRENCY / delay` for the
+                # whole crawl — 500 links over 3 hosts went from ~2.5s to ~42s,
+                # and other hosts queued behind a sleep they owed nothing for.
+                #
+                # The slot is reserved BEFORE the await, not recomputed after
+                # it: the old read-modify-write straddled the sleep, so at a
+                # per-host bound above 1 (the value is env-tunable) the delay
+                # degenerated into bursts — measured four requests inside 1 ms —
+                # which is worse for the host than no delay at all.
+                now = time.monotonic()
+                slot = max(now, _host_next_ok.get(host, 0.0))
+                _host_next_ok[host] = slot + _EXT_PER_HOST_DELAY_S
+                if slot > now:
+                    await asyncio.sleep(slot - now)
                 async with sem:
                     if cancel_event and cancel_event.is_set():
                         return ext, None
-                    now = time.monotonic()
-                    wait = _host_next_ok.get(host, 0.0) - now
-                    if wait > 0:
-                        await asyncio.sleep(wait)
-                    _host_next_ok[host] = time.monotonic() + _EXT_PER_HOST_DELAY_S
                     return ext, await _check_external_link(ext["target_url"], client)
 
         tasks = [_check_one(ext) for ext in links_to_check]
@@ -1075,9 +1085,15 @@ async def run_crawl(
                     issue.description = f"Link to {target} did not respond — destination may be slow or unavailable"
                     all_issues.append(issue)
                     _record(None)
-                elif link_type == "external" and result.status_code >= 400 and (
-                        result.status_code == 503
-                        or _is_bot_blocking_domain(result.final_url or target)):
+                elif (link_type == "external"
+                      and result.status_code >= 400
+                      # 404/410 are definite answers even from a host that
+                      # blocks us — a shortener landing on a deleted LinkedIn
+                      # profile is a dead link, not an unverified one, and
+                      # calling it unverified drops it to impact 0.
+                      and result.status_code not in (404, 410)
+                      and (result.status_code == 503
+                           or _is_bot_blocking_domain(result.final_url or target))):
                     # BB1/BB3 (2026-09-03). Two facts the engine used to ignore:
                     #
                     # 1. `_is_bot_blocking_domain` was checked BEFORE the request,
@@ -1122,15 +1138,25 @@ async def run_crawl(
                     # used to fall through `issue_for_status`, which returns None
                     # for 429 — so the link was counted as verified and working.
                     # "We could not check" rendered as "checked, it works" (P2).
-                    issue = make_issue("EXTERNAL_LINK_TIMEOUT", source_url)
+                    #
+                    # Reported as SKIPPED, not TIMEOUT: the first version used
+                    # EXTERNAL_LINK_TIMEOUT, whose entire help surface says the
+                    # destination did not answer ("Slow External Link", "may be
+                    # leaving supporters staring at a blank screen"). It answered
+                    # instantly and told us to slow down. A rate limit means what
+                    # a bot-block means — we could not verify — so it files with
+                    # it, and the two no longer collapse into a genuine timeout
+                    # where the surviving status was decided by completion order.
+                    issue = make_issue("EXTERNAL_LINK_SKIPPED", source_url)
                     issue.extra = _broken_link_extra(
                         target_url=target, sources=source_urls,
                         first_source=source_url, anchor_texts=anchor_texts,
                     )
                     issue.extra["status_code"] = 429
                     issue.description = (
-                        f"Link to {target} was rate-limited (HTTP 429) and could not be "
-                        f"verified — this says nothing about whether the link works"
+                        f"Link to {target} could not be verified — the destination "
+                        f"rate-limited us (HTTP 429). This says nothing about whether "
+                        f"the link works for a visitor."
                     )
                     all_issues.append(issue)
                     _record(429)
@@ -1895,9 +1921,7 @@ def _compute_click_depths(pages: list[ParsedPage], start_url: str | None) -> Non
 def _is_bot_blocking_domain(url: str) -> bool:
     """Return True if *url* belongs to a domain known to block automated requests."""
     host = (urlparse(url).hostname or "").lower()
-    if host in _BOT_BLOCKING_DOMAINS:
-        return True
-    return any(host == sfx or host.endswith("." + sfx) for sfx in _BOT_BLOCKING_SUFFIXES)
+    return host in _BOT_BLOCKING_DOMAINS
 
 
 async def _check_external_link(
