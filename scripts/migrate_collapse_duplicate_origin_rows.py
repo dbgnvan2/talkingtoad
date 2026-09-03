@@ -33,20 +33,35 @@ Idempotent — a second run finds nothing to do.
 from __future__ import annotations
 
 import argparse
+import json
 import shutil
 import sqlite3
 import sys
 from datetime import datetime, timezone
+import re
 from pathlib import Path
 
-# Tables whose rows point at a page by URL. Discovered from the schema rather
-# than hard-coded blindly: a table added later that this misses would leave
-# orphan rows pointing at a deleted page.
+# A scheme+host with no path — the shape ND3 collapsed.
+_BARE_URL_RE = re.compile(r'"(https?://[^"/]+)"')
+
+# Tables whose rows point at a page by URL. `sqlite_store.py`'s job-expiry list
+# — ("issues","crawled_pages","links","fixes","fixed_issues","images") — is the
+# authoritative enumeration and this was written without consulting it, so
+# `fixes` and `fixed_issues` were missed on the first pass (cold sweep).
+#
+# `fixes` carries UNIQUE(job_id, page_url, field): if both spellings hold a fix
+# for the same field, a plain UPDATE raises IntegrityError and — because every
+# table moves inside one transaction — aborts the whole migration mid-flight.
+# Tables listed here as CONFLICT_SAFE drop the losing row instead.
 _URL_COLUMNS = {
     "issues": "page_url",
     "links": "source_url",
+    "links_target": ("links", "target_url"),
     "images": "page_url",
+    "fixes": "page_url",
+    "fixed_issues": "page_url",
 }
+_CONFLICT_SAFE = {"fixes"}          # has a UNIQUE index that a move can violate
 
 
 def _affected(con: sqlite3.Connection) -> list[tuple[str, str, str]]:
@@ -64,17 +79,173 @@ def _affected(con: sqlite3.Connection) -> list[tuple[str, str, str]]:
     return [(job, bare, bare + "/") for job, bare in rows]
 
 
+def _stale_evidence_jobs(con: sqlite3.Connection) -> list[tuple[str, str, str]]:
+    """(job, bare, slashed) for jobs whose ISSUE EVIDENCE still names a bare
+    origin the job no longer has a page for.
+
+    Phase 2 needs its own finder because phase 1 deletes the page rows that
+    `_affected` keys on — after a collapse the evidence is stale and nothing
+    points at it any more. This is what makes the two phases independently
+    re-runnable on an already-migrated database.
+    """
+    out: list[tuple[str, str, str]] = []
+    seen: set[tuple[str, str]] = set()
+    for job, extra in con.execute(
+            "SELECT job_id, extra FROM issues WHERE extra LIKE '%http%'"):
+        for m in _BARE_URL_RE.findall(extra or ""):
+            key = (job, m)
+            if key in seen:
+                continue
+            seen.add(key)
+            if not con.execute(
+                    "SELECT 1 FROM crawled_pages WHERE job_id = ? AND url = ?",
+                    (job, m)).fetchone():
+                if con.execute(
+                        "SELECT 1 FROM crawled_pages WHERE job_id = ? AND url = ?",
+                        (job, m + "/")).fetchone():
+                    out.append((job, m, m + "/"))
+    return out
+
+
+def _duplicated_root_pages(con: sqlite3.Connection) -> list[tuple[str, str]]:
+    """(job, url) for every origin-root page holding IDENTICAL issue rows.
+
+    The dedupe was originally driven off the stale-evidence list, which missed
+    the collapsed jobs whose evidence happened to be clean — 27 of the 71, and
+    175 surplus rows. The condition to look for is the duplication itself, not a
+    proxy for it.
+    """
+    return con.execute(
+        """
+        SELECT DISTINCT job_id, page_url FROM issues
+        WHERE page_url LIKE '%://%'
+          AND page_url LIKE '%/'
+          AND length(page_url) - length(replace(page_url, '/', '')) = 3
+          AND (job_id, page_url, issue_code, IFNULL(extra, '')) IN (
+              SELECT job_id, page_url, issue_code, IFNULL(extra, '')
+              FROM issues GROUP BY 1, 2, 3, 4 HAVING COUNT(*) > 1)
+        """
+    ).fetchall()
+
+
+def _resolve(key: str, spec) -> tuple[str, str]:
+    """(table, column) for a `_URL_COLUMNS` entry, which may be either form."""
+    return spec if isinstance(spec, tuple) else (key, spec)
+
+
 def _counts(con: sqlite3.Connection, job: str, url: str) -> dict[str, int]:
     out = {}
-    for table, col in _URL_COLUMNS.items():
+    for key, spec in _URL_COLUMNS.items():
+        table, col = _resolve(key, spec)
         try:
-            out[table] = con.execute(
+            out[key] = con.execute(
                 f"SELECT COUNT(*) FROM {table} WHERE job_id = ? AND {col} = ?",
                 (job, url),
             ).fetchone()[0]
         except sqlite3.OperationalError:
-            out[table] = 0          # table or column absent in this schema
+            out[key] = 0            # table or column absent in this schema
     return out
+
+
+# Codes whose whole meaning is "this page is the same as ANOTHER page". When the
+# other page was only the second spelling of this one, the finding existed solely
+# because of the duplication and is false once the pages are collapsed.
+_CROSS_PAGE_DUPLICATE_CODES = frozenset({
+    "NEAR_DUPLICATE_BODY", "TITLE_DUPLICATE", "META_DESC_DUPLICATE",
+    "TITLE_META_DUPLICATE_PAIR",
+})
+_EVIDENCE_URL_KEYS = ("members", "near_identical_to", "duplicate_urls",
+                      "occurrence_urls", "inaccessible_sources")
+
+
+def _repoint_evidence(con: sqlite3.Connection, job: str, bare: str, slashed: str,
+                      *, apply: bool) -> tuple[int, int]:
+    """Rewrite URLs stored INSIDE `issues.extra`, and drop findings the collapse
+    makes self-referential.
+
+    Collapsing the page rows alone left the findings that existed *because* the
+    page was duplicated — a home page reported as a near-duplicate of itself,
+    citing a URL the job no longer contains (19 rows across 19 jobs, found by the
+    cold sweep after the first version ran). Evidence is not just decoration
+    here: for these codes it IS the finding.
+
+    Returns (rows_rewritten, rows_deleted).
+    """
+    rewritten = deleted = 0
+    rows = con.execute(
+        "SELECT issue_id, issue_code, page_url, extra FROM issues "
+        "WHERE job_id = ? AND extra IS NOT NULL AND instr(extra, ?) > 0",
+        (job, bare),
+    ).fetchall()
+    for issue_id, code, page_url, extra in rows:
+        try:
+            payload = json.loads(extra)
+        except (TypeError, ValueError):
+            continue
+        if not isinstance(payload, dict):
+            continue
+        changed = False
+        for key in _EVIDENCE_URL_KEYS:
+            v = payload.get(key)
+            if not isinstance(v, list):
+                continue
+            seen: list[str] = []
+            for item in v:
+                item = slashed if item == bare else item
+                if item not in seen:
+                    seen.append(item)
+            if seen != v:
+                payload[key] = seen
+                changed = True
+        # A "duplicate of another page" finding whose other page was this page's
+        # own second spelling is now a cluster of one. It is not a finding.
+        if code in _CROSS_PAGE_DUPLICATE_CODES:
+            partners = [u for k in ("members", "duplicate_urls")
+                        for u in (payload.get(k) or []) if isinstance(u, str)]
+            # Delete ONLY when the finding names no page other than this one.
+            # The first version counted distinct partners and deleted anything
+            # with fewer than two — which would have removed every legitimate
+            # two-page duplicate, whose `duplicate_urls` holds exactly one entry.
+            # Measured before the fix: 553 rows. After: only the self-references.
+            own = (page_url or "").rstrip("/")
+            others = {u.rstrip("/") for u in partners} - {own}
+            if partners and not others:
+                deleted += 1
+                if apply:
+                    con.execute("DELETE FROM issues WHERE issue_id = ?", (issue_id,))
+                continue
+        if changed:
+            rewritten += 1
+            if apply:
+                con.execute("UPDATE issues SET extra = ? WHERE issue_id = ?",
+                            (json.dumps(payload), issue_id))
+    return rewritten, deleted
+
+
+def _dedupe_identical(con: sqlite3.Connection, job: str, url: str,
+                      *, apply: bool) -> int:
+    """Drop issue rows that are byte-identical after the move.
+
+    Re-pointing both spellings onto one URL put the same finding on the page
+    twice — measured at ~450 surplus rows across the 71 collapsed jobs. Only
+    IDENTICAL rows are dropped (same code AND same evidence): plenty of codes
+    legitimately repeat on a page (one per image, one per link), and collapsing
+    those would delete real findings.
+    """
+    ids = con.execute(
+        """
+        SELECT issue_id FROM issues
+        WHERE job_id = ? AND page_url = ? AND issue_id NOT IN (
+            SELECT MIN(issue_id) FROM issues
+            WHERE job_id = ? AND page_url = ?
+            GROUP BY issue_code, IFNULL(extra, '')
+        )
+        """,
+        (job, url, job, url),
+    ).fetchall()
+    if apply and ids:
+        con.executemany("DELETE FROM issues WHERE issue_id = ?", ids)
+    return len(ids)
 
 
 def _health(con: sqlite3.Connection, job: str, *, collapse: bool) -> int | None:
@@ -123,12 +294,34 @@ def main(argv: list[str] | None = None) -> int:
     con = sqlite3.connect(db)
     con.row_factory = None
     affected = _affected(con)
+    # Phase 2 runs independently: after a collapse the page rows are gone but the
+    # evidence inside `issues.extra` still names them, so it must be findable on
+    # its own. (The first version of this script did phase 1 only, and the cold
+    # sweep found 19 home pages still reported as near-duplicates of themselves.)
+    stale = [t for t in _stale_evidence_jobs(con)
+             if t[0] not in {j for j, _, _ in affected}]
 
-    if not affected:
-        print("Nothing to do — no job holds both spellings of its home page.")
+    dupes = _duplicated_root_pages(con)
+
+    # Decide "nothing to do" from the WORK, not from a proxy for it. The
+    # stale-evidence finder over-reports (a bare URL can sit in a key this does
+    # not rewrite), so keying the early exit on it made a finished database
+    # report work it would not do.
+    ev_rewritten = ev_deleted = 0
+    for job, bare, slashed in (affected + stale):
+        r, d = _repoint_evidence(con, job, bare, slashed, apply=False)
+        ev_rewritten += r
+        ev_deleted += d
+    ev_deduped = sum(_dedupe_identical(con, j, u, apply=False) for j, u in dupes)
+
+    if not affected and not (ev_rewritten or ev_deleted or ev_deduped):
+        print("Nothing to do — no job holds both spellings of its home page, "
+              "no stored evidence names a page that is gone, and no page holds "
+              "the same finding twice.")
         return 0
 
-    print(f"{len(affected)} job(s) hold both spellings of the home page.\n")
+    if affected:
+        print(f"{len(affected)} job(s) hold both spellings of the home page.\n")
     moved_rows = 0
     score_changes = 0
     for job, bare, slashed in affected:
@@ -146,6 +339,13 @@ def main(argv: list[str] | None = None) -> int:
     print(f"\n{moved_rows} row(s) would be re-pointed; "
           f"{score_changes} job(s) would change health score.")
 
+    if ev_rewritten or ev_deleted:
+        print(f"{len({j for j, _, _ in stale})} job(s) have stale evidence from an "
+              f"earlier collapse.")
+    print(f"Evidence: {ev_rewritten} row(s) re-pointed, {ev_deleted} self-referential "
+          f"duplicate finding(s) removed, {ev_deduped} identical row(s) de-duplicated "
+          f"across {len(dupes)} page(s).")
+
     if not args.apply:
         print("\nDry run — nothing was written. Re-run with --apply to make the change.")
         return 0
@@ -155,8 +355,18 @@ def main(argv: list[str] | None = None) -> int:
 
     with con:
         for job, bare, slashed in affected:
-            for table, col in _URL_COLUMNS.items():
+            for key, spec in _URL_COLUMNS.items():
+                table, col = _resolve(key, spec)
                 try:
+                    if table in _CONFLICT_SAFE:
+                        # UNIQUE(job_id, page_url, field): if the slashed row
+                        # already holds a fix for this field, drop the bare
+                        # duplicate rather than abort the whole transaction.
+                        con.execute(
+                            f"DELETE FROM {table} WHERE job_id = ? AND {col} = ? "
+                            f"AND field IN (SELECT field FROM {table} "
+                            f"              WHERE job_id = ? AND {col} = ?)",
+                            (job, bare, job, slashed))
                     con.execute(
                         f"UPDATE {table} SET {col} = ? WHERE job_id = ? AND {col} = ?",
                         (slashed, job, bare),
@@ -165,7 +375,12 @@ def main(argv: list[str] | None = None) -> int:
                     continue
             con.execute("DELETE FROM crawled_pages WHERE job_id = ? AND url = ?",
                         (job, bare))
-    print(f"Applied. {len(affected)} duplicate home-page row(s) collapsed.")
+        for job, bare, slashed in (affected + stale):
+            _repoint_evidence(con, job, bare, slashed, apply=True)
+        for job, url in _duplicated_root_pages(con):
+            _dedupe_identical(con, job, url, apply=True)
+    print(f"Applied. {len(affected)} duplicate home-page row(s) collapsed; "
+          f"evidence cleaned on {len({j for j, _, _ in affected + stale})} job(s).")
     return 0
 
 

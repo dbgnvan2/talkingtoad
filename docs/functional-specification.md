@@ -1134,7 +1134,38 @@ the denominator, so the home page is double-weighted at a merged deduction: 71
 jobs affected in the development store, **24 with a score 1–2 points wrong**, and
 all 71 showing the home page twice in By Page. Dry run is the default; `--apply`
 backs the database up first and refuses to proceed if the backup cannot be
-written; a second run is a no-op. It does **not** rewrite stored `health_score`
+written; a second run is a no-op.
+
+**Collapsing the pages is only half of it.** The first version moved the rows and
+left the findings that existed *because* the page was duplicated — 19 home pages
+still reported as near-duplicates of themselves, citing a URL the job no longer
+contained (cold sweep). For those codes the evidence **is** the finding. The
+script therefore also: re-points URLs stored inside `issues.extra`; deletes a
+cross-page duplicate finding that, after the collapse, names **no page other than
+the one it sits on**; and de-duplicates issue rows that are byte-identical after
+the move (~490 surplus rows, created by re-pointing both spellings onto one URL).
+
+Two rules that had to be got right, because both delete rows:
+- **Self-referential, not "fewer than two partners".** Counting distinct partners
+  and deleting anything under two would have removed **553 rows** on the real
+  database — every legitimate two-page duplicate, whose `duplicate_urls` holds
+  exactly one entry. The correct test is whether the finding names any page other
+  than its own, which deletes **73**.
+- **Identical, not same-code.** Only rows with the same code *and* the same
+  evidence are collapsed. Plenty of codes legitimately repeat on a page (one per
+  image, one per link) and de-duplicating by code alone would delete real
+  findings.
+
+It also covers `fixes` and `fixed_issues`, which the first version missed —
+`sqlite_store.py`'s job-expiry list is the authoritative enumeration and was not
+consulted. `fixes` carries `UNIQUE(job_id, page_url, field)`, so a plain UPDATE
+raises `IntegrityError` and, inside one transaction, aborts the whole migration:
+the losing row is dropped instead.
+
+Applied to the development store: 71 pages collapsed, 1016 rows re-pointed, 24
+health scores corrected, 73 false findings removed, ~490 duplicate rows
+de-duplicated. Identical-duplicate rows site-wide finished **below** the
+pre-migration baseline (278 vs 284). It does **not** rewrite stored `health_score`
 columns — the score is recomputed from rows on read, so collapsing the rows fixes
 it, and writing a derived value would create a second source of truth.
 → `tests/test_migrate_duplicate_origin_rows.py`
