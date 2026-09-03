@@ -708,13 +708,25 @@ All ai_readiness codes carry a confidence label per the spec:
     Every one of the 98 `Article.headline` findings in the development store
     carried an entity — a 100% false-positive rate on a check with **impact 6**
     and `Established` confidence citing Google's markup-must-match rule.
-    `_normalize` now applies `html.unescape` to both sides. This does not loosen
-    the check: the only strings it newly matches differ solely by encoding, and a
-    value whose words are genuinely absent still fails (asserted directly, and
-    `&#038;` must not start matching the word "and"). Deliberately **not**
-    widened further — folding typographic quotes and dashes to ASCII cleared no
-    additional case in evidence, and every widening of an impact-6 check is a
-    chance to hide a real mismatch. The reported value is decoded for display too
+    The **schema value only** is decoded (`_normalize_schema_value`); the visible
+    side is not. `soup.get_text()` has already resolved entities, so a literal
+    `&#8217;` surviving into the visible text means the source was
+    double-encoded and a visitor genuinely sees `don&#8217;t` on screen —
+    markup declaring `don’t` then really does differ from what the page shows,
+    and must still be flagged. This does not loosen the check: the only strings
+    it newly matches differ solely by encoding, and a value whose words are
+    genuinely absent still fails (asserted directly, and `&#038;` must not start
+    matching the word "and"). Deliberately **not** widened further — decoding
+    the visible side, or folding typographic quotes and dashes to ASCII, cleared
+    no additional case in evidence, and every widening of an impact-6 check is a
+    chance to hide a real mismatch. The first version of this fix decoded both
+    sides and was narrowed by the cold sweep.
+
+    The premise the fix rests on — script content is raw text, body text is
+    decoded — is asserted against a real parser
+    (`TestTheParserBoundaryThisFixRestsOn`), not merely stated here: every other
+    test in the file hands the function two pre-built strings and so cannot tell
+    whether the boundary behaves as claimed. The reported value is decoded for display too
     (SV2): the raw string put markup in a client report and could not be matched
     against what the operator sees in the WordPress editor, and the 120-character
     display budget was being spent on `&#8217;`.

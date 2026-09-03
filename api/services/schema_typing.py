@@ -149,32 +149,53 @@ _SCHEMA_FIELDS_TO_CHECK: dict[str, list[tuple[str, str]]] = {
 
 
 def _normalize(text: str) -> str:
-    """Decode HTML entities, lowercase, collapse whitespace — for substring compare.
+    """Lowercase, collapse whitespace — the VISIBLE side of the comparison.
+
+    Deliberately does NOT decode entities. ``visible_text`` is
+    ``soup.get_text()``, so the parser has already resolved them; a literal
+    ``&#8217;`` surviving into it means the page source was double-encoded and a
+    visitor really does see ``don&#8217;t`` on screen. Decoding here would make
+    that match a schema value declaring ``don’t`` — markup that does not match
+    what the page shows, which is the thing this check exists to catch.
+
+    The first version of the SV1 fix decoded both sides. The cold sweep found
+    that only the schema side is needed for the reported bug, and that the
+    visible-side decode was defended by a fixture ``get_text()`` cannot produce
+    (P27). Widening an impact-6 check further than the evidence requires is how
+    a true positive goes quiet.
+    """
+    return " ".join(text.lower().split())
+
+
+def _normalize_schema_value(value: str) -> str:
+    """Normalise a JSON-LD value for comparison — entities decoded first.
 
     SV1 (2026-09-03). The two sides of this comparison arrive through DIFFERENT
-    decoders, and until now only one of them was decoded:
+    decoders, and only one of them was decoded:
 
     * visible text comes from ``soup.get_text()``, so entities are already
       resolved — the page reads ``don’t``;
-    * the schema value comes from inside ``<script type="application/ld+json">``,
-      and script content is **raw text**: an HTML parser does not decode entities
-      there. Yoast writes ``&#8217;``, so the parsed JSON string literally holds
+    * this value came out of ``<script type="application/ld+json">``, and script
+      content is **raw text**: an HTML parser does not decode entities there.
+      Yoast writes ``&#8217;``, so the parsed JSON string literally holds
       ``don&#8217;t``.
 
-    So ``SCHEMA_VISIBLE_MISMATCH`` reported text that is identical to a reader as
-    missing from the page. Every one of the 98 ``Article.headline`` findings in
-    the development store carried an entity — a 100% false-positive rate, on a
-    check with impact 6 that cites Google's markup-must-match rule.
+    So ``SCHEMA_VISIBLE_MISMATCH`` reported text identical to a reader as missing
+    from the page. Every one of the 98 ``Article.headline`` findings in the
+    development store carried an entity — a 100% false-positive rate, on a check
+    with impact 6 and ``Established`` confidence citing Google's
+    markup-must-match rule.
 
     This does NOT loosen the check: the only strings it newly matches are ones
     that differ solely by encoding, i.e. the same text. A value whose words are
-    genuinely absent still fails — asserted by
-    ``TestHtmlEntitiesInTheSchemaValue::test_a_genuinely_absent_headline_is_still_flagged``.
+    genuinely absent still fails.
 
     Spec:  docs/functional-specification.md §4.6 (SV1)
     Tests: tests/test_schema_visible_mismatch.py::TestHtmlEntitiesInTheSchemaValue
+           and ::TestTheParserBoundaryThisFixRestsOn, which asserts the
+           script-is-raw-text premise against a real parser rather than stating it.
     """
-    return " ".join(html.unescape(text).lower().split())
+    return _normalize(html.unescape(value))
 
 
 # Max characters kept for a mismatched schema value shown in the report.
@@ -295,7 +316,7 @@ def _check_block_fields(
                 continue  # absent or empty → not a mismatch
             if _is_machine_identifier(value):
                 continue  # email/URL identifier, not display content
-            if _normalize(value) not in normalized_visible:
+            if _normalize_schema_value(value) not in normalized_visible:
                 _record_mismatch(mismatched, f"{prefix}{label}", value)
 
         # LocalBusiness.address — special assembly
@@ -304,7 +325,7 @@ def _check_block_fields(
             if addr_str:
                 # Check each non-empty part individually; if ANY part is missing,
                 # flag. But for the label, use the whole address.
-                if _normalize(addr_str) not in normalized_visible:
+                if _normalize_schema_value(addr_str) not in normalized_visible:
                     _record_mismatch(
                         mismatched, f"{prefix}LocalBusiness.address", addr_str
                     )
@@ -319,7 +340,7 @@ def _check_block_fields(
                     # Question name
                     name = item.get("name")
                     if isinstance(name, str) and name.strip():
-                        if _normalize(name) not in normalized_visible:
+                        if _normalize_schema_value(name) not in normalized_visible:
                             _record_mismatch(
                                 mismatched,
                                 f"{prefix}FAQPage.mainEntity[{idx}].name",
@@ -330,7 +351,7 @@ def _check_block_fields(
                     if isinstance(accepted, dict):
                         ans_text = accepted.get("text")
                         if isinstance(ans_text, str) and ans_text.strip():
-                            if _normalize(ans_text) not in normalized_visible:
+                            if _normalize_schema_value(ans_text) not in normalized_visible:
                                 _record_mismatch(
                                     mismatched,
                                     f"{prefix}FAQPage.mainEntity[{idx}].acceptedAnswer.text",

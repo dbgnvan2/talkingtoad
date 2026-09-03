@@ -285,10 +285,24 @@ class TestHtmlEntitiesInTheSchemaValue:
         visible = f"Article: Bowen Theory {char} Relationships, a discussion."
         assert check_schema_visible_mismatch(blocks, visible) == []
 
-    def test_entities_on_the_visible_side_too(self):
-        """Both sides normalise the same way, so an entity in either is fine."""
-        blocks = [{"@type": "Article", "headline": "Fathers &amp; Sons"}]
-        assert check_schema_visible_mismatch(blocks, "About Fathers &#038; Sons here") == []
+    def test_a_page_that_literally_displays_an_entity_is_still_flagged(self):
+        """Only the SCHEMA side is decoded, and that is deliberate.
+
+        Decoding the visible text too would widen an impact-6 check further than
+        the reported bug requires. `soup.get_text()` has already resolved
+        entities, so a literal `&#8217;` surviving into the visible text means
+        the SOURCE was double-encoded and a visitor genuinely sees
+        `don&#8217;t` on screen. The markup then declares something the page
+        does not show, which is exactly what this check is for — Google's rule
+        is that markup match the visible content.
+
+        Caught by the cold sweep: the first version of this fix decoded both
+        sides, and its only guard was a fixture that `get_text()` cannot produce
+        from a correctly-encoded page (P27 — a widening justified by an input
+        that does not occur)."""
+        blocks = [{"@type": "Article", "headline": "Emotions don&#8217;t take a vacation"}]
+        visible = "Emotions don&#8217;t take a vacation"   # the entity is on screen
+        assert _fields(check_schema_visible_mismatch(blocks, visible)) == ["Article.headline"]
 
     # ── The point of the check has to survive (adversarial) ─────────────────
 
@@ -312,6 +326,73 @@ class TestHtmlEntitiesInTheSchemaValue:
         assert _fields(check_schema_visible_mismatch(blocks, visible)) == ["Article.headline"]
 
 
+class TestTheParserBoundaryThisFixRestsOn:
+    """The premise, asserted against a real parser instead of stated as fact.
+
+    The whole fix rests on one claim: **an HTML parser does not decode entities
+    inside `<script>`, but does decode them in body text.** That sentence is in
+    the code, the commit message and the functional spec — and until the cold
+    sweep pointed it out, in no test. Every other test here hands the function
+    two pre-built Python strings, so the suite could not tell whether the
+    boundary behaves as claimed or whether the fix is a no-op.
+
+    LEARNINGS, 2026-09-02: "one test per integration that talks to a real
+    transport and asserts the wire format ... that is the only layer where the
+    code and its author cannot both be wrong in the same direction."
+    """
+
+    HTML = (
+        "<!DOCTYPE html><html lang='en'><head>"
+        "<title>Emotions</title>"
+        '<script type="application/ld+json">'
+        '{"@context":"https://schema.org","@type":"Article",'
+        '"headline":"Emotions don&#8217;t take a vacation"}'
+        "</script></head><body>"
+        "<h1>Emotions don&#8217;t take a vacation</h1>"
+        "<p>Family systems do not pause for the summer.</p>"
+        "</body></html>"
+    )
+
+    def _soup(self):
+        from bs4 import BeautifulSoup
+        return BeautifulSoup(self.HTML, "lxml")
+
+    def test_the_parser_leaves_entities_alone_inside_the_json_ld(self):
+        from api.crawler.parser import _extract_schema_blocks
+
+        blocks = _extract_schema_blocks(self._soup())
+        headline = next(b["headline"] for b in blocks if isinstance(b, dict) and b.get("headline"))
+        assert headline == "Emotions don&#8217;t take a vacation", (
+            f"the parser decoded script content; this fix assumes it does not: {headline!r}")
+
+    def test_the_parser_decodes_the_same_entity_in_body_text(self):
+        visible = self._soup().get_text()
+        assert "Emotions don\u2019t take a vacation" in visible, visible[:200]
+        assert "&#8217;" not in visible, "get_text() left an entity undecoded"
+
+    def test_end_to_end_the_page_is_not_flagged(self):
+        """The two halves above are why the check was wrong; this is the check."""
+        from api.crawler.parser import _extract_schema_blocks
+
+        soup = self._soup()
+        result = check_schema_visible_mismatch(_extract_schema_blocks(soup), soup.get_text())
+        assert result == [], result
+
+    def test_end_to_end_a_real_mismatch_in_the_same_shape_is_still_flagged(self):
+        """Adversarial partner: identical markup, a headline the page never
+        shows. If this passes silently the test above proves nothing."""
+        from bs4 import BeautifulSoup
+
+        from api.crawler.parser import _extract_schema_blocks
+
+        html = self.HTML.replace(
+            '"headline":"Emotions don&#8217;t take a vacation"',
+            '"headline":"A completely unrelated headline about tax clinics"')
+        soup = BeautifulSoup(html, "lxml")
+        result = check_schema_visible_mismatch(_extract_schema_blocks(soup), soup.get_text())
+        assert _fields(result) == ["Article.headline"], result
+
+
 class TestTheReportedValueIsReadable:
     """SV2 — the report printed `Emotions don&#8217;t take a vacation`. Even on a
     true positive that is markup leaking into a client report, and the operator
@@ -325,18 +406,34 @@ class TestTheReportedValueIsReadable:
         assert value == "Grief & Loss \u2013 A Guide", value
         assert "&" in value and "&amp;" not in value and "&#" not in value
 
-    def test_truncation_counts_decoded_characters(self):
-        """The 120-char cap must not be spent on `&#8217;`. Eight entities cost
-        56 raw characters and 8 real ones."""
+    def test_a_value_under_the_cap_once_decoded_is_not_truncated(self):
+        """The 120-char budget must be spent on characters, not on `&#8217;`.
+
+        20 entities are 140 raw characters and 20 real ones. Without decoding
+        first, this value is cut and given an ellipsis it does not need — the
+        operator sees a truncated headline and cannot tell it from a genuinely
+        long one. (The earlier version of this test asserted
+        `len(value) == _MAX + 1`, which is true with or without the fix — a
+        restatement of the implementation, not a test of it. P32.)"""
         from api.services.schema_typing import _MISMATCH_VALUE_MAX_CHARS
 
-        headline = "A" * 115 + "&#8217;" * 8          # 115 real + 8 real = 123 decoded
+        headline = "Don&#8217;t" * 20                  # 200 raw chars, 100 decoded
         blocks = [{"@type": "Article", "headline": headline}]
-        result = check_schema_visible_mismatch(blocks, "unrelated visible text")
-        value = result[0]["value"]
-        assert "&#" not in value, f"raw entity survived truncation: {value!r}"
-        assert len(value) == _MISMATCH_VALUE_MAX_CHARS + 1, len(value)  # + the ellipsis
+        value = check_schema_visible_mismatch(blocks, "unrelated visible text")[0]["value"]
+        assert "&#" not in value, f"raw entity survived: {value!r}"
+        assert not value.endswith("\u2026"), (
+            f"a {len(value)}-character value was truncated as though it were "
+            f"{len(headline)} characters long: {value!r}")
+        assert len(value) <= _MISMATCH_VALUE_MAX_CHARS
+
+    def test_a_genuinely_long_value_is_still_truncated(self):
+        """The cap still bites once the value really is over it."""
+        from api.services.schema_typing import _MISMATCH_VALUE_MAX_CHARS
+
+        blocks = [{"@type": "Article", "headline": "A" * 200}]
+        value = check_schema_visible_mismatch(blocks, "unrelated visible text")[0]["value"]
         assert value.endswith("\u2026")
+        assert len(value) == _MISMATCH_VALUE_MAX_CHARS + 1
 
 
 class TestEmptyMissingFields:

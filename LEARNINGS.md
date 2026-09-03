@@ -177,6 +177,22 @@ Newest first. Format: **Issue → Root cause → What would have caught it → F
   - *Scale, and why it was expensive:* **98 of 98** `Article.headline` findings in the development store carried an entity — the check had never once produced a true positive for that field. The entities were `&#8217;`, `&#038;`, `&#8211;`: standard Yoast output, so this fires on any WordPress site whose headlines contain an apostrophe, an ampersand or a dash, which is most of them. And it is not a cheap wrong answer — `SCHEMA_VISIBLE_MISMATCH` carries **impact 6**, among the largest single deductions in the catalogue, with confidence `Established` because it cites Google. It deducted heavily *and* told a nonprofit they might be penalised, for markup that already matched.
   - *What would have caught it:* a fixture taken off the wire. Every existing test in `test_schema_visible_mismatch.py` — including a class explicitly named `TestAdversarialNormalization` — wrote both sides of the comparison in **one encoding**, because the author typed both strings. The class tested the normalisation it had thought of (case, whitespace) and could not see the one it had not. The new fixtures are the live Yoast payload and the live rendered text.
   - *Fix:* `html.unescape` inside `_normalize`, so both sides are treated identically, plus decoding for display (`_truncate_value`) — the raw string was putting markup into a client report and spending the 120-character display budget on `&#8217;`. Verified against the six affected pages on the current crawl: 6 before, 0 after. Three adversarial tests pin that the check still works: a genuinely absent headline still fails, `&#038;` does not start matching the word "and", and a partial overlap is still a mismatch. Deliberately not widened to fold typographic quotes and dashes — that cleared no additional case in evidence, and every widening of an impact-6 check is a chance to hide a real mismatch.
+  - *And what the cold sweep of the FIX then found — three, one of them a real widening:*
+    **(a)** I decoded BOTH sides. Only the schema side needed it: `soup.get_text()` has already
+    resolved entities, so a literal `&#8217;` in the visible text means the source was
+    double-encoded and a visitor really does see `don&#8217;t` — markup declaring `don’t` then
+    genuinely differs from the page and should still be flagged. My own spec sentence said
+    "every widening of an impact-6 check is a chance to hide a real mismatch", and I widened it
+    one step further than the evidence required in the same commit. Worse, the only test
+    defending the extra step used a "visible text" of `About Fathers &#038; Sons here` — a string
+    `get_text()` cannot produce from a correctly-encoded page (P27: a widening justified by an
+    input that does not occur). **(b)** the premise the whole fix rests on — script content is
+    raw text, body text is decoded — was stated in the code, the commit message and the canonical
+    spec, and asserted in no test: all nine new tests handed the function two pre-built Python
+    strings, so the suite could not tell whether the boundary behaves as claimed or the fix is a
+    no-op. **(c)** `assert len(value) == _MAX + 1` passes with or without the fix — a restatement
+    of the implementation (P32); replaced with the load-bearing case, a value that is over the cap
+    raw and under it decoded, which must not be truncated at all.
   - *Pattern:* **a comparison whose two sides come from different decoders will eventually compare an encoding artifact.** The generalisable check, for any "is X present in Y" across a parser boundary: name the decoder on each side, and if they differ, normalise the encoding before comparing — or the test is measuring the pipeline, not the content. Related to P13 (two implementations of one rule that drift), but the drift here is not in the rule; it is in what reached the rule. Corollary, third time in a week: **fixtures written by the author of the code encode the author's model, not the world.** A test class called "adversarial" is not adversarial if both of its strings were typed by the same person in the same sitting.
 
 - **2026-09-02 — the WordPress audit asked for routes that do not exist, and its stub agreed with it. Found by accident, a day after it shipped.**
