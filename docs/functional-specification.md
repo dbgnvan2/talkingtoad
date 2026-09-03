@@ -697,6 +697,29 @@ All ai_readiness codes carry a confidence label per the spec:
 
 - **Established** (9 codes) — robots.txt / AI bot directives, plus direct markup validation:
   - `SCHEMA_VISIBLE_MISMATCH` — A value declared in JSON-LD structured data does not appear in the page's visible text. The author/publisher-node guard (`_is_author_publisher_node`, `api/services/schema_typing.py`) excludes structural nodes — including the WordPress SEO-plugin byline `Person` node (`/schema/person/<hash>` `@id`) — so a legitimate author graph-node does not fire the check site-wide (V2 false-positive fix, 2026-07-06). → adversarial + true-positive-preserved tests.
+
+    **Both sides are decoded before comparison (SV1, 2026-09-03).** The two
+    strings arrive through different decoders: visible text comes from
+    `soup.get_text()`, so entities are already resolved, while the schema value
+    comes from inside `<script type="application/ld+json">` — script content is
+    **raw text**, and an HTML parser does not decode entities there. Yoast writes
+    `&#8217;`, so the JSON string literally held `don&#8217;t` while the page
+    showed `don’t`, and the check reported text identical to a reader as missing.
+    Every one of the 98 `Article.headline` findings in the development store
+    carried an entity — a 100% false-positive rate on a check with **impact 6**
+    and `Established` confidence citing Google's markup-must-match rule.
+    `_normalize` now applies `html.unescape` to both sides. This does not loosen
+    the check: the only strings it newly matches differ solely by encoding, and a
+    value whose words are genuinely absent still fails (asserted directly, and
+    `&#038;` must not start matching the word "and"). Deliberately **not**
+    widened further — folding typographic quotes and dashes to ASCII cleared no
+    additional case in evidence, and every widening of an impact-6 check is a
+    chance to hide a real mismatch. The reported value is decoded for display too
+    (SV2): the raw string put markup in a client report and could not be matched
+    against what the operator sees in the WordPress editor, and the 120-character
+    display budget was being spent on `&#8217;`.
+    → `tests/test_schema_visible_mismatch.py::TestHtmlEntitiesInTheSchemaValue`,
+    `::TestTheReportedValueIsReadable`.
   - `AI_PREVIEW_SUPPRESSED` — X-Robots-Tag suppresses search/AI previews (`nosnippet` or `max-snippet:0`).
   - `AI_PREVIEW_BLOCKED_AT_BOT` — X-Robots-Tag directive specifically blocks an AI crawler (e.g. GPTBot).
   - `AI_CITED_PAGE` — Page has ingested AI citation count > 0 (informational positive signal).
