@@ -491,6 +491,7 @@ Only the fields you include are updated.
 |---|---|---|
 | GET | `/api/health` | `{"status": "ok", "version": "1.9.1"}` |
 | GET | `/api/ai/test` | Test connectivity to Gemini/OpenAI API providers. |
+| GET | `/api/wp/connection` | WordPress connectivity + account capabilities (read-only). See below. |
 | GET | `/api/robots?url={url}` | Fetch and parse robots.txt for a domain. |
 | GET | `/api/sitemap?url={url}` | Fetch and parse sitemap(s) for a domain. |
 | GET | `/api/utility/generate-llms-txt?job_id={id}` | Generate an /llms.txt file from crawl data. |
@@ -678,6 +679,42 @@ All endpoints require `Authorization: Bearer <token>`.
 | POST | `/api/gsc/disconnect` | Remove stored GSC credentials. |
 | POST | `/api/gsc/ingest?site_url=...&job_id=...&days=30` | Fetch GSC data and store as PerformanceRecords. |
 | GET | `/api/gsc/performance?url=...&health_score=50` | Get performance ledger rows + ReviewFlag for a URL. |
+
+### GET `/api/wp/connection`
+
+WordPress connectivity for the Connections panel (WA5, 2026-09-02). Auth required. **Read-only** —
+the server logs in with the stored credentials and makes one call, `users/me`.
+
+Always **200 with a state**, never an HTTP error for a connectivity problem: *not configured*,
+*credentials rejected* and *logged in but under-privileged* are three different problems with three
+different fixes, and collapsing them into one failure would rebuild the guessing error message this
+work removed. `can_run_fixes` (edit_posts + edit_pages + upload_files) is separate from
+`can_run_wp_audit` (manage_options) because an editor authenticates fine and still cannot list
+plugins.
+
+Optional `?job_id=` is domain-validated against the stored credentials and returns **403
+`DOMAIN_MISMATCH`** on a mismatch. Without it there is no address to validate — the endpoint can
+only ever contact the site in the credentials file. The payload never carries a password.
+
+```json
+{
+  "configured": true,
+  "authenticated": true,
+  "site_url": "https://example.com",
+  "user_id": 11,
+  "roles": ["administrator"],
+  "capabilities": {"edit_posts": true, "edit_pages": true,
+                   "upload_files": true, "manage_options": true},
+  "can_run_fixes": true,
+  "can_run_wp_audit": true,
+  "message": "Connected. This account can run the fixes and the configuration audit."
+}
+```
+
+Not configured: `{"configured": false, "authenticated": false, "site_url": null, "message": "No WordPress credentials are stored…"}`.
+Rejected: `configured: true`, `authenticated: false`, and `message` carries the client's own
+diagnosis — the URL it posted to, whether the request was redirected, and the causes it cannot
+distinguish.
 
 ### GET `/api/gsc/status`
 

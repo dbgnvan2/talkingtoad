@@ -2319,6 +2319,72 @@ because "we could not look" must never render as "nothing to report" (P2).
 Themes and Site Health are best-effort — absent on some installs, and their
 absence degrades the report rather than failing it.
 
+**The REST route an audit call actually goes to (WA1–WA3, 2026-09-02).**
+`WPClient.get(endpoint)` joins `{site_url}/wp-json/wp/v2/` to *endpoint*, and all
+four call sites in `wp_audit.py` passed a path that already carried the
+namespace — so every request went to `/wp-json/wp/v2//wp/v2/…` and 404ed. The
+audit shipped 2026-09-02 and **never returned a report against a real site**.
+Three rules now hold:
+
+- **One spelling, enforced.** Endpoints are `wp/v2`-relative (`plugins`,
+  `themes`, `users/me?context=edit`), and `get`/`post`/`patch`/`delete` strip a
+  leading `/` and a redundant `wp/v2/` prefix, so both spellings issue the same
+  request. Writing a REST route with its namespace is the natural thing to do;
+  the client no longer punishes it.
+- **A namespace that is not `wp/v2`.** `WPClient.get_route(route)` addresses any
+  route under `/wp-json/`. Site Health lives in `wp-site-health/v1` and `get()`
+  hard-codes `wp/v2`, so it was unreachable by *any* endpoint string — a
+  structural fault, not a typo, hidden behind a best-effort `except`.
+  `parse_site_health` also reads the shape WordPress actually sends: a
+  single-test route returns one result object, not the grouped
+  `{recommended, critical}` form it was written for, and a `status` of `good`
+  is a PASS and is never listed as a finding.
+- **The capability probe cannot pass on a 404.** It checked
+  `status_code in (401, 403)`; a 404 is neither, so the broken route sailed
+  through and the audit continued as though the account had been verified. Any
+  non-200 now raises and names the status — a 404 means the route is wrong or
+  REST is disabled, which is not a permissions answer (P2).
+
+→ `tests/test_wp_client_routes.py` (a real `WPClient` over a mocked transport,
+asserting the exact URL — the stub in `tests/test_wp_audit.py` was keyed by the
+same wrong strings the code passed, so it could only ever agree with it),
+`tests/test_wp_audit.py::TestTheAuditAgainstARealClient`.
+
+### 7.8a WordPress connection check (WA5, 2026-09-02)
+
+`GET /api/wp/connection` — auth required, read-only, one call (`users/me`). The
+Connections panel tested the AI provider and Google Search Console; nothing
+tested WordPress, so the first sign of a stale credential was a failed fix or a
+502 from the audit. When livingsystems.ca moved its login page, every WordPress
+feature broke at once and nothing in the app could say why.
+
+It answers **200 with a state**, never an HTTP error, because *not configured*,
+*credentials rejected* and *logged in but under-privileged* are three different
+problems with three different fixes: `configured`, `authenticated`, `site_url`,
+`user_id`, `roles`, `capabilities`, `can_run_fixes`, `can_run_wp_audit`,
+`message`. `can_run_fixes` (edit_posts + edit_pages + upload_files) is separate
+from `can_run_wp_audit` (manage_options) because an editor authenticates
+perfectly well, runs every title/heading/image fix, and still cannot list
+plugins — one green tick for both would send the operator to a button that 403s.
+
+Domain safety: the endpoint takes no address, so with no `job_id` it can only
+ever contact the site named in the credentials file. An optional `job_id` is
+domain-validated, so it cannot be used to confirm credentials while looking at
+another site's crawl. The payload never carries a password.
+→ `tests/test_wp_connection_endpoint.py`, `ConnectionsPanel.test.jsx`.
+
+**The login error names what it saw (WA4).** `WPClient.login` raised "Login
+failed — no wordpress_logged_in cookie received. Check username and password"
+for every failure. On livingsystems.ca the password was correct: the site had
+moved its login page, and the stored pretty URL 302s to
+`wp-login.php?sgs-token=…` — httpx replays a 302 on a POST as a GET, so the
+credentials were dropped in flight and never reached WordPress. The message sent
+the reader to the one thing that was not wrong (P14). It now names the URL it
+posted to, states when the request was redirected and where to, quotes
+WordPress's own `login_error` when present, and lists the causes it cannot
+distinguish (wrong password, wrong login URL, a redirecting login URL,
+two-factor/CAPTCHA) rather than asserting one.
+
 Plugin-overlap detection collapses free/premium pairs of one product first
 (`families` in `api/config/wp_plugin_advice.json`): flagging Yoast against Yoast
 Premium, or Duplicator against Duplicator Pro, is noise that would make the whole
