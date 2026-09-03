@@ -227,9 +227,20 @@ class TestItDoesNotBecomeStopReporting503:
             "bb-403-notbroken", '<a href="https://forbidden.test/x">F</a>', wire))
         assert not [c for c in codes if c.startswith("BROKEN_LINK")], codes
 
-    async def test_an_internal_403_is_unchanged(self):
-        """Out of scope and deliberately untouched — a crawler blocked from the
-        site's own page is a different question, and no evidence was gathered."""
+    async def test_an_internal_403_page_produces_no_broken_link_finding(self):
+        """The BASELINE for internal 403, recorded rather than assumed.
+
+        The first version of this asserted that an internal 403 does not become
+        `EXTERNAL_LINK_SKIPPED` — which is structurally impossible and so could
+        never fail (cold sweep, P27): only links where `is_internal` is false are
+        queued for external checking, and the `link_type == "external"` guard in
+        the branch recomputes the same expression, so it is a tautology.
+
+        What is worth pinning is the actual behaviour, because it is a gap and
+        somebody will change it: an internal page returning 403 produces NO
+        broken-link finding at all, because `issue_for_status` returns None for
+        403. Deliberately out of scope for BL1 — a crawler blocked from the
+        site's own page is a different question — and recorded in TODO."""
         def wire(mock):
             mock.get("https://example.com/private").mock(return_value=httpx.Response(
                 403, text="<html><body>Forbidden</body></html>",
@@ -237,8 +248,9 @@ class TestItDoesNotBecomeStopReporting503:
 
         issues = await _crawl("bb-403-internal", '<a href="/private">Private</a>',
                               wire, max_pages=2)
-        assert "EXTERNAL_LINK_SKIPPED" not in _codes(issues), (
-            "an internal page was reclassified as an unverified external link")
+        codes = _codes(issues)
+        assert codes == [], (
+            f"internal-403 handling changed; this is the recorded baseline: {codes}")
 
     async def test_a_listed_host_reached_via_a_redirect_that_answers_200_is_verified(self):
         """The `>= 400` guard. The first version of the condition was

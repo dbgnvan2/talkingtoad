@@ -94,7 +94,10 @@ describe('WpAuditPanel — the findings the PDF had and the screen did not', () 
     // why `not_inspected` exists. An absent section must stay absent.
     await run(EMPTY)
     expect(screen.queryByText(/Site Health/i)).not.toBeInTheDocument()
-    expect(screen.queryByText(/overlap/i)).not.toBeInTheDocument()
+    // The heading is 'Two plugins doing one job' — no rendered text contains
+    // 'overlap', so the original assertion passed even with a POPULATED
+    // overlaps block (cold sweep, P27).
+    expect(screen.queryByText(/Two plugins doing one job/i)).not.toBeInTheDocument()
     expect(screen.queryByText(/Inactive themes/i)).not.toBeInTheDocument()
   })
 

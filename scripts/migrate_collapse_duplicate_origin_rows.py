@@ -8,7 +8,7 @@ ND3 (2026-09-03) made `normalise_url` map a bare origin to the root path, so
 that hold both as separate `crawled_pages` rows with different issue sets.
 
 Measured on the development store when this was written: **71 jobs affected, 24
-of them with a health score 1-2 points wrong** — `_compute_v15_health_score`
+of them with a health score wrong by up to 3 points** — `_compute_v15_health_score`
 merges the two rows' issues under `RTRIM(page_url,'/')` but counts the page
 TWICE in the denominator, so the home page is double-weighted at a merged
 deduction. All 71 also show the home page twice in the By Page list.

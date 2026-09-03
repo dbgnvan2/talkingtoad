@@ -5,7 +5,7 @@ Spec: docs/functional-specification.md §4.10 (LR, 2026-09-03)
 ND3 made a bare origin normalise to the root path. Jobs crawled before it hold
 `https://site.ca` and `https://site.ca/` as separate `crawled_pages` rows with
 different issue sets — 71 jobs in the development store, 24 with a health score
-1-2 points wrong, because the scorer merges the two rows' issues under
+wrong by up to 3 points, because the scorer merges the two rows' issues under
 `RTRIM(page_url,'/')` and counts the page TWICE in the denominator.
 
 Every test builds its own SQLite file under tmp_path. Nothing here touches the

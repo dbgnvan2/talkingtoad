@@ -1131,7 +1131,7 @@ bare-origin issues, links and images at the slashed row and deletes the bare
 `crawled_pages` row. It matters because `_compute_v15_health_score` merges the
 two rows' issues under `RTRIM(page_url,'/')` while counting the page **twice** in
 the denominator, so the home page is double-weighted at a merged deduction: 71
-jobs affected in the development store, **24 with a score 1–2 points wrong**, and
+jobs affected in the development store, **24 with a score wrong by up to 3 points**, and
 all 71 showing the home page twice in By Page. Dry run is the default; `--apply`
 backs the database up first and refuses to proceed if the backup cannot be
 written; a second run is a no-op.
