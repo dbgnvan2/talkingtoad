@@ -169,7 +169,9 @@ class TestTheFailureStatesAreDistinguishable:
         the audit button to meet a 403 they were just told would not happen."""
         me = _Resp(200, {"id": 4, "roles": ["editor"],
                          "capabilities": {"edit_posts": True, "edit_pages": True,
-                                          "upload_files": True, "manage_options": False}})
+                                          "upload_files": True,
+                                          "manage_options": False,
+                                          "activate_plugins": False}})
         with _patch_client(_FakeWP(me)):
             r = await api_client.get(ENDPOINT, headers=auth_headers)
         body = r.json()
@@ -177,6 +179,24 @@ class TestTheFailureStatesAreDistinguishable:
         assert body["can_run_fixes"] is True
         assert body["can_run_wp_audit"] is False, (
             "an editor cannot list plugins; the panel must not promise the audit")
+
+    async def test_the_audit_capability_is_the_one_the_plugins_route_gates_on(
+            self, api_client, auth_headers, creds):
+        """`WP_REST_Plugins_Controller::get_items_permissions_check` gates on
+        `activate_plugins`, not `manage_options`. Checking the wrong one is the
+        very failure the fix/audit split exists to prevent — a green tick, then
+        a 403 from the button it promised."""
+        me = _Resp(200, {"id": 5, "roles": ["custom"],
+                         "capabilities": {"edit_posts": True, "edit_pages": True,
+                                          "upload_files": True,
+                                          "manage_options": True,
+                                          "activate_plugins": False}})
+        with _patch_client(_FakeWP(me)):
+            r = await api_client.get(ENDPOINT, headers=auth_headers)
+        body = r.json()
+        assert body["can_run_fixes"] is True
+        assert body["can_run_wp_audit"] is False, (
+            "manage_options is not what /wp/v2/plugins checks")
 
     async def test_a_403_on_users_me_is_authenticated_false_not_a_crash(
             self, api_client, auth_headers, creds):
@@ -195,12 +215,115 @@ class TestTheFailureStatesAreDistinguishable:
         assert body["authenticated"] is False
         assert "404" in body["message"], body["message"]
 
+    async def test_a_200_that_is_not_wordpress_json_is_not_a_capability_verdict(
+            self, api_client, auth_headers, creds):
+        """P2/P14. A cache interstitial, a WAF challenge or a maintenance page
+        answers 200 with HTML. `me.json()` raised, `body` fell back to `{}`, and
+        every capability read False — so the panel rendered, in the GREEN box,
+        "Connected, but this account is missing edit_posts, edit_pages,
+        upload_files, so the fixes will fail": a specific, wrong, actionable
+        verdict about the operator's WordPress account, from a response that
+        established nothing. WA3 set the rule for the audit three files over;
+        a 200 that does not parse establishes nothing either."""
+        class _Html:
+            status_code = 200
+
+            def json(self):
+                raise ValueError("not json")
+
+        with _patch_client(_FakeWP(_Html())):
+            r = await api_client.get(ENDPOINT, headers=auth_headers)
+        body = r.json()
+        assert body["authenticated"] is False, (
+            "an unparseable body was reported as an authenticated account")
+        assert "edit_posts" not in body["message"], (
+            f"a capability verdict was invented from a non-JSON body: {body['message']}")
+
+    async def test_a_200_json_that_is_not_a_user_object_is_refused(
+            self, api_client, auth_headers, creds):
+        """Adversarial sibling: valid JSON, wrong shape (a REST error envelope,
+        or a list). No `id` means this is not the account description we asked
+        for, and its absent capabilities are not a finding about the account."""
+        for payload in ({"code": "rest_forbidden", "message": "no"}, [], "text"):
+            with _patch_client(_FakeWP(_Resp(200, payload))):
+                r = await api_client.get(ENDPOINT, headers=auth_headers)
+            assert r.json()["authenticated"] is False, payload
+
     async def test_a_transport_failure_is_reported_not_raised(
             self, api_client, auth_headers, creds):
         with _patch_client(_FakeWP(raises=httpx.ConnectError("dns"))):
             r = await api_client.get(ENDPOINT, headers=auth_headers)
         assert r.status_code == 200
         assert r.json()["authenticated"] is False
+
+
+class TestItActuallyTestsTheCredentials:
+    """The finding that matters (P6). `WPClient.login()` returns early on a
+    session-cache hit — restoring a cookie and a nonce, never touching
+    `self.password` — and the cache lives 10 hours. So the endpoint whose whole
+    job is "do the stored credentials still work" answered from a cookie: change
+    the password in wp-credentials.json with a warm cache and it still reported
+    "Connected. This account can run the fixes and the configuration audit."
+
+    A connection TEST must do the round trip it claims to."""
+
+    async def test_the_session_cache_is_cleared_before_the_check(
+            self, api_client, auth_headers, creds, monkeypatch):
+        import api.routers.wp_connection_router as mod
+
+        cleared: list[tuple] = []
+        monkeypatch.setattr(mod, "invalidate_session",
+                            lambda login_url, username: cleared.append((login_url, username)))
+        with _patch_client(_FakeWP()):
+            r = await api_client.get(ENDPOINT, headers=auth_headers)
+        assert r.status_code == 200
+        assert cleared == [("https://example.com/wp-login.php", "u")], (
+            "the check answered from whatever session was already cached — "
+            f"invalidate_session calls: {cleared}")
+
+    async def test_a_real_client_performs_the_login_round_trip(
+            self, api_client, auth_headers, tmp_path, monkeypatch):
+        """End to end through a real WPClient over a mocked transport: a warm
+        cache must not spare the POST. A stubbed client cannot show this — the
+        cache lives inside the client this endpoint would otherwise reuse.
+
+        Driven over HTTP rather than by calling the function directly: the
+        rate-limit decorator rejects a non-Request argument and is disabled in
+        tests, so a direct call would exercise a path production never takes
+        (P27)."""
+        import respx
+
+        from api.services.wp_client import WPClient
+
+        site, login = "https://wp.test", "https://wp.test/wp-login.php"
+        path = tmp_path / "wp-credentials.json"
+        path.write_text(json.dumps({"site_url": site, "login_url": login,
+                                    "username": "u", "password": "p"}))
+        monkeypatch.setattr("api.routers.wp_connection_router._CREDS_PATH", path)
+
+        admin = ('<html><script>wp.apiFetch.use( wp.apiFetch.createNonceMiddleware( '
+                 '"abc123" ) );</script></html>')
+        with respx.mock(assert_all_called=False) as mock:
+            mock.get(login).mock(return_value=httpx.Response(200, text="<form/>"))
+            post = mock.post(login).mock(return_value=httpx.Response(
+                302, headers={"location": f"{site}/wp-admin/",
+                              "set-cookie": "wordpress_logged_in_x=y; Path=/"}))
+            mock.get(f"{site}/wp-admin/").mock(return_value=httpx.Response(200, text=admin))
+            mock.get(f"{site}/wp-json/wp/v2/users/me?context=edit").mock(
+                return_value=httpx.Response(200, json={"id": 1, "roles": ["administrator"],
+                                                       "capabilities": {}}))
+            # Warm the cache the way a prior fix or audit would have.
+            async with WPClient(site_url=site, login_url=login, username="u", password="p"):
+                pass
+            before = post.call_count
+            r = await api_client.get(ENDPOINT, headers=auth_headers)
+            after = post.call_count
+
+        assert r.status_code == 200, r.text[:200]
+        assert r.json()["authenticated"] is True, r.json()["message"]
+        assert after == before + 1, (
+            "the connection check reused a cached session instead of logging in — "
+            "a stale password would still report Connected")
 
 
 # ── Auth and domain safety ──────────────────────────────────────────────────
@@ -238,9 +361,23 @@ class TestAuthAndDomain:
         assert r.json()["authenticated"] is True
 
     async def test_the_response_never_carries_the_password(
-            self, api_client, auth_headers, creds):
-        with _patch_client(_FakeWP()):
-            r = await api_client.get(ENDPOINT, headers=auth_headers)
-        assert "p" not in r.json().get("password", "x"), "a password field exists"
-        body = r.text.lower()
-        assert "password" not in body, f"the payload mentions a password: {r.text[:200]}"
+            self, api_client, auth_headers, tmp_path, monkeypatch):
+        """The first version asserted `"p" not in body.get("password","x")` —
+        vacuously true — and then that the WORD "password" was absent, which
+        only held because the configured path happens not to use it. Assert the
+        VALUE, with a value distinctive enough to find (P26)."""
+        secret = "Sup3rSecretW0rd-notinanymessage"
+        path = tmp_path / "wp-credentials.json"
+        path.write_text(json.dumps({
+            "site_url": "https://example.com",
+            "login_url": "https://example.com/wp-login.php",
+            "username": "u", "password": secret,
+        }))
+        monkeypatch.setattr("api.routers.wp_connection_router._CREDS_PATH", path)
+        monkeypatch.setattr("api.routers.fixes_shared._CREDS_PATH", path)
+
+        for fake in (_FakeWP(), _FakeWP(raises=WPAuthError(f"tried with {secret}"))):
+            with _patch_client(fake):
+                r = await api_client.get(ENDPOINT, headers=auth_headers)
+            assert secret not in r.text, (
+                f"the password reached the payload: {r.text[:300]}")

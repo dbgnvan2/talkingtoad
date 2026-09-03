@@ -60,5 +60,10 @@ AI_ANALYSIS_LIMIT = "60/hour"
 # an operator-initiated single-page fetch, cheaper than an AI call and far
 # cheaper than a crawl.
 DETAILS_LIMIT = "60/hour"
+# WA5 — /api/wp/connection logs in to WordPress on every call. Auth is
+# required, so the exposure is a token holder, but it is the same shape as
+# the details endpoint: a request amplifier pointed at the operator's own
+# site. A connection check is a thing you press occasionally.
+WP_CONNECTION_LIMIT = "30/hour"
 # Citation ingestion (M5) — a bulk write; the literal used to live in the router.
 CITATIONS_LIMIT = "10/minute"

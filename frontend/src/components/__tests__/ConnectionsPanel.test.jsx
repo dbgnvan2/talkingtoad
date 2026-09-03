@@ -188,8 +188,10 @@ describe('ConnectionsPanel — WordPress row', () => {
       message: 'Connected. This account can run the fixes, but not the configuration audit.',
     })
     await clickWordPress()
+    // Assert the PANEL's own can_run_wp_audit branch, not the mocked server
+    // message — matching the message only proves the mock was echoed (P27).
     await waitFor(() => {
-      expect(screen.getByText(/not the configuration audit/)).toBeInTheDocument()
+      expect(screen.getByText(/needs an administrator account/)).toBeInTheDocument()
     })
   })
 

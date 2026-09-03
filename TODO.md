@@ -71,6 +71,20 @@ user replaces the old image in the post by hand.
 - [ ] `/pages?min_severity=info` is level-blind.
 - [ ] Nested card containers (E6): choose between nested candidates deliberately.
 - [ ] `rechecked` is a field no consumer reads — wire or delete.
+- [ ] **`WpAuditPanel` renders none of Site Health, plugin overlaps, or inactive themes** — the
+  panel shows plugins total/active/inactive, pending updates, inactive plugins and the
+  `not_inspected` boundary; `site_health`, `overlaps` and `inactive_themes` reach the payload
+  and only the PDF prints them (P25/P16). WA2's whole payoff — the first real Site Health row
+  this feature has produced, a `critical` on livingsystems.ca — is invisible in the app. Not
+  done here because CLAUDE.md requires explicit instruction before changing what a panel
+  displays, and the approved WA spec did not cover it. There is also no `WpAuditPanel.test.jsx`
+  at all. (Cold sweep, 2026-09-02.)
+- [ ] **`users/me` capabilities are `allcaps`, not `current_user_can()`** — the raw role map,
+  unfiltered by `map_meta_cap`, so a role plugin or a multisite subsite that filters
+  `activate_plugins` at the meta layer still reports it true and `can_run_wp_audit` will
+  promise an audit that 403s. The REST API exposes no effective-capability check; closing it
+  properly means probing `plugins` with a HEAD/OPTIONS rather than inferring. (Cold sweep,
+  2026-09-02.)
 - [ ] **`NEAR_DUPLICATE_BODY` stores its cluster twice, O(N²) across a cluster** — ND1 keeps
   `members` (N urls) beside `near_identical_to` (N−1) on each of N rows, and `_issue_dict`
   serialises `extra` whole and uncapped, so a 50-page doorway cluster carries ~5,000 urls.

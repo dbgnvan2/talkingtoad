@@ -2337,8 +2337,14 @@ Three rules now hold:
   structural fault, not a typo, hidden behind a best-effort `except`.
   `parse_site_health` also reads the shape WordPress actually sends: a
   single-test route returns one result object, not the grouped
-  `{recommended, critical}` form it was written for, and a `status` of `good`
-  is a PASS and is never listed as a finding.
+  `{recommended, critical}` form it was written for. An **explicit** pass
+  (`good`/`passed`/`ok`) is dropped; a *missing* status is WordPress asserting
+  nothing and is reported, not silently discarded. And a Site Health read that
+  did not happen — a security plugin or managed host blocking the namespace, as
+  most do — is recorded in `not_inspected`, because the old best-effort
+  `try/except` left a blocked read byte-identical to a passing one in the client
+  report. The audit reads **one** of WordPress's ~20 Site Health tests, and
+  `NOT_INSPECTED` says so (P31).
 - **The capability probe cannot pass on a 404.** It checked
   `status_code in (401, 403)`; a 404 is neither, so the broken route sailed
   through and the audit continued as though the account had been verified. Any
@@ -2367,10 +2373,33 @@ from `can_run_wp_audit` (manage_options) because an editor authenticates
 perfectly well, runs every title/heading/image fix, and still cannot list
 plugins — one green tick for both would send the operator to a button that 403s.
 
+**It clears the session cache before running.** `WPClient.login()` returns early
+on a cache hit — restoring a cookie and a nonce, never touching the password —
+and that cache lives 10 hours. Without the bypass, an operator who had changed
+their WordPress password would click Test connection and be told *"Connected.
+This account can run the fixes and the configuration audit"* on the strength of
+a cookie (P6). Every other caller wants that cache; a connection **test** must
+do the round trip it claims to.
+
+A 200 is not by itself an answer either: a cache interstitial, a WAF challenge
+or a maintenance page all answer 200 with HTML, and parsing that to `{}` made
+every capability read False and produced a specific, wrong, actionable verdict
+about the account — in the green box. A body that is not a user object (no `id`)
+is reported as "nothing was verified", the same rule WA3 applies to the audit.
+
+`can_run_wp_audit` reads **`activate_plugins`**, which is what
+`WP_REST_Plugins_Controller` gates on, falling back to `manage_options` only
+when the install does not report it; an explicit `false` is never overridden by
+the fallback. Caveat recorded in TODO: `users/me` returns `allcaps`, the raw
+role map, not the result of `current_user_can()`, so a role plugin filtering at
+the meta layer can still make this optimistic.
+
 Domain safety: the endpoint takes no address, so with no `job_id` it can only
 ever contact the site named in the credentials file. An optional `job_id` is
 domain-validated, so it cannot be used to confirm credentials while looking at
-another site's crawl. The payload never carries a password.
+another site's crawl. Rate-limited (`WP_CONNECTION_LIMIT`, 30/hour) like the
+other request amplifiers. Any message forwarded from the client is scrubbed of
+the stored password before it reaches the browser.
 → `tests/test_wp_connection_endpoint.py`, `ConnectionsPanel.test.jsx`.
 
 **The login error names what it saw (WA4).** `WPClient.login` raised "Login
@@ -2383,7 +2412,13 @@ the reader to the one thing that was not wrong (P14). It now names the URL it
 posted to, states when the request was redirected and where to, quotes
 WordPress's own `login_error` when present, and lists the causes it cannot
 distinguish (wrong password, wrong login URL, a redirecting login URL,
-two-factor/CAPTCHA) rather than asserting one.
+two-factor/CAPTCHA) rather than asserting one. The quote is taken from the
+whole `#login_error` element: the first extractor stopped at the first closing
+tag, so against WordPress 6.x markup
+(`<div id="login_error"><p><strong>Error:</strong> The password you entered …`)
+it yielded `"Error:"` and dropped the reason — covered by a single flat fixture
+written from the extractor's own expectations, which is the P32 lesson again.
+The tests now use markup captured from a real WordPress 6.x login screen.
 
 Plugin-overlap detection collapses free/premium pairs of one product first
 (`families` in `api/config/wp_plugin_advice.json`): flagging Yoast against Yoast

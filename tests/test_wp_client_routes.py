@@ -173,6 +173,34 @@ class TestANamespaceThatIsNotWpV2:
         for u in urls:
             assert "/wp-json/wp/v2/" not in u, f"get_route went through wp/v2: {u}"
 
+    @pytest.mark.parametrize("bad", [
+        "../wp-admin/admin-ajax.php",
+        "wp/v2/../../wp-admin/options.php",
+        "a/../../../etc/passwd",
+    ])
+    async def test_a_traversing_route_is_refused(self, bad):
+        """Latent today — the only caller is a literal — but `get_route` joins a
+        caller string to `/wp-json/` and httpx normalises dot segments, so
+        `../wp-admin/admin-ajax.php` leaves the REST namespace and arrives at
+        wp-admin carrying the session cookie and the nonce. It cannot leave the
+        host, so this is not SSRF; it is a privilege surface waiting for someone
+        to wire a route parameter to it."""
+        with respx.mock(assert_all_called=False) as mock:
+            _mock_login(mock)
+            mock.route(host="wp.test").mock(return_value=httpx.Response(200, json={}))
+            async with _client() as wp:
+                with pytest.raises(ValueError):
+                    await wp.get_route(bad)
+
+    async def test_a_normal_route_is_unaffected(self):
+        with respx.mock(assert_all_called=False) as mock:
+            _mock_login(mock)
+            route = mock.get(f"{SITE}/wp-json/{self.ROUTE}").mock(
+                return_value=httpx.Response(200, json={}))
+            async with _client() as wp:
+                await wp.get_route(self.ROUTE)
+        assert route.called
+
     async def test_get_route_sends_the_nonce(self):
         """It is an authenticated route like any other."""
         target = f"{SITE}/wp-json/{self.ROUTE}"
@@ -253,3 +281,48 @@ class TestTheLoginErrorNamesWhatItSaw:
                 async with _client():
                     pass
         assert "password" in str(exc.value).lower()
+
+    # WordPress 6.x renders the login error as nested markup. The first version
+    # of this extractor was `(.*?)</` — lazy, stopping at the FIRST closing tag —
+    # so on every modern install it produced `WordPress said: "Error:"` and
+    # dropped the reason, which is the only thing the clause was added to
+    # surface. It was covered by one fixture, flat `<div id=...>text</div>`,
+    # which is the single shape the regex handled: a fixture written from the
+    # parser's own expectations proves the parser parses itself (P32). These
+    # come off a real WordPress 6.x login screen.
+    REAL_WP_ERRORS = [
+        ('<div id="login_error" class="notice notice-error"><p><strong>Error:</strong> '
+         'The password you entered for the username admin is incorrect. '
+         '<a href="https://wp.test/b0w3n?action=lostpassword">Lost your password?</a>'
+         '</p></div>',
+         "password you entered"),
+        ('<div id="login_error" class="notice notice-error"><p><strong>Error:</strong> '
+         'The username admin is not registered on this site.</p></div>',
+         "not registered"),
+        ("<div id='login_error'>Unknown username</div>", "Unknown username"),
+    ]
+
+    @pytest.mark.parametrize("markup,expected", REAL_WP_ERRORS)
+    async def test_wordpress_own_error_reaches_the_message(self, markup, expected):
+        with respx.mock(assert_all_called=False) as mock:
+            mock.get(LOGIN).mock(return_value=httpx.Response(200, text="<form/>"))
+            mock.post(LOGIN).mock(return_value=httpx.Response(200, text=markup + "<form/>"))
+            with pytest.raises(WPAuthError) as exc:
+                async with _client():
+                    pass
+        msg = str(exc.value)
+        assert expected in msg, (
+            f"WordPress said something this message dropped: {msg}")
+        assert "<" not in msg.split("WordPress said:")[-1], (
+            f"raw markup leaked into the message: {msg}")
+
+    async def test_no_login_error_element_means_no_quote(self):
+        """Adversarial: the quote must come from the response, not be boilerplate.
+        With nothing to quote the message must not claim WordPress said anything."""
+        with respx.mock(assert_all_called=False) as mock:
+            mock.get(LOGIN).mock(return_value=httpx.Response(200, text="<form/>"))
+            mock.post(LOGIN).mock(return_value=httpx.Response(200, text="<form/>"))
+            with pytest.raises(WPAuthError) as exc:
+                async with _client():
+                    pass
+        assert "WordPress said" not in str(exc.value)

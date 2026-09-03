@@ -884,8 +884,13 @@ def _render_wp_audit_section(pdf, audit: dict | None) -> None:
             pdf.ln(1)
         pdf.ln(2)
 
+    # `status` distinguishes a WordPress "critical" from a "recommended", and
+    # this is the only surface that shows Site Health at all — dropping it made
+    # the two render identically.
     _block("WordPress Site Health says", [
-        f"{h['label']}  ({h['source']})" for h in audit.get("site_health") or []
+        (f"[{str(h.get('status')).upper()}] " if h.get("status") else "")
+        + f"{h['label']}  ({h['source']})"
+        for h in audit.get("site_health") or []
     ], COLOR_GRAY_600)
 
     # The boundary, stated. Without it the reader may assume a clean section

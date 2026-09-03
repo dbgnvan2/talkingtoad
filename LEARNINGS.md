@@ -180,6 +180,34 @@ Newest first. Format: **Issue → Root cause → What would have caught it → F
   - *What would have caught it:* exactly what did — calling the thing against a real site. Failing that, one test driving a real `WPClient` over a mocked **transport** and asserting the URL string, which is now `tests/test_wp_client_routes.py`. The `_FakeWP` stub survives for the collector's own logic, but it now **asserts** that any endpoint handed to it is `wp/v2`-relative: a stub cannot police URL construction, but it can refuse to answer a spelling the real client would never produce.
   - *Fix:* endpoints normalise (both spellings issue one request); `get_route` addresses any namespace; the probe raises on any non-200 and names the status; `parse_site_health` reads the single-test shape and treats `status: "good"` as a pass, not a finding. Verified end to end against livingsystems.ca: 22 plugins, an inactive theme, and a real critical Site Health row — the first report this feature has ever produced.
   - *Plus P14, which cost the diagnostic round that found all of it:* `login()` raised "Login failed — no wordpress_logged_in cookie received. **Check username and password**" for every failure. The password was correct. The site's new login URL is a **redirect** — SiteGround Security 302s the pretty slug to `wp-login.php?sgs-token=…`, and httpx replays a 302 on a POST as a GET, so the credentials were dropped in flight and never reached WordPress. The message named the one thing that was not wrong. It now states the URL it posted to, where it was redirected, what WordPress itself said, and the four causes it cannot distinguish.
+  - *And what the cold sweep of the FIX then found — four more, two of them tests that could not fail:*
+    **(a)** `/api/wp/connection`, the endpoint built to answer "do the stored credentials still
+    work", **did not test the credentials.** `login()` returns early on a session-cache hit —
+    restoring a cookie and a nonce, never reading the password — and that cache lives 10 hours.
+    Change the WordPress password with a warm cache and the panel still reported "Connected. This
+    account can run the fixes and the configuration audit" (P6). A false green on the single
+    question the feature exists to answer, inside the feature written to stop false greens.
+    **(b)** WA3's own tests could not fail against WA3, proven by mutation: deleting the whole
+    `status_code != 200` block left all 38 green, because the fixture passed an EMPTY routes dict,
+    so the follow-on `plugins` call 404ed too and a pre-existing check raised from a different
+    line. The assertions were satisfied by the wrong raise (P27). Fixed by giving the fake a
+    WORKING plugin route, so the probe is the only thing that can raise, and asserting the call
+    log shows the audit stopped before reading anything. **(c)** the `login_error` quote — added
+    in this very change, and written into the canonical spec as fact — used a lazy `(.*?)</`, so
+    against WordPress 6.x markup it extracted `"Error:"` and dropped the reason. Its one fixture
+    was flat `<div id=...>text</div>`: the single shape the regex handled, written from the
+    extractor's own expectations. Deleting the entire clause left 17/17 green. **(d)** a 200
+    carrying HTML — a cache interstitial, a WAF challenge, a maintenance page — parsed to `{}`,
+    so every capability read False and the panel rendered, in the GREEN box, a specific wrong
+    verdict about the operator's account. WA3 had set exactly that rule for the audit two files
+    over and the new endpoint did not inherit it.
+  - *Second-order lesson, and the one worth the entry:* **the fix for a pattern does not
+    inoculate the fix.** This change's own LEARNINGS entry named P32 — "a fixture invented from a
+    parser's expectations proves the parser parses itself" — and shipped a new extractor with
+    exactly that fixture, in the same commit, written minutes apart. Naming a pattern is not the
+    same as running the check. The check that would have caught (b) and (c) is mechanical and
+    took two minutes each: **delete the code under test and re-run.** It is now the thing to do
+    before writing any test's docstring claiming what it guards.
   - *Pattern:* **a stub keyed by strings copied from the code under test is a mirror, not a test.** It is the same failure as 2026-09-01's endpoint-coverage guard being satisfied by a path literal inside a stub, and 2026-09-02's `NOT EXISTS (twin)` query answering a question narrower than the one asked. All three share a shape: **the artifact that was supposed to check the work was derived from the work.** The durable defence is not more tests, it is one test per integration that talks to a real transport and asserts the wire format — a URL, a payload shape, a status — because that is the only layer where the code and its author cannot both be wrong in the same direction. Corollary, now earned twice in one day: a fixture invented from a parser's expectations proves the parser parses itself.
 
 - **2026-09-02 — `NEAR_DUPLICATE_BODY` reported one page per group and never named the page it duplicated, and on livingsystems.ca the page it most often duplicated was itself.**

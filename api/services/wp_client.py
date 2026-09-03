@@ -228,10 +228,19 @@ class WPClient:
                 f"redirects."
             )
 
-        m = re.search(r'id=["\']login_error["\'][^>]*>(.*?)</', response.text or "",
+        # Take the WHOLE element, not up to the first closing tag. WordPress 6.x
+        # renders `<div id="login_error" ...><p><strong>Error:</strong> The
+        # password you entered ... is incorrect.</p></div>`, so a lazy `(.*?)</`
+        # yielded "Error:" and dropped the reason — the only thing this clause
+        # exists to surface. Balanced-tag matching is not a job for a regex, so
+        # take everything to the closing </div> and strip the markup.
+        m = re.search(r'id=["\']login_error["\'][^>]*>(.*?)</div>', response.text or "",
                       re.S | re.I)
         if m:
             detail = " ".join(re.sub(r"<[^>]+>", " ", m.group(1)).split())
+            # WordPress prefixes "Error:" as a label; the sentence after it is
+            # the content. Drop a bare leading label so the quote reads.
+            detail = re.sub(r"^(error|warning)\s*:\s*", "", detail, flags=re.I).strip()
             if detail:
                 parts.append(f'WordPress said: "{detail[:200]}"')
 
@@ -315,6 +324,12 @@ class WPClient:
         Tests: tests/test_wp_client_routes.py::TestANamespaceThatIsNotWpV2
         """
         assert self._client is not None
+        # httpx normalises dot segments, so `../wp-admin/admin-ajax.php` would
+        # leave /wp-json/ entirely and arrive at wp-admin carrying the session
+        # cookie and the nonce. No caller passes anything but a literal today;
+        # this closes the class before one does.
+        if ".." in route.split("?")[0].split("/"):
+            raise ValueError(f"route must stay under /wp-json/: {route!r}")
         r = await self._client.get(
             f"{self.site_url}/wp-json/{route.lstrip('/')}",
             headers=self._auth_headers,

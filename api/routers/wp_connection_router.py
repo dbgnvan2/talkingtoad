@@ -20,7 +20,7 @@ from __future__ import annotations
 import json
 import logging
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import JSONResponse
 
 from api.routers.fixes_shared import (
@@ -29,7 +29,8 @@ from api.routers.fixes_shared import (
     get_store,
 )
 from api.services.auth import require_auth
-from api.services.wp_client import WPAuthError, WPClient
+from api.services.rate_limiter import WP_CONNECTION_LIMIT, limiter
+from api.services.wp_client import WPAuthError, WPClient, invalidate_session
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +43,25 @@ router = APIRouter(prefix="/api/wp", tags=["wp"],
 # the configuration audit. Reporting one green tick for both would send the
 # operator to a button that 403s.
 _FIX_CAPS = ("edit_posts", "edit_pages", "upload_files")
-_AUDIT_CAP = "manage_options"
+# `WP_REST_Plugins_Controller::get_items_permissions_check` gates on
+# `activate_plugins`, NOT `manage_options`. Checking the wrong one reproduces the
+# exact failure this split exists to prevent: a green tick, then a 403 from the
+# button it just promised. `manage_options` is kept as a fallback for installs
+# that do not report `activate_plugins` in `allcaps`.
+_AUDIT_CAPS = ("activate_plugins", "manage_options")
+
+
+def _redact(text: str, secret: str | None) -> str:
+    """Never forward a message containing the stored password.
+
+    The client's own failure message does not include it, but this endpoint
+    passes that message verbatim to a browser, and a future client change — or a
+    WordPress error echoing a submitted value — would leak it with no other
+    guard in the path.
+    """
+    if secret and len(secret) >= 4 and secret in text:
+        return text.replace(secret, "[redacted]")
+    return text
 
 
 def _state(**kw) -> dict:
@@ -62,7 +81,9 @@ def _state(**kw) -> dict:
 
 
 @router.get("/connection", response_model=None)
+@limiter.limit(WP_CONNECTION_LIMIT)
 async def wp_connection(
+    request: Request,
     job_id: str | None = Query(
         None, description="Optional crawl job to domain-validate against."),
     store=Depends(get_store),
@@ -86,20 +107,32 @@ async def wp_connection(
             "site_url, login_url, username and a password to enable the fix "
             "flows and the configuration audit."))
 
-    # Read the site from the FILE, not off the client: the operator needs to see
-    # which site was tried even when the client cannot be constructed, and the
-    # answer must not depend on the client object's shape.
-    site_url = None
+    # Read the identifiers from the FILE, not off the client: the operator needs
+    # to see which site was tried even when the client cannot be constructed,
+    # and the answer must not depend on the client object's shape.
+    creds: dict = {}
     try:
-        site_url = json.loads(_CREDS_PATH.read_text()).get("site_url")
+        loaded = json.loads(_CREDS_PATH.read_text())
+        if isinstance(loaded, dict):
+            creds = loaded
     except Exception:  # noqa: BLE001
         pass
+    site_url = creds.get("site_url")
 
     try:
         client = WPClient.from_credentials_file(_CREDS_PATH)
     except WPAuthError as exc:
-        return _state(site_url=site_url,
-                      message=f"The stored credentials are unusable: {exc}")
+        return _state(site_url=site_url, message=_redact(
+            f"The stored credentials are unusable: {exc}", creds.get("password")))
+
+    # A connection TEST must do the round trip it claims to. `login()` returns
+    # early on a session-cache hit — restoring a cookie and a nonce, never
+    # touching the password — and that cache lives 10 hours. Without this, an
+    # operator who changed the WordPress password would click Test connection
+    # and be told "Connected. This account can run the fixes and the
+    # configuration audit." on the strength of a cookie (P6). Every other caller
+    # of WPClient legitimately wants the cache; this one must not have it.
+    invalidate_session(creds.get("login_url") or "", creds.get("username") or "")
 
     try:
         async with client as wp:
@@ -108,12 +141,13 @@ async def wp_connection(
         # WA4's diagnosis reaches the screen verbatim. It names the URL it tried,
         # whether the POST was redirected, and what it cannot tell apart —
         # which is the whole reason this endpoint exists.
-        return _state(configured=True, site_url=site_url, message=str(exc))
+        return _state(configured=True, site_url=site_url,
+                      message=_redact(str(exc), creds.get("password")))
     except Exception as exc:  # noqa: BLE001
         logger.info("wp_connection_failed", exc_info=True)
-        return _state(configured=True, site_url=site_url, message=(
+        return _state(configured=True, site_url=site_url, message=_redact(
             f"Could not reach {site_url or 'the WordPress site'}: "
-            f"{type(exc).__name__}: {exc}"))
+            f"{type(exc).__name__}: {exc}", creds.get("password")))
 
     if me.status_code in (401, 403):
         return _state(configured=True, site_url=site_url, message=(
@@ -129,14 +163,34 @@ async def wp_connection(
             "That is not a permissions answer: the REST API may be disabled or "
             "blocked, so nothing was verified."))
 
+    # A 200 is not by itself an answer. A cache interstitial, a WAF challenge or
+    # a maintenance page all answer 200 with HTML; parsing that to `{}` made
+    # every capability read False and produced a specific, wrong, actionable
+    # verdict about the operator's account — rendered in the GREEN box. WA3 set
+    # the rule for the audit: a response that establishes nothing must never be
+    # reported as a finding (P2/P14). A body with no `id` is not the account
+    # description we asked for.
     try:
         body = me.json()
     except Exception:  # noqa: BLE001
-        body = {}
+        body = None
+    if not isinstance(body, dict) or body.get("id") is None:
+        return _state(configured=True, site_url=site_url, message=(
+            "WordPress answered the account check with something that is not an "
+            "account (HTTP 200, but no user object). A cache, a firewall or a "
+            "maintenance page may be answering instead of the REST API, so "
+            "nothing was verified."))
+
     caps = {k: bool(v) for k, v in (body.get("capabilities") or {}).items()}
     roles = [str(r) for r in (body.get("roles") or [])]
     can_fix = all(caps.get(c) for c in _FIX_CAPS)
-    can_audit = bool(caps.get(_AUDIT_CAP))
+    # An explicit False is an answer; an absent key is not. Only fall back to
+    # `manage_options` when the install does not report `activate_plugins` at
+    # all — otherwise the fallback would override the real gate with a laxer one.
+    if "activate_plugins" in caps:
+        can_audit = bool(caps["activate_plugins"])
+    else:
+        can_audit = bool(caps.get("manage_options"))
 
     if can_fix and can_audit:
         message = "Connected. This account can run the fixes and the configuration audit."
@@ -155,7 +209,7 @@ async def wp_connection(
         roles=roles,
         # Only the capabilities the app depends on — the raw list is ~60 keys of
         # WordPress internals and nothing here reads them.
-        capabilities={c: bool(caps.get(c)) for c in (*_FIX_CAPS, _AUDIT_CAP)},
+        capabilities={c: bool(caps.get(c)) for c in (*_FIX_CAPS, *_AUDIT_CAPS)},
         can_run_fixes=can_fix,
         can_run_wp_audit=can_audit,
         message=message,

@@ -187,8 +187,11 @@ def parse_site_health(payload) -> list[dict]:
     # must not be listed as a finding.
     # Tests: tests/test_wp_audit.py::TestSiteHealthParsesWhatWordPressActuallySends
     if payload.get("label") and not any(k in payload for k in ("recommended", "critical")):
+        # An EXPLICIT pass is a pass; a missing status is WordPress asserting
+        # nothing and must be reported, not dropped (P2). `""` used to sit in
+        # this list, so a status-less finding vanished.
         status = str(payload.get("status") or "").lower()
-        if status not in ("good", "passed", "ok", ""):
+        if status not in ("good", "passed", "ok"):
             out.append({
                 "label": str(payload["label"]),
                 "status": status,
@@ -208,6 +211,9 @@ def parse_site_health(payload) -> list[dict]:
 
 
 NOT_INSPECTED = [
+    "WordPress Site Health beyond the background-updates test. WordPress runs "
+    "roughly twenty checks; this audit reads that one, so a clean Site Health "
+    "line here is not a clean Site Health panel.",
     "Plugin-internal state — whether a backup plugin has ever run, whether a "
     "security plugin is configured, whether a cache is warm. There is no generic "
     "WordPress API for this, so it was not read.",
@@ -282,14 +288,30 @@ async def collect_wp_audit(wp) -> WPAuditReport:
     except Exception:  # noqa: BLE001
         logger.info("wp_themes_unavailable", exc_info=True)
 
+    # WA2: Site Health is in the `wp-site-health/v1` namespace, which `get()`
+    # (hard-coded to wp/v2) cannot reach by any spelling.
+    #
+    # Best-effort, but NOT silent. Security plugins and managed hosts routinely
+    # block this namespace, and the old `try/except` + `== 200` left a blocked
+    # read byte-identical to a passing one in the client report — the exact "its
+    # absence read as checked, nothing to report" that WA2 exists to remove (P2).
+    health_reason: str | None = None
     try:
-        # WA2: Site Health is in the `wp-site-health/v1` namespace, which
-        # `get()` (hard-coded to wp/v2) cannot reach by any spelling.
         health = await wp.get_route("wp-site-health/v1/tests/background-updates")
         if health.status_code == 200:
             report.site_health = parse_site_health(health.json())
-    except Exception:  # noqa: BLE001
+        else:
+            health_reason = f"WordPress returned HTTP {health.status_code}"
+    except Exception as exc:  # noqa: BLE001
         logger.info("wp_site_health_unavailable", exc_info=True)
+        health_reason = f"{type(exc).__name__}: {exc}"
+
+    if health_reason:
+        report.not_inspected = list(report.not_inspected) + [
+            f"WordPress Site Health — the check could not be read "
+            f"({health_reason}). Security plugins and some managed hosts block "
+            f"this REST namespace. This is 'not checked', not 'nothing found'."
+        ]
 
     return report
 

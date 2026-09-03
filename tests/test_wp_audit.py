@@ -84,6 +84,9 @@ class _FakeWP:
     async def get_route(self, route, **_kw):
         """WA2 — Site Health is in the `wp-site-health/v1` namespace, which
         `get()` structurally cannot reach."""
+        assert not route.startswith("/"), (
+            f"route {route!r} has a leading slash; get_route joins it to /wp-json/")
+        assert ".." not in route, f"route {route!r} escapes /wp-json/"
         self.calls.append(f"route:{route}")
         for prefix, resp in self.routes.items():
             if route.startswith(prefix):
@@ -509,18 +512,34 @@ class TestTheCapabilityProbeCannotPassOnA404:
     audit carried on as though the account had been verified (P2). 'Could not
     look' must never be indistinguishable from 'looked, and it was fine'."""
 
+    # The plugin route WORKS in these fixtures. The first version passed an
+    # empty routes dict, so `plugins` 404ed too and the pre-existing
+    # `resp.status_code != 200` check raised — satisfying both assertions from a
+    # DIFFERENT line. Deleting the probe left all 38 tests green (P27, proven by
+    # mutation in the 2026-09-02 sweep). With a working plugin route the probe
+    # is the only thing that can raise, and the call log proves the audit
+    # stopped before reading anything.
+    GOOD_PLUGINS = {"plugins": None}   # filled per-test; see _wp()
+
+    def _wp(self, me_status):
+        return _FakeWP({"plugins": _Resp(200, [_plugin("wordpress-seo", "Yoast")])},
+                       me_status=me_status)
+
     async def test_a_404_probe_raises_rather_than_continuing(self):
-        wp = _FakeWP({}, me_status=404)
+        wp = self._wp(404)
         with pytest.raises(WPAuditError) as excinfo:
             await collect_wp_audit(wp)
         assert excinfo.value.code != "WP_INSUFFICIENT_CAPABILITY", (
             "a 404 is a wrong route or REST disabled, not a permissions answer")
         assert "404" in str(excinfo.value)
+        assert wp.calls == ["users/me?context=edit"], (
+            f"the audit read on past an unverified probe: {wp.calls}")
 
     async def test_a_500_probe_raises_too(self):
-        wp = _FakeWP({}, me_status=500)
+        wp = self._wp(500)
         with pytest.raises(WPAuditError):
             await collect_wp_audit(wp)
+        assert wp.calls == ["users/me?context=edit"]
 
     async def test_a_200_probe_still_proceeds(self):
         wp = _FakeWP({"plugins": _Resp(200, [_plugin("wordpress-seo", "Yoast")])})
@@ -570,3 +589,50 @@ class TestSiteHealthParsesWhatWordPressActuallySends:
     def test_junk_is_not_a_crash(self):
         for payload in (None, [], "text", {}, {"critical": None}, {"label": ""}):
             assert parse_site_health(payload) == []
+
+
+class TestSiteHealthAbsenceIsDeclared:
+    """P2, and the exact sentence WA2 was written to remove. WA2 fixed the
+    PARSE; the FETCH was left as `try/except` + `status_code == 200`, so a
+    security plugin blocking the `wp-site-health/v1` namespace (Wordfence,
+    SiteGround and most managed hosts do) produced a client report
+    byte-identical to one where the check ran and passed."""
+
+    async def test_a_blocked_site_health_route_is_recorded_as_not_inspected(self):
+        wp = _FakeWP({"plugins": _Resp(200, [_plugin("wordpress-seo", "Yoast")])})
+        # No site-health route in the fake -> 404, the blocked-host case.
+        report = await collect_wp_audit(wp)
+        assert report.site_health == []
+        assert any("site health" in n.lower() for n in report.not_inspected), (
+            "a blocked Site Health check is indistinguishable from a passing one: "
+            f"{report.not_inspected}")
+
+    async def test_a_successful_read_does_not_claim_it_was_skipped(self):
+        wp = _FakeWP({"plugins": _Resp(200, [_plugin("wordpress-seo", "Yoast")]),
+                      "wp-site-health": _Resp(200, REAL_SITE_HEALTH)})
+        report = await collect_wp_audit(wp)
+        assert report.site_health, "the route answered but nothing was parsed"
+        assert not any("could not be read" in n.lower() for n in report.not_inspected)
+
+    def test_only_the_one_test_that_was_read_is_claimed(self):
+        """WordPress has ~20 Site Health tests; the audit reads one. The report
+        must not imply the whole panel was covered (P31)."""
+        from api.services.wp_audit import NOT_INSPECTED
+        joined = " ".join(NOT_INSPECTED).lower()
+        assert "site health" in joined and "background" in joined, (
+            "the report does not say which Site Health tests it left unread")
+
+
+class TestAStatusLessFindingIsNotSilentlyDropped:
+    """P2 nit from the sweep: `status` was lowercased through
+    `str(x or "")` and `""` sat in the pass-list, so a finding WordPress sent
+    with no status was treated as a pass and dropped. "good" is WordPress
+    asserting a pass; "" is WordPress asserting nothing."""
+
+    def test_a_missing_status_is_reported_not_dropped(self):
+        rows = parse_site_health({"test": "x", "label": "Something is wrong"})
+        assert rows, "a finding with no status vanished"
+        assert rows[0]["label"] == "Something is wrong"
+
+    def test_an_explicit_pass_is_still_dropped(self):
+        assert parse_site_health({"test": "x", "label": "All good", "status": "good"}) == []
