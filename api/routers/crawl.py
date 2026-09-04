@@ -1825,7 +1825,7 @@ async def rescan_url(
                 _checks_a_single_page_scan_cannot_run())),
             "total_issues": existing,
             "by_category": {
-                k: [_issue_dict(i) | {"rechecked": False} for i in v]
+                k: [_issue_dict(i) for i in v]
                 for k, v in old_by_cat.items()
             },
             "caveat": (
@@ -1917,14 +1917,19 @@ async def rescan_url(
 
     by_category: dict[str, list] = {}
     for issue in new_issues:
-        by_category.setdefault(issue.category, []).append(
-            _issue_dict(issue) | {"rechecked": True})
+        by_category.setdefault(issue.category, []).append(_issue_dict(issue))
     # Carried-over findings travel in the response too. Kept in the database
     # but dropped from the payload, they would be invisible to the panel —
     # the same failure by a quieter route.
+    #
+    # P6.2: these rows used to carry `rechecked: true|false`. No consumer ever
+    # read it — the banner distinguishes the two from `carried_over_codes`, and
+    # this response's per-issue rows are not rendered at all — and it was
+    # derivable anyway: carry-over is defined as "code in needs_full_crawl", so
+    # the flag was a per-row copy of a code-level fact. `carried_over_codes` and
+    # `checks_not_run_reason` below are the disclosure that is actually read.
     for issue in carried_over:
-        by_category.setdefault(issue.category, []).append(
-            _issue_dict(issue) | {"rechecked": False})
+        by_category.setdefault(issue.category, []).append(_issue_dict(issue))
     # Apply exempt filter to the response (issues were stored without exemption filtering)
     by_category = {
         cat: _apply_exempt_anchors(issues, exempt_urls)

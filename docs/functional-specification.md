@@ -1640,9 +1640,13 @@ serialised it, and the function ignored it: **a disclosure is not a control.**
 
 The gate reads `needs_full_crawl` off the registry — never a list in the router
 (P19). Such findings are now *carried over*: re-saved after the delete, so they
-stay in the store, the results list and the score; returned in `by_category`
-with `rechecked: false`; named in `carried_over_codes`; and never resolved or
-ledgered. The response also gains `still_present_codes` and `newly_found_codes`,
+stay in the store, the results list and the score; returned in `by_category`;
+named in `carried_over_codes`; and never resolved or ledgered. (Until 2026-09-04
+each row also carried a per-row `rechecked` boolean. No consumer read it — the
+banner distinguishes the two from `carried_over_codes`, and this response's
+per-issue rows are never rendered — and it was derivable regardless, carry-over
+being defined as "code in `needs_full_crawl`". Removed in P6.2; a test fails if
+a doc states it as contract again while the API does not send it.) The response also gains `still_present_codes` and `newly_found_codes`,
 sharing vocabulary with `/fix-focus/verify-page` so two surfaces do not describe
 one event in two dialects. `resolved`/`added` remain row-count deltas and are a
 different claim from the code sets — three `IMG_ALT_MISSING` rows reduced to one

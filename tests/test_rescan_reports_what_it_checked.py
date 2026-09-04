@@ -167,16 +167,108 @@ class TestARecheckDoesNotResolveWhatItCannotCheck:
 
     async def test_a_carried_over_finding_is_still_in_the_response(self, store):
         """The panel renders from this payload. A finding kept in the database
-        but dropped from the response is invisible, which is the same failure."""
+        but dropped from the response is invisible, which is the same failure.
+
+        P6.2: this used to also assert `rechecked is False`, with the message
+        "so the panel cannot distinguish a re-checked finding from a
+        carried-over one". No panel ever read that field — the banner
+        distinguishes them from `carried_over_codes` — so the message stated a
+        dependency that never held. Presence is the real assertion and the one
+        the test's name makes.
+        """
         await _seed(store, DEFAULT_SEED)
         res = await _recheck(store)
         returned = {i["issue_code"]: i
                     for v in res["by_category"].values() for i in v}
         for code in UNRUNNABLE_SEEDED:
             assert code in returned, f"{code} missing from the re-check response"
-            assert returned[code].get("rechecked") is False, (
-                f"{code} returned without rechecked=false, so the panel cannot "
-                f"distinguish a re-checked finding from a carried-over one")
+
+    async def test_the_rescan_response_carries_no_unread_rechecked_flag(self, store):
+        """4.2 — the field is gone and must not accumulate again.
+
+        It was a per-row copy of a code-level fact (see the equivalence pinned
+        below) that no consumer read, on a response whose per-issue rows are
+        never rendered — the banner shows code lists.
+        """
+        await _seed(store, DEFAULT_SEED)
+        res = await _recheck(store)
+        rows = [i for v in res["by_category"].values() for i in v]
+        assert rows, "the fixture stopped returning rows"
+        offenders = [i["issue_code"] for i in rows if "rechecked" in i]
+        assert not offenders, f"rows still carry the unread flag: {offenders}"
+
+    async def test_carried_over_is_exactly_the_unrunnable_codes(self, store):
+        """4.3 — the premise the deletion rests on.
+
+        Deleting a field is only safe while the information is genuinely
+        derivable elsewhere. `rechecked` was `code not in needs_full_crawl`,
+        because carry-over is defined by exactly that membership. If carry-over
+        ever depends on something else, this fails and says so — rather than the
+        deletion quietly having removed real information.
+        """
+        from api.routers.crawl import _checks_a_single_page_scan_cannot_run
+
+        await _seed(store, DEFAULT_SEED + [(RUNNABLE_SEEDED, "metadata")])
+        res = await _recheck(store)
+        unrunnable = set(_checks_a_single_page_scan_cannot_run())
+        stored_before = {c for c, _cat in DEFAULT_SEED + [(RUNNABLE_SEEDED, "metadata")]}
+        assert set(res["carried_over_codes"]) == stored_before & unrunnable, (
+            "carry-over is no longer decided by the code alone, so `rechecked` "
+            "was carrying information the code does not"
+        )
+
+    async def test_fix_focus_rechecked_is_untouched(self, store):
+        """4.4 — the wrong-target guard.
+
+        Two fields share this name: a BOOLEAN on rescan issue rows (deleted) and
+        a STRING on Fix Focus items (`fix_focus.py`), which `FixFocusPanel.jsx`
+        genuinely renders as "not re-checked". A `grep -r rechecked` cleanup is
+        the obvious way to do this work and would take out the live one.
+        """
+        from datetime import datetime, timezone
+
+        from api.models.issue import Issue
+        from api.services.fix_focus import apply_verify, build_snapshot
+
+        issue = Issue(job_id="j", page_url="https://x.org/a", category="crawlability",
+                      severity="warning", issue_code="ORPHAN_PAGE", description="d",
+                      recommendation="r", impact=4)
+        snap = build_snapshot([issue], generated_at=datetime.now(timezone.utc),
+                              scoring_model_version="v")
+        apply_verify(snap, "https://x.org/a", present_codes=[],
+                     unchecked_codes=["ORPHAN_PAGE"])
+        item = next(it for p in snap["seo"]["pages"] for it in p["items"])
+        assert item.get("rechecked") == "not_checked", (
+            "the Fix Focus string form was deleted along with the boolean — "
+            "FixFocusPanel.jsx renders it as 'not re-checked'"
+        )
+
+    async def test_no_doc_documents_a_field_the_api_does_not_send(self, store):
+        """4.5 — read the DOCS, assert against the LIVE response.
+
+        `docs/api.md` and the functional spec both stated `rechecked: false` as
+        contract for this endpoint. A documented field no code produces is worse
+        than an undocumented one: it is the doc justifying the code rather than
+        describing it, and a reader has no way to tell.
+
+        Written per LEARNINGS item 13 — one side read, the other asserted from
+        its live output, rather than two assertions that agree with each other.
+        """
+        import re
+        from pathlib import Path
+
+        await _seed(store, DEFAULT_SEED)
+        res = await _recheck(store)
+        sent = {k for v in res["by_category"].values() for i in v for k in i}
+
+        root = Path(__file__).resolve().parent.parent
+        for doc in (root / "docs" / "api.md",
+                    root / "docs" / "functional-specification.md"):
+            for m in re.finditer(r"`rechecked: (?:false|true)`", doc.read_text()):
+                assert "rechecked" in sent, (
+                    f"{doc.name} documents `{m.group(0)}` on the rescan response, "
+                    f"which sends {sorted(sent)}"
+                )
 
     async def test_the_response_names_what_it_carried_over(self, store):
         await _seed(store, DEFAULT_SEED)
