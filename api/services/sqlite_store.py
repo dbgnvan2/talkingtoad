@@ -700,7 +700,7 @@ class SQLiteJobStore:
         except (aiosqlite.DatabaseError, json.JSONDecodeError) as e:
             logger.warning(f"Could not load discovery info for job {job_id}: {e}")
 
-        return {
+        summary = {
             "target_url": job.target_url,
             "pages_crawled": job.pages_crawled,
             "pages_with_errors": pages_with_errors,
@@ -737,13 +737,34 @@ class SQLiteJobStore:
             # S1: what the health score was computed OVER. A partial scan
             # scores 100 for categories it never ran, so the number must
             # carry its basis or it invites a false comparison.
-            "health_score_basis": health_score_basis(job.analysis_coverage, job.settings),
+            "health_score_basis": health_score_basis(
+                job.analysis_coverage, job.settings, job.pages_crawled),
             "robots_txt": robots_info,
             "sitemap": sitemap_info,
             # Phase 4 U4.4: the panel shows a stored audit on reload (P25 —
             # the job had it, the PDF printed it, the summary never carried it).
             "wp_audit": job.wp_audit,
         }
+        # P6.1 — 24 catalogue codes carry `needs_full_crawl` and cannot fire on
+        # the single-page path. Only one of them (ORPHAN_PAGE, via
+        # orphan_detection) was disclosed, so a one-page job scored 100 and read
+        # as a clean audit. Derived from the registry, never mirrored.
+        #
+        # Present ONLY on a single-page job: `[]` on a full crawl would be one
+        # more field asserting that nothing was skipped, which is the failure
+        # this repo has already hit twice (`info_excluded: 0`,
+        # `categories_unscored: []`). Absence is the honest encoding.
+        if getattr(job.settings, "single_page", False):
+            from api.crawler.checkers.registry import _CATALOGUE
+
+            summary["checks_not_run"] = sorted(
+                c for c, spec in _CATALOGUE.items() if spec.needs_full_crawl)
+            summary["checks_not_run_reason"] = (
+                "These checks compare a page against the rest of the site, so a "
+                "single-page scan cannot evaluate them. Run a full crawl to have "
+                "them checked."
+            )
+        return summary
 
     async def get_info_excluded_report(self, job_id: str, info_detail: str) -> dict:
         """``{hidden, by_tier}`` for the rows this level leaves out, job-wide.

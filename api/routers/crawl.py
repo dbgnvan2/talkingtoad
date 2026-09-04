@@ -2829,6 +2829,28 @@ async def get_crawl_comparison(
         comparable = False
         reasons.append(emission_reason or "the issue-emission rules differ")
     reason = "; ".join(reasons) if reasons else None
+    # P6.1 — page scope, the fourth comparability dimension. A single-page scan
+    # runs every category over one page, so info_detail, the emission version and
+    # the category basis all matched and a one-page scan reported a +4
+    # improvement against a ten-page crawl of the same site.
+    #
+    # Two single-page scans of the SAME url stay comparable: that is the rescan
+    # before/after, and it is the one comparison this scope genuinely supports.
+    # A blanket "single-page scans never compare" would pass the cross-scope test
+    # and silently break a shipped feature.
+    cur_scope = (current_summary.get("health_score_basis") or {}).get("page_scope", "site")
+    prev_scope = (prev_summary.get("health_score_basis") or {}).get("page_scope", "site")
+    if cur_scope != prev_scope:
+        comparable = False
+        reasons.append(
+            "a single-page scan is not comparable with a site crawl "
+            f"({cur_scope} vs {prev_scope})")
+    elif cur_scope == "single_page" and job.target_url != prev_job.target_url:
+        comparable = False
+        reasons.append(
+            "these are single-page scans of different pages "
+            f"({job.target_url} vs {prev_job.target_url})")
+
     # A partial analysis scores 100 for what it never ran (S1); two scores over
     # different category sets are not the same measurement either.
     for label, summ in (("this scan", current_summary), ("the previous scan", prev_summary)):

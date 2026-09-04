@@ -396,7 +396,8 @@ def compute_impact_health(
     return round(sum(page_scores) / len(page_scores)), len(page_scores)
 
 
-def health_score_basis(analysis_coverage: dict | None, settings=None) -> dict:
+def health_score_basis(analysis_coverage: dict | None, settings=None,
+                       pages_crawled: int | None = None) -> dict:
     """Describe what a health score was computed OVER.
 
     Purpose: Page Health is ``100 - sum(impact)``, so a category that never ran
@@ -417,6 +418,17 @@ def health_score_basis(analysis_coverage: dict | None, settings=None) -> dict:
     """
     from api.crawler.engine import _ANALYSIS_CATEGORY_MAP, _UNGROUPED_CATEGORIES
 
+    # P6.1 — the PAGE scope, alongside the category scope this function already
+    # describes. A single-page scan runs every category over one page, so by the
+    # category test nothing is unscored and `comparable` is True — which let a
+    # one-page scan report a +4 improvement against a ten-page crawl. `comparable`
+    # keeps its existing meaning (the category sets match); /comparison reads
+    # these two fields for the other question.
+    scope = {
+        "page_scope": "single_page" if getattr(settings, "single_page", False) else "site",
+        "pages_scored": int(pages_crawled or 0),
+    }
+
     every: set[str] = set(_UNGROUPED_CATEGORIES)
     for cats in _ANALYSIS_CATEGORY_MAP.values():
         every |= cats
@@ -436,11 +448,11 @@ def health_score_basis(analysis_coverage: dict | None, settings=None) -> dict:
             analysis_coverage = _build_analysis_coverage(settings)
         else:
             return {"mode": "all", "categories_scored": sorted(every),
-                    "categories_unscored": [], "comparable": True}
+                    "categories_unscored": [], "comparable": True, **scope}
 
     if analysis_coverage.get("mode") != "partial":
         return {"mode": "all", "categories_scored": sorted(every),
-                "categories_unscored": [], "comparable": True}
+                "categories_unscored": [], "comparable": True, **scope}
 
     scored = set(analysis_coverage.get("categories_checked") or [])
     return {
@@ -450,6 +462,7 @@ def health_score_basis(analysis_coverage: dict | None, settings=None) -> dict:
         # Two scores computed over different category sets cannot be compared,
         # and a bare number invites exactly that comparison.
         "comparable": False,
+        **scope,
     }
 
 

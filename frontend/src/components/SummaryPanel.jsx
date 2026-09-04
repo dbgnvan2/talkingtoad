@@ -42,6 +42,12 @@ export default function SummaryPanel({ summary, domain, jobId, onCategoryClick, 
   const infoExcluded = summary?.info_excluded || 0
   const infoScored = summary?.info_scored ?? (summary?.by_severity?.info || 0)
   const infoByTier = summary?.info_by_tier || {}
+  // P6.1: /scan-page sends the caller here, so a one-page audit renders on the
+  // same panel as a full crawl — and scored 100 with nothing saying that 24
+  // catalogue checks could not run at all. Count in the sentence, names behind
+  // the disclosure: 24 code names above a one-page report is the wall of text
+  // that makes the next caveat easier to skip.
+  const checksNotRun = summary?.checks_not_run || []
   // P5.2: a tile is a button, and the list it opens is filtered by the scan's
   // info_detail. Showing `by_category` (every stored row) meant a `metadata` tile
   // could read 2 and open an empty list. `by_category_scored` is the population
@@ -267,6 +273,24 @@ export default function SummaryPanel({ summary, domain, jobId, onCategoryClick, 
           ) : null}
         />
       </div>
+
+      {checksNotRun.length > 0 && (
+        <div className="mb-4 px-5 py-4 bg-white border border-blue-200 rounded-2xl">
+          <p className="text-blue-700 font-medium">This was a single-page scan.</p>
+          <p className="text-sm text-gray-600 mt-1">
+            {`${checksNotRun.length} checks could not run on a single page, so this score covers less than a full crawl of the site. `}
+            {summary?.checks_not_run_reason || ''}
+          </p>
+          <details className="mt-2">
+            <summary className="text-xs text-blue-700 cursor-pointer select-none">
+              Which checks?
+            </summary>
+            <p className="text-xs text-gray-500 mt-1 font-mono break-words">
+              {checksNotRun.join(', ')}
+            </p>
+          </details>
+        </div>
+      )}
 
       {/* C2: the banner qualifies every number on this page, so it is not a
           footnote. Two crawls of one site read 1 warning and 118 purely because
