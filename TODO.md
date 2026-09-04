@@ -53,7 +53,7 @@ user replaces the old image in the post by hand.
 - [x] **Compare card** with struck-through delta and reason — 2026-09-02.
 - [x] **Re-check all pages in place** and the **WordPress audit** button — 2026-09-02.
 - [x] **Fix Focus third state** `not_checked` — 2026-09-02.
-## Phase 5 — the numbers on screen disagree with each other (4 — 3 done)
+## Phase 5 — the numbers on screen disagree with each other (4 — ALL DONE)
 
 Every item here is a contradiction the operator can see: two figures about the same thing that
 do not match. That is the most expensive kind of defect this app has, because it costs trust in
@@ -149,10 +149,31 @@ the figures that *are* right. Do these first.
   (flagged by the QA gate, 2026-09-04; pre-existing, not from this cycle). Harmless while the
   build uses `eslint --quiet`, which reports errors only. **Done when:** the import is dropped, or
   the file is confirmed to need it.
-- [ ] **P5.4 — prevalence tiers by today's catalogue, lists tier by stored impact (P8).** After a
-  recalibration across an impact boundary, an old job's prevalence table and its own issue list
-  disagree by a code. **Done when:** one of the two is chosen deliberately and the other follows,
-  with a test that pins the agreement across a simulated recalibration.
+- [x] **P5.4 — prevalence judged an old job by today's catalogue** (2026-09-04). `compute_prevalence`
+  took `(code, url)` pairs, so the stored impact and severity were **discarded at the boundary**
+  and everything was re-derived from `_CATALOGUE`/`derive_impact` while the lists, the counts and
+  the health score used the stored value. Both recalibration directions measured; the upward one
+  is worse — prevalence *names a code that appears in no list*, the "quick win you cannot find"
+  that `_prevalence_for_display` was written to prevent. And it was **already firing on live
+  data**: six §7-deleted codes hold 4,559 rows (`OG_IMAGE_MISSING` 1474, `OG_DESC_MISSING` 1188,
+  `SCHEMA_MISSING` 1025, …) that the lists show, `by_severity` counts and the score charges, and
+  prevalence dropped on `_CATALOGUE.get(code) is None`. **Decision: the stored value wins** — the
+  principle `scoring_model_version` and `ISSUE_EMISSION_VERSION` already encode. 6 mutations
+  verified red, plus one the gate ran itself.
+  - *Superseded, not quietly flipped:* `test_e4_1b_unknown_code_ignored_not_crashed` asserted
+    `prev == []` for an unknown code. That expectation **was** the defect; rewritten in place with
+    the reason and the live row counts, keeping its "must not crash" half.
+  - *One mutation survived the first pass:* `severity=spec.severity if spec else severity` —
+    keeping the catalogue for known codes — passed all 28 tests, because the only severity
+    assertion used a code the catalogue had *forgotten* and so exercised just the `else` branch.
+    Test 4.5c now covers a known code whose stored severity differs.
+- [ ] **P5.4b — `_CATALOGUE[code].severity` is a hand-kept literal** (surfaced 2026-09-04 by the
+  P5.4 spec §6, recorded here at the gate's request). Nothing pins it to
+  `severity_from_impact(derive_impact(code))`; all 170 agree today by convention alone.
+  `test_issue_help_completeness` pins *issueHelp* to the derived value, so the catalogue's own
+  field is the third copy of one rule and the only untested one (P13, and LEARNINGS checklist 17).
+  **Done when:** one assertion pins the catalogue's severity to the derived value, or the field is
+  computed rather than stored.
 
 ## Phase 6 — things the app knows and does not say (3)
 

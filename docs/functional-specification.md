@@ -644,6 +644,31 @@ it changed* — it is a declared scope, not a hidden filter. The controls that k
    `/page-priority` states `info_detail` beside its rows for the same reason: every `health_score`
    and `citability_grade` in them is computed at the job's level.
 
+   **Prevalence reads the stored finding, not today's catalogue (P5.4, 2026-09-04).**
+   `compute_prevalence` takes `(code, url, impact, severity, category)` — the last three read
+   from the row — and `Prevalence` carries `impact`, so `_prevalence_for_display` applies
+   `info_row_excluded` to the same value the lists use. It previously took `(code, url)` pairs
+   and re-derived everything from `_CATALOGUE`/`derive_impact`, so after any recalibration an old
+   job's prevalence table and its own issue list disagreed by a code — in the upward direction by
+   *naming a code that appears in no list*, which is the "quick win you cannot find" that
+   `_prevalence_for_display` was written to prevent.
+
+   **A code the catalogue has forgotten keeps its row.** Prevalence used to skip anything
+   `_CATALOGUE.get(code)` returned `None` for; a code deleted in the §7 merge still has stored
+   rows that the lists show, `by_severity` counts and the health score charges, so dropping it
+   made the two tables disagree on live data (six such codes, 4,559 rows). Only a code the
+   catalogue *knows* can be declared site-scoped — an unknown code has page URLs, which is what
+   page-scoped means. Where one job holds two impacts for a code (a rescan under a newer model),
+   the **maximum** wins: prevalence escalates, so it must never demote a code below a value some
+   row in that job actually carries.
+
+   `human_description` and `category` still come from the catalogue: they are labels, not
+   judgements, so improved wording reaches an old report, while a stale impact would be an
+   arithmetic error. Where the catalogue has forgotten the code it can supply neither, and the
+   stored values are the only honest source. The choice of the stored value over the derived one
+   is the same principle `scoring_model_version` and `ISSUE_EMISSION_VERSION` encode: an old job
+   is not restated under today's rules.
+
    `registry.info_row_excluded` remains **the** predicate: the score
    (`job_store_base.info_detail_rows`), the lists, the exports and `_info_tier_counts` all call it.
    `sqlite_store._kept_info_sql` is its SQL restatement for the two count queries that aggregate in

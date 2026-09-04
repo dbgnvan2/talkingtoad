@@ -83,6 +83,10 @@
     disclosure driven by a field that §3.1 of the same spec fixes at zero in that exact case. Two
     sections, written an hour apart, both plausible, mutually exclusive — and re-reading did not
     surface it. Check each "when X, show Y" against the clause that defines X.
+21. **A narrow tuple is a decision nobody made.** When a function re-derives something the caller
+    already knows, check what the caller actually passes before calling the derivation a design
+    choice — `compute_prevalence` re-derived impact and severity because the `(code, url)` pairs it
+    received left it no alternative. Widen the boundary; do not defend the invention.
 
 ## Pattern index
 
@@ -217,6 +221,15 @@ this index is the one-line meaning.
 ## Fix log
 
 Newest first. Format: **Issue → Root cause → What would have caught it → Fix → Pattern.**
+
+- **2026-09-04 — prevalence judged an old job by today's catalogue, and the defect was already live on 4,559 rows.**
+  - *Issue:* after any recalibration, an old job's prevalence table and its own issue list disagreed by a code. Downward: the list keeps a code (stored impact 3) that prevalence drops (derived 2). Upward, and worse: prevalence **names a code that appears in no list** — which `_prevalence_for_display`'s own docstring calls "the quick win you cannot find" and says the filter exists to prevent. The filter read `derive_impact`, so it produced the thing it was written to stop.
+  - *Root cause — a boundary that dropped the data.* `compute_prevalence` was handed `(issue_code, page_url)` pairs and nothing else. The stored `impact` and `severity` never crossed into the function, so re-deriving from `_CATALOGUE` was not a choice anyone made; it was the only option left once the tuple was that narrow. **A function that cannot see the authoritative value will invent one, and the invention looks like a design decision in review.** The fix is at the call site, not in the logic.
+  - *The part that makes it not-hypothetical:* `prevalence.py` skipped any code `_CATALOGUE.get(code)` returned `None` for. Six codes deleted in the §7 merge still hold **4,559 rows** in the live database (`OG_IMAGE_MISSING` 1474, `OG_DESC_MISSING` 1188, `SCHEMA_MISSING` 1025, `TITLE_META_DUPLICATE_PAIR` 570, …). Probed: those rows are listed, counted in `by_severity`, and charge the health score (95, not 100) — and prevalence dropped them silently. **A deleted code is a recalibration to impact "none",** so the latent hazard and the live one are the same bug wearing different clothes. Looking for the *latent* case is what found the live one.
+  - *A test that encoded the defect.* `test_e4_1b_unknown_code_ignored_not_crashed` asserted `prev == []`. It passed for two months and was describing the bug. Superseded in place with the reason and the row counts rather than quietly flipped — **when a fix makes an existing test fail, decide which of the two is wrong out loud.**
+  - *The mutation that survived the first pass:* `severity=spec.severity if spec else severity` — keep the catalogue for known codes — passed all 28 tests. My only severity assertion used a code the catalogue had *forgotten*, so it exercised the `else` branch alone and never the branch that matters. **A test written against the exceptional input does not cover the ordinary one**, and the partial fix that keeps the old behaviour on the common path is the one most likely to be written.
+  - *The independent gate ran its own mutation* (reverting the filter to `derive_impact` → 12 red) rather than trusting the commit's claim to have done so. That is the right relationship to a commit message: evidence, not testimony.
+  - *Pattern:* P8 (state that persists between runs, read under this run's rules), P13 (two implementations of one rule), P31 (rows dropped from a table with nothing saying so), P27 (a test asserting the defect). Checklist item 21.
 
 - **2026-09-04 — a filter that agreed with the score, dropped pages, and said nothing; plus the first cycle gated by an outside reviewer.**
   - *Issue:* TODO P5.3 said `/pages?min_severity=info` was level-blind. It was not — the store has filtered on the kept info count since 2026-09-01. It did something quieter: at `key`, a page whose only two findings were below the floor **vanished from a filtered list**, and the response carried no `info_detail`, no `hidden`, no count. An operator asking "show me pages with info issues" got a list whose only omissions were the pages whose info issues had been excluded. Third Phase-5 item running whose written premise had gone stale while its instinct held.
