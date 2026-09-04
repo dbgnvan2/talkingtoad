@@ -252,3 +252,69 @@ class TestDisplayFilter:
         note = info_caveat_note({"hidden": 3, "by_tier": {"medium": 1, "low": 2}, "info_detail": "key"})
         assert "3 info notices" in note and "'key'" in note and "health score" in note
         assert "Low 2" in note and "Notable 1" in note
+
+# ── The SQL predicate must BE the Python predicate ────────────────────────────
+# `sqlite_store._kept_info_sql` re-expresses `registry.info_row_excluded` in SQL
+# so the store's count queries agree with the score. Its docstring claimed to
+# mirror the Python and cited a test that did not exist; it did not mirror it.
+# `info_row_excluded` opens with `if impact >= 4: return False` — a row in the
+# warning/critical band is never excluded, whatever the level — and the SQL had
+# no such clause. 4,860 rows in the live database are severity='info' with
+# impact >= 4 (CONVERSATIONAL_H2_MISSING, NOT_IN_SITEMAP, SCHEMA_MISSING...),
+# so at info_detail='none' a category tile read 0 while the list it opens had 1,
+# and By Page reported "0 issues (1 excluded)" for a page the score charged.
+# This is the grid the docstring promised.
+
+class TestSqlPredicateMirrorsThePython:
+    @pytest.mark.parametrize("level", ["all", "notable", "key", "none"])
+    @pytest.mark.parametrize("impact", [0, 1, 2, 3, 4, 5, 6, 10])
+    def test_kept_info_sql_agrees_with_info_row_excluded(self, level, impact):
+        """Every (impact, level) pair, evaluated by SQLite itself.
+
+        Executed rather than string-compared: the point is what the database
+        decides, and a fragment that reads right can still evaluate wrong.
+        """
+        import sqlite3
+        from api.crawler.checkers.registry import info_row_excluded
+        from api.services.sqlite_store import _kept_info_sql
+
+        db = sqlite3.connect(":memory:")
+        db.execute("CREATE TABLE t (impact INTEGER)")
+        db.execute("INSERT INTO t VALUES (?)", (impact,))
+        kept_sql = bool(db.execute(
+            f"SELECT ({_kept_info_sql(level)}) FROM t").fetchone()[0])
+        db.close()
+
+        kept_py = not info_row_excluded(impact, level)
+        assert kept_sql == kept_py, (
+            f"impact={impact} level={level!r}: SQL says "
+            f"{'kept' if kept_sql else 'excluded'}, info_row_excluded says "
+            f"{'kept' if kept_py else 'excluded'}"
+        )
+
+    def test_the_warning_band_is_never_excluded_by_any_level(self):
+        """The specific clause that was missing, named on its own.
+
+        The grid above would also pass if both predicates were changed together
+        in the wrong direction; this pins the rule itself.
+        """
+        import sqlite3
+        from api.services.sqlite_store import _kept_info_sql
+
+        db = sqlite3.connect(":memory:")
+        db.execute("CREATE TABLE t (impact INTEGER)")
+        db.execute("INSERT INTO t VALUES (5)")
+        for level in ("all", "notable", "key", "none"):
+            kept = bool(db.execute(f"SELECT ({_kept_info_sql(level)}) FROM t").fetchone()[0])
+            assert kept, f"an impact-5 row was excluded at info_detail={level!r}"
+        db.close()
+
+    def test_the_prefix_reaches_the_column(self):
+        """The `prefix` argument is inert in production (only one table in the
+        JOIN has an `impact` column), so nothing else would notice it being
+        dropped. Asserted here so the aliased call site stays honest."""
+        from api.services.sqlite_store import _kept_info_sql
+
+        assert "i.impact" in _kept_info_sql("notable", "i.")
+        assert "i.impact" not in _kept_info_sql("notable")
+

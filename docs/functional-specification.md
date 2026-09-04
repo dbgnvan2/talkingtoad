@@ -617,10 +617,23 @@ it changed* — it is a declared scope, not a hidden filter. The controls that k
    the four callers had omitted it. On those paths the row came back `info_excluded: 0` for a job
    that excluded rows — a disclosure field asserting the opposite of the truth, which is worse than
    having none (P12/P24). The PDF's per-page rows print `N Info` from the kept count and append
-   `(+N excluded)`; its "Total Issues Found" reads `5 (2 scored)`, the phrasing the Results panel
-   has used since the setting shipped; the Excel category sheet counts the scored map. One SQL
-   predicate (`sqlite_store._kept_info_sql`) expresses "this info row is in the audit" for every
-   count query in the store, so the tile, the By Page row and the score cannot drift apart.
+   `(+N excluded)`; its "Total Issues Found" reads `5 (2 scored)`; its own "Issues by Category"
+   table and the Excel category sheet count the scored map and print `0 (2 not scored)` where the
+   level emptied a category. The phrasing throughout is the one the Results panel has used since
+   the setting shipped.
+
+   `registry.info_row_excluded` remains **the** predicate: the score
+   (`job_store_base.info_detail_rows`), the lists, the exports and `_info_tier_counts` all call it.
+   `sqlite_store._kept_info_sql` is its SQL restatement for the two count queries that aggregate in
+   the database rather than in Python, and the two are pinned against each other over the whole
+   (impact × level) grid by `TestSqlPredicateMirrorsThePython`, executed through SQLite rather than
+   string-compared. That test exists because the restatement was **not** a mirror: it omitted
+   `info_row_excluded`'s opening `if impact >= 4: return False` — a row in the warning/critical band
+   is never excluded, whatever the level — so for a `severity='info'` row at impact ≥ 4 (there are
+   thousands: `CONVERSATIONAL_H2_MISSING`, `NOT_IN_SITEMAP`, `SCHEMA_MISSING`) a tile at `none` read
+   0 while the list it opened had 1, and By Page had reported "0 issues (1 excluded)" for a page the
+   score charged since the setting shipped. A predicate restated in a second language needs a test
+   that runs both, not a docstring that says they agree.
 3. **Exports say it.** PDF and Excel carry "Scored at info detail 'notable': N info notices (…)
    excluded from this audit and from its health score by the scan setting" through the same caveat
    channel as F1; CSV is filtered the same way.

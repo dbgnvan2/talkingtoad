@@ -354,12 +354,22 @@ async def generate_geo_report_legacy(
                     detail="page_urls is empty. Select at least one page to analyze.",
                 )
 
-            # Membership only — the level changes no URL here (a page whose rows
-            # were all excluded still comes back from the LEFT JOIN). Passed so
-            # that "every caller passes the level" has no exceptions to remember.
-            pages, _total = await store.get_pages_with_issue_counts(
-                payload.job_id, info_detail=job.settings.info_detail)
+            # Membership over the WHOLE crawl. The default limit is 50 and the
+            # rows come back ORDER BY total DESC, so a bare call answers "is this
+            # one of the 50 worst pages", not "is this page in the job" — a
+            # 500-page crawl rejected 90% of its own URLs, and passing the level
+            # changed `total`, hence the ordering, hence which URLs validated
+            # (P9). The level is passed so no call site is an exception to
+            # remember; the limit is what makes the answer correct.
+            pages, total_pages = await store.get_pages_with_issue_counts(
+                payload.job_id, limit=1000, info_detail=job.settings.info_detail)
             valid_urls = {p.get("url") for p in pages}
+            if total_pages > len(valid_urls):
+                logger.warning(
+                    "advisor_membership_truncated",
+                    extra={"job_id": payload.job_id, "known": len(valid_urls),
+                           "crawled": total_pages},
+                )
             invalid = [u for u in payload.page_urls if u not in valid_urls]
             if invalid:
                 raise HTTPException(

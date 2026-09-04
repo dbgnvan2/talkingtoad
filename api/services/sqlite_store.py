@@ -31,21 +31,35 @@ logger = logging.getLogger(__name__)
 
 
 def _kept_info_sql(info_detail: str, prefix: str = "") -> str:
-    """SQL for "this info row clears the scan's info_detail floor".
+    """SQL for ``not registry.info_row_excluded(impact, info_detail)``.
 
-    One expression, used by every count query in this store, so the tile, the
-    By Page row and the health score cannot disagree about what a level keeps.
-    Mirrors ``registry.info_row_excluded`` — when the two must be changed
-    together, ``tests/test_info_tiers.py`` is what says so.
+    One expression, used by the store's count queries so a tile, a By Page row
+    and the health score cannot disagree about what a level keeps.
+
+    **Both clauses matter.** `info_row_excluded` opens with
+    ``if impact >= 4: return False`` — a row in the warning/critical band is
+    never excluded, whatever the level, and `none` still keeps every warning.
+    Written without that clause (as it was until 2026-09-04) the SQL disagrees
+    with the Python for any ``severity='info'`` row at impact >= 4, of which
+    there are thousands: at `none` a category tile read 0 while the list it
+    opens had 1, and By Page reported "0 issues (1 excluded)" for a page the
+    score had charged.
+
+    The two predicates are pinned against each other over the whole
+    (impact x level) grid by
+    ``tests/test_info_tiers.py::TestSqlPredicateMirrorsThePython`` — executed
+    through SQLite, not string-compared.
 
     ``prefix`` is the table alias plus a dot ("i.") where the query joins.
     """
     from api.crawler.checkers.registry import INFO_DETAIL_MIN_IMPACT
 
+    impact = f"COALESCE({prefix}impact, 0)"
+    above_info_band = f"{impact} >= 4"          # never excluded, at any level
     floor = INFO_DETAIL_MIN_IMPACT.get(info_detail, 0)
-    if floor is None:          # `none` keeps no info row at all
-        return "0"
-    return f"COALESCE({prefix}impact, 0) >= {int(floor)}"
+    if floor is None:                            # `none` keeps no INFO-band row
+        return above_info_band
+    return f"({above_info_band} OR {impact} >= {int(floor)})"
 
 
 class SQLiteJobStore:

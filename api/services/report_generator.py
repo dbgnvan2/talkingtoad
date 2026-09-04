@@ -1237,15 +1237,26 @@ async def generate_pdf_report(
     from api.crawler.checkers.registry import CATEGORY_DISPLAY
     cat_list = [(label, key) for key, label in CATEGORY_DISPLAY]
     
+    # P5.2: the SCORED count, so this table agrees with the health score two
+    # pages back, with the findings list that follows, and with the workbook.
+    # `by_category` (stored) is the fallback for an audit produced before the
+    # scored map existed. The excluded figure travels with the count — a bare 0
+    # is what a clean category looks like (P31).
+    scored_map = summary.get("by_category_scored") or summary.get("by_category", {})
+    excluded_map = summary.get("by_category_excluded") or {}
+
     for label, key in cat_list:
-        count = summary.get("by_category", {}).get(key, 0)
+        count = scored_map.get(key, 0)
+        excluded = excluded_map.get(key, 0)
         pdf.set_x(25.4)
         pdf.set_font('helvetica', '', 11)
         pdf.set_text_color(*COLOR_GRAY_600)
         pdf.cell(60, 8, pdf.clean_text(label + ":"))
         pdf.set_font('helvetica', 'B', 11)
         pdf.set_text_color(*COLOR_GRAY_800)
-        pdf.cell(W - 60, 8, str(count), new_x="LMARGIN", new_y="NEXT")
+        pdf.cell(W - 60, 8, pdf.clean_text(
+            f"{count} ({excluded} not scored)" if excluded else str(count)),
+            new_x="LMARGIN", new_y="NEXT")
 
     # ── Search Performance + Priority Pages (E3.2) ────────────────────────
     # Rendered only when the Performance Ledger holds data for this domain. When

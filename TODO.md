@@ -108,6 +108,16 @@ the figures that *are* right. Do these first.
     the store's disclosure field, so deleting the rendered "(+N excluded)" line left it green. It
     now seeds a second page whose per-page figures differ from the site total, so the assertion
     cannot be satisfied by the dashboard's line.
+  - *Cold sweep found 7 more, all real, all fixed.* The serious one: `_kept_info_sql` — the SQL
+    restatement of `info_row_excluded` — **omitted the Python's `impact >= 4` clause**, so the fix
+    re-created the very defect it was closing for the 4,860 live rows that are `severity='info'`
+    with impact ≥ 4. Its docstring claimed it mirrored the Python and cited a test that did not
+    exist; there is now a grid test executing both through SQLite. The By Page half had shipped
+    with the same hole on 2026-09-01. Also: a **sixth** surface (the PDF's own category table),
+    found by grepping the field rather than re-reading this ticket; and passing the level into the
+    advisor's membership check moved a `limit=50` window, so a URL that validated before the change
+    400'd after — a P9 underneath (membership was answered over the top 50 pages of a 500-page
+    crawl), now fixed and tested.
 - [ ] **P5.2b — `PHASE_1_CATEGORIES` still contains `duplicate`** (surfaced 2026-09-04, not fixed).
   CLN1 removed it from `CATEGORY_DISPLAY` in August because no checker emits it, but the store's
   list still seeds it, so every summary carries three `by_category*` entries for a category that
