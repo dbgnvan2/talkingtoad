@@ -256,6 +256,48 @@ class TestTheGscPathAdoptsItsSiblingsContract:
         recs = await test_store.get_performance_records(url=PAGE)
         assert [(r.gsc_clicks_mo, r.gsc_impressions_mo) for r in recs] == [(150, 1500)]
 
+    async def test_the_carry_forward_runs_once_per_page_not_once_per_folded_url(
+        self, api_client, auth_headers, test_store
+    ):
+        """4.10 — the restructure's motivating scenario, promoted from a gate
+        probe to a permanent test at the gate's request.
+
+        The bundle path's read-merge (a bundle is authoritative only for the
+        sections it carries, P8) used to run PER PAGE, before any fold. Two pages
+        folding onto one key, neither carrying GA4, would each carry the stored
+        GA4 forward — and the fold would then sum the same value twice. The carry
+        is one fact about the page, not one per source URL.
+
+        Seeded: a prior row with 40 sessions, then a GSC-only bundle whose two
+        pages fold onto it. 40 must survive as 40, not become 80.
+        """
+        from api.models.performance import PerformanceRecord
+
+        await _job_with_one_page(test_store, job_id="j3")
+        await test_store.save_performance_records([PerformanceRecord(
+            url=PAGE, period="2026-09", ga4_sessions_mo=40, ga4_conversions_mo=3)])
+
+        bundle = {
+            "bundle_version": 1, "site_url": BASE, "period": "2026-09",
+            "generated_at": datetime.now(timezone.utc).isoformat(), "sources": ["gsc"],
+            "pages": [
+                {"url": "http://www.e.com/about",
+                 "gsc": {"clicks": 100, "impressions": 1000, "ctr": 0.1, "position": 5.0}},
+                {"url": "https://e.com/about/",
+                 "gsc": {"clicks": 50, "impressions": 500, "ctr": 0.1, "position": 6.0}},
+            ],
+        }
+        with patch("api.routers.performance._get_store", return_value=test_store):
+            r = await api_client.post("/api/performance/ingest?job_id=j3", json=bundle,
+                                      headers=auth_headers)
+        assert r.status_code == 200, r.text
+        rec = (await test_store.get_performance_records(url=PAGE))[0]
+        assert rec.gsc_clicks_mo == 150, "the GSC fold"
+        assert rec.ga4_sessions_mo == 40, (
+            f"the carried-forward GA4 was counted once per folded URL: {rec.ga4_sessions_mo}"
+        )
+        assert rec.ga4_conversions_mo == 3
+
     async def test_both_ingest_paths_report_folded_urls(
         self, api_client, auth_headers, test_store
     ):

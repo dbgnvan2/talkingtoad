@@ -2137,6 +2137,39 @@ server did not send (LEARNINGS P27).
 > implementation had re-derived the list and re-worded the sentence inside the store. Results
 > states the count and names the codes behind a disclosure.
 
+> **The performance ingest holds out what it could not join, and folds what it can (P6.3,
+> 2026-09-04).** `match_key` deliberately folds www/scheme/trailing-slash, so a GSC domain
+> property routinely resolves several source URLs onto one crawled page. Both ingest paths wrote
+> those as separate records under one storage key, and the ledger's `ON CONFLICT` overwrites the
+> GSC columns — so a page that earned 150 clicks stored 50. `/api/gsc/ingest` additionally
+> persisted URLs matching no crawled page under their raw form, a key page-priority never reads,
+> and counted them in `ingested`, so a wholly failed join returned the same shape as a perfect
+> one.
+>
+> `perf_join.fold_performance_rows` is the one implementation, used by both paths. **Counts add**
+> (two URL variants are two slices of one page's traffic); **rates are recomputed from the summed
+> parts, never averaged** (averaging weights a 10-impression row equally with a 10,000-impression
+> one); **average position is impression-weighted** (an unweighted mean says a page ranking 5th
+> for its main query and 90th for one stray impression averages 47.5); **a field no source
+> carried stays `None`**, so "unmeasured" is not written as 0.
+>
+> `ga4_engagement_rate_mo` is `float | None` and reports `None` when its denominator is zero.
+> `gsc_ctr_mo` and `gsc_avg_position_mo` are bare floats that every consumer does arithmetic on,
+> so they keep `0.0` in that case; widening them is a contract change (TODO P6.3b), and a test
+> pins the current value so it reads as a decision rather than an oversight.
+>
+> `/api/gsc/ingest` returns the shape its sibling already returned: `received` (URLs the API
+> gave), `matched` (of those, URLs resolving to a crawled page), `ingested` (ledger rows
+> written — fewer than `matched` when URLs fold), `unmatched_urls`, `invalid_urls`, and
+> `folded_urls` (storage key → the URLs that collapsed onto it, only where more than one did; a
+> fold of one is not a fold). Unmatched rows are held out, not stored. Rows written under raw
+> URLs before this change are left in place — invisible rather than wrong, and a destructive
+> migration to tidy invisible rows is not worth its risk (TODO P6.3c).
+>
+> The bundle path's read-merge — a bundle is authoritative only for the sections it carries (P8)
+> — runs **after** the fold, once per folded row. Running it per page, as it did, would carry a
+> stored value forward onto each folding URL and then sum it once per URL: 40 sessions became 80.
+
 ### 5.10 Verified links (`/api/verified-links`)
 Mark external URLs as known-good to bypass bot-blocking skipped lists.
 

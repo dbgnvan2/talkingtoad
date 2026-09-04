@@ -175,7 +175,7 @@ the figures that *are* right. Do these first.
   **Done when:** one assertion pins the catalogue's severity to the derived value, or the field is
   computed rather than stored.
 
-## Phase 6 — things the app knows and does not say (3 — 2 done)
+## Phase 6 — things the app knows and does not say (3 — ALL DONE)
 
 Disclosure gaps. Each is a fact already computed and then dropped — the P25 shape this codebase
 keeps hitting, and the reason four separate bugs this week were invisible until someone looked
@@ -222,10 +222,37 @@ in SQLite.
   last scan could not evaluate is distinguishable in the drawer, or the decision not to store
   that is recorded with its reason.
 
-- [ ] **P6.3 — GSC ingest stores unmatched rows as silent orphans, and a fold collision is
-  last-wins.** Performance data that matched nothing is indistinguishable from performance data
-  that did not exist. **Done when:** the ingest reports "matched N of M" and a collision is
-  recorded rather than overwritten.
+- [x] **P6.3 — the performance ingest lost clicks and said it ingested them** (2026-09-04).
+  Measured: one crawled page, three GSC rows (two folding onto it with 100 and 50 clicks, one
+  matching nothing) → `ingested: 3`, the unmatched row stored under a key page-priority never
+  reads, and the folded rows written as `(50, 500)` on a page that earned 150 and 1500. The
+  sibling `/api/performance/ingest` already held unmatched URLs out — its comment states the
+  exact reasoning the GSC path violated (P16) — but probing showed **the fold is wrong on both
+  paths identically**, so one shared `fold_performance_rows` serves both. Arithmetic per field
+  kind: counts add, rates recompute from the summed parts, position is impression-weighted, a
+  field no source carried stays `None`. `/api/gsc/ingest` now returns `received`/`matched`/
+  `ingested`/`unmatched_urls`/`invalid_urls`/`folded_urls`. 8 mutations verified red.
+  - *The riskiest part was the read-merge, not the fold.* The bundle path's carry-forward for
+    omitted sections ran per page, before folding, so a carried GA4 value would be summed once
+    per folding URL (40 → 80, reproduced). It now runs once per folded row.
+  - *Two pre-existing tests were passing **because** of the orphan write* — they seeded no
+    crawled pages, so the test named "writes records to the ledger" was exercising the raw-URL
+    fallback rather than the join it claims to test. Seeded, with the reason.
+- [ ] **P6.3b — `gsc_ctr_mo` and `gsc_avg_position_mo` cannot express "no denominator"**
+  (deferred 2026-09-04 from P6.3 §3.1; transcribed here at the gate's request). They are bare
+  `float`s defaulting to `0.0`, and every consumer does arithmetic on them, so a fold with zero
+  impressions writes `0.0` — "measured, and it was zero" — where `ga4_engagement_rate_mo`
+  (`float | None`) can say `None`. Widening them is a contract change across the model, the
+  ledger schema and the readers. Pinned meanwhile by
+  `test_gsc_ctr_with_no_impressions_stays_zero_deliberately`, so it reads as a decision.
+  **Done when:** the two fields can express "unmeasured", or the 0.0 is documented as the
+  contract with its reason.
+- [ ] **P6.3c — orphan performance rows already in the ledger are not migrated** (decided
+  2026-09-04 in P6.3 §3.4; transcribed here). Rows written before P6.3 under raw GSC URLs are
+  keyed by URLs no consumer reads, so they are invisible rather than wrong. A destructive
+  migration to tidy invisible rows is the trade the 2026-09-03 collapse warned about.
+  **Done when:** a reason to touch them exists — e.g. a ledger-size problem — or the decision
+  is confirmed and closed.
 
 ## Phase 7 — the V4 second half (1)
 

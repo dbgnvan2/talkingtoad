@@ -741,8 +741,25 @@ Not-yet-linked (env configured, no stored creds): `{"connected": false, "propert
 Query params: `site_url` (required), `job_id` (required), `days` (optional, default 30).
 
 ```json
-{"ingested": 42, "period": "2026-06"}
+{
+  "ingested": 40,
+  "period": "2026-06",
+  "received": 45,
+  "matched": 42,
+  "unmatched_urls": ["https://example.org/never-crawled"],
+  "invalid_urls": [],
+  "folded_urls": {"https://example.org/a": ["http://www.example.org/a/",
+                                            "https://example.org/a"]}
+}
 ```
+
+`received` is what the GSC API returned; `matched` is how many of those resolved to a
+crawled page; `ingested` is how many ledger rows were written — fewer than `matched` when
+several source URLs fold onto one page. A URL matching no crawled page is **held out**, not
+stored: the ledger is read by the crawled page's exact url, so a row under a raw GSC URL is
+invisible. `folded_urls` names only keys that more than one source URL resolved to; their
+counts are summed, their rates recomputed and their average position impression-weighted
+(P6.3).
 
 ### GET `/api/gsc/performance`
 

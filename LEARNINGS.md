@@ -93,11 +93,17 @@
     answers a neighbouring question returns a confident wrong answer, which is worse than none.
     When adding a new way to narrow a scan, list the fields that claim to describe scope and check
     each one against the new dimension.
-23. **Never write "recorded in TODO" (or any done-later step) in the past tense.** Twice in one
-    week a commit message claimed a deferral had been recorded when it existed only in a pending
-    file about to be deleted; both were caught by the external gate. Perform the bookkeeping
+23. **Never write "recorded in TODO" (or any done-later step) in the past tense.** Three times in
+    one week a commit message claimed a deferral had been recorded when it existed only in a pending
+    file about to be deleted; all three were caught by the external gate, and the third came two
+    commits AFTER this item was written. Perform the bookkeeping
     first, then describe it. Same rule this file already sets for consequences: write "would" for
     what you reasoned to, "did" only for what you saw.
+24. **A deliberately many-to-one function needs an answer for the many.** `match_key` folds
+    www/scheme/slash on purpose, and two ingest paths then used it as a storage key without
+    deciding what happens when two inputs land on one — so they inherited the database's answer
+    (last write wins) and lost a page's clicks. When a key is intentionally lossy, the collision
+    is a case to specify, not an edge.
 
 ## Pattern index
 
@@ -232,6 +238,16 @@ this index is the one-line meaning.
 ## Fix log
 
 Newest first. Format: **Issue → Root cause → What would have caught it → Fix → Pattern.**
+
+- **2026-09-04 — a page that earned 150 clicks was stored as 50, and the ingest reported success.**
+  - *Issue (P6.3):* `match_key` deliberately folds www/scheme/trailing-slash, so a GSC domain property routinely resolves several source URLs onto one crawled page. Both ingest paths wrote them as separate records under one storage key, and the ledger's `ON CONFLICT` overwrites the GSC columns — last row wins. Measured: 100 clicks + 50 clicks stored as `(50, 500)`. `/api/gsc/ingest` also persisted URLs matching no crawled page under their raw form (a key page-priority never reads) and counted them in `ingested`, so **a wholly failed join returned the same shape as a perfect one**.
+  - *Root cause — a fold that was designed for matching and then used for storage.* `match_key`'s tolerance is correct and necessary; nothing downstream asked what happens when two inputs land on one key. **A deliberately many-to-one function needs an answer for the many.** Neither path had one, so both inherited SQLite's.
+  - *The P16 half:* `/api/performance/ingest` already held unmatched URLs out, with a comment stating the exact reasoning the GSC path violated — *"rather than persisted under an orphan key the consumer would never read."* Two siblings, one contract, one implementation of it. But probing the sibling found the fold broken there too, identically and silently, which is why the fix is a shared helper rather than a patch to the path named in the ticket.
+  - *The riskiest change was not the one the ticket was about.* The bundle path's read-merge (a bundle is authoritative only for the sections it carries, P8) ran per page, before any fold — so a stored GA4 value carried forward onto two folding pages would be summed once per URL. Reproduced: 40 sessions became 80. **When two mechanisms meet at a new join, the bug is in the meeting, not in either mechanism.** Flagged to the external gate on the way in, and the gate asked for the probe to become a permanent test — correctly: the first version of my own mutation for it was masked by the post-fold carry and passed.
+  - *Two pre-existing tests were passing BECAUSE of the defect.* They seeded no crawled pages, so their rows only reached the ledger through the raw-URL fallback: the test named "writes PerformanceRecords to the ledger" was exercising the orphan key rather than the join. **A test that does not set up the precondition its name implies is testing whatever path the code happens to take.**
+  - *And the arithmetic lesson:* my own probe used 100/1000 and 50/500 — both CTR 0.1 — so an averaged CTR and a recomputed one agree, and a fixture built from the numbers that revealed the bug could not have distinguished the fix from a wrong fix. **Choose test inputs where the wrong implementations disagree, not the inputs that showed you the problem.**
+  - *Third strike on the same process failure:* the commit said "Deferred as TODO P6.3b" while P6.3b existed only in the pending file about to be deleted. Checklist item 23 was added for this **two commits earlier**, after the second instance. Adding a rule does not create the habit; the external gate caught all three.
+  - *Pattern:* P16 (a capability on one of two siblings), P2 (a partial failure with no trace), P12 (0 written for unmeasured), P31 (a narrowed result rendered as complete). Checklist item 24.
 
 - **2026-09-04 — a field nobody read, a test that asserted it for the reader who did not exist, and the same false bookkeeping claim twice.**
   - *Issue (P6.2):* the rescan response carried `rechecked: true|false` on every issue row. No consumer had ever read it — that response reaches the UI through a banner rendering four *code lists*, never per-issue rows — and it was derivable regardless: carry-over is defined as "code in `needs_full_crawl`", and an unrunnable code can never be newly found, so the flag was a per-row copy of a code-level fact.
