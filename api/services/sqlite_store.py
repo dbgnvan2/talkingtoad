@@ -755,15 +755,13 @@ class SQLiteJobStore:
         # this repo has already hit twice (`info_excluded: 0`,
         # `categories_unscored: []`). Absence is the honest encoding.
         if getattr(job.settings, "single_page", False):
-            from api.crawler.checkers.registry import _CATALOGUE
-
-            summary["checks_not_run"] = sorted(
-                c for c, spec in _CATALOGUE.items() if spec.needs_full_crawl)
-            summary["checks_not_run_reason"] = (
-                "These checks compare a page against the rest of the site, so a "
-                "single-page scan cannot evaluate them. Run a full crawl to have "
-                "them checked."
+            from api.crawler.checkers.registry import (
+                CHECKS_NOT_RUN_REASON,
+                checks_a_single_page_scan_cannot_run,
             )
+
+            summary["checks_not_run"] = checks_a_single_page_scan_cannot_run()
+            summary["checks_not_run_reason"] = CHECKS_NOT_RUN_REASON
         return summary
 
     async def get_info_excluded_report(self, job_id: str, info_detail: str) -> dict:

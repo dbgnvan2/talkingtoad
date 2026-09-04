@@ -482,11 +482,8 @@ _PREPUBLICATION_NOISE_CODES = frozenset({
 # a draft scan because it is meaningless before publication; this set is *not
 # run* because of which code path executed. Merging them would let one reason
 # stand in for the other.
-_CHECKS_NOT_RUN_REASON = (
-    "These checks only run during a full crawl, so this single-page scan did "
-    "not evaluate them. Their absence from the findings is not a pass — run a "
-    "full crawl to have them checked."
-)
+# One home, in the registry beside the `needs_full_crawl` flag these derive from.
+from api.crawler.checkers.registry import CHECKS_NOT_RUN_REASON as _CHECKS_NOT_RUN_REASON
 
 
 async def _filter_for_domain(store, target_url: str, issue_dicts: list[dict]) -> tuple[list[dict], dict]:
@@ -624,9 +621,10 @@ def _rescan_is_conclusive(status_code: int) -> bool:
 
 
 def _checks_a_single_page_scan_cannot_run() -> list[str]:
-    """Registry-derived list of codes unreachable on the single-page path."""
-    from api.crawler.checkers.registry import _CATALOGUE
-    return sorted(c for c, spec in _CATALOGUE.items() if spec.needs_full_crawl)
+    """Thin alias kept for the four endpoint call sites; the list lives in the
+    registry, beside the flag it derives from."""
+    from api.crawler.checkers.registry import checks_a_single_page_scan_cannot_run
+    return checks_a_single_page_scan_cannot_run()
 
 
 async def _fetch_page_as_logged_in_user(url: str, *, bypass_cache: bool = False):

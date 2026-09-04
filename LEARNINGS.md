@@ -87,6 +87,12 @@
     already knows, check what the caller actually passes before calling the derivation a design
     choice — `compute_prevalence` re-derived impact and severity because the `(code, url)` pairs it
     received left it no alternative. Widen the boundary; do not defend the invention.
+22. **Ask what a disclosure field is actually measuring.** `health_score_basis` reported
+    `categories_unscored: []` for a scan that skipped 24 checks — not because it was silent, but
+    because it measures analysis *categories* and the narrowing was by *page*. A disclosure that
+    answers a neighbouring question returns a confident wrong answer, which is worse than none.
+    When adding a new way to narrow a scan, list the fields that claim to describe scope and check
+    each one against the new dimension.
 
 ## Pattern index
 
@@ -221,6 +227,15 @@ this index is the one-line meaning.
 ## Fix log
 
 Newest first. Format: **Issue → Root cause → What would have caught it → Fix → Pattern.**
+
+- **2026-09-04 — a one-page scan reported the site had improved by four points.**
+  - *Issue:* `/scan-page` creates a real job and sends the caller to `/results/{job_id}`, so a one-page audit renders on the same panel as a full crawl. It scored **100**, and nothing on the page said that the 24 codes carrying `needs_full_crawl` could not run. `checks_not_run` was returned by four endpoints and rendered in exactly one place — the Page Audit re-check banner, and even there only as its reason sentence.
+  - *Root cause — a field that answered a neighbouring question.* `health_score_basis` exists precisely because *"we did not look" is arithmetically identical to "we found nothing"*. But it reasons about analysis **categories**, and a single-page scan runs every category over one page, so by its own test nothing was unscored: `categories_unscored: []`, `comparable: true`. **The disclosure was not missing; it was answering a different question and returning a confident yes.** That is more dangerous than silence, and it is the third time this family has appeared: `info_excluded: 0` (P5.2), `categories_unscored: []` here.
+  - *The consequence, measured rather than reasoned:* a full 10-page crawl (health 96) then a one-page scan of one of those pages (health 100) → `/comparison` returned `comparable: true`, `reasons: None`, `delta health_score: +4`. `comparable` is the mechanism built to stop exactly this, and it checked `info_detail`, the emission version and the category basis — all three of which a one-page scan passes. **A guard is only as wide as the dimensions someone thought of; adding the fourth is cheap, noticing it is missing is the work.**
+  - *The wrong fix, and why the test for it came first:* "single-page scans are never comparable" passes the cross-scope test and the different-pages test, and silently breaks the rescan before/after — comparing one page with its own previous scan is the one comparison this scope genuinely supports. The test that protects it is written before the tests for the defect.
+  - *What the independent gate caught in the fix:* I re-derived the code list inside `sqlite_store` and wrote a **second, differently-worded** reason sentence, because the helper and constant lived in the router and the store cannot import it. Both lists were registry-pinned so neither could drift silently — but the *phrase* was pinned nowhere. The registry's comment beside `needs_full_crawl` already said "do not mirror the list anywhere else", and I mirrored it four lines after reading it. **Layering pressure produces duplication that looks like necessity;** the answer is to move the shared thing down, not to copy it sideways.
+  - *And a test-writing slip of my own:* the "the names are not listed inline" assertion used `queryByText().not.toBeInTheDocument()`, which **passes against a banner showing all 24 names** — a collapsed `<details>` keeps its content in the DOM. `not.toBeVisible()` is the thing actually claimed. An assertion that reads correct and tests something adjacent.
+  - *Pattern:* P25 (a fact computed and never rendered), P31 (a narrowed population read as a clean result), P12 (a default reaching a surface as a measurement), P16 (one of four endpoints' disclosure reaching one UI). Checklist item 22.
 
 - **2026-09-04 — prevalence judged an old job by today's catalogue, and the defect was already live on 4,559 rows.**
   - *Issue:* after any recalibration, an old job's prevalence table and its own issue list disagreed by a code. Downward: the list keeps a code (stored impact 3) that prevalence drops (derived 2). Upward, and worse: prevalence **names a code that appears in no list** — which `_prevalence_for_display`'s own docstring calls "the quick win you cannot find" and says the filter exists to prevent. The filter read `derive_impact`, so it produced the thing it was written to stop.

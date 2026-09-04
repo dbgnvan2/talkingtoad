@@ -130,6 +130,65 @@ class TestSummaryDisclosesTheChecksThatCouldNotRun:
             )
 
 
+    async def test_the_summary_and_the_endpoint_give_the_SAME_reason(
+        self, api_client, auth_headers, test_store
+    ):
+        """3.3b — flagged by the independent QA gate, not by me.
+
+        The first implementation wrote a fresh reason sentence inline in
+        `sqlite_store.get_summary`, with different wording from the router's
+        `_CHECKS_NOT_RUN_REASON`, and derived the code list a second time beside
+        the router's helper. Both lists were registry-pinned so neither could
+        drift silently — but the PHRASE was pinned nowhere, so one fact had two
+        wordings on two surfaces. The registry's own comment beside
+        `needs_full_crawl` says "do not mirror the list anywhere else".
+
+        Same defect family as P5.2's triplicated "N scored / N not scored"
+        (LEARNINGS checklist 17).
+        """
+        from api.crawler.checkers.registry import (
+            CHECKS_NOT_RUN_REASON,
+            checks_a_single_page_scan_cannot_run,
+        )
+        from api.routers.crawl import _CHECKS_NOT_RUN_REASON
+
+        await _single_page_job(test_store)
+        s = await test_store.get_summary("sp")
+        assert s["checks_not_run_reason"] == CHECKS_NOT_RUN_REASON
+        assert _CHECKS_NOT_RUN_REASON == CHECKS_NOT_RUN_REASON, (
+            "the router keeps its own wording of the same fact"
+        )
+        assert s["checks_not_run"] == checks_a_single_page_scan_cannot_run()
+
+    def test_the_reason_and_the_list_are_defined_once(self):
+        """3.3c — structural: no second derivation of either, anywhere in api/.
+
+        A behavioural test covers the two surfaces that exist. This is what
+        catches the third.
+        """
+        import re
+        from pathlib import Path
+
+        api = Path(__file__).resolve().parent.parent / "api"
+        derivations, phrases = [], []
+        for path in api.rglob("*.py"):
+            if path.name == "registry.py":
+                continue                      # the single home
+            src = path.read_text()
+            for m in re.finditer(r"spec\.needs_full_crawl|\.needs_full_crawl\b", src):
+                derivations.append(f"{path.relative_to(api.parent)}:"
+                                   f"{src[:m.start()].count(chr(10)) + 1}")
+            if "only run during a full crawl" in src or "single-page scan cannot evaluate" in src:
+                if "CHECKS_NOT_RUN_REASON" not in src.split("\n")[0]:
+                    phrases.append(str(path.relative_to(api.parent)))
+        assert not derivations, (
+            f"needs_full_crawl is derived outside the registry: {derivations}"
+        )
+        assert not phrases, (
+            f"the reason sentence is spelled out outside the registry: {phrases}"
+        )
+
+
 # ---------------------------------------------------------------------------
 # 3.4 / 3.5 / 3.6 — comparability across scopes
 # ---------------------------------------------------------------------------

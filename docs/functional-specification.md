@@ -2110,6 +2110,29 @@ The vitest mocks for `/wp-value` are built from one fixture
 its own mock from the component, so seven green tests asserted the shape of a response the
 server did not send (LEARNINGS P27).
 
+> **A single-page scan declares its scope (P6.1, 2026-09-04).** `/scan-page` creates a real job
+> and sends the caller to `/results/{job_id}`, so a one-page audit renders on the same panel as a
+> full crawl — and scored 100 with nothing saying that the 24 codes carrying `needs_full_crawl`
+> could not run. `health_score_basis` did not merely omit that: it asserted `categories_unscored:
+> []` and `comparable: true`, because it reasons about analysis *categories* and a single-page
+> scan runs every category over one page.
+>
+> The basis now carries `page_scope` (`single_page` | `site`) and `pages_scored`. `comparable`
+> keeps its existing meaning — the category sets match — and `/comparison` reads the new fields
+> for a fourth refusal beside `info_detail`, the emission version and the category basis: scopes
+> differ, or both are single-page of different URLs. **Two scans of the same page stay
+> comparable** — that is the rescan before/after, the one comparison this scope supports, and a
+> blanket ban would have broken it. Without the guard a one-page scan reported a **+4 improvement**
+> against a ten-page crawl of the same site.
+>
+> `get_summary` carries `checks_not_run` and `checks_not_run_reason` **only for a single-page
+> job**: `[]` on a full crawl would be one more field claiming nothing was skipped, the failure
+> this repo has hit twice (`info_excluded: 0`, `categories_unscored: []`). Both come from
+> `registry.checks_a_single_page_scan_cannot_run()` and `registry.CHECKS_NOT_RUN_REASON` — one
+> home beside the flag they derive from, after the independent gate found the first
+> implementation had re-derived the list and re-worded the sentence inside the store. Results
+> states the count and names the codes behind a disclosure.
+
 ### 5.10 Verified links (`/api/verified-links`)
 Mark external URLs as known-good to bypass bot-blocking skipped lists.
 

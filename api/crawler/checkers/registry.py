@@ -641,6 +641,27 @@ _IMPACT_OVERRIDES: dict[str, int] = {
     "LOGIN_REDIRECT": 2,
 }
 
+CHECKS_NOT_RUN_REASON = (
+    "These checks only run during a full crawl, so this single-page scan did "
+    "not evaluate them. Their absence from the findings is not a pass — run a "
+    "full crawl to have them checked."
+)
+
+
+def checks_a_single_page_scan_cannot_run() -> list[str]:
+    """The codes `needs_full_crawl` puts out of reach on the single-page path.
+
+    Lives HERE, beside the flag, because the router and the store both need it
+    and the store cannot import the router. The first P6.1 implementation
+    derived the list a second time in `sqlite_store.get_summary` and wrote a
+    fresh reason sentence with different wording, so one fact reached two
+    surfaces in two phrasings — the drift shape P5.2 was about, caught by the
+    independent gate. The comment on `needs_full_crawl` above already said "do
+    not mirror the list anywhere else".
+    """
+    return sorted(c for c, spec in _CATALOGUE.items() if spec.needs_full_crawl)
+
+
 def derive_impact(code: str) -> int:
     """Impact derived from the calibration record: matrix(confidence, effect),
     the Aggarwal measured lane, the page-fatal 10-tier, then any override."""

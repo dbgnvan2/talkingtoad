@@ -175,15 +175,29 @@ the figures that *are* right. Do these first.
   **Done when:** one assertion pins the catalogue's severity to the derived value, or the field is
   computed rather than stored.
 
-## Phase 6 — things the app knows and does not say (3)
+## Phase 6 — things the app knows and does not say (3 — 1 done)
 
 Disclosure gaps. Each is a fact already computed and then dropped — the P25 shape this codebase
 keeps hitting, and the reason four separate bugs this week were invisible until someone looked
 in SQLite.
 
-- [ ] **P6.1 — `checks_not_run` reaches no UI beyond the Page Audit note.** A single-page job's
-  Results summary does not say which 24 checks could not run, so a clean-looking summary is
-  partly "not checked". **Done when:** the summary states the count and names them on demand.
+- [x] **P6.1 — a single-page scan scored 100 and called itself comparable** (2026-09-04). The
+  item was right and stopped one step short. `checks_not_run` reached one UI — the Page Audit
+  re-check banner, and even there only its *reason* sentence. Worse, `health_score_basis` did not
+  omit the fact but **asserted the opposite**: `categories_unscored: []`, `comparable: true` on a
+  job where 24 checks could not run, because it reasons about analysis *categories* and a
+  single-page scan runs every category over one page. Measured consequence: a one-page scan
+  reported a **+4 health improvement** against a ten-page crawl of the same site — the exact false
+  comparison `comparable` exists to prevent. Fixed: `page_scope`/`pages_scored` on the basis, a
+  fourth `/comparison` refusal, `checks_not_run` in the summary (absent — not `[]` — on a full
+  crawl), and a Results banner with the count and names on demand. 11 mutations verified red,
+  including the blanket "single-page never compares" ban, which passes the cross-scope test and
+  silently kills the rescan before/after.
+  - *The gate's non-blocking finding, fixed rather than commented:* the first implementation
+    re-derived the code list inside `sqlite_store` and wrote a **differently worded** reason
+    sentence, so one fact reached two surfaces in two phrasings. The registry's own comment beside
+    `needs_full_crawl` already said "do not mirror the list anywhere else". Both now live in the
+    registry, pinned by a behavioural test and a structural one.
 - [ ] **P6.2 — `rechecked` is a field no consumer reads.** Wire it or delete it; a field that
   travels and is never read is a claim nobody can check. **Done when:** it is rendered somewhere
   or gone from the model.
