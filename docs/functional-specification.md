@@ -2176,6 +2176,37 @@ Mark external URLs as known-good to bypass bot-blocking skipped lists.
 ### 5.11 llms.txt generation
 Generate or retrieve curated `/llms.txt` content from crawl data.
 
+### 5.11b Panel explainers (V4, P7.1 — 2026-09-04)
+
+Every major non-issue tool carries the same five-part explainer the 170 issue codes carry:
+**what it is · why it's useful · good vs bad · how it can mislead · how to use**. The labels
+live once in `frontend/src/components/PanelExplainer.jsx`; the copy lives once in
+`frontend/src/data/panelHelp.json`, keyed by panel id. Nine panels are registered.
+
+The component takes the **copy, not the affordance** — how a panel reveals help is a per-panel
+judgement (`GSCInsightsPanel` renders immediately because it is a connect-first screen with
+nothing else on it; the modals hide behind "What is this?" so they do not bury the result the
+user opened them for), while what it says is a contract.
+
+Before this there were **five** hand-written copies in two forms, and their labels had already
+diverged — `FixFocusPanel` said "Why it matters" / "Good vs. bad" / "How to use it" where the
+others said "Why it's useful" / "Good vs bad" / "How to use". Four tools that change a
+nonprofit's site (`FaqSchemaModal`, `GeoSettingsModal`, `ImageAnalysisPanel`,
+`BatchOptimizePanel`) had none at all.
+
+`tests/test_panel_help_completeness.py` pins: all five parts present and non-trivial; the
+`misleading` field has substance (a paired adversarial test proves the substance check can
+reject, so it is a guard rather than a green light); `misleading` is not a restatement of
+`what`; no file outside `PanelExplainer.jsx` spells the labels; and rendered ids and registered
+ids are the **same set** in both directions — an unrenderable id renders blank silently, and an
+unrendered entry is copy nobody will read. The vitest additionally asserts the specific
+batch-optimisation sentence, not merely that an explainer rendered.
+
+Two migrated entries (`geo-faq`, `entity-schema`) had their `misleading` field **sharpened
+rather than copied verbatim**: the pre-existing inline wording would not have passed the new
+substance check, so rewriting it was a condition of the migration being honest rather than a
+change of meaning.
+
 ### 5.12 Schema Generation & Suggestions
 **Generate-and-suggest features (No direct WP mutation):**
 - **FAQ Generator (`POST /api/ai/geo-faq`):** Produces Schema.org `FAQPage` JSON-LD to capture long-tail, high-intent queries. Uses a hybrid engine with a deterministic template default and an opt-in `AIRouter` enrichment mode. Enforces a ≥6-word rule for all generated queries.

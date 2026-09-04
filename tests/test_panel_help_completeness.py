@@ -166,6 +166,13 @@ def test_every_panel_that_renders_the_explainer_uses_a_registered_id():
     assert used, "no panel renders PanelExplainer — the component is unused"
     unknown = {i: f for i, f in used.items() if i not in PANEL_HELP}
     assert not unknown, f"PanelExplainer ids with no entry in panelHelp.json: {unknown}"
+    # And the reverse, added at the gate's request: an entry nothing renders is
+    # copy nobody will ever read, and every test above would pass it. Both
+    # directions or neither — a one-way set check is how a registry rots.
+    orphaned = set(PANEL_HELP) - set(used)
+    assert not orphaned, (
+        f"panelHelp.json entries no panel renders: {sorted(orphaned)}"
+    )
 
 
 def test_the_labels_are_defined_once():

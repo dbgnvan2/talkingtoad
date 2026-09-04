@@ -254,15 +254,24 @@ in SQLite.
   **Done when:** a reason to touch them exists — e.g. a ledger-size problem — or the decision
   is confirmed and closed.
 
-## Phase 7 — the V4 second half (1)
+## Phase 7 — the V4 second half (1 — ALL DONE)
 
-- [ ] **P7.1 — panel explainers for the non-issue features.** Verified 2026-09-03: `GEOReportPanel`
-  and `GSCInsightsPanel` have them; **`FaqSchemaModal`, `GeoSettingsModal`, `ImageAnalysisPanel`
-  and `BatchOptimizePanel` have none**. The 170 issue codes all carry the seven-part explainer;
-  these four tools carry nothing, so the app teaches a nonprofit what `META_DESC_TOO_LONG` means
-  and not what the FAQ generator is for. **Done when:** each of the four carries the tool shape
-  from `PLAN-V4.0.md` (what it is · why it is useful · good vs bad · how it can mislead · how to
-  use it). **Size:** medium, and it is writing, not engineering.
+- [x] **P7.1 — panel explainers for the non-issue features** (2026-09-04). Verified by counting,
+  not by trusting: `GEOReportPanel` 2, `GSCInsightsPanel` 1, and **zero** on the four named.
+  The structural guard then found two the item had not listed — `PagePriorityPanel` and
+  `FixFocusPanel` also hand-wrote the block. So there were **five** copies, and their labels had
+  **already drifted** ("Why it matters" / "Good vs. bad" / "How to use it" in FixFocusPanel),
+  which is a better argument for a shared component than the one the spec made. One home for the
+  labels (`PanelExplainer.jsx`) and one for the copy (`panelHelp.json`), nine panels registered.
+  The spec also had an error I corrected while implementing: it registered a `geo-report` panel
+  that does not exist — `GEOReportPanel` has two distinct sub-tools (a GEO FAQ generator working
+  from your settings, and an entity-schema factory), both different from `FaqSchemaModal`, which
+  works only from answers already in the page HTML.
+  - *The line that matters most:* batch optimisation uploads NEW files and your pages keep
+    serving the old ones until you swap each by hand. Without it an operator watching a green
+    progress bar reasonably concludes the site got faster. The vitest asserts that sentence.
+  - *Gate finding acted on:* the id check ran one way only, so an entry no panel renders would
+    have passed everything. Both directions now, mutation-verified.
 
 ## Phase 8 — engineering debt with no user symptom (4)
 
