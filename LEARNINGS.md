@@ -93,6 +93,11 @@
     answers a neighbouring question returns a confident wrong answer, which is worse than none.
     When adding a new way to narrow a scan, list the fields that claim to describe scope and check
     each one against the new dimension.
+23. **Never write "recorded in TODO" (or any done-later step) in the past tense.** Twice in one
+    week a commit message claimed a deferral had been recorded when it existed only in a pending
+    file about to be deleted; both were caught by the external gate. Perform the bookkeeping
+    first, then describe it. Same rule this file already sets for consequences: write "would" for
+    what you reasoned to, "did" only for what you saw.
 
 ## Pattern index
 
@@ -227,6 +232,14 @@ this index is the one-line meaning.
 ## Fix log
 
 Newest first. Format: **Issue → Root cause → What would have caught it → Fix → Pattern.**
+
+- **2026-09-04 — a field nobody read, a test that asserted it for the reader who did not exist, and the same false bookkeeping claim twice.**
+  - *Issue (P6.2):* the rescan response carried `rechecked: true|false` on every issue row. No consumer had ever read it — that response reaches the UI through a banner rendering four *code lists*, never per-issue rows — and it was derivable regardless: carry-over is defined as "code in `needs_full_crawl`", and an unrunnable code can never be newly found, so the flag was a per-row copy of a code-level fact.
+  - *The trap in deleting it:* **two fields share the name.** `fix_focus.py` sets `rechecked = "not_checked"`, a *string* that `FixFocusPanel.jsx` genuinely renders. A `grep -r rechecked` cleanup — the obvious way to do this work — takes out the live one. The wrong-target mutation is the test that matters in a deletion cycle, and it is not the one you think to write.
+  - *A test that asserted the field FOR the consumer that never existed.* Its failure message: *"so the panel cannot distinguish a re-checked finding from a carried-over one"*. The panel distinguishes them from `carried_over_codes`. This is the past-tense-consequence shape already recorded in this file's open risks, arriving inside an assertion message rather than a note — **a sentence in a test's failure string is read as established fact, and nobody re-derives it because the test is green.**
+  - *For a deletion, the load-bearing test is the one pinning the PREMISE.* Not "the field is gone" but "the information is genuinely elsewhere": `carried_over_codes == stored codes ∩ needs_full_crawl`, asserted rather than assumed, so it fails if carry-over ever stops being decided by the code alone. Deleting a field on the strength of an unpinned equivalence is how information disappears quietly.
+  - *And the same false claim, twice.* The commit said "recorded as TODO P6.2b" while P6.2b existed only in the pending file the fold was about to delete. `fc492fb` said "recorded in TODO" for a gate observation that was never recorded. Both were caught by the independent gate, neither by me. **A commit message describing a bookkeeping step that happens LATER in the same cycle is a prediction written in the past tense** — the exact failure this file already documents for consequences, applied to process. Do the transcription first, then write the sentence that says you did.
+  - *Pattern:* P25 (a field computed and never read), P26 (a test asserting internal consistency while claiming a dependency), P13 (one name, two meanings). Checklist item 23.
 
 - **2026-09-04 — a one-page scan reported the site had improved by four points.**
   - *Issue:* `/scan-page` creates a real job and sends the caller to `/results/{job_id}`, so a one-page audit renders on the same panel as a full crawl. It scored **100**, and nothing on the page said that the 24 codes carrying `needs_full_crawl` could not run. `checks_not_run` was returned by four endpoints and rendered in exactly one place — the Page Audit re-check banner, and even there only as its reason sentence.

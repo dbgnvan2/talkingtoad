@@ -175,7 +175,7 @@ the figures that *are* right. Do these first.
   **Done when:** one assertion pins the catalogue's severity to the derived value, or the field is
   computed rather than stored.
 
-## Phase 6 — things the app knows and does not say (3 — 1 done)
+## Phase 6 — things the app knows and does not say (3 — 2 done)
 
 Disclosure gaps. Each is a fact already computed and then dropped — the P25 shape this codebase
 keeps hitting, and the reason four separate bugs this week were invisible until someone looked
@@ -198,9 +198,30 @@ in SQLite.
     sentence, so one fact reached two surfaces in two phrasings. The registry's own comment beside
     `needs_full_crawl` already said "do not mirror the list anywhere else". Both now live in the
     registry, pinned by a behavioural test and a structural one.
-- [ ] **P6.2 — `rechecked` is a field no consumer reads.** Wire it or delete it; a field that
-  travels and is never read is a claim nobody can check. **Done when:** it is rendered somewhere
-  or gone from the model.
+- [x] **P6.2 — `rechecked` was a field no consumer read** (2026-09-04). Two fields share the
+  name: `fix_focus.py`'s **string** `"not_checked"`, which `FixFocusPanel` genuinely renders,
+  and the rescan response's **boolean** on issue rows, which nothing has ever read — that
+  response reaches the UI through a banner rendering four *code lists*, never per-issue rows.
+  It was also derivable on every row: carry-over is defined as "code in `needs_full_crawl`"
+  and an unrunnable code can never be newly found, so the flag was a per-row copy of a
+  code-level fact. Deleted, with its `docs/api.md` and functional-spec lines. A test asserted
+  it *for* the missing consumer — its message read "so the panel cannot distinguish a
+  re-checked finding from a carried-over one", a dependency that never held; it keeps the real
+  assertion (presence) and loses the claim. 4 mutations verified red, including the
+  `grep -r rechecked` sweep that would delete the live Fix Focus string.
+- [ ] **P6.2b — the persistent Page Audit drawer cannot distinguish a carried-over finding
+  from a re-checked one** (surfaced 2026-09-04 by P6.2; transcribed here at the gate's
+  request). Measured: after a rescan, `/pages/issues` returns
+  `H1_MISSING -> {'scored': True}` and `ORPHAN_PAGE -> {'scored': True}` — identical keys,
+  though only one was re-evaluated. The re-check banner says so but is **transient**: dismiss
+  it or reopen the drawer and the disclosure is gone. Deliberately NOT fixed in P6.2: the
+  drawer also serves full-crawl jobs, where `needs_full_crawl` codes *were* checked, so "when
+  was this row last evaluated, and by what kind of scan" is genuine per-row state stored
+  nowhere. Adding it is a schema change to the `issues` table — the same reasoning
+  `docs/TODO-ARCHIVE.md` applied to the Fix Focus third state. **Done when:** a finding the
+  last scan could not evaluate is distinguishable in the drawer, or the decision not to store
+  that is recorded with its reason.
+
 - [ ] **P6.3 — GSC ingest stores unmatched rows as silent orphans, and a fold collision is
   last-wins.** Performance data that matched nothing is indistinguishable from performance data
   that did not exist. **Done when:** the ingest reports "matched N of M" and a collision is
