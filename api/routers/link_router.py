@@ -35,6 +35,11 @@ from api.routers.fixes_shared import (
 from api.services.auth import require_auth
 from api.services.error_responses import _err
 from api.services.wp_client import WPClient, WPAuthError
+from api.services.wp_shared import (
+    _CODE_TO_FIELD,
+    _FIELD_SPECS,
+    PREDEFINED_FIX_VALUES,
+)
 from api.services.wp_fixer import (
     apply_fix,
     detect_seo_plugin,
@@ -358,14 +363,37 @@ async def apply_one_endpoint(
     if domain_err is not None:
         return domain_err
 
+    # The BACKEND map decides which field an issue code writes. The panel sends a
+    # `field` too, but taking it would make a stale client authoritative over
+    # _CODE_TO_FIELD and let it write the wrong Yoast meta key (P13) — so the body
+    # field is deliberately ignored.
+    field = _CODE_TO_FIELD.get(body.issue_code)
+    if field is None:
+        return _err(
+            "CODE_NOT_FIXABLE",
+            f"Issue code {body.issue_code} has no WordPress fix — nothing to apply.",
+            400,
+        )
+
     try:
         async with WPClient.from_credentials_file(_CREDS_PATH) as wp:
             seo_plugin = await detect_seo_plugin(wp)
-            # apply_fix expects a "fix record" dict with the page URL, issue
-            # code, proposed value, etc.
+            # apply_fix reads fix["field"] and fix["wp_post_id"] and refuses the
+            # record without them. Resolving the post here is what makes the
+            # inline fix a real write rather than a guaranteed failure.
+            post_info = await find_post_by_url(wp, body.page_url)
+            if not post_info:
+                return _err(
+                    "POST_NOT_FOUND",
+                    f"No WordPress post found for {body.page_url}",
+                    404,
+                )
             fix_record = {
                 "page_url": body.page_url,
                 "issue_code": body.issue_code,
+                "field": field,
+                "wp_post_id": post_info["id"],
+                "wp_post_type": post_info["type"],
                 "proposed_value": body.proposed_value or "",
             }
             ok, err = await apply_fix(wp, fix_record, seo_plugin)
@@ -398,6 +426,17 @@ async def wp_value_endpoint(
     if domain_err is not None:
         return domain_err
 
+    # get_current_value returns None for a field it does not know, which the panel
+    # renders as "WordPress has no value here" — a typo and an empty field would be
+    # indistinguishable (P14). Name the real error instead.
+    if field not in _FIELD_SPECS:
+        return _err(
+            "UNKNOWN_FIELD",
+            f"Unknown WordPress field '{field}'. Known fields: "
+            f"{', '.join(sorted(_FIELD_SPECS))}.",
+            400,
+        )
+
     try:
         async with WPClient.from_credentials_file(_CREDS_PATH) as wp:
             post_info = await find_post_by_url(wp, page_url)
@@ -415,4 +454,15 @@ async def wp_value_endpoint(
         logger.exception("wp_value_failed", extra={"page_url": page_url, "field": field})
         return _err("WP_VALUE_FAILED", str(exc), 500)
 
-    return {"page_url": page_url, "field": field, "value": value}
+    # `current_value` is the name this concept carries in Fix.current_value, the
+    # `fixes` table column and FixManager.jsx; the panel reads that key. It used to
+    # be returned as `value`, so the editor opened blank on every fix.
+    # `predefined_value` is non-null only for the fields whose value is not
+    # user-supplied — the panel switches to one-click mode on it, and the constant
+    # is published rather than re-declared in JS.
+    return {
+        "page_url": page_url,
+        "field": field,
+        "current_value": value,
+        "predefined_value": PREDEFINED_FIX_VALUES.get(field),
+    }

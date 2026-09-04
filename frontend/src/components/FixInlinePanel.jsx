@@ -57,12 +57,19 @@ export default function FixInlinePanel({ jobId, pageUrl, issueCode, issueExtra, 
   const field = CODE_TO_FIELD[issueCode]
   const fieldLabel = FIELD_LABELS[field] ?? field
   const limits = FIELD_LIMITS[field]
-  const isPredefined = predefinedValue != null
+  // The fix value for sitemap_include / schema_article_type is predetermined, not
+  // typed. `predefinedValue` is a prop no caller passes (Results.jsx:1682 renders
+  // this panel with four props, and it is the only call site), so the one-click
+  // branch was unreachable in production and those two codes opened an empty
+  // textarea they could never satisfy. The server now publishes the value on the
+  // wp-value response and this state picks it up; the prop is kept as an override.
+  const [predefined,    setPredefined]    = useState(predefinedValue ?? null)
+  const isPredefined = predefined != null
 
-  const [loading,       setLoading]       = useState(!isPredefined)
+  const [loading,       setLoading]       = useState(predefinedValue == null)
   const [fetchError,    setFetchError]    = useState(null)
   const [currentValue,  setCurrentValue]  = useState(null)
-  const [proposedValue, setProposedValue] = useState(isPredefined ? predefinedValue : '')
+  const [proposedValue, setProposedValue] = useState(predefinedValue ?? '')
   const [applying,      setApplying]      = useState(false)
   const [applyError,    setApplyError]    = useState(null)
   const [applied,       setApplied]       = useState(false)
@@ -70,7 +77,7 @@ export default function FixInlinePanel({ jobId, pageUrl, issueCode, issueExtra, 
 
   useEffect(() => {
     if (issueCode === 'TITLE_H1_MISMATCH') return  // handled by MismatchFixPanel
-    if (isPredefined) return   // no need to fetch current WP value for one-click fixes
+    if (predefinedValue != null) return  // caller forced one-click mode — nothing to fetch
     if (!field) {
       setFetchError(`No fix available for issue code: ${issueCode}`)
       setLoading(false)
@@ -86,15 +93,20 @@ export default function FixInlinePanel({ jobId, pageUrl, issueCode, issueExtra, 
       .then(data => {
         const cur = data.current_value ?? ''
         setCurrentValue(cur)
-        const proposed = autoPropose(issueCode, cur)
-        setProposedValue(proposed || cur)
+        if (data.predefined_value != null) {
+          setPredefined(data.predefined_value)
+          setProposedValue(data.predefined_value)
+        } else {
+          const proposed = autoPropose(issueCode, cur)
+          setProposedValue(proposed || cur)
+        }
         setLoading(false)
       })
       .catch(err => {
         setFetchError(err.message)
         setLoading(false)
       })
-  }, [issueCode, isPredefined, field, jobId, pageUrl])
+  }, [issueCode, predefinedValue, field, jobId, pageUrl])
 
   useEffect(() => {
     if (!loading && !fetchError && textareaRef.current) {
@@ -119,9 +131,8 @@ export default function FixInlinePanel({ jobId, pageUrl, issueCode, issueExtra, 
         body: JSON.stringify({
           job_id: jobId,
           page_url: pageUrl,
-          field,
           proposed_value: proposedValue,
-          issue_code: issueCode,
+          issue_code: issueCode,   // the backend derives the field from this
         }),
       })
       const data = await res.json().catch(() => ({}))
@@ -181,7 +192,7 @@ export default function FixInlinePanel({ jobId, pageUrl, issueCode, issueExtra, 
       {isPredefined && !applied && (
         <>
           <p className="text-xs text-gray-700 mb-3">
-            {predefinedDesc || `This will set the value to "${predefinedValue}" in WordPress.`}
+            {predefinedDesc || `This will set the value to "${predefined}" in WordPress.`}
           </p>
           {applyError && <p className="text-xs text-red-600 mb-2">{applyError}</p>}
           <div className="flex items-center gap-2">
@@ -323,9 +334,8 @@ function MismatchFixPanel({ jobId, pageUrl, issueExtra, onClose }) {
         body: JSON.stringify({
           job_id: jobId,
           page_url: pageUrl,
-          field: 'seo_title',
           proposed_value: newTitle.trim(),
-          issue_code: 'TITLE_H1_MISMATCH',
+          issue_code: 'TITLE_H1_MISMATCH',   // the backend derives the field
         }),
       })
       const data = await res.json().catch(() => ({}))
@@ -376,9 +386,8 @@ function MismatchFixPanel({ jobId, pageUrl, issueExtra, onClose }) {
           body: JSON.stringify({
             job_id: jobId,
             page_url: pageUrl,
-            field: 'seo_title',
             proposed_value: newTitle.trim(),
-            issue_code: 'TITLE_H1_MISMATCH',
+            issue_code: 'TITLE_H1_MISMATCH',   // the backend derives the field
           }),
         })
         const data = await res.json().catch(() => ({}))
