@@ -26,7 +26,11 @@ from api.models.performance import PerformanceRecord
 from api.services.auth import require_auth
 from api.services.gsc_client import (build_flow, fetch_page_performance,
                                      google_libraries_available, list_properties)
-from api.services.perf_join import build_crawled_key_map, match_key
+from api.services.perf_join import (
+    build_crawled_key_map,
+    fold_performance_rows,
+    match_key,
+)
 from api.services.refresh_trigger import ReviewFlag, evaluate_refresh
 
 logger = logging.getLogger(__name__)
@@ -278,8 +282,19 @@ async def gsc_disconnect():
 
 
 class IngestResponse(BaseModel):
-    ingested: int
+    """P6.3: the same shape `/api/performance/ingest` returns.
+
+    `ingested: N` alone could not be told apart from a perfect join — an ingest
+    where the GSC property was a different domain from the crawl returned the
+    same response as one where every row matched.
+    """
+    ingested: int              # ledger rows written (matched URLs, after folding)
     period: str
+    received: int = 0          # URLs the GSC API returned
+    matched: int = 0           # of those, URLs that resolved to a crawled page
+    unmatched_urls: list[str] = []   # held out, NOT stored under an orphan key
+    invalid_urls: list[str] = []     # unparseable, skipped rather than fatal
+    folded_urls: dict[str, list[str]] = {}   # storage key -> the URLs that collapsed onto it
 
 
 @router.post("/ingest")
@@ -309,13 +324,28 @@ async def gsc_ingest(site_url: str, job_id: str, days: int = 30):
     # raw form. Stamp source_generated_at so PB8 freshness works for GSC too.
     crawled_by_key = build_crawled_key_map(await store.get_pages(job_id))
     generated_at = datetime.now(timezone.utc).isoformat()
-    records = []
+
+    # P6.3 — the contract `/api/performance/ingest` already implements, whose
+    # own comment states the reasoning this path violated: "URLs that match no
+    # crawled page are held out rather than persisted under an orphan key the
+    # consumer would never read." Page-priority looks rows up by the crawled
+    # page's exact url, so a row stored under a raw GSC URL is invisible — and
+    # it was counted in `ingested`, which is how a failed join looked like a
+    # successful one.
+    resolved: list[tuple[str, str, PerformanceRecord]] = []
+    unmatched: list[str] = []
+    invalid: list[str] = []
     for row in rows:
         try:
-            storage_key = crawled_by_key.get(match_key(row["url"]), row["url"])
+            key = match_key(row["url"])
         except ValueError:
-            storage_key = row["url"]
-        records.append(PerformanceRecord(
+            invalid.append(row["url"])
+            continue
+        storage_key = crawled_by_key.get(key)
+        if storage_key is None:
+            unmatched.append(row["url"])
+            continue
+        resolved.append((storage_key, row["url"], PerformanceRecord(
             url=storage_key,
             period=period,
             gsc_clicks_mo=row["clicks"],
@@ -323,11 +353,25 @@ async def gsc_ingest(site_url: str, job_id: str, days: int = 30):
             gsc_ctr_mo=row["ctr"],
             gsc_avg_position_mo=row["position"],
             source_generated_at=generated_at,
-        ))
+        )))
+
+    # `match_key` folds www/scheme/slash, so a GSC domain property routinely
+    # resolves several source URLs onto one crawled page. Their traffic is
+    # additive; writing them as separate records let the ledger's ON CONFLICT
+    # overwrite the page's clicks with whichever landed last.
+    records, folded = fold_performance_rows(resolved)
 
     await store.save_performance_records(records)
 
-    return IngestResponse(ingested=len(records), period=period)
+    return IngestResponse(
+        ingested=len(records),
+        period=period,
+        received=len(rows),
+        matched=len(resolved),
+        unmatched_urls=sorted(set(unmatched)),
+        invalid_urls=sorted(set(invalid)),
+        folded_urls=folded,
+    )
 
 
 class PerformanceResponse(BaseModel):

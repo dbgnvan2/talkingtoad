@@ -27,7 +27,11 @@ from api.crawler.normaliser import is_same_domain
 from api.models.performance import PerformanceRecord
 from api.services.auth import require_auth
 from api.services.error_responses import _err
-from api.services.perf_join import build_crawled_key_map, match_key
+from api.services.perf_join import (
+    build_crawled_key_map,
+    fold_performance_rows,
+    match_key,
+)
 from api.services.performance_freshness import earlier, is_stale
 
 logger = logging.getLogger(__name__)
@@ -124,6 +128,10 @@ class IngestResult(BaseModel):
     period: str
     unmatched_urls: list[str]  # bundle URLs with no crawled page — held out, not stored
     invalid_urls: list[str] = []  # bundle URLs that could not be parsed (skipped, not fatal)
+    # P6.3 — storage key -> the bundle URLs that collapsed onto it. A fold is not
+    # an error (it is the normal shape of a www/https duplicate) but it changes a
+    # number the reader sees, so it is stated. Only keys with more than one URL.
+    folded_urls: dict[str, list[str]] = {}
     stale: bool | None = None
     deferred: list[str] = []
 
@@ -186,10 +194,18 @@ async def ingest_bundle(bundle: PerformanceBundle, job_id: str):
             existing_cache[key_url] = next((r for r in recs if r.period == bundle.period), None)
         return existing_cache[key_url]
 
-    # Keyed by storage_key so two bundle pages that resolve to the same crawled
-    # page merge into one row (last-writer-wins over the accumulated base) rather
-    # than emitting a duplicate — `ingested` then counts distinct rows.
-    pending: dict[str, PerformanceRecord] = {}
+    # P6.3 — two bundle pages resolving to one crawled page used to merge
+    # last-writer-wins, so 100 clicks + 50 clicks stored as 50 on a page that
+    # earned 150. They are collected here and FOLDED below (counts summed, rates
+    # recomputed), which is also what /api/gsc/ingest does — one arithmetic, one
+    # implementation.
+    #
+    # The read-merge (P8: a bundle is authoritative only for the fields it
+    # carries) now happens AFTER the fold, not before. Before it, a GA4 value
+    # carried forward onto two folding pages would be summed twice — the carry
+    # is one fact about the page, not one per source URL.
+    resolved: list[tuple[str, str, PerformanceRecord]] = []
+    sections_seen: dict[str, set[str]] = {}
     unmatched: list[str] = []
     invalid: list[str] = []
     for p in bundle.pages:
@@ -205,40 +221,60 @@ async def ingest_bundle(bundle: PerformanceBundle, job_id: str):
             unmatched.append(p.url)
             continue
 
-        # Base to merge onto: an already-accumulated row for this key (in-batch
-        # duplicate) else the stored prior row (fetched only when a field must be
-        # carried forward).
-        base = pending.get(storage_key)
-        if base is None and (p.gsc is None or p.ga4 is None):
-            base = await _existing(storage_key)
-
         gsc = p.gsc
         ga4 = p.ga4
-        # Freshness (PB8, honest): if any field is carried forward from an older
-        # base row, the row is only as fresh as that oldest source.
-        gen = bundle.generated_at
-        if base is not None and base.source_generated_at:
-            gen = earlier(bundle.generated_at, base.source_generated_at)
+        seen = sections_seen.setdefault(storage_key, set())
+        if gsc is not None:
+            seen.add("gsc")
+        if ga4 is not None:
+            seen.add("ga4")
 
-        pending[storage_key] = PerformanceRecord(
+        resolved.append((storage_key, p.url, PerformanceRecord(
             url=storage_key,
             period=bundle.period,
-            # GSC — from bundle if present, else carry base forward (else 0).
-            gsc_clicks_mo=gsc.clicks if gsc else (base.gsc_clicks_mo if base else 0),
-            gsc_impressions_mo=gsc.impressions if gsc else (base.gsc_impressions_mo if base else 0),
-            gsc_ctr_mo=gsc.ctr if gsc else (base.gsc_ctr_mo if base else 0.0),
-            gsc_avg_position_mo=gsc.position if gsc else (base.gsc_avg_position_mo if base else 0.0),
-            index_state=(gsc.index_state if gsc else None) or (base.index_state if base else None),
-            # GA4 — from bundle if present, else carry base forward (else None).
-            ga4_sessions_mo=ga4.sessions if ga4 else (base.ga4_sessions_mo if base else None),
-            ga4_engaged_sessions_mo=ga4.engaged_sessions if ga4 else (base.ga4_engaged_sessions_mo if base else None),
-            ga4_engagement_rate_mo=ga4.engagement_rate if ga4 else (base.ga4_engagement_rate_mo if base else None),
-            ga4_conversions_mo=ga4.conversions if ga4 else (base.ga4_conversions_mo if base else None),
-            ga4_ai_referral_sessions_mo=_ai_referral(ga4) if ga4 else (base.ga4_ai_referral_sessions_mo if base else None),
-            source_generated_at=gen,
-        )
+            # Bundle values only — the carry-forward happens after the fold.
+            gsc_clicks_mo=gsc.clicks if gsc else 0,
+            gsc_impressions_mo=gsc.impressions if gsc else 0,
+            gsc_ctr_mo=gsc.ctr if gsc else 0.0,
+            gsc_avg_position_mo=gsc.position if gsc else 0.0,
+            index_state=gsc.index_state if gsc else None,
+            ga4_sessions_mo=ga4.sessions if ga4 else None,
+            ga4_engaged_sessions_mo=ga4.engaged_sessions if ga4 else None,
+            ga4_engagement_rate_mo=ga4.engagement_rate if ga4 else None,
+            ga4_conversions_mo=ga4.conversions if ga4 else None,
+            ga4_ai_referral_sessions_mo=_ai_referral(ga4) if ga4 else None,
+            source_generated_at=bundle.generated_at,
+        )))
 
-    records = list(pending.values())
+    records, folded = fold_performance_rows(resolved)
+
+    # Read-merge, once per folded row (P8): a bundle is authoritative ONLY for
+    # the sections it carries, so a GA4-only bundle must not overwrite GSC
+    # metrics from an earlier one with zeros, and vice versa.
+    for rec in records:
+        seen = sections_seen.get(rec.url, set())
+        if "gsc" in seen and "ga4" in seen:
+            continue
+        base = await _existing(rec.url)
+        if base is None:
+            continue
+        if "gsc" not in seen:
+            rec.gsc_clicks_mo = base.gsc_clicks_mo
+            rec.gsc_impressions_mo = base.gsc_impressions_mo
+            rec.gsc_ctr_mo = base.gsc_ctr_mo
+            rec.gsc_avg_position_mo = base.gsc_avg_position_mo
+            rec.index_state = rec.index_state or base.index_state
+        if "ga4" not in seen:
+            rec.ga4_sessions_mo = base.ga4_sessions_mo
+            rec.ga4_engaged_sessions_mo = base.ga4_engaged_sessions_mo
+            rec.ga4_engagement_rate_mo = base.ga4_engagement_rate_mo
+            rec.ga4_conversions_mo = base.ga4_conversions_mo
+            rec.ga4_ai_referral_sessions_mo = base.ga4_ai_referral_sessions_mo
+        # Freshness (PB8, honest): a row carrying a field forward from an older
+        # base is only as fresh as that oldest source.
+        if base.source_generated_at:
+            rec.source_generated_at = earlier(bundle.generated_at, base.source_generated_at)
+
     await store.save_performance_records(records)
 
     deferred: list[str] = []
@@ -262,6 +298,7 @@ async def ingest_bundle(bundle: PerformanceBundle, job_id: str):
         period=bundle.period,
         unmatched_urls=sorted(set(unmatched)),
         invalid_urls=sorted(set(invalid)),
+        folded_urls=folded,
         stale=is_stale(bundle.generated_at),
         deferred=deferred,
     )

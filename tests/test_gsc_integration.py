@@ -502,6 +502,24 @@ class TestGscIngest:
     @pytest.mark.asyncio
     async def test_ingest_writes_records(self, gsc_client, gsc_env, gsc_store):
         """Mock fetch -> writes PerformanceRecords to the ledger."""
+        # P6.3: seed the crawled pages these rows join onto. Before P6.3 an
+        # unmatched GSC URL fell back to its raw form and was stored anyway, so
+        # this test passed without a crawl — it was exercising the orphan-key
+        # write rather than the join it claims to test. Unmatched rows are now
+        # held out (see tests/test_performance_fold.py).
+        from datetime import datetime, timezone
+
+        from api.models.job import CrawlJob
+        from api.models.page import CrawledPage
+
+        await gsc_store.create_job(CrawlJob(
+            job_id="test_job", target_url="https://example.com", status="complete"))
+        await gsc_store.save_pages([
+            CrawledPage(job_id="test_job", url=u, status_code=200,
+                        crawled_at=datetime.now(timezone.utc))
+            for u in ("https://example.com/page1", "https://example.com/page2")
+        ])
+
         mock_rows = [
             {
                 "url": "https://example.com/page1",
@@ -593,6 +611,24 @@ class TestGscIngest:
     @pytest.mark.asyncio
     async def test_ingest_idempotent(self, gsc_client, gsc_env, gsc_store):
         """Re-ingest for same (url, period) updates — doesn't duplicate."""
+        # P6.3: seed the crawled pages these rows join onto. Before P6.3 an
+        # unmatched GSC URL fell back to its raw form and was stored anyway, so
+        # this test passed without a crawl — it was exercising the orphan-key
+        # write rather than the join it claims to test. Unmatched rows are now
+        # held out (see tests/test_performance_fold.py).
+        from datetime import datetime, timezone
+
+        from api.models.job import CrawlJob
+        from api.models.page import CrawledPage
+
+        await gsc_store.create_job(CrawlJob(
+            job_id="test_job", target_url="https://example.com", status="complete"))
+        await gsc_store.save_pages([
+            CrawledPage(job_id="test_job", url=u, status_code=200,
+                        crawled_at=datetime.now(timezone.utc))
+            for u in ("https://example.com/page1", "https://example.com/page2")
+        ])
+
         mock_rows = [
             {
                 "url": "https://example.com/page1",
