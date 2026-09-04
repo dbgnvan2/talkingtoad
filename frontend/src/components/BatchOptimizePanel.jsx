@@ -1,3 +1,4 @@
+import PanelExplainer from './PanelExplainer.jsx'
 import { useState, useEffect, useRef } from 'react'
 import { useToast } from '../contexts/ToastContext.jsx'
 import { startBatchOptimize, getBatchStatus, pauseBatch, resumeBatch, cancelBatch } from '../api'
@@ -10,6 +11,7 @@ import { startBatchOptimize, getBatchStatus, pauseBatch, resumeBatch, cancelBatc
 export default function BatchOptimizePanel({ jobId, selectedImages, onClose, onComplete }) {
   const toast = useToast()
   const [status, setStatus] = useState(null)
+  const [showHelp, setShowHelp] = useState(false)
   const [batchId, setBatchId] = useState(null)
   const [error, setError] = useState(null)
   const [starting, setStarting] = useState(false)
@@ -127,6 +129,13 @@ export default function BatchOptimizePanel({ jobId, selectedImages, onClose, onC
                 {!status && `${selectedImages.length} images selected`}
                 {status && `${status.status} - ${status.completed + status.failed}/${status.total}`}
               </p>
+              <button
+                onClick={() => setShowHelp(v => !v)}
+                className="text-xs text-blue-600 hover:text-blue-800 underline self-start"
+              >
+                {showHelp ? 'Hide' : 'What is this?'}
+              </button>
+              {showHelp && <PanelExplainer id="batch-optimise" />}
             </div>
             <button
               onClick={onClose}

@@ -1,3 +1,4 @@
+import PanelExplainer from './PanelExplainer.jsx'
 import { useState, useEffect } from 'react'
 import { useToast } from '../contexts/ToastContext.jsx'
 import { getGeoSettings, saveGeoSettings, getGeoAiModel, setGeoAiModel } from '../api.js'
@@ -11,6 +12,7 @@ import { getGeoSettings, saveGeoSettings, getGeoAiModel, setGeoAiModel } from '.
 export default function GeoSettingsModal({ domain, onClose, onSaved }) {
   const toast = useToast()
   const [loading, setLoading] = useState(true)
+  const [showHelp, setShowHelp] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
 
@@ -168,6 +170,13 @@ export default function GeoSettingsModal({ domain, onClose, onSaved }) {
 
         {/* Content */}
         <div className="p-6 space-y-6">
+          <button
+            onClick={() => setShowHelp(v => !v)}
+            className="text-xs text-blue-600 hover:text-blue-800 underline self-start"
+          >
+            {showHelp ? 'Hide' : 'What is this?'}
+          </button>
+          {showHelp && <PanelExplainer id="geo-settings" />}
           {error && (
             <div className="bg-red-50 border border-red-200 text-red-800 px-4 py-3 rounded-lg text-sm">
               {error}

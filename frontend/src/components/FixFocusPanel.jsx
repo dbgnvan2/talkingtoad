@@ -1,3 +1,4 @@
+import PanelExplainer from './PanelExplainer.jsx'
 import { useState, useEffect, useCallback } from 'react'
 import { getFixFocus, toggleFixFocusItem, verifyFixFocusPage, regenerateFixFocus } from '../api.js'
 
@@ -7,13 +8,6 @@ import { getFixFocus, toggleFixFocusItem, verifyFixFocusPage, regenerateFixFocus
 // re-scans one page and marks its items verified / still-present.
 // Spec: docs/pending/2026-08-13_fix-focus-checklist.md
 
-const V4 = {
-  what: 'A short checklist of the fixes that matter most, in two lists — SEO and AI/GEO — grouped by page (top 10 each) so you can work through them and tick them off.',
-  why: 'A full report has hundreds of items. This turns it into a finite worklist a person can actually finish, highest-impact first.',
-  goodBad: 'A ticked item means you did the work; press "Verify page" to have the crawler re-check that page — items it confirms fixed turn green, ones it still sees are flagged "still present".',
-  mislead: 'The list is a snapshot frozen when generated, so it stays stable while you work. After fixing things, use Regenerate to rebuild it from the latest scan.',
-  how: 'Work down each list; tick items as you fix them; Verify a page when done; Regenerate when you want a fresh list.',
-}
 
 const STATUS_STYLE = {
   open: 'text-gray-500',
@@ -185,11 +179,7 @@ export default function FixFocusPanel({ jobId }) {
 
       {showHelp && (
         <div className="text-xs text-gray-600 bg-indigo-50 rounded-xl p-3 space-y-1">
-          <p><strong>What it is:</strong> {V4.what}</p>
-          <p><strong>Why it matters:</strong> {V4.why}</p>
-          <p><strong>Good vs. bad:</strong> {V4.goodBad}</p>
-          <p><strong>How it can mislead:</strong> {V4.mislead}</p>
-          <p><strong>How to use it:</strong> {V4.how}</p>
+          <PanelExplainer id="fix-focus" />
         </div>
       )}
 

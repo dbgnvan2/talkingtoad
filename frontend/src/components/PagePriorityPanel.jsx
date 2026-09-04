@@ -1,3 +1,4 @@
+import PanelExplainer from './PanelExplainer.jsx'
 import React, { useState } from 'react'
 import { getPagePriority } from '../api.js'
 import CitabilityBadge from './CitabilityBadge.jsx'
@@ -15,13 +16,6 @@ const BUCKET_STYLES = {
   'OK': 'bg-gray-100 text-gray-500',
 }
 
-const V4 = {
-  what: 'Ranks every crawled page by how much it matters (Google Search traffic) against how well it is built (health score), so you know which pages to improve first.',
-  why: 'Your most valuable pages are not always your healthiest. This puts the high-impact, structurally-weak pages at the top of the queue.',
-  goodBad: 'A "Vulnerable Star" (earns traffic but weak structure) is the #1 thing to fix; a "Hidden Gem" (healthy but no traffic) is an opportunity to re-target, not a fire.',
-  mislead: 'GSC data lags ~2-3 days and a low-traffic site shows thin data — without GSC connected, pages are ranked by health alone. Buckets are heuristics, not verdicts.',
-  how: 'Connect GSC and ingest performance for richer ranking; then work down the list from the top.',
-}
 
 export default function PagePriorityPanel({ jobId }) {
   const [loading, setLoading] = useState(false)
@@ -80,11 +74,7 @@ export default function PagePriorityPanel({ jobId }) {
 
       {showHelp && (
         <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-4 text-xs text-indigo-900 space-y-2">
-          <p><strong>What it is:</strong> {V4.what}</p>
-          <p><strong>Why it&apos;s useful:</strong> {V4.why}</p>
-          <p><strong>Good vs bad:</strong> {V4.goodBad}</p>
-          <p><strong>How it can mislead:</strong> {V4.mislead}</p>
-          <p><strong>How to use:</strong> {V4.how}</p>
+          <PanelExplainer id="page-priority" />
         </div>
       )}
 

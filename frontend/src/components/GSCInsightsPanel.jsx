@@ -1,13 +1,7 @@
+import PanelExplainer from './PanelExplainer.jsx'
 import { useState, useEffect, useCallback } from 'react'
 import { gscStatus, gscConnectUrl, gscDisconnect, gscIngest } from '../api'
 
-const V4_EXPLAINER = {
-  what: 'Connects Google Search Console to show how your pages actually perform in Google (clicks, impressions, position) including AI surfaces.',
-  why: "It's the reality check \u2014 it tells you which technically-healthy pages actually earn traffic, so you fix the pages that matter, and whether your GEO work is being cited.",
-  goodVsBad: 'A healthy page with high impressions but low clicks = a title/answerability problem to fix; a healthy page with zero traffic = a "Hidden Gem" to re-target.',
-  misleading: 'GSC data lags ~2\u20133 days and a brand-new/low-traffic site may show zero rows \u2014 absence of data is not a failure.',
-  howToUse: 'Connect \u2192 pick a property you Own or have Full access to \u2192 Ingest \u2192 review the flagged pages.',
-}
 
 // Map Google's permissionLevel to a short human label.
 const PERMISSION_LABELS = {
@@ -175,15 +169,7 @@ function GSCInsightsPanel({ jobId }) {
         </p>
       )}
 
-      {showExplainer && (
-        <div className="mb-4 p-3 bg-blue-50 rounded text-sm text-gray-700 space-y-2">
-          <p><strong>What it is:</strong> {V4_EXPLAINER.what}</p>
-          <p><strong>Why it's useful:</strong> {V4_EXPLAINER.why}</p>
-          <p><strong>Good vs bad:</strong> {V4_EXPLAINER.goodVsBad}</p>
-          <p><strong>How it can mislead:</strong> {V4_EXPLAINER.misleading}</p>
-          <p><strong>How to use:</strong> {V4_EXPLAINER.howToUse}</p>
-        </div>
-      )}
+      {showExplainer && <PanelExplainer id="gsc-insights" className="mb-4" />}
 
       <div className="space-y-4">
         <div>

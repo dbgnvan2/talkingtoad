@@ -1,0 +1,74 @@
+{
+  "faq-schema": {
+    "title": "FAQ schema generator",
+    "what": "Builds ready-to-paste FAQ structured data (JSON-LD) for one page, using only the questions and answers that are already written in that page's HTML.",
+    "why": "Search engines and AI assistants match against specific questions, not topics. Marking up your existing answers makes them eligible for rich results and for being quoted directly, without you writing anything new.",
+    "goodVsBad": "Good: a question a real visitor would type, answered in full on the page - \"What does a first counselling session cost?\". Bad: a heading with no answer beneath it, or a question whose answer lives on another page.",
+    "misleading": "A refusal is not a verdict on your page. If this tool says it cannot build schema, the usual cause is that your FAQ answers are drawn by JavaScript after the page loads - Google's parser cannot see them either, which is a bigger problem than the missing markup. It is also copy-and-paste only: nothing is written to WordPress, so your page is unchanged until you paste the snippet yourself.",
+    "howToUse": "Generate, copy the snippet, and paste it into the page's HTML (a Custom HTML block works). Re-run the crawl afterwards to confirm the page now reports structured data."
+  },
+  "geo-settings": {
+    "title": "GEO settings",
+    "what": "Records who your organisation is, where it works, and what it does - the identity and place details used when this tool writes image metadata and entity markup for you.",
+    "why": "AI assistants answer questions like \"grief counselling near me\" by matching an organisation to a place and a subject. Stating those once, here, means every generated caption and alt text says the same thing rather than guessing per image.",
+    "goodVsBad": "Good: the legal organisation name, the city you actually serve, and topics a visitor would recognise. Bad: a marketing tagline in the name field, or a province-wide location when you serve one neighbourhood.",
+    "misleading": "Everything here is an input, not a verified fact - the tool cannot tell a wrong answer from a right one, and it does not check these values against your website or any register. A mistaken location propagates into the alt text of every image you generate, and with GPS writing enabled it is stamped into the EXIF of every optimised file, where it is far harder to notice and to undo.",
+    "howToUse": "Fill these in once before using image GEO analysis or the entity schema factory. Re-check them whenever the organisation moves, renames, or changes what it offers."
+  },
+  "image-analysis": {
+    "title": "Image analysis",
+    "what": "Scores every image found during the crawl on its file weight, dimensions, filename and alt text, and lists the ones dragging a page down.",
+    "why": "Images are usually the largest thing a nonprofit's page asks a visitor to download, and alt text is what a screen reader and a search engine actually read. Both are fixable without a developer.",
+    "goodVsBad": "Good: a descriptive filename, alt text a sighted person would recognise the picture from, and a file sized for where it is shown. Bad: DSC_0431.JPG at 4000px wide, or alt text that repeats the filename.",
+    "misleading": "The score measures metadata and file weight - not whether the picture is any good, relevant, or worth having on the page. A decorative spacer with a tidy filename scores well. Coverage is also capped: the dimension pass measures at most 150 images per crawl (TT_IMAGE_DIMENSION_MAX_COUNT), so beyond that a file-size finding is missing because it was not measured, not because the image is fine. Each row carries its data_source so you can tell the two apart.",
+    "howToUse": "Sort by score, fix the worst handful first, and treat alt text as writing rather than as a field to fill. Re-crawl to confirm the change."
+  },
+  "batch-optimise": {
+    "title": "Batch image optimisation",
+    "what": "Converts selected images to WebP, resizes them to a target width, and can write GPS and GEO metadata into each file - then uploads the results to your WordPress media library.",
+    "why": "Doing this by hand for a few hundred photos is a day's work. Smaller files load faster on the phones and slow connections most nonprofit visitors are using.",
+    "goodVsBad": "Good: photographs and screenshots wider than they are displayed. Bad: logos and line art, which usually belong as SVG or PNG and can look worse as WebP.",
+    "misleading": "This uploads NEW files. Your pages keep serving the old images until you replace each one by hand in the post or page - the progress bar finishing does not mean your site got faster. That is a deliberate limit of this tool, because changing image links automatically is not safe to do through the WordPress API. Check a page in a browser before telling anyone the site has been optimised.",
+    "howToUse": "Select the images, optimise, then edit each post and swap the old image for the new one from the media library. Re-crawl afterwards to see the file sizes change."
+  },
+  "gsc-insights": {
+    "title": "Search Console insights",
+    "what": "Connects Google Search Console to show how your pages actually perform in Google - clicks, impressions and average position - including AI surfaces.",
+    "why": "It is the reality check. It tells you which technically-healthy pages actually earn traffic, so you fix the pages that matter rather than the pages that score badly.",
+    "goodVsBad": "Good to act on: high impressions with few clicks, which is usually a title or answerability problem. Also good: a healthy page with no traffic at all, which may just need to be linked to.",
+    "misleading": "Search Console data lags roughly 2-3 days, and a new or low-traffic site can legitimately show no rows at all - an empty panel is not a failure and not a finding. Position is an average across every query a page appeared for, so a page ranking 3rd for its own name and 80th for one stray phrase reports neither.",
+    "howToUse": "Connect, pick a property you own or have full access to, ingest, then review the flagged pages alongside the health score."
+  },
+  "geo-faq": {
+    "title": "GEO FAQ generator",
+    "what": "Generates ready-to-paste FAQ schema (JSON-LD) built from your organisation's topics and locations.",
+    "why": "Long-tail FAQ questions are exactly what AI engines and search match against; structured FAQ markup makes your answers eligible for rich results and AI citation.",
+    "goodVsBad": "A 6+-word, specific question (\"What should I expect from grief counselling in Vancouver?\") vs a short head term (\"counselling\") that everyone competes for and AI can't anchor to.",
+    "misleading": "The tool generates ANCHORS, not verified answers - you must write accurate answers before publishing. Schema describing content you cannot honestly answer can hurt trust, and unlike the per-page FAQ tool this one works from your GEO settings rather than from text already on the page, so nothing here has been checked against what a visitor actually sees.",
+    "howToUse": "Paste the JSON-LD into your page's head or body, then replace the draft answers with real ones."
+  },
+  "entity-schema": {
+    "title": "Entity schema factory",
+    "what": "Builds ready-to-paste JSON-LD that tells search and AI engines who your organisation is, what services it offers, and which authoritative entity (Wikipedia/Wikidata page) it corresponds to.",
+    "why": "A sameAs link to an authoritative entity is a strong disambiguation signal - it helps AI engines confidently identify and cite your organisation rather than confusing it with a similarly named one.",
+    "goodVsBad": "Good: linking to your real Wikipedia or Wikidata entity. Bad: leaving it blank, which gives no disambiguation at all, or pointing at an unrelated page, which actively misleads.",
+    "misleading": "Schema must match what is visibly on your page and must be true. Claiming services or an identity you cannot back up can cost you eligibility rather than win it, and this tool cannot check either claim - it writes what your GEO settings say, including a sameAs URL nobody has verified belongs to you.",
+    "howToUse": "Set your entity URL in GEO settings, generate, then paste the JSON-LD into the page head."
+  },
+  "page-priority": {
+    "title": "Page priority",
+    "what": "Ranks every crawled page by how much it matters (Google Search traffic) against how well it is built (health score), so you know which pages to improve first.",
+    "why": "Your most valuable pages are not always your healthiest. This puts the high-impact, structurally-weak pages at the top of the queue.",
+    "goodVsBad": "A \"Vulnerable Star\" (earns traffic but weak structure) is the first thing to fix; a \"Hidden Gem\" (healthy but no traffic) is an opportunity to re-target, not a fire.",
+    "misleading": "Search Console data lags roughly 2-3 days and a low-traffic site shows thin data - without Search Console connected, pages are ranked by health alone, which is the ranking this panel exists to improve on. The buckets are heuristics, not verdicts.",
+    "howToUse": "Connect Search Console and ingest performance for richer ranking, then work down the list from the top."
+  },
+  "fix-focus": {
+    "title": "Fix Focus",
+    "what": "A short checklist of the fixes that matter most, in two lists - SEO and AI/GEO - grouped by page (top 10 each) so you can work through them and tick them off.",
+    "why": "A full report has hundreds of items. This turns it into a finite worklist a person can actually finish, highest-impact first.",
+    "goodVsBad": "A ticked item means you did the work; press \"Verify page\" to have the crawler re-check that page - items it confirms fixed turn green, ones it still sees are flagged \"still present\".",
+    "misleading": "The list is a snapshot frozen when it was generated, so it stays stable while you work - it does not update as you fix things, and an item can be done on the site while still showing here. Verify a page to re-check it, or Regenerate to rebuild the list from the latest scan. A verify cannot evaluate the 24 checks that need a full crawl; those are marked \"not re-checked\" rather than passed.",
+    "howToUse": "Work down each list, tick items as you fix them, Verify a page when done, and Regenerate when you want a fresh list."
+  }
+}

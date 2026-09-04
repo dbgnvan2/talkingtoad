@@ -1,3 +1,4 @@
+import PanelExplainer from './PanelExplainer.jsx'
 import { useState, useEffect, useCallback } from 'react'
 import { getFaqSchema } from '../api.js'
 
@@ -12,6 +13,7 @@ import { getFaqSchema } from '../api.js'
  */
 export default function FaqSchemaModal({ jobId, pageUrl, onClose }) {
   const [state, setState] = useState({ loading: true })
+  const [showHelp, setShowHelp] = useState(false)
   const [copied, setCopied] = useState(false)
 
   const load = useCallback(async () => {
@@ -76,6 +78,13 @@ export default function FaqSchemaModal({ jobId, pageUrl, onClose }) {
 
         {/* Content */}
         <div className="p-6 space-y-5">
+          <button
+            onClick={() => setShowHelp(v => !v)}
+            className="text-xs text-blue-600 hover:text-blue-800 underline self-start"
+          >
+            {showHelp ? 'Hide' : 'What is this?'}
+          </button>
+          {showHelp && <PanelExplainer id="faq-schema" />}
           {state.loading && (
             <div className="py-12 text-center text-gray-500">
               <span className="animate-spin inline-block mr-2">&#8635;</span>

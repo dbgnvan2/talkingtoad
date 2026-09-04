@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react'
 import { useToast } from '../contexts/ToastContext.jsx'
 import { generateGeoReport, getGeoAiModel, setGeoAiModel, generateGeoRewritePrompt, generateGeoFaq, generateEntitySchema } from '../api.js'
 import { authHeaders } from '../api.js'
+import PanelExplainer from './PanelExplainer.jsx'
 import Spinner from './Spinner.jsx'
 
 const TIER_COLORS = {
@@ -620,16 +621,8 @@ function FAQSchemaCard({ domain }) {
         </div>
       </div>
 
-      {/* Help / explainer (V4 standard) */}
-      {showHelp && (
-        <div className="bg-white border border-emerald-200 rounded-xl p-4 text-xs text-emerald-800 space-y-2">
-          <p><strong>What it is:</strong> Generates ready-to-paste FAQ schema (JSON-LD) built from your organisation&apos;s topics and locations.</p>
-          <p><strong>Why it&apos;s useful:</strong> Long-tail FAQ questions are exactly what AI engines and search match against; structured FAQ markup makes your answers eligible for rich results and AI citation.</p>
-          <p><strong>Good vs bad:</strong> A 6+-word, specific question (&quot;What should I expect from grief counselling in Vancouver?&quot;) vs a short head term (&quot;counselling&quot;) that everyone competes for and AI can&apos;t anchor to.</p>
-          <p><strong>How it can mislead:</strong> The tool generates <em>anchors</em>, not verified answers &mdash; you must write accurate answers; schema for content you can&apos;t honestly answer can hurt trust.</p>
-          <p><strong>How to use:</strong> Paste the JSON-LD into your page&apos;s {'<head>'} or body, then replace the draft answers with real ones.</p>
-        </div>
-      )}
+      {/* Help / explainer (V4 standard) — copy in panelHelp.json */}
+      {showHelp && <PanelExplainer id="geo-faq" />}
 
       {expanded && (
         <>
@@ -804,16 +797,8 @@ function EntitySchemaCard({ domain }) {
         </div>
       </div>
 
-      {/* Help / explainer (V4 standard) */}
-      {showHelp && (
-        <div className="bg-white border border-violet-200 rounded-xl p-4 text-xs text-violet-800 space-y-2">
-          <p><strong>What it is:</strong> Builds ready-to-paste JSON-LD that tells search and AI engines who your organisation is, what services it offers, and which authoritative entity (Wikipedia/Wikidata page) it corresponds to.</p>
-          <p><strong>Why it&apos;s useful:</strong> A <code>sameAs</code> link to an authoritative entity is a strong disambiguation signal &mdash; it helps AI engines confidently identify and cite your organisation.</p>
-          <p><strong>Good vs bad:</strong> Linking to your real Wikipedia/Wikidata entity vs leaving it blank (no disambiguation) or pointing at an unrelated page (actively misleading).</p>
-          <p><strong>How it can mislead:</strong> Schema must match what&apos;s visibly on your page and be truthful; claiming services or an identity you can&apos;t back up can hurt trust and eligibility.</p>
-          <p><strong>How to use:</strong> Set your entity URL in GEO settings, generate, paste the JSON-LD into the page <code>{'<head>'}</code>.</p>
-        </div>
-      )}
+      {/* Help / explainer (V4 standard) — copy in panelHelp.json */}
+      {showHelp && <PanelExplainer id="entity-schema" />}
 
       {expanded && (
         <>

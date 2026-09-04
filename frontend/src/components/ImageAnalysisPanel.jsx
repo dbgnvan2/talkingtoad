@@ -5,6 +5,7 @@
  * thumbnails, and per-image scoring breakdown with sort/filter options.
  */
 
+import PanelExplainer from './PanelExplainer.jsx'
 import React, { useState, useEffect, useCallback, lazy, Suspense } from 'react'
 import { useToast } from '../contexts/ToastContext.jsx'
 import { getImages, getImagesSummary, fetchImageDetails, analyzeImageWithAI, updateImageMeta, downloadAIImagePDF, analyzeImageWithGeo, applyGeoMetadata, getGeoSettings, getOrphanedMedia } from '../api.js'
@@ -26,6 +27,7 @@ const LazyFallback = () => (
 export default function ImageAnalysisPanel({ jobId, domain, onPageClick, onShowHelp }) {
   const toast = useToast()
   const [summary, setSummary] = useState(null)
+  const [showHelp, setShowHelp] = useState(false)
   const [images, setImages] = useState([])
   const [loading, setLoading] = useState(true)
   const [page, setPage] = useState(1)
@@ -313,6 +315,13 @@ export default function ImageAnalysisPanel({ jobId, domain, onPageClick, onShowH
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <h2 className="text-lg font-bold text-gray-800">{domain ? `Images - ${domain}` : 'Images'}</h2>
+          <button
+            onClick={() => setShowHelp(v => !v)}
+            className="text-xs text-blue-600 hover:text-blue-800 underline self-start"
+          >
+            {showHelp ? 'Hide' : 'What is this?'}
+          </button>
+          {showHelp && <PanelExplainer id="image-analysis" />}
           {onShowHelp && (
             <button
               onClick={onShowHelp}
