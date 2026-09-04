@@ -105,6 +105,29 @@ def info_caveat_note(report: dict | None) -> str | None:
     )
 
 
+def scored_of_found(found: int, excluded: int) -> str:
+    """``"5 (2 scored)"`` — a FOUND total that states how much the score charged."""
+    return f"{found} ({found - excluded} scored)" if excluded else str(found)
+
+
+def scored_with_excluded(scored: int, excluded: int) -> str:
+    """``"0 (2 not scored)"`` — a SCORED count that states what the level dropped.
+
+    The inverse of :func:`scored_of_found`, and the two are easy to mix up, which
+    is why they live together. Both were written out as f-strings in three
+    places (the PDF total, the PDF category rows, the Excel column); the QA gate
+    on P5.2 flagged the triplication as the same drift shape that produced P5.2.
+    """
+    return f"{scored} ({excluded} not scored)" if excluded else str(scored)
+
+
+def excluded_at_level(excluded: int, level: str) -> str | None:
+    """``"2 not scored at info detail 'key'"`` — the per-category caveat, or None."""
+    if not excluded:
+        return None
+    return f"{excluded} not scored at info detail '{level}'"
+
+
 def combine_notes(*notes: str | None) -> str | None:
     """Join the caveat sentences that apply; None when none do."""
     kept = [n for n in notes if n]

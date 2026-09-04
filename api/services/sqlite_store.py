@@ -800,6 +800,21 @@ class SQLiteJobStore:
                 scored += n
         return by_tier, scored, excluded
 
+    async def get_crawled_urls(self, job_id: str) -> set[str]:
+        """Every URL crawled in this job.
+
+        Membership asked as membership. The advisor previously answered "is this
+        URL in the job?" with `get_pages_with_issue_counts`, which orders by issue
+        count and takes a LIMIT — so it really answered "is this one of the N worst
+        pages", and a crawl larger than N false-rejected its own URLs. Raising the
+        limit moved the boundary; this removes it (P9). No ordering, no window, and
+        no threshold constant to keep in `docs/thresholds.md`.
+        """
+        async with self._db.execute(
+            "SELECT url FROM crawled_pages WHERE job_id = ?", (job_id,),
+        ) as cursor:
+            return {row[0] for row in await cursor.fetchall()}
+
     # ── By-page views ─────────────────────────────────────────────────────
 
     async def get_pages_with_issue_counts(

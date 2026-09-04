@@ -354,22 +354,14 @@ async def generate_geo_report_legacy(
                     detail="page_urls is empty. Select at least one page to analyze.",
                 )
 
-            # Membership over the WHOLE crawl. The default limit is 50 and the
-            # rows come back ORDER BY total DESC, so a bare call answers "is this
-            # one of the 50 worst pages", not "is this page in the job" — a
-            # 500-page crawl rejected 90% of its own URLs, and passing the level
-            # changed `total`, hence the ordering, hence which URLs validated
-            # (P9). The level is passed so no call site is an exception to
-            # remember; the limit is what makes the answer correct.
-            pages, total_pages, _hidden = await store.get_pages_with_issue_counts(
-                payload.job_id, limit=1000, info_detail=job.settings.info_detail)
-            valid_urls = {p.get("url") for p in pages}
-            if total_pages > len(valid_urls):
-                logger.warning(
-                    "advisor_membership_truncated",
-                    extra={"job_id": payload.job_id, "known": len(valid_urls),
-                           "crawled": total_pages},
-                )
+            # Membership, asked as membership. This used to go through
+            # get_pages_with_issue_counts, which orders by issue count and takes a
+            # LIMIT — so it answered "is this one of the N worst pages" and a crawl
+            # bigger than N false-rejected its own URLs. It also made the answer
+            # depend on info_detail, because the level changes the ordering. An
+            # unbounded set of crawled URLs has neither problem and no limit knob
+            # to tune (P9).
+            valid_urls = await store.get_crawled_urls(payload.job_id)
             invalid = [u for u in payload.page_urls if u not in valid_urls]
             if invalid:
                 raise HTTPException(

@@ -538,13 +538,20 @@ class TestPageCountCallersPassTheLevel:
 
         A clean page (no issues at all) sorts LAST, which is exactly the page a
         limited window drops.
+
+        The independent QA gate on P5.2 pointed out that the first fix only moved
+        the window (`limit=1000`): a crawl with more issue-bearing pages than that
+        would still false-reject, and the number was a magic constant in a router.
+        Membership is now asked as membership — no limit, no ordering — so this
+        test seeds past ANY plausible window rather than past the old default.
         """
         await _job(test_store, info_detail="key")
         clean = f"{BASE}/page-with-nothing-wrong"
+        _N = 1200          # past the old limit=1000, not merely past the old 50
         await test_store.save_pages(
             [CrawledPage(job_id="j1", url=f"{BASE}/filler-{n}", status_code=200,
                          title="f", crawled_at=datetime.now(timezone.utc))
-             for n in range(60)]
+             for n in range(_N)]
             + [CrawledPage(job_id="j1", url=clean, status_code=200, title="c",
                            crawled_at=datetime.now(timezone.utc))]
         )
@@ -553,7 +560,7 @@ class TestPageCountCallersPassTheLevel:
             Issue(job_id="j1", page_url=f"{BASE}/filler-{n}", category="heading",
                   severity="warning", issue_code="H1_MISSING", description="d",
                   recommendation="fix", impact=4)
-            for n in range(60)
+            for n in range(_N)
         ])
 
         with patch("api.routers.advisor.evaluate_page",

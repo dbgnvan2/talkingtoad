@@ -99,6 +99,8 @@ def generate_excel_report(
     # P5.2: the scored map, so the sheet agrees with the health score and with
     # the workbook's own issue list. `by_category` (stored) is the fallback for a
     # summary produced before the scored map existed.
+    from api.services.info_tier_filter import excluded_at_level
+
     _cats = summary.get("by_category_scored") or summary.get("by_category", {})
     _excluded = summary.get("by_category_excluded") or {}
     for cat, count in _cats.items():
@@ -110,8 +112,7 @@ def generate_excel_report(
         if count > 0 or excl > 0:
             ws_summary.append([
                 cat.replace('_', ' ').title(), count,
-                f"{excl} not scored at info detail "
-                f"'{summary.get('info_detail', 'all')}'" if excl else None,
+                excluded_at_level(excl, summary.get("info_detail", "all")),
             ])
 
     # Adjust widths

@@ -914,11 +914,11 @@ def _total_issues_figure(summary: dict):
     since the info_detail change; the PDF printed the bare stored count two rows
     under Health Score and said nothing. Same fact, same report, one front end.
     """
+    from api.services.info_tier_filter import scored_of_found
+
     stored = summary.get("total_issues", 0)
     excluded = summary.get("info_excluded") or 0
-    if not excluded:
-        return stored
-    return f"{stored} ({stored - excluded} scored)"
+    return scored_of_found(stored, excluded) if excluded else stored
 
 
 def _render_caveats_section(pdf, job, summary, *, performance, image_summary,
@@ -1235,6 +1235,7 @@ async def generate_pdf_report(
     # registry.CATEGORY_DISPLAY (ordered key→label), so this list can never drift
     # from the crawler's categories or the frontend grid.
     from api.crawler.checkers.registry import CATEGORY_DISPLAY
+    from api.services.info_tier_filter import scored_with_excluded
     cat_list = [(label, key) for key, label in CATEGORY_DISPLAY]
     
     # P5.2: the SCORED count, so this table agrees with the health score two
@@ -1254,9 +1255,9 @@ async def generate_pdf_report(
         pdf.cell(60, 8, pdf.clean_text(label + ":"))
         pdf.set_font('helvetica', 'B', 11)
         pdf.set_text_color(*COLOR_GRAY_800)
-        pdf.cell(W - 60, 8, pdf.clean_text(
-            f"{count} ({excluded} not scored)" if excluded else str(count)),
-            new_x="LMARGIN", new_y="NEXT")
+        pdf.cell(W - 60, 8,
+                 pdf.clean_text(scored_with_excluded(count, excluded)),
+                 new_x="LMARGIN", new_y="NEXT")
 
     # ── Search Performance + Priority Pages (E3.2) ────────────────────────
     # Rendered only when the Performance Ledger holds data for this domain. When
