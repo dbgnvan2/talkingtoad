@@ -343,6 +343,283 @@ class TestExports:
         assert "Scored at info detail" not in cells
 
 
+# ── P5.2: a count beside a score must be the population the score charged ──
+# The tile/list disagreement below is what P5.2 exists to close. Measured before
+# the fix, at info_detail="key": the `metadata` tile read 2 and opened an EMPTY
+# list, and the PDF's per-page row reported `info_excluded: 0` on a job that
+# excluded three rows — a disclosure field positively asserting the opposite of
+# the truth, which is worse than not having one.
+
+
+class TestCountsMatchTheScoredPopulation:
+    _CATS = ("metadata", "redirect", "heading", "image")
+
+    async def _summary(self, api_client, auth_headers, job_id="j1"):
+        r = await api_client.get(f"/api/crawl/{job_id}/results", headers=auth_headers)
+        assert r.status_code == 200, r.text
+        return r.json()["summary"]
+
+    @pytest.mark.parametrize("level", ["all", "notable", "key", "none"])
+    async def test_category_tile_count_equals_the_list_it_opens(
+        self, api_client, auth_headers, test_store, level
+    ):
+        """4.1 — read one side, assert against the other side's LIVE output.
+
+        A tile is a button; its number is a promise about what opening it shows.
+        This asserts the summary's per-category count against the actual length of
+        `/results/{category}` — not against a second computation of the same thing,
+        which is how the disagreement shipped green (LEARNINGS checklist 13).
+        """
+        await _job(test_store, job_id="j1", info_detail=level)
+        summary = await self._summary(api_client, auth_headers)
+        scored = summary.get("by_category_scored") or {}
+        for cat in self._CATS:
+            r = await api_client.get(f"/api/crawl/j1/results/{cat}", headers=auth_headers)
+            assert r.status_code == 200, r.text
+            listed = len(r.json()["issues"])
+            assert scored.get(cat, 0) == listed, (
+                f"at info_detail={level!r} the {cat} tile says {scored.get(cat, 0)} "
+                f"and the list it opens has {listed} rows"
+            )
+
+    @pytest.mark.parametrize("level", ["all", "notable", "key", "none"])
+    async def test_scored_plus_excluded_equals_stored_per_category(
+        self, api_client, auth_headers, test_store, level
+    ):
+        """4.2 — the same invariant info_scored + info_excluded already carries."""
+        await _job(test_store, job_id="j1", info_detail=level)
+        s = await self._summary(api_client, auth_headers)
+        stored, scored, excluded = (s["by_category"], s["by_category_scored"],
+                                    s["by_category_excluded"])
+        assert set(scored) == set(stored) == set(excluded), "the three maps disagree on keys"
+        for cat in stored:
+            assert scored[cat] + excluded[cat] == stored[cat], (
+                f"{cat}: {scored[cat]} + {excluded[cat]} != {stored[cat]}"
+            )
+
+    async def test_by_category_stays_the_stored_count(
+        self, api_client, auth_headers, test_store
+    ):
+        """4.3 — the other direction of 4.2, and the obvious WRONG fix.
+
+        Redefining `by_category` as the scored count makes 4.1 pass with a smaller
+        diff, and leaves `by_severity` (stored) and `by_category` (scored) meaning
+        different things in one response. `test_summary_stored_counts_unchanged`
+        pins the severity half; this pins the category half.
+        """
+        await _job(test_store, job_id="j1", info_detail="all")
+        await _job(test_store, job_id="j2", info_detail="none")
+        s1 = await self._summary(api_client, auth_headers, "j1")
+        s2 = await self._summary(api_client, auth_headers, "j2")
+        assert s1["by_category"] == s2["by_category"], (
+            "by_category moved with the level — it is the FOUND count, like by_severity"
+        )
+        assert s1["by_category"]["metadata"] == 2
+        # ...and the scored map is the one that moves.
+        assert s1["by_category_scored"]["metadata"] == 2
+        assert s2["by_category_scored"]["metadata"] == 0
+
+    async def test_tile_hint_exists_whenever_a_category_lost_rows(
+        self, api_client, auth_headers, test_store
+    ):
+        """4.3b — a scored count with no disclosure is P31 wearing a fix.
+
+        At `none` every tile reads 0, and 0 is what a clean site looks like. The
+        per-category excluded map is what the tile's "+N not scored" line renders
+        from, so it must be non-zero exactly where rows were dropped.
+        """
+        await _job(test_store, job_id="j1", info_detail="none")
+        s = await self._summary(api_client, auth_headers)
+        assert s["by_category_scored"]["metadata"] == 0
+        assert s["by_category_excluded"]["metadata"] == 2, (
+            "the tile would render a bare 0 with nothing saying rows were excluded"
+        )
+
+
+class TestPageCountCallersPassTheLevel:
+    async def test_pdf_page_rows_use_the_jobs_level(
+        self, api_client, auth_headers, test_store
+    ):
+        """4.4 — the PDF's "Pages with Most Issues" table."""
+        from pypdf import PdfReader
+        await _job(test_store, info_detail="key")
+        r = await api_client.get("/api/crawl/j1/export/pdf", headers=auth_headers)
+        assert r.status_code == 200
+        text = " ".join((pg.extract_text() or "") for pg in
+                        PdfReader(io.BytesIO(r.content)).pages).replace("\n", " ")
+        assert "4 Info" not in text, (
+            "the per-page row printed the stored info count (4); the scan scored 1"
+        )
+        assert "1 Info" in text
+
+    async def test_pdf_page_row_prints_what_the_level_took_off_that_page(
+        self, api_client, auth_headers, test_store
+    ):
+        """4.4b — assert the RENDERED artifact, not the number behind it.
+
+        4.4 checks the count is scoped and 4.5 checks the store's disclosure
+        field; deleting the PDF's per-page "(+N excluded)" line left both green.
+        The row must SAY what it dropped, or a page whose findings were all
+        excluded prints as a clean page.
+
+        A second page is seeded so the per-page figures (3 and 2) differ from the
+        site total (5) — otherwise the Dashboard's "Info Notices: 1 (+3 excluded)"
+        line satisfies the assertion on its own and the test proves nothing.
+        """
+        from pypdf import PdfReader
+
+        await _job(test_store, info_detail="key")
+        other = f"{BASE}/other"
+        await test_store.save_pages([CrawledPage(
+            job_id="j1", url=other, status_code=200, title="o",
+            crawled_at=datetime.now(timezone.utc))])
+        await test_store.save_issues([
+            Issue(job_id="j1", page_url=other, category=cat, severity=sev,
+                  issue_code=code, description=code, recommendation="fix", impact=imp)
+            for code, cat, sev, imp in _ROWS[3:]      # 2 info rows, both excluded at `key`
+        ])
+
+        r = await api_client.get("/api/crawl/j1/export/pdf", headers=auth_headers)
+        assert r.status_code == 200
+        text = " ".join((pg.extract_text() or "") for pg in
+                        PdfReader(io.BytesIO(r.content)).pages).replace("\n", " ")
+        assert "(+3 excluded)" in text, "the page row did not say what the level dropped"
+        assert "(+2 excluded)" in text, (
+            "only the first page's row carried the disclosure — and this figure "
+            "cannot come from the site-total line, which says 5"
+        )
+
+    async def test_pdf_page_rows_never_claim_zero_excluded_when_rows_were(
+        self, test_store
+    ):
+        """4.5 — the adversarial half of 4.4.
+
+        Passing the level fixes the count AND the disclosure at once, so 4.4 alone
+        cannot say which was fixed. A row scoped correctly but still reporting
+        `info_excluded: 0` stays possible if the count and the disclosure are ever
+        computed from different queries — and a disclosure that says "nothing was
+        excluded" is worse than none at all (P12/P24).
+        """
+        await _job(test_store, job_id="j1", info_detail="key")
+        job = await test_store.get_job("j1")
+        pages, _ = await test_store.get_pages_with_issue_counts(
+            "j1", info_detail=job.settings.info_detail)
+        counts = pages[0]["issue_counts"]
+        assert counts["info"] == 1 and counts["total"] == 2
+        assert counts["info_excluded"] == 3, (
+            f"the row claims {counts['info_excluded']} rows were excluded; 3 were"
+        )
+
+    def test_every_caller_of_get_pages_with_issue_counts_passes_info_detail(self):
+        """4.6 — structural, and it says so.
+
+        This proves the ARGUMENT is passed at every call site, not that the value
+        is right — the behavioural tests above cover the callers that exist today.
+        The next caller is the one that will forget: three of the four omitted it
+        before P5.2, which is how the PDF and the advisor came to disagree with
+        the score.
+        """
+        import re
+        from pathlib import Path
+
+        api = Path(__file__).resolve().parent.parent / "api"
+        offenders = []
+        for path in api.rglob("*.py"):
+            src = path.read_text()
+            for m in re.finditer(r"get_pages_with_issue_counts\s*\(", src):
+                # Balance parens from the call's opening bracket.
+                i, depth = m.end() - 1, 0
+                while i < len(src):
+                    if src[i] == "(":
+                        depth += 1
+                    elif src[i] == ")":
+                        depth -= 1
+                        if depth == 0:
+                            break
+                    i += 1
+                call = src[m.end():i]
+                if "def get_pages_with_issue_counts" in src[max(0, m.start() - 40):m.start()]:
+                    continue
+                if "info_detail" not in call:
+                    line = src[:m.start()].count("\n") + 1
+                    offenders.append(f"{path.relative_to(api.parent)}:{line}")
+        assert not offenders, (
+            "get_pages_with_issue_counts called without info_detail (the default is "
+            f"'all', which silently reports stored counts): {offenders}"
+        )
+
+    async def test_advisor_page_list_ranks_by_the_scored_count(
+        self, api_client, auth_headers, test_store
+    ):
+        """4.6b — the picker ranks pages BY this number, so a stored count
+        promotes a page whose findings the scan excluded."""
+        await _job(test_store, job_id="j1", info_detail="key")
+        r = await api_client.get("/api/ai/geo-report/pages?job_id=j1", headers=auth_headers)
+        assert r.status_code == 200, r.text
+        counts = {p["url"]: p["issue_count"] for p in r.json()["pages"]}
+        assert counts[PAGE] == 2, f"advisor ranked on the stored count: {counts}"
+
+
+class TestPdfAndExcelTotals:
+    async def test_pdf_total_issues_shows_scored_when_any_excluded(
+        self, api_client, auth_headers, test_store
+    ):
+        """4.7 — the frontend already does this (SummaryPanel "found · N scored").
+
+        The PDF printed the bare stored number two rows under Health Score. P16:
+        a capability added at one front end only.
+        """
+        from pypdf import PdfReader
+        await _job(test_store, info_detail="key")
+        r = await api_client.get("/api/crawl/j1/export/pdf", headers=auth_headers)
+        text = " ".join((pg.extract_text() or "") for pg in
+                        PdfReader(io.BytesIO(r.content)).pages).replace("\n", " ")
+        assert "5 (2 scored)" in text, (
+            "Total Issues Found printed a stored count with nothing saying so"
+        )
+
+    async def test_pdf_total_is_bare_when_nothing_excluded(
+        self, api_client, auth_headers, test_store
+    ):
+        """4.7b — the other direction: no parenthetical on a full-detail scan."""
+        from pypdf import PdfReader
+        await _job(test_store, info_detail="all")
+        r = await api_client.get("/api/crawl/j1/export/pdf", headers=auth_headers)
+        text = " ".join((pg.extract_text() or "") for pg in
+                        PdfReader(io.BytesIO(r.content)).pages).replace("\n", " ")
+        assert "scored)" not in text
+
+    async def test_excel_category_sheet_uses_the_scored_count(
+        self, api_client, auth_headers, test_store
+    ):
+        """4.8 — the workbook already carries the caveat sentence; the number
+        beside it was the stored one."""
+        from openpyxl import load_workbook
+
+        def _cats(job_id):
+            wb = load_workbook(io.BytesIO(_xl[job_id]))
+            rows = [[c.value for c in row] for ws in wb.worksheets for row in ws.iter_rows()]
+            return {r[0]: r[1] for r in rows
+                    if r and isinstance(r[0], str) and len(r) > 1 and isinstance(r[1], int)}
+
+        _xl = {}
+        for jid, level in (("j1", "key"), ("j2", "all")):
+            await _job(test_store, job_id=jid, info_detail=level)
+            r = await api_client.get(f"/api/crawl/{jid}/export/excel", headers=auth_headers)
+            assert r.status_code == 200
+            _xl[jid] = r.content
+
+        # The sheet title-cases the key and omits zero rows. At `key` both metadata
+        # rows are excluded, so the row must be gone; at `all` it must be 2. The
+        # second half is the other direction — a change that dropped the category
+        # table entirely would pass the first assertion alone.
+        assert "Metadata" not in _cats("j1"), (
+            f"the category sheet still counts the excluded metadata rows: {_cats('j1')}"
+        )
+        assert _cats("j1").get("Heading") == 1, "the category table lost its real rows"
+        assert _cats("j2").get("Metadata") == 2, "at info_detail=all nothing should change"
+
+
 # ── GET /comparison ───────────────────────────────────────────────────────
 
 

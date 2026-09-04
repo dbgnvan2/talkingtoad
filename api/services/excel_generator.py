@@ -96,7 +96,11 @@ def generate_excel_report(
         cell.font = label_font
         cell.fill = PatternFill(start_color="F3F4F6", end_color="F3F4F6", fill_type="solid")
 
-    for cat, count in summary.get("by_category", {}).items():
+    # P5.2: the scored map, so the sheet agrees with the health score and with
+    # the workbook's own issue list. `by_category` (stored) is the fallback for a
+    # summary produced before the scored map existed.
+    _cats = summary.get("by_category_scored") or summary.get("by_category", {})
+    for cat, count in _cats.items():
         if count > 0:
             ws_summary.append([cat.replace('_', ' ').title(), count])
 

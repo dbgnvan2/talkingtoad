@@ -42,6 +42,14 @@ export default function SummaryPanel({ summary, domain, jobId, onCategoryClick, 
   const infoExcluded = summary?.info_excluded || 0
   const infoScored = summary?.info_scored ?? (summary?.by_severity?.info || 0)
   const infoByTier = summary?.info_by_tier || {}
+  // P5.2: a tile is a button, and the list it opens is filtered by the scan's
+  // info_detail. Showing `by_category` (every stored row) meant a `metadata` tile
+  // could read 2 and open an empty list. `by_category_scored` is the population
+  // behind the click; the fallback keeps audits stored before P5.2 rendering as
+  // they always did rather than reporting them as clean.
+  const categoryScored = summary?.by_category_scored ?? null
+  const categoryExcluded = summary?.by_category_excluded || {}
+  const categoryCount = (key) => (categoryScored ?? summary?.by_category ?? {})[key] || 0
   const toast = useToast()
   const { getFontClass } = useTheme()
   const [aiTesting, setAiTesting] = useState(false)
@@ -291,11 +299,20 @@ export default function SummaryPanel({ summary, domain, jobId, onCategoryClick, 
                 {isUnchecked(cat.key) ? (
                   <p className="font-black text-gray-400 group-hover:text-green-600" style={{ ...getFontClass('badgeSize'), fontSize: `${getFontClass('badgeSize').fontSize.replace('px', '') * 2}px` }}>&mdash;</p>
                 ) : (
-                  <p className="font-black text-gray-800 group-hover:text-green-600" style={{ ...getFontClass('badgeSize'), fontSize: `${getFontClass('badgeSize').fontSize.replace('px', '') * 2}px` }}>{summary.by_category?.[cat.key] || 0}</p>
+                  <p className="font-black text-gray-800 group-hover:text-green-600" style={{ ...getFontClass('badgeSize'), fontSize: `${getFontClass('badgeSize').fontSize.replace('px', '') * 2}px` }}>{categoryCount(cat.key)}</p>
                 )}
                 <p className="font-black text-gray-800 uppercase tracking-wider mt-1 group-hover:text-green-600" style={getFontClass('headingSize')}>{cat.label}</p>
                 {isUnchecked(cat.key) && (
                   <p className="text-xs text-gray-400 mt-1">not checked</p>
+                )}
+                {/* The count and its caveat ship together. A bare 0 on a tile whose
+                    rows the level excluded is indistinguishable from a clean
+                    category — the P31 shape the "not checked" line above exists
+                    to avoid, arriving by a different route. */}
+                {!isUnchecked(cat.key) && (categoryExcluded[cat.key] || 0) > 0 && (
+                  <p className="text-xs text-gray-400 mt-1" data-testid={`cat-excluded-${cat.key}`}>
+                    +{categoryExcluded[cat.key]} not scored
+                  </p>
                 )}
               </button>
               <button

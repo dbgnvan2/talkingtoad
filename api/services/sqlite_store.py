@@ -30,6 +30,24 @@ from api.services.job_store_base import (
 logger = logging.getLogger(__name__)
 
 
+def _kept_info_sql(info_detail: str, prefix: str = "") -> str:
+    """SQL for "this info row clears the scan's info_detail floor".
+
+    One expression, used by every count query in this store, so the tile, the
+    By Page row and the health score cannot disagree about what a level keeps.
+    Mirrors ``registry.info_row_excluded`` — when the two must be changed
+    together, ``tests/test_info_tiers.py`` is what says so.
+
+    ``prefix`` is the table alias plus a dot ("i.") where the query joins.
+    """
+    from api.crawler.checkers.registry import INFO_DETAIL_MIN_IMPACT
+
+    floor = INFO_DETAIL_MIN_IMPACT.get(info_detail, 0)
+    if floor is None:          # `none` keeps no info row at all
+        return "0"
+    return f"COALESCE({prefix}impact, 0) >= {int(floor)}"
+
+
 class SQLiteJobStore:
     """SQLite-backed job store. Use as an async context manager or call ``init()`` manually."""
 
@@ -587,17 +605,37 @@ class SQLiteJobStore:
         for row in severity_rows:
             by_severity[row[0]] = row[1]
 
-        # Count by category (Phase 1 only)
+        # Count by category (Phase 1 only). Three maps, because a category tile is
+        # a BUTTON: its number is a promise about the list it opens, and that list
+        # is filtered by the job's info_detail. Before P5.2 the tile showed the
+        # stored count, so at `key` a `metadata` tile read 2 and opened an empty
+        # list. `by_category` stays the FOUND count (same contract as by_severity);
+        # `by_category_scored` is what the health score charged and what the list
+        # shows; `by_category_excluded` is what the tile must disclose, because a
+        # bare 0 is indistinguishable from a clean category (P31).
+        kept_info = _kept_info_sql(job.settings.info_detail)
         async with self._db.execute(
-            "SELECT category, COUNT(*) FROM issues WHERE job_id = ? GROUP BY category",
+            f"""
+            SELECT category,
+                   COUNT(*)                                                      AS stored,
+                   SUM(CASE WHEN severity = 'info' AND NOT ({kept_info})
+                            THEN 0 ELSE 1 END)                                   AS scored,
+                   SUM(CASE WHEN severity = 'info' AND NOT ({kept_info})
+                            THEN 1 ELSE 0 END)                                   AS excluded
+            FROM issues WHERE job_id = ? GROUP BY category
+            """,
             (job_id,),
         ) as cursor:
             category_rows = await cursor.fetchall()
         by_category: dict[str, int] = {c: 0 for c in PHASE_1_CATEGORIES}
+        by_category_scored: dict[str, int] = {c: 0 for c in PHASE_1_CATEGORIES}
+        by_category_excluded: dict[str, int] = {c: 0 for c in PHASE_1_CATEGORIES}
         for row in category_rows:
             cat = row[0]
             if cat in PHASE_1_CATEGORIES:
                 by_category[cat] = row[1]
+                by_category_scored[cat] = row[2] or 0
+                by_category_excluded[cat] = row[3] or 0
 
         total_issues = sum(by_severity.values())
 
@@ -655,6 +693,10 @@ class SQLiteJobStore:
             "total_issues": total_issues,
             "by_severity": by_severity,
             "by_category": by_category,
+            # P5.2: `scored + excluded == stored` per category, always — the same
+            # invariant info_scored/info_excluded carries for severity.
+            "by_category_scored": by_category_scored,
+            "by_category_excluded": by_category_excluded,
             "health_score": health_score,
             "agent_health_score": agent_health_score,
             # Info detail (2026-09-01): what the score counted and what it left
@@ -745,9 +787,7 @@ class SQLiteJobStore:
         # An info row is "kept" when its stored impact clears the level's floor
         # (registry.INFO_DETAIL_MIN_IMPACT); `none` keeps no info row. Same
         # predicate as info_row_excluded, expressed in SQL.
-        from api.crawler.checkers.registry import INFO_DETAIL_MIN_IMPACT
-        floor = INFO_DETAIL_MIN_IMPACT.get(info_detail, 0)
-        kept_info = "0" if floor is None else f"COALESCE(i.impact, 0) >= {int(floor)}"
+        kept_info = _kept_info_sql(info_detail, "i.")
 
         # Aggregate issue counts per page URL for this job
         async with self._db.execute(

@@ -907,6 +907,20 @@ def _info_notices_figure(summary: dict):
     return f"{summary.get('info_scored', stored - excluded)} (+{excluded} excluded)"
 
 
+def _total_issues_figure(summary: dict):
+    """Findings recorded, and how many of them the score charged.
+
+    P5.2/P16: `SummaryPanel` has shown "found - N scored" beneath this number
+    since the info_detail change; the PDF printed the bare stored count two rows
+    under Health Score and said nothing. Same fact, same report, one front end.
+    """
+    stored = summary.get("total_issues", 0)
+    excluded = summary.get("info_excluded") or 0
+    if not excluded:
+        return stored
+    return f"{stored} ({stored - excluded} scored)"
+
+
 def _render_caveats_section(pdf, job, summary, *, performance, image_summary,
                             filter_note=None,
                             prevalence, performance_failed: bool = False,
@@ -1167,7 +1181,7 @@ async def generate_pdf_report(
         ("Health Score", summary.get("health_score", 0), COLOR_TOAD_GREEN),
         ("Agent Health Score", summary.get("agent_health_score", 0), COLOR_TOAD_GREEN),
         ("Pages Crawled", summary.get("pages_crawled", 0), COLOR_GRAY_800),
-        ("Total Issues Found", summary.get("total_issues", 0), COLOR_GRAY_800),
+        ("Total Issues Found", _total_issues_figure(summary), COLOR_GRAY_800),
         ("Critical Issues", summary.get("by_severity", {}).get("critical", 0), COLOR_CRITICAL),
         ("Warnings", summary.get("by_severity", {}).get("warning", 0), COLOR_WARNING),
         # Info detail (2026-09-01): the figure beside "Health Score" is the one
@@ -1287,6 +1301,11 @@ async def generate_pdf_report(
             if info:
                 pdf.set_text_color(*COLOR_INFO)
                 pdf.cell(0, 5, f"{info} Info", new_x="END")
+            # What the scan's info_detail dropped from THIS row. Same phrasing as
+            # the Dashboard's Info Notices figure.
+            if counts.get("info_excluded"):
+                pdf.set_text_color(*COLOR_GRAY_500)
+                pdf.cell(0, 5, f"  (+{counts['info_excluded']} excluded)", new_x="END")
             if not crit and not warn and not info:
                 pdf.set_text_color(*COLOR_TOAD_GREEN)
                 pdf.cell(0, 5, "No issues", new_x="END")

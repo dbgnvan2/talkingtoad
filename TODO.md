@@ -53,7 +53,7 @@ user replaces the old image in the post by hand.
 - [x] **Compare card** with struck-through delta and reason — 2026-09-02.
 - [x] **Re-check all pages in place** and the **WordPress audit** button — 2026-09-02.
 - [x] **Fix Focus third state** `not_checked` — 2026-09-02.
-## Phase 5 — the numbers on screen disagree with each other (4 — 1 done)
+## Phase 5 — the numbers on screen disagree with each other (4 — 2 done)
 
 Every item here is a contradiction the operator can see: two figures about the same thing that
 do not match. That is the most expensive kind of defect this app has, because it costs trust in
@@ -90,11 +90,30 @@ the figures that *are* right. Do these first.
     `` `This will set the value to "${predefined}"…` `` is unreachable today, because
     `PREDEFINED_DESCRIPTIONS` covers both fields that can produce a non-null `predefined_value`.
     Kept as the defensive default for a third predetermined field; it is not claimed as tested.
-- [ ] **P5.2 — category tiles and PDF per-page rows show STORED counts beside a SCORED score.**
-  `info_detail` charges fewer rows than it stores, so a tile can read "12 info" beside a score
-  computed from 4. LEARNINGS logs this as open risk (3) of the `info_detail` change. **Done
-  when:** every surface showing a count beside a score shows the same population, or labels
-  which it is showing.
+- [x] **P5.2 — stored counts beside a scored score** (2026-09-04). Five surfaces, not two, and the
+  symptom was worse than "two figures disagree": a category **tile is a button**, and at
+  `info_detail="key"` the `metadata` tile read **2** and opened an **empty list**. Measured, not
+  inferred. The PDF was worse still — `get_pages_with_issue_counts` defaults to `"all"` and three
+  of its four callers omitted the argument, so the per-page row reported `info_excluded: 0` on a
+  job that excluded three rows: a disclosure field asserting the opposite of the truth rather than
+  staying silent (P12/P24). Fixed: `by_category_scored` / `by_category_excluded` beside the stored
+  `by_category` (reconciling per category); tiles render the scored count **with** a "+N not
+  scored" line, because a bare 0 is what a clean category looks like (P31); every caller passes
+  the level, pinned by a structural test; the PDF prints per-page `(+N excluded)` and
+  `5 (2 scored)` for its total, the phrasing the Results panel already used (P16); Excel counts
+  the scored map. One SQL predicate (`_kept_info_sql`) for every count query in the store.
+  13 mutations verified red — including the two wrong fixes: redefining `by_category` as scored,
+  and showing the scored count with no disclosure.
+  - *Caught by mutation, not review:* the first version of the PDF test asserted the **count** and
+    the store's disclosure field, so deleting the rendered "(+N excluded)" line left it green. It
+    now seeds a second page whose per-page figures differ from the site total, so the assertion
+    cannot be satisfied by the dashboard's line.
+- [ ] **P5.2b — `PHASE_1_CATEGORIES` still contains `duplicate`** (surfaced 2026-09-04, not fixed).
+  CLN1 removed it from `CATEGORY_DISPLAY` in August because no checker emits it, but the store's
+  list still seeds it, so every summary carries three `by_category*` entries for a category that
+  cannot exist. Harmless — no surface renders it — and out of P5.2's scope, which was about which
+  population a count shows, not which keys the map has. **Done when:** the store derives its
+  category list from the registry rather than its own copy (the CLN2 single-source treatment).
 - [ ] **P5.3 — `/pages?min_severity=info` is level-blind.** Same family: the filter does not know
   about `info_detail`, so it returns rows the score excluded. **Done when:** the filter and the
   score agree on what "info" means for that job.

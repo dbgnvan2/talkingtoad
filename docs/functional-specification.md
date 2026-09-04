@@ -602,6 +602,25 @@ it changed* — it is a declared scope, not a hidden filter. The controls that k
    or note. By Page's `issue_counts` count the kept rows with `info_excluded` beside them, so a page
    is never listed as "5 issues" whose drawer shows one. The `AI_HIGH_VALUE_UNCITED` health gate and
    the CSV (`info_tier` column) follow the level too.
+
+   **A count beside a score shows the population the score charged (P5.2, 2026-09-04).** A category
+   tile is a *button*: its number is a promise about the list it opens, and that list is filtered by
+   the level. Tiles therefore render `by_category_scored`, with a muted "+N not scored" line
+   wherever `by_category_excluded` is non-zero — the count and its caveat ship together, because at
+   `info_detail="none"` a tile showing a bare `0` is indistinguishable from a clean category (P31),
+   which is the same failure the "not checked" line exists to prevent, arriving by another route.
+   Before this, tiles read `by_category` (every stored row) and a `metadata` tile could read **2**
+   and open an **empty list**.
+
+   The same rule binds every caller of `get_pages_with_issue_counts`: the level is passed at every
+   call site, pinned by a structural test, because the parameter defaults to `"all"` and three of
+   the four callers had omitted it. On those paths the row came back `info_excluded: 0` for a job
+   that excluded rows — a disclosure field asserting the opposite of the truth, which is worse than
+   having none (P12/P24). The PDF's per-page rows print `N Info` from the kept count and append
+   `(+N excluded)`; its "Total Issues Found" reads `5 (2 scored)`, the phrasing the Results panel
+   has used since the setting shipped; the Excel category sheet counts the scored map. One SQL
+   predicate (`sqlite_store._kept_info_sql`) expresses "this info row is in the audit" for every
+   count query in the store, so the tile, the By Page row and the score cannot drift apart.
 3. **Exports say it.** PDF and Excel carry "Scored at info detail 'notable': N info notices (…)
    excluded from this audit and from its health score by the scan setting" through the same caveat
    channel as F1; CSV is filtered the same way.

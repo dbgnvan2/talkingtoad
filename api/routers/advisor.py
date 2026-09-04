@@ -284,7 +284,10 @@ async def list_geo_report_pages(
     if not job:
         raise HTTPException(status_code=404, detail=f"Job {job_id} not found")
 
-    pages, _total = await store.get_pages_with_issue_counts(job_id)
+    # The picker RANKS by issue_count, so a stored count promotes a page whose
+    # findings the scan excluded — it would be offered first and open empty.
+    pages, _total = await store.get_pages_with_issue_counts(
+        job_id, info_detail=job.settings.info_detail)
 
     out = []
     for page in pages:
@@ -351,7 +354,11 @@ async def generate_geo_report_legacy(
                     detail="page_urls is empty. Select at least one page to analyze.",
                 )
 
-            pages, _total = await store.get_pages_with_issue_counts(payload.job_id)
+            # Membership only — the level changes no URL here (a page whose rows
+            # were all excluded still comes back from the LEFT JOIN). Passed so
+            # that "every caller passes the level" has no exceptions to remember.
+            pages, _total = await store.get_pages_with_issue_counts(
+                payload.job_id, info_detail=job.settings.info_detail)
             valid_urls = {p.get("url") for p in pages}
             invalid = [u for u in payload.page_urls if u not in valid_urls]
             if invalid:

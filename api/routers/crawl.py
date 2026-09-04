@@ -3053,8 +3053,12 @@ async def export_pdf_report(
     issues, _filter_note = _filter_issue_models_for_info_detail(job, issues, _filter_note)
     summary = await store.get_summary(job_id)
 
-    # Fetch top 10 pages for the report
-    top_pages_data, _ = await store.get_pages_with_issue_counts(job_id, page=1, limit=10)
+    # Fetch top 10 pages for the report. The level is not optional: without it the
+    # rows come back at "all", so the PDF printed the STORED info count beside a
+    # scoped health score — and reported `info_excluded: 0` on a job that excluded
+    # rows, which asserts the opposite of the truth rather than staying silent.
+    top_pages_data, _ = await store.get_pages_with_issue_counts(
+        job_id, page=1, limit=10, info_detail=job.settings.info_detail)
 
     # Fetch image data for the report
     image_summary = await store.get_image_summary(job_id)

@@ -116,10 +116,16 @@ this index is the one-line meaning.
   `compute_page_health` without passing the job's level — it will disagree with the site score by
   page. `grep compute_page_health\|compute_citability_grade` when adding one — the /csdp sweep of
   the very change that introduced the setting found exactly this in `citations.py`, missed by the
-  author who had written the risk down an hour earlier. (3) `by_severity.info`
-  is the stored count and `info_scored` the charged one; a UI that adds them, or shows the stored
-  count beside the scored score, double-counts or contradicts — the category cards and PDF per-page
-  rows still show stored counts (TODO). (4) `/comparison` has no frontend consumer today, so the
+  author who had written the risk down an hour earlier. (3) **CLOSED 2026-09-04 (P5.2)** — and it cost more than the
+  risk as written predicted. `by_severity.info` is the stored count and `info_scored` the charged
+  one; the category cards and PDF per-page rows showed stored counts. The note said they would
+  "contradict". What they actually did: a category tile is a *button*, so at `key` the `metadata`
+  tile read **2** and opened an **empty list** — not a discrepancy an operator has to notice, a
+  promise followed by a blank page. And the PDF path did not merely show the stored count: it
+  printed `info_excluded: 0` on a job that excluded three rows, because
+  `get_pages_with_issue_counts` defaults to `"all"` and three of its four callers omitted the
+  argument. **A risk written down as "two numbers will disagree" is worth re-deriving before it is
+  fixed** — the shape of the damage was not in the note. (4) `/comparison` has no frontend consumer today, so the
   `comparable` guard is unrendered until one exists. (5) Prevalence rows tier by today's catalogue
   (`derive_impact`) while lists tier by stored impact; after a recalibration across the 2↔3 boundary
   an old job's prevalence table and its list can disagree by one code (TODO).
@@ -188,6 +194,16 @@ this index is the one-line meaning.
 ## Fix log
 
 Newest first. Format: **Issue → Root cause → What would have caught it → Fix → Pattern.**
+
+- **2026-09-04 — a disclosure field that reported zero, on a path where three rows were excluded.**
+  - *Issue:* two surfaces showed a stored count beside a scored score (LEARNINGS open risk 3, written 2026-09-01). Concretely at `info_detail="key"`: the `metadata` category tile read **2** and the list it opens had **0** rows. The PDF's per-page table read `4 Info` where the score charged 1.
+  - *Root cause A — a default that means "no setting".* `get_pages_with_issue_counts(job_id, info_detail="all")`. Three of its four callers omitted the argument, so they silently got the unscoped answer. The one caller that passed it (`/pages`) was correct, and looked like proof the function was fine.
+  - *Root cause B — two paths to one question.* The tile read `summary.by_category` (a plain `GROUP BY` over stored rows); the drill-down `/results/{category}` applied the level. P13, and neither side was wrong on its own terms.
+  - *The part that is worse than the risk predicted:* the PDF path did not just show a stale number, it **printed `info_excluded: 0`**. That field exists to say what the level left out; on this path it positively asserted nothing had been. **A disclosure reporting zero is a claim; a missing disclosure is only a gap.** A reader who checks the caveat and finds "0 excluded" is more misled than one who finds nothing — this is P12 (a default reaching a surface and reading as a measurement) with the safety mechanism itself as the casualty.
+  - *What would have caught it:* one test reading the tile's number and asserting it against the **live list endpoint's length**. Checklist item 13, added the day before from P5.1 — this is its first application, and it found the defect immediately.
+  - *Fix:* `by_category_scored` / `by_category_excluded` beside the stored `by_category` (additive, so `by_severity` and `by_category` keep meaning the same thing); tiles render the scored count **with** a "+N not scored" line; every caller passes the level, pinned by a structural test that says in its docstring that it proves the argument is passed, not that the value is right; the PDF prints per-page `(+N excluded)` and `5 (2 scored)`; Excel reads the scored map; one SQL predicate (`_kept_info_sql`) for every count query in the store.
+  - *A miss of my own, caught by mutation for the second item running:* the PDF test asserted the scoped **count** and, separately, the store's **disclosure field** — so deleting the rendered `(+N excluded)` line from the PDF left both green. I had tested the plumbing on both sides of the artifact and not the artifact. The rewrite seeds a second page so the per-page figures (3 and 2) differ from the site total (5), which also kills the version of the test that would have been satisfied by the Dashboard's own "(+3 excluded)" line. **When a fix changes what a document says, the test has to read the document.**
+  - *Pattern:* P13 (two implementations of one rule), P12/P24 (a default rendered as a measurement — here, as a caveat), P16 (the PDF total, already solved on the other front end), P31 (why a scored count needs its caveat: at `none` every tile reads 0, and 0 is what a clean site looks like).
 
 - **2026-09-03 — the inline fix had never applied, for any code, and both test suites were green.**
   - *Issue:* every "Fix" button in the Results view returned `success: false, error: "No fix spec for field ''"`. Not one of the ten codes `FixInlinePanel` offers could be applied to WordPress. Separately, the editor opened **blank** even when WordPress held a value, so `TITLE_TOO_LONG` — a fix that exists only to trim the current title — proposed an empty string. Found while auditing TODO P5.1, whose two stated premises were both already fixed and whose conclusion was right for reasons it did not name.
