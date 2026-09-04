@@ -72,10 +72,14 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/crawl", dependencies=[Depends(require_auth)])
 
-# Valid severity values for the By Page filter. Derived from the store's own
-# rank table so the two cannot drift: anything absent from that table maps to
-# rank 4 there, which admits every severity — i.e. an unvalidated value is not
-# "no match", it is "match everything" (P14).
+# Valid severity values for the By Page filter. This is a SECOND declaration of
+# the set in `sqlite_store._SEVERITY_RANK`, not a derivation from it — the two
+# can drift, and `test_every_valid_min_severity_is_accepted` is what would
+# notice. Validation lives here rather than in the store because the store's
+# rank default (4, which admits every severity) also encodes the legitimate
+# "no filter at all" case, so the store cannot tell an omitted value from a
+# typo'd one — and an unvalidated typo is not "no match", it is "match
+# everything" (P14).
 _VALID_SEVERITIES: frozenset[str] = frozenset({"critical", "warning", "info"})
 
 # Valid category slugs for the filtered results endpoint

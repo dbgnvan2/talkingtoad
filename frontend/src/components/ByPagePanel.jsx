@@ -52,7 +52,7 @@ export default function ByPagePanel({ jobId, domain, onPageClick }) {
                       title={`${p.issue_counts.info_excluded} info notice(s) found but not scored at this info detail`}
                       className="bg-gray-100 text-gray-500 px-2.5 py-0.5 rounded-full text-[10px] font-black"
                     >
-                      +{p.issue_counts.info_excluded}
+                      +{p.issue_counts.info_excluded} not scored
                     </span>
                   )}
                 </div>

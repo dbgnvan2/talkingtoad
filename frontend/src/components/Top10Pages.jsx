@@ -3,10 +3,19 @@ import { getPages } from '../api.js'
 
 export default function Top10Pages({ jobId, onPageClick }) {
   const [pages, setPages] = useState(null)
+  // P5.3 §3.4: `pagesWithIssues` below drops any page whose scored counts are all
+  // zero, so a page whose only findings the level excluded vanishes from "pages
+  // to fix" with nothing saying so. Driven by `hidden` (job-wide excluded rows),
+  // NOT `pages_hidden`: this component fetches without `min_severity`, and
+  // `pages_hidden` is 0 in exactly that case by the endpoint's own contract —
+  // the QA gate caught the spec's first draft asking for a signal that could
+  // never fire here.
+  const [filtered, setFiltered] = useState(null)
 
   useEffect(() => {
     getPages(jobId, { limit: 10 })
       .then(d => {
+        setFiltered(d.info_filtered || null)
         const sorted = (d.pages || []).sort((a, b) => {
           const aTotal = (a.issue_counts?.critical || 0) + (a.issue_counts?.warning || 0) + (a.issue_counts?.info || 0)
           const bTotal = (b.issue_counts?.critical || 0) + (b.issue_counts?.warning || 0) + (b.issue_counts?.info || 0)
@@ -34,6 +43,13 @@ export default function Top10Pages({ jobId, onPageClick }) {
   return (
     <section>
       <h2 className="text-base font-black text-gray-400 uppercase tracking-widest mb-4">Top 10 Pages to Fix</h2>
+      {(filtered?.hidden || 0) > 0 && (
+        <p className="text-xs text-gray-500 mb-3">
+          {`${filtered.hidden} info notice${filtered.hidden === 1 ? '' : 's'} not scored at info detail `}
+          <span className="font-semibold">{filtered.info_detail}</span>
+          {'. A page whose findings were all excluded is not listed here.'}
+        </p>
+      )}
       <div className="bg-white border border-gray-200 rounded-2xl overflow-hidden shadow-sm">
         <table className="min-w-full">
           <thead className="bg-gray-50 border-b border-gray-200">

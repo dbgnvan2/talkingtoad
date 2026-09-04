@@ -37,6 +37,38 @@ const response = {
 
 const row = (url) => screen.getByText(url).closest('tr')
 
+// Pre-existing coverage (f95dec1, E5/P8), restored after the P5.3 work
+// overwrote this file. Flagged by the independent QA gate, not by me — a
+// `Write` to a path that already existed, with no read first.
+describe('ByPagePanel citability column', () => {
+  beforeEach(() => global.fetch.mockReset())
+
+  it('renders a Citability column with the per-page grade (E5)', async () => {
+    global.fetch.mockImplementation(() => mockFetchResponse({
+      pages: [
+        { url: 'https://x/a', status_code: 200, citability_grade: 72,
+          issue_counts: counts({ total: 1, warning: 1 }) },
+        { url: 'https://x/b', status_code: 200, citability_grade: 30,
+          issue_counts: counts() },
+      ],
+    }))
+    renderWithProviders(<ByPagePanel jobId="job1" domain="x" onPageClick={vi.fn()} />)
+    await waitFor(() => expect(screen.getByText('https://x/a')).toBeInTheDocument())
+    expect(screen.getByText('Citability')).toBeInTheDocument()
+    expect(screen.getByText('72')).toBeInTheDocument()
+    expect(screen.getByText('30')).toBeInTheDocument()
+  })
+
+  it('shows a dash when citability_grade is absent (old crawls, P8)', async () => {
+    global.fetch.mockImplementation(() => mockFetchResponse({
+      pages: [{ url: 'https://x/a', status_code: 200, issue_counts: counts() }],
+    }))
+    renderWithProviders(<ByPagePanel jobId="job1" domain="x" onPageClick={vi.fn()} />)
+    await waitFor(() => expect(screen.getByText('https://x/a')).toBeInTheDocument())
+    expect(screen.getByText('—')).toBeInTheDocument()
+  })
+})
+
 describe('ByPagePanel', () => {
   beforeEach(() => {
     global.fetch.mockReset()
@@ -48,7 +80,10 @@ describe('ByPagePanel', () => {
     await waitFor(() => expect(screen.getByText('https://e.com/clean')).toBeInTheDocument())
 
     const excluded = within(row('https://e.com/lowinfo')).getByTestId('not-scored')
-    expect(excluded).toHaveTextContent('2')
+    // The wording matters, not just the number: the P5.2 tiles say "+N not
+    // scored" and a bare "+2" beside three coloured severity badges reads as a
+    // fourth severity. The gate flagged the deviation from spec §3.4.
+    expect(excluded).toHaveTextContent('+2 not scored')
     // The comparison IS the assertion: the two rows must differ.
     expect(within(row('https://e.com/clean')).queryByTestId('not-scored')).toBeNull()
   })
@@ -78,6 +113,18 @@ describe('ByPagePanel', () => {
     renderWithProviders(<ByPagePanel jobId="j" domain="e.com" onPageClick={vi.fn()} />)
     await waitFor(() => expect(screen.getByText('https://e.com/warn')).toBeInTheDocument())
     expect(screen.queryByText(/not scored at info detail/i)).toBeNull()
+  })
+
+  it('names the pages a filtered list left out, when there are any', async () => {
+    // The `pages_hidden > 0` clause of the sentence had no test: the fixture
+    // above always has pages_hidden 0, so the clause could be deleted and every
+    // assertion still passed.
+    global.fetch.mockImplementation(() => mockFetchResponse({
+      ...response,
+      info_filtered: { hidden: 2, by_tier: { low: 2 }, info_detail: 'key', pages_hidden: 3 },
+    }))
+    renderWithProviders(<ByPagePanel jobId="j" domain="e.com" onPageClick={vi.fn()} />)
+    await waitFor(() => expect(screen.getByText(/3 pages left out/i)).toBeInTheDocument())
   })
 
   it('renders a legacy response with no info_filtered', async () => {

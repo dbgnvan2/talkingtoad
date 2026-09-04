@@ -622,6 +622,28 @@ it changed* — it is a declared scope, not a hidden filter. The controls that k
    level emptied a category. The phrasing throughout is the one the Results panel has used since
    the setting shipped.
 
+   **A list narrowed by the level says so, and can be widened (P5.3, 2026-09-04).** `/pages`
+   returns `info_filtered: {hidden, by_tier, info_detail, pages_hidden}` like its three siblings,
+   and accepts the same reveal-only `?info_detail=`. `pages_hidden` is the field only this
+   endpoint needs: on `/results` the level removes *rows* and the shorter list is itself visible;
+   on `/pages` it can remove a whole **page** from the page list, and a page that is not listed
+   leaves no other trace. It counts pages that **changed qualification** for the request's
+   `min_severity` — not pages that merely lost a row, which are still listed — and is 0 whenever
+   `min_severity` is unset. `hidden`/`by_tier` are job-wide (`get_info_excluded_report`), because
+   summing the returned rows would miss the rows on the pages the level removed.
+
+   By Page renders `issue_counts.info_excluded` as a muted `+N not scored` chip, so a page whose
+   findings were all excluded is not pixel-identical to a clean one, and states the level above
+   the table. "Top 10 Pages to Fix" filters on the scored counts, so such a page is not listed at
+   all; it carries the same sentence driven by **`hidden`**, not `pages_hidden` — that component
+   fetches without `min_severity`, where `pages_hidden` is 0 by the contract above. An
+   unrecognised `min_severity` is **422 `INVALID_SEVERITY`**: the store's rank table maps an
+   unknown value to a rank that admits every severity, so an unvalidated typo meant "everything"
+   rather than "no match" (P14).
+
+   `/page-priority` states `info_detail` beside its rows for the same reason: every `health_score`
+   and `citability_grade` in them is computed at the job's level.
+
    `registry.info_row_excluded` remains **the** predicate: the score
    (`job_store_base.info_detail_rows`), the lists, the exports and `_info_tier_counts` all call it.
    `sqlite_store._kept_info_sql` is its SQL restatement for the two count queries that aggregate in

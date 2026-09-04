@@ -53,7 +53,7 @@ user replaces the old image in the post by hand.
 - [x] **Compare card** with struck-through delta and reason — 2026-09-02.
 - [x] **Re-check all pages in place** and the **WordPress audit** button — 2026-09-02.
 - [x] **Fix Focus third state** `not_checked` — 2026-09-02.
-## Phase 5 — the numbers on screen disagree with each other (4 — 2 done)
+## Phase 5 — the numbers on screen disagree with each other (4 — 3 done)
 
 Every item here is a contradiction the operator can see: two figures about the same thing that
 do not match. That is the most expensive kind of defect this app has, because it costs trust in
@@ -124,9 +124,31 @@ the figures that *are* right. Do these first.
   cannot exist. Harmless — no surface renders it — and out of P5.2's scope, which was about which
   population a count shows, not which keys the map has. **Done when:** the store derives its
   category list from the registry rather than its own copy (the CLN2 single-source treatment).
-- [ ] **P5.3 — `/pages?min_severity=info` is level-blind.** Same family: the filter does not know
-  about `info_detail`, so it returns rows the score excluded. **Done when:** the filter and the
-  score agree on what "info" means for that job.
+- [x] **P5.3 — the filter agreed with the score and never said so** (2026-09-04). The premise was
+  stale for the third item running: the store has filtered on the kept info count since
+  2026-09-01. What it did instead was quieter and, by this repo's own rule, worse — at `key` a
+  page with two findings **vanished from a filtered list** and the response carried no
+  `info_detail`, no `hidden`, no count (P31). Three defects behind it: `/pages` was the one list
+  endpoint with no `info_filtered` and no reveal override; `issue_counts.info_excluded` had been
+  on every row since 2026-09-01 with **no component reading it** (P25), so a fully-excluded page
+  rendered identically to a clean one; and `?min_severity=bogus` returned 200 meaning
+  "everything" (P14). Fixed with `info_filtered {hidden, by_tier, info_detail, pages_hidden}`,
+  the reveal-only `?info_detail=`, 422 `INVALID_SEVERITY`, and By Page / Top 10 disclosures.
+  11 mutations verified red.
+  - The structural test (no allowlist) also caught **`/page-priority`** rendering per-page
+    `health_score` without naming the level — LEARNINGS open risk (1) arriving verbatim, now
+    **CLOSED** there.
+  - *First cycle gated by an external reviewer, and it earned it:* the gate caught me
+    **overwriting `ByPagePanel.test.jsx`** and silently deleting its two E5/P8 citability tests
+    (a green suite cannot tell you a test was removed — restored); a **contradiction inside my own
+    approved spec** (§3.4 asked Top10Pages to disclose on `pages_hidden > 0`, which §3.1 of the
+    same document fixes at 0 in exactly that case — reimplemented against `hidden` and the spec
+    amended at the fold); and a **false claim in a commit message** ("recorded in TODO" for
+    something never recorded — this bullet is that record).
+- [ ] **P5.3b — `SummaryPanel.jsx:1` imports `React` unused** under the new JSX transform
+  (flagged by the QA gate, 2026-09-04; pre-existing, not from this cycle). Harmless while the
+  build uses `eslint --quiet`, which reports errors only. **Done when:** the import is dropped, or
+  the file is confirmed to need it.
 - [ ] **P5.4 — prevalence tiers by today's catalogue, lists tier by stored impact (P8).** After a
   recalibration across an impact boundary, an old job's prevalence table and its own issue list
   disagree by a code. **Done when:** one of the two is chosen deliberately and the other follows,

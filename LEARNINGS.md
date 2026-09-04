@@ -75,6 +75,14 @@
     has *separately*: a grid test alone passes when both sides are changed together the wrong way.
 18. **Enumerate surfaces by grepping the field, not by reading the ticket.** P5.2's ticket named two
     surfaces; the field had six. The one missed was in a file the commit already edited.
+19. **A green suite cannot tell you a test was deleted.** Before `Write` on any path under
+    `__tests__/` or `tests/`, read it or `git log` it. Overwriting a test file leaves both suites
+    green with less coverage than before, and no diff stat distinguishes "rewrote this file" from
+    "replaced its contents with something else". Found by an outside reviewer, not by me.
+20. **Re-derive a spec's cross-references before implementing it.** P5.3 §3.4 asked for a
+    disclosure driven by a field that §3.1 of the same spec fixes at zero in that exact case. Two
+    sections, written an hour apart, both plausible, mutually exclusive — and re-reading did not
+    surface it. Check each "when X, show Y" against the clause that defines X.
 
 ## Pattern index
 
@@ -117,8 +125,16 @@ this index is the one-line meaning.
   difference is that this one is *declared*: chosen at scan time, stamped on the job, printed under
   the score, in the Info card, in every list's `info_filtered`, in the PDF/Excel caveat, and
   `/comparison` refuses to call two levels comparable. Those disclosures are the whole defence.
-  **Risks to watch:** (1) a new surface that renders `health_score` without `info_detail` beside it
-  — the S1 score-basis lesson again; the contract test for that surface must assert the label.
+  **Risks to watch:** (1) **HIT AND CLOSED 2026-09-04 (P5.3)** — a new surface that renders
+  `health_score` without `info_detail` beside it; the S1 score-basis lesson again. It arrived
+  exactly as written: `/page-priority` returned per-page `health_score` and `citability_grade`
+  computed at the job's level and never named it. What found it was **not** "the contract test for
+  that surface" — nobody wrote one, because nobody thought of that surface — but a structural test
+  over the whole route table, added for a different endpoint: *any* GET under
+  `/api/crawl/{job_id}` returning rows carrying `impact`/`severity`/`issue_counts`/`health_score`/
+  `citability_grade` must state the level. **A risk phrased as "the test for that surface must
+  assert X" cannot be discharged, because the surface it warns about does not exist yet. Phrase it
+  as a rule over the surfaces you have, and test the rule.**
   (2) a new scoring path that reconstructs `(code, impact, category)` rows and calls
   `compute_page_health` without passing the job's level — it will disagree with the site score by
   page. `grep compute_page_health\|compute_citability_grade` when adding one — the /csdp sweep of
@@ -201,6 +217,17 @@ this index is the one-line meaning.
 ## Fix log
 
 Newest first. Format: **Issue → Root cause → What would have caught it → Fix → Pattern.**
+
+- **2026-09-04 — a filter that agreed with the score, dropped pages, and said nothing; plus the first cycle gated by an outside reviewer.**
+  - *Issue:* TODO P5.3 said `/pages?min_severity=info` was level-blind. It was not — the store has filtered on the kept info count since 2026-09-01. It did something quieter: at `key`, a page whose only two findings were below the floor **vanished from a filtered list**, and the response carried no `info_detail`, no `hidden`, no count. An operator asking "show me pages with info issues" got a list whose only omissions were the pages whose info issues had been excluded. Third Phase-5 item running whose written premise had gone stale while its instinct held.
+  - *Three defects behind it:* `/pages` was the one list endpoint without `info_filtered` (its three siblings have it, and the spec claimed "every list response" did) and the only one with no reveal override; `issue_counts.info_excluded` had shipped on every row for three days with **no component reading it** (P25), so a fully-excluded page rendered with no badges at all — identical to a clean one; and `?min_severity=bogus` returned 200 meaning "everything", because the store's rank table maps an unknown value to a rank that admits every severity (P14).
+  - *What found the fourth surface:* a structural test with **no allowlist** — any job-scoped GET returning rows carrying `impact`/`severity`/`issue_counts`/`health_score`/`citability_grade` must state the level. Exactly two endpoints failed it, and the second was `/page-priority`, which is open risk (1) arriving verbatim. An allowlist entry I could not justify is what hid P5.1's defect; a rule with no exemptions is what caught this one.
+  - **The cycle was gated by an external reviewer for the first time**, and it earned its place three times over:
+    - **It caught me destroying test coverage.** I `Write`-ed `ByPagePanel.test.jsx` onto a path that already held two E5/P8 citability tests, without reading it first. Neither suite noticed — the file still passed, with fewer tests in it. **A green suite cannot tell you a test was deleted.** Restored.
+    - **It caught a contradiction inside my own approved spec.** §3.4 asked Top10Pages to disclose when `pages_hidden > 0`; §3.1 of the same document fixes `pages_hidden` at 0 when `min_severity` is unset, which is exactly how Top10Pages fetches. The clause could never fire. Two sections written an hour apart, both plausible, mutually exclusive — and I had read the spec back several times. Implemented against `hidden` instead, and the spec amended at the fold rather than left as silent drift.
+    - **It caught a false claim in a commit message** — I wrote "recorded in TODO" for an observation I never recorded.
+    - It also showed a fix of mine had only *moved* a bound: after the P5.2 sweep I raised the advisor's membership `limit` from 50 to 1000, and my test seeded 60 pages — past the old default and nothing else — so **it would have gone green against the very version it was written for**. Membership is now unbounded and the test seeds 1200.
+  - *Pattern:* P31 (a narrowed population rendered as a clean result), P25 (a field on every row that nothing reads), P14 (an unknown input taking the valid path), P16 (`/pages` alone among four siblings). And the one worth naming: **a self-review cannot see a file it overwrote, a spec it wrote, or a claim it made.** Checklist items 19-20.
 
 - **2026-09-04 — a disclosure field that reported zero, on a path where three rows were excluded.**
   - *Issue:* two surfaces showed a stored count beside a scored score (LEARNINGS open risk 3, written 2026-09-01). Concretely at `info_detail="key"`: the `metadata` category tile read **2** and the list it opens had **0** rows. The PDF's per-page table read `4 Info` where the score charged 1.
