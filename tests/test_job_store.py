@@ -423,7 +423,7 @@ class TestByPageView:
             _issue(job.job_id, page_url="https://example.com/a", severity="info"),
             _issue(job.job_id, page_url="https://example.com/b", severity="info"),
         ])
-        pages, total = await store.get_pages_with_issue_counts(job.job_id)
+        pages, total, _hidden = await store.get_pages_with_issue_counts(job.job_id)
         assert total == 2
         assert pages[0]["url"] == "https://example.com/a"
         assert pages[0]["issue_counts"]["total"] == 3
@@ -439,7 +439,7 @@ class TestByPageView:
             _issue(job.job_id, severity="warning"),
             _issue(job.job_id, severity="info"),
         ])
-        pages, _ = await store.get_pages_with_issue_counts(job.job_id)
+        pages, _, _hidden = await store.get_pages_with_issue_counts(job.job_id)
         counts = pages[0]["issue_counts"]
         assert counts["critical"] == 1
         assert counts["warning"] == 1
@@ -455,7 +455,7 @@ class TestByPageView:
             _issue(job.job_id, page_url="https://example.com/a", severity="critical"),
             _issue(job.job_id, page_url="https://example.com/b", severity="info"),
         ])
-        pages, total = await store.get_pages_with_issue_counts(job.job_id, min_severity="critical")
+        pages, total, _hidden = await store.get_pages_with_issue_counts(job.job_id, min_severity="critical")
         assert total == 1
         assert pages[0]["url"] == "https://example.com/a"
 
@@ -464,10 +464,10 @@ class TestByPageView:
         await store.create_job(job)
         pages = [_page(job.job_id, url=f"https://example.com/{i}") for i in range(5)]
         await store.save_pages(pages)
-        result, total = await store.get_pages_with_issue_counts(job.job_id, page=1, limit=3)
+        result, total, _hidden = await store.get_pages_with_issue_counts(job.job_id, page=1, limit=3)
         assert total == 5
         assert len(result) == 3
-        result2, _ = await store.get_pages_with_issue_counts(job.job_id, page=2, limit=3)
+        result2, _, _hidden = await store.get_pages_with_issue_counts(job.job_id, page=2, limit=3)
         assert len(result2) == 2
 
     async def test_get_page_issues_by_url_returns_grouped_issues(self, store):

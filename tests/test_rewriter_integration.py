@@ -70,9 +70,13 @@ def mock_store():
         return None
 
     async def mock_get_pages(job_id, min_severity=None, page=1, limit=50, info_detail="all"):
+        # (rows, total, pages_hidden) — the third value is what the level removed
+        # from a filtered list (P5.3). This stub is hand-written from the caller,
+        # so it drifts when the real signature moves; `_hidden` is 0 here because
+        # the fixture has no excluded rows.
         if job_id == "test-job-123":
-            return (pages, 2)
-        return ([], 0)
+            return (pages, 2, 0)
+        return ([], 0, 0)
 
     store.get_job = mock_get_job
     store.get_pages_with_issue_counts = mock_get_pages
@@ -83,6 +87,10 @@ def mock_store():
     # CLN5: /pages filters user-suppressed codes; a MagicMock fabricates this
     # attribute (a real Redis store returns None here → no-op), so model it.
     store.get_suppressed_codes = AsyncMock(return_value=[])
+    # /pages states what the scan's info_detail left out (P5.3). A MagicMock
+    # answers getattr for any name, so an endpoint that guards with getattr still
+    # gets a MagicMock and fails on await — the stub has to be explicit.
+    store.get_info_excluded_report = AsyncMock(return_value={"hidden": 0, "by_tier": {}})
 
     # Override the get_store dependency for both routers
     app.dependency_overrides[crawl_get_store] = lambda: store

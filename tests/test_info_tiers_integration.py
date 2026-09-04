@@ -514,7 +514,8 @@ class TestPageCountCallersPassTheLevel:
                                 if sev == "info" and info_row_excluded(imp, "key"))
         expected_kept = len(_ROWS) - expected_excluded
 
-        pages, _ = await test_store.get_pages_with_issue_counts("j1", info_detail="key")
+        pages, _total, _hidden = await test_store.get_pages_with_issue_counts(
+            "j1", info_detail="key")
         counts = pages[0]["issue_counts"]
         assert counts["total"] == expected_kept, counts
         assert counts["info_excluded"] == expected_excluded, (
@@ -758,6 +759,260 @@ class TestPdfAndExcelTotals:
         # Not [0] — the notes are in category order, so metadata is not first.
         assert any("2 not scored" in n for n in _notes("j1")), _notes("j1")
         assert not _notes("j2"), "a full-detail scan must carry no per-category caveat"
+
+
+# ── P5.3: a list narrowed by the level must say so ─────────────────────────
+# The premise in TODO P5.3 ("the filter is level-blind") was already false: the
+# store filters on the KEPT info count. What it does instead is quieter and, by
+# this codebase's own rule, worse — it drops a page with findings out of a
+# filtered list and returns nothing saying so. Measured at info_detail="key":
+#   /pages?min_severity=info -> only the warning page; the 2-finding page gone
+#   keys in response         -> ['job_id', 'pages', 'pagination']
+#   the same page's drawer   -> info_filtered {'hidden': 2, 'by_tier': {'low': 2}}
+
+
+async def _multi_page_job(store, job_id="j1", info_detail="key"):
+    """A warning page, a page whose ONLY findings are below the level's floor,
+    and a genuinely clean page — so "dropped by the level" and "nothing to
+    find" are distinguishable in the assertions."""
+    job = CrawlJob(job_id=job_id, target_url=BASE, status="complete", pages_crawled=3,
+                   settings=CrawlSettings(info_detail=info_detail),
+                   started_at=datetime.now(timezone.utc))
+    await store.create_job(job)
+    await store.save_pages([
+        CrawledPage(job_id=job_id, url=f"{BASE}/{n}", status_code=200, title=n,
+                    crawled_at=datetime.now(timezone.utc))
+        for n in ("warn", "lowinfo", "clean")
+    ])
+    await store.save_issues([
+        Issue(job_id=job_id, page_url=f"{BASE}/warn", category="heading",
+              severity="warning", issue_code="H1_MISSING", description="d",
+              recommendation="r", impact=4),
+        Issue(job_id=job_id, page_url=f"{BASE}/lowinfo", category="metadata",
+              severity="info", issue_code="TITLE_TOO_SHORT", description="d",
+              recommendation="r", impact=1),
+        Issue(job_id=job_id, page_url=f"{BASE}/lowinfo", category="redirect",
+              severity="info", issue_code="REDIRECT_TRAILING_SLASH", description="d",
+              recommendation="r", impact=0),
+    ])
+    return f"{BASE}/lowinfo"
+
+
+class TestByPageDeclaresWhatTheLevelRemoved:
+    async def test_pages_filtered_by_info_declares_the_pages_it_dropped(
+        self, api_client, auth_headers, test_store
+    ):
+        """4.1 — and the dropped page must be NAMEABLE, not just counted.
+
+        The plausible wrong implementation counts pages that lost a row
+        (`info_excluded > 0`), which is non-zero on this fixture and means
+        something else. `pages_hidden` counts pages that CHANGED QUALIFICATION
+        for this filter — the ones absent from the list the operator is reading.
+        """
+        dropped = await _multi_page_job(test_store, info_detail="key")
+        r = await api_client.get("/api/crawl/j1/pages?min_severity=info",
+                                 headers=auth_headers)
+        assert r.status_code == 200, r.text
+        body = r.json()
+        listed = {p["url"] for p in body["pages"]}
+        assert dropped not in listed, "the filter stopped agreeing with the score"
+
+        info = body["info_filtered"]
+        assert info["info_detail"] == "key"
+        assert info["pages_hidden"] == 1, (
+            f"a page with two findings vanished from a filtered list: {info}"
+        )
+        assert info["hidden"] == 2 and info["by_tier"] == {"low": 2}
+
+    async def test_pages_hidden_counts_qualification_not_lost_rows(
+        self, api_client, auth_headers, test_store
+    ):
+        """4.1b — the adversarial half of 4.1.
+
+        A page that loses a row but still qualifies is NOT hidden from the list,
+        so counting `info_excluded > 0` pages would over-report. Here the warning
+        page also carries an excluded info row: it stays listed, and must not be
+        counted as hidden.
+        """
+        await _multi_page_job(test_store, info_detail="key")
+        await test_store.save_issues([
+            Issue(job_id="j1", page_url=f"{BASE}/warn", category="metadata",
+                  severity="info", issue_code="TITLE_TOO_SHORT", description="d",
+                  recommendation="r", impact=1),
+        ])
+        r = await api_client.get("/api/crawl/j1/pages?min_severity=info",
+                                 headers=auth_headers)
+        body = r.json()
+        assert f"{BASE}/warn" in {p["url"] for p in body["pages"]}
+        assert body["info_filtered"]["pages_hidden"] == 1, (
+            "a page that lost a row but still qualifies was counted as hidden: "
+            f"{body['info_filtered']}"
+        )
+
+    async def test_pages_hidden_is_zero_when_nothing_was_dropped(
+        self, api_client, auth_headers, test_store
+    ):
+        """4.2 — the other direction, both ways it can arise."""
+        await _multi_page_job(test_store, job_id="ja", info_detail="all")
+        r = await api_client.get("/api/crawl/ja/pages?min_severity=info",
+                                 headers=auth_headers)
+        assert r.json()["info_filtered"]["pages_hidden"] == 0, "nothing is excluded at `all`"
+
+        await _multi_page_job(test_store, job_id="jb", info_detail="key")
+        r = await api_client.get("/api/crawl/jb/pages", headers=auth_headers)
+        assert r.json()["info_filtered"]["pages_hidden"] == 0, (
+            "an unfiltered By Page lists every crawled page, so none is hidden"
+        )
+
+    async def test_pages_carries_info_filtered_like_its_siblings(
+        self, api_client, auth_headers, test_store
+    ):
+        """4.3 — the shape the other three list endpoints already return."""
+        await _multi_page_job(test_store, info_detail="key")
+        body = (await api_client.get("/api/crawl/j1/pages", headers=auth_headers)).json()
+        assert set(body["info_filtered"]) >= {"hidden", "by_tier", "info_detail",
+                                              "pages_hidden"}
+
+    async def test_pages_reveal_shows_the_pages_the_level_dropped(
+        self, api_client, auth_headers, test_store
+    ):
+        """4.5 — By Page was the only list an operator could not widen."""
+        dropped = await _multi_page_job(test_store, info_detail="key")
+        r = await api_client.get(
+            "/api/crawl/j1/pages?min_severity=info&info_detail=all", headers=auth_headers)
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert dropped in {p["url"] for p in body["pages"]}
+        assert body["info_filtered"]["info_detail"] == "all"
+        assert body["info_filtered"]["pages_hidden"] == 0
+
+    async def test_pages_reveal_cannot_tighten(
+        self, api_client, auth_headers, test_store
+    ):
+        """4.6 — reveal-only: the score is a property of the scan, not the view."""
+        await _multi_page_job(test_store, info_detail="all")
+        r = await api_client.get("/api/crawl/j1/pages?info_detail=none",
+                                 headers=auth_headers)
+        body = r.json()
+        assert body["info_filtered"]["info_detail"] == "all", (
+            "a request tightened the level and would disagree with the score"
+        )
+        rows = {p["url"]: p["issue_counts"] for p in body["pages"]}
+        assert rows[f"{BASE}/lowinfo"]["info"] == 2
+
+
+class TestMinSeverityIsValidated:
+    @pytest.mark.parametrize("bad", ["bogus", "Critical", "INFO", "warnings", ""])
+    async def test_unknown_min_severity_is_422_not_a_silent_pass(
+        self, api_client, auth_headers, test_store, bad
+    ):
+        """4.7 — an unrecognised filter silently meant "everything".
+
+        `_SEVERITY_RANK.get(bad, 4)` admits every severity, so `?min_severity=bogus`
+        returned 200 with an unfiltered list — and `Critical` with a capital C
+        quietly stopped filtering. `/results/{category}` already refuses an unknown
+        category with 422; this is the same class of input on a sibling endpoint.
+
+        Asserts no rows come back as well as the status: a 422 that still ran the
+        query would satisfy a status-only check and miss the point.
+        """
+        await _multi_page_job(test_store, info_detail="all")
+        r = await api_client.get(f"/api/crawl/j1/pages?min_severity={bad}",
+                                 headers=auth_headers)
+        assert r.status_code == 422, f"{bad!r} was accepted: {r.text[:200]}"
+        assert r.json()["error"]["code"] == "INVALID_SEVERITY"
+        assert "pages" not in r.json()
+
+    @pytest.mark.parametrize("good", ["critical", "warning", "info"])
+    async def test_every_valid_min_severity_is_accepted(
+        self, api_client, auth_headers, test_store, good
+    ):
+        """4.8 — the guard must not be broader than the invalid set."""
+        await _multi_page_job(test_store, info_detail="all")
+        r = await api_client.get(f"/api/crawl/j1/pages?min_severity={good}",
+                                 headers=auth_headers)
+        assert r.status_code == 200, r.text
+
+    async def test_no_min_severity_still_lists_every_crawled_page(
+        self, api_client, auth_headers, test_store
+    ):
+        """4.8b — the omitted case, which shares the rank default with the
+        invalid one. Validating in the router keeps them separable."""
+        await _multi_page_job(test_store, info_detail="key")
+        r = await api_client.get("/api/crawl/j1/pages", headers=auth_headers)
+        assert len(r.json()["pages"]) == 3
+
+
+class TestEveryLevelDependentListDeclaresTheLevel:
+    """4.4 — structural, and the rule needs no allowlist.
+
+    A per-endpoint behavioural test covers the endpoints that exist. Three
+    siblings agreed and `/pages` did not, and nothing noticed; the fourth
+    surface is the one that will be missed. The rule asserted here is a property
+    of the DATA: if a response carries rows whose content depends on the scan's
+    `info_detail` — issue rows, per-page counts, or a health/citability score —
+    it must state the level it was computed at.
+
+    `/page-priority` was the second offender: per-page `health_score` computed at
+    the job's level with nothing saying so, which is LEARNINGS open risk (1)
+    ("a new surface that renders health_score without info_detail beside it")
+    arriving exactly as predicted.
+    """
+
+    _LEVEL_DEPENDENT_FIELDS = ("impact", "severity", "issue_counts",
+                               "health_score", "citability_grade")
+
+    @staticmethod
+    def _level_dependent_keys(body: dict) -> list[str]:
+        out = []
+        for key, val in (body or {}).items():
+            if isinstance(val, list) and val and isinstance(val[0], dict):
+                if any(f in val[0] for f in
+                       TestEveryLevelDependentListDeclaresTheLevel._LEVEL_DEPENDENT_FIELDS):
+                    out.append(key)
+        return out
+
+    async def test_every_job_scoped_get_declares_the_level_it_used(
+        self, api_client, auth_headers, test_store
+    ):
+        import inspect
+        from api.main import app
+
+        await _multi_page_job(test_store, info_detail="key")
+
+        paths = []
+        for route in app.routes:
+            path = getattr(route, "path", "")
+            if not path.startswith("/api/crawl/{job_id}"):
+                continue
+            if "GET" not in (getattr(route, "methods", None) or set()):
+                continue
+            params = inspect.signature(route.endpoint).parameters
+            # Only routes callable with a job_id alone: another path segment or a
+            # required body puts them out of this test's reach, not out of the rule.
+            if "{" in path.replace("{job_id}", "") or "request" in params:
+                continue
+            paths.append(path.replace("{job_id}", "j1"))
+        assert len(paths) >= 8, f"route discovery broke, found only {paths}"
+
+        offenders = []
+        for path in paths:
+            r = await api_client.get(path, headers=auth_headers)
+            if r.status_code != 200:
+                continue
+            try:
+                body = r.json()
+            except ValueError:
+                continue          # a CSV/PDF export, not a JSON list
+            if not isinstance(body, dict):
+                continue
+            keys = self._level_dependent_keys(body)
+            if keys and not ("info_filtered" in body or "info_detail" in body):
+                offenders.append(f"{path} returns {keys} and never names the level")
+        assert not offenders, (
+            "a response carries rows computed at the scan's info_detail without "
+            f"stating it — the S1 score-basis rule:\n  " + "\n  ".join(offenders)
+        )
 
 
 # ── GET /comparison ───────────────────────────────────────────────────────

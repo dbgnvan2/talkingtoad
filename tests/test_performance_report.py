@@ -335,7 +335,7 @@ class TestRenderedExports:
     async def test_e3_3a_pdf_subtitle_names_the_weighting(self, store):
         job = await _seed(store, pages=[HOME, TOP_PAGE, LOW_CTR_PAGE])
         priority = serialise_review_flags(await build_page_priority(store, JOB_ID))
-        top_pages, _ = await store.get_pages_with_issue_counts(JOB_ID, page=1, limit=10)
+        top_pages, _, _hidden = await store.get_pages_with_issue_counts(JOB_ID, page=1, limit=10)
         pdf_bytes = await generate_pdf_report(
             job, [], await store.get_summary(JOB_ID),
             top_pages=top_pages,
@@ -348,7 +348,7 @@ class TestRenderedExports:
     async def test_e3_3b_pdf_subtitle_unchanged_without_ledger(self, store):
         """No ledger, no claim of traffic weighting."""
         job = await _seed(store, with_ledger=False, pages=[HOME, TOP_PAGE])
-        top_pages, _ = await store.get_pages_with_issue_counts(JOB_ID, page=1, limit=10)
+        top_pages, _, _hidden = await store.get_pages_with_issue_counts(JOB_ID, page=1, limit=10)
         pdf_bytes = await generate_pdf_report(
             job, [], await store.get_summary(JOB_ID),
             top_pages=top_pages, performance=None, priority_pages=None,

@@ -12,9 +12,25 @@ export default function ByPagePanel({ jobId, domain, onPageClick }) {
 
   if (!data) return <Spinner />
 
+  // P5.3: the level can empty a page's findings, and a row with every badge
+  // suppressed is pixel-identical to a genuinely clean page — while that page's
+  // own drawer reports what was hidden. `info_excluded` has been on every row
+  // since 2026-09-01 and nothing read it (P25).
+  const filtered = data.info_filtered || null
+  const hidden = filtered?.hidden || 0
+
   return (
     <div className="space-y-4">
       <h2 className="text-xl font-bold text-gray-800">{domain ? `By Page - ${domain}` : 'By Page'}</h2>
+      {hidden > 0 && (
+        <p className="text-xs text-gray-500">
+          {`${hidden} info notice${hidden === 1 ? '' : 's'} not scored at info detail `}
+          <span className="font-semibold">{filtered.info_detail}</span>
+          {filtered.pages_hidden > 0
+            ? `, and ${filtered.pages_hidden} page${filtered.pages_hidden === 1 ? '' : 's'} left out of this filtered list.`
+            : '.'}
+        </p>
+      )}
       <div className="bg-white border border-gray-200 rounded-3xl overflow-hidden shadow-sm">
       <table className="min-w-full divide-y divide-gray-200 text-sm">
         <thead className="bg-gray-50">
@@ -30,6 +46,15 @@ export default function ByPagePanel({ jobId, domain, onPageClick }) {
                   {p.issue_counts.critical > 0 && <span className="bg-red-100 text-red-700 px-2.5 py-0.5 rounded-full text-[10px] font-black">{p.issue_counts.critical}</span>}
                   {p.issue_counts.warning > 0 && <span className="bg-amber-100 text-amber-700 px-2.5 py-0.5 rounded-full text-[10px] font-black">{p.issue_counts.warning}</span>}
                   {p.issue_counts.info > 0 && <span className="bg-blue-100 text-blue-700 px-2.5 py-0.5 rounded-full text-[10px] font-black">{p.issue_counts.info}</span>}
+                  {p.issue_counts.info_excluded > 0 && (
+                    <span
+                      data-testid="not-scored"
+                      title={`${p.issue_counts.info_excluded} info notice(s) found but not scored at this info detail`}
+                      className="bg-gray-100 text-gray-500 px-2.5 py-0.5 rounded-full text-[10px] font-black"
+                    >
+                      +{p.issue_counts.info_excluded}
+                    </span>
+                  )}
                 </div>
               </td>
             </tr>

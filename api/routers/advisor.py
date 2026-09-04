@@ -286,7 +286,7 @@ async def list_geo_report_pages(
 
     # The picker RANKS by issue_count, so a stored count promotes a page whose
     # findings the scan excluded — it would be offered first and open empty.
-    pages, _total = await store.get_pages_with_issue_counts(
+    pages, _total, _hidden = await store.get_pages_with_issue_counts(
         job_id, info_detail=job.settings.info_detail)
 
     out = []
@@ -361,7 +361,7 @@ async def generate_geo_report_legacy(
             # changed `total`, hence the ordering, hence which URLs validated
             # (P9). The level is passed so no call site is an exception to
             # remember; the limit is what makes the answer correct.
-            pages, total_pages = await store.get_pages_with_issue_counts(
+            pages, total_pages, _hidden = await store.get_pages_with_issue_counts(
                 payload.job_id, limit=1000, info_detail=job.settings.info_detail)
             valid_urls = {p.get("url") for p in pages}
             if total_pages > len(valid_urls):

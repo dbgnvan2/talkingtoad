@@ -72,6 +72,12 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/crawl", dependencies=[Depends(require_auth)])
 
+# Valid severity values for the By Page filter. Derived from the store's own
+# rank table so the two cannot drift: anything absent from that table maps to
+# rank 4 there, which admits every severity — i.e. an unvalidated value is not
+# "no match", it is "match everything" (P14).
+_VALID_SEVERITIES: frozenset[str] = frozenset({"critical", "warning", "info"})
+
 # Valid category slugs for the filtered results endpoint
 _VALID_CATEGORIES: frozenset[str] = frozenset(
     ["broken_link", "metadata", "heading", "redirect",
@@ -1551,16 +1557,33 @@ async def get_pages(
     page: int = Query(1, ge=1),
     limit: int = Query(50, ge=1, le=100),
     min_severity: str | None = Query(None),
+    info_detail: str | None = Query(None, description="Reveal-only override of the scan's info detail (e.g. 'all')"),
     store: SQLiteJobStore = Depends(get_store),
 ) -> dict | JSONResponse:
     """All crawled pages with per-page issue counts (spec §6.1, By Page view)."""
+    # `_SEVERITY_RANK.get(x, 4)` in the store admits every severity for an
+    # unrecognised value, so an unvalidated typo silently meant "everything" —
+    # `?min_severity=Critical` quietly stopped filtering. Refused here beside the
+    # other input validation, and NOT in the store, whose rank default also
+    # encodes the legitimate "no filter at all" case.
+    if min_severity is not None and min_severity not in _VALID_SEVERITIES:
+        return _err(
+            "INVALID_SEVERITY",
+            f"'{min_severity}' is not a valid severity. Valid values: "
+            f"{sorted(_VALID_SEVERITIES)}.",
+            422,
+        )
+
     job = await store.get_job(job_id)
     if job is None:
         return _err("JOB_NOT_FOUND", "No crawl job found with the given ID.", 404)
 
-    pages, total_crawled = await store.get_pages_with_issue_counts(
+    from api.services.info_tier_filter import resolve_info_detail
+    level = resolve_info_detail(job.settings.info_detail, info_detail)
+
+    pages, total_crawled, pages_hidden = await store.get_pages_with_issue_counts(
         job_id, min_severity=min_severity, page=page, limit=limit,
-        info_detail=job.settings.info_detail,
+        info_detail=level,
     )
     total_pages = max(1, math.ceil(total_crawled / limit))
 
@@ -1589,8 +1612,18 @@ async def get_pages(
     for pg in pages:
         pg["citability_grade"] = compute_citability_grade(
             rows_by_url.get((pg.get("url") or "").rstrip("/"), []),
-            info_detail=job.settings.info_detail,
+            info_detail=level,
         )
+
+    # P5.3: the same disclosure the other three list endpoints carry, plus the
+    # one only this endpoint needs. On /results the level removes ROWS and the
+    # shorter list is itself visible; here it removes whole PAGES from the page
+    # list, and a page that is not listed leaves no other trace (P31).
+    # Job-wide, deliberately: summing `info_excluded` over the RETURNED rows
+    # misses the rows on pages the level removed from the list entirely — which
+    # are exactly the ones `pages_hidden` is counting. It is also stable across
+    # pagination, so page 2 does not report a different site.
+    excluded_report = await store.get_info_excluded_report(job_id, level)
 
     return {
         "job_id": job_id,
@@ -1601,6 +1634,11 @@ async def get_pages(
             "total_pages": total_pages,
         },
         "pages": pages,
+        "info_filtered": {
+            **excluded_report,
+            "info_detail": level,
+            "pages_hidden": pages_hidden,
+        },
     }
 
 
@@ -2894,7 +2932,17 @@ async def get_page_priority(
         return _err("JOB_NOT_FOUND", f"No job with id {job_id}", 404)
 
     ranked = serialise_review_flags(await build_page_priority(store, job_id))
-    return {"pages": ranked, "total": len(ranked)}
+    # Every `health_score` and `citability_grade` in these rows was computed at
+    # the job's info_detail (page_priority.py:129), so the level travels with
+    # them. LEARNINGS open risk (1), 2026-09-01, in its own words: "a new surface
+    # that renders health_score without info_detail beside it — the S1
+    # score-basis lesson again; the contract test for that surface must assert
+    # the label." This is that surface, and this is that label.
+    return {
+        "pages": ranked,
+        "total": len(ranked),
+        "info_detail": job.settings.info_detail,
+    }
 
 
 @router.post("/{job_id}/web-vitals", response_model=None)
@@ -3057,7 +3105,7 @@ async def export_pdf_report(
     # rows come back at "all", so the PDF printed the STORED info count beside a
     # scoped health score — and reported `info_excluded: 0` on a job that excluded
     # rows, which asserts the opposite of the truth rather than staying silent.
-    top_pages_data, _ = await store.get_pages_with_issue_counts(
+    top_pages_data, _, _ = await store.get_pages_with_issue_counts(
         job_id, page=1, limit=10, info_detail=job.settings.info_detail)
 
     # Fetch image data for the report

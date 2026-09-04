@@ -745,6 +745,36 @@ class SQLiteJobStore:
             "wp_audit": job.wp_audit,
         }
 
+    async def get_info_excluded_report(self, job_id: str, info_detail: str) -> dict:
+        """``{hidden, by_tier}`` for the rows this level leaves out, job-wide.
+
+        The same shape and the same meaning as ``info_tier_filter.apply_info_detail``'s
+        report — the REMOVED rows per tier, zero tiers omitted — so `/pages`'
+        `info_filtered` block says what its siblings' does. Note this is NOT
+        ``_info_tier_counts``'s ``by_tier``, which counts *every* info row by tier;
+        putting that under the same key would give one field name two meanings
+        (P13).
+
+        Job-wide because `/pages`' disclosure cannot be summed from the rows it
+        returns: the level can remove a page from the list entirely, and that
+        page's excluded rows are then on no returned row at all.
+        """
+        from api.crawler.checkers.registry import info_row_excluded, info_tier
+
+        async with self._db.execute(
+            "SELECT impact, COUNT(*) FROM issues WHERE job_id = ? AND severity = 'info' "
+            "GROUP BY impact",
+            (job_id,),
+        ) as cursor:
+            rows = await cursor.fetchall()
+        by_tier: dict[str, int] = {}
+        for impact, n in rows:
+            impact = impact or 0
+            if info_row_excluded(impact, info_detail):
+                tier = info_tier(impact) or "low"
+                by_tier[tier] = by_tier.get(tier, 0) + n
+        return {"hidden": sum(by_tier.values()), "by_tier": by_tier}
+
     async def _info_tier_counts(self, job_id: str, info_detail: str) -> tuple[dict, int, int]:
         """(by_tier, scored, excluded) over the job's STORED info rows.
 
@@ -780,7 +810,7 @@ class SQLiteJobStore:
         page: int = 1,
         limit: int = 50,
         info_detail: str = "all",
-    ) -> tuple[list[dict], int]:
+    ) -> tuple[list[dict], int, int]:
         """Return crawled pages with aggregated issue counts, sorted by total issues desc.
 
         Each entry is a dict:
@@ -794,6 +824,14 @@ class SQLiteJobStore:
         When *min_severity* is set, only pages that have at least one issue of
         that severity (or higher) are returned.
         Severity ordering: critical > warning > info.
+
+        Returns ``(rows, total, pages_hidden)``. ``pages_hidden`` is how many
+        pages qualify for this *min_severity* at ``all`` and do **not** qualify at
+        *info_detail* — the pages the level removed from the caller's list. It is
+        NOT "pages that lost a row": a page that loses an info row and still
+        qualifies is still listed, and counting it would over-report. The filter
+        has agreed with the score since 2026-09-01; what it never did was say so,
+        and a page absent from a filtered list leaves no other trace (P31).
         """
         _SEVERITY_RANK = {"critical": 1, "warning": 2, "info": 3}
         min_rank = _SEVERITY_RANK.get(min_severity, 4) if min_severity else 4
@@ -827,18 +865,28 @@ class SQLiteJobStore:
             all_rows = await cursor.fetchall()
 
         # Apply min_severity filter in Python (simpler than SQL HAVING with rank)
+        def _qualifies(r, *, at_all: bool) -> bool:
+            # `at_all` asks the same question ignoring the level, so the two
+            # answers differ exactly on the pages the level removed.
+            info = (r["info"] + r["info_excluded"]) if at_all else r["info"]
+            return bool(
+                (1 <= min_rank and r["critical"] > 0)
+                or (2 <= min_rank and r["warning"] > 0)
+                or (3 <= min_rank and info > 0)
+            )
+
+        pages_hidden = 0
         if min_severity:
             filtered = []
             for row in all_rows:
                 r = dict(row)
-                has_qualifying = (
-                    (1 <= min_rank and r["critical"] > 0)
-                    or (2 <= min_rank and r["warning"] > 0)
-                    or (3 <= min_rank and r["info"] > 0)
-                )
-                if has_qualifying:
+                if _qualifies(r, at_all=False):
                     filtered.append(r)
+                elif _qualifies(r, at_all=True):
+                    pages_hidden += 1
         else:
+            # An unfiltered By Page lists every crawled page whatever the level,
+            # so the level hides none of them.
             filtered = [dict(r) for r in all_rows]
 
         total_count = len(filtered)
@@ -859,7 +907,7 @@ class SQLiteJobStore:
             }
             for r in sliced
         ]
-        return result, total_count
+        return result, total_count, pages_hidden
 
     async def get_page_issues_by_url(
         self, job_id: str, url: str
