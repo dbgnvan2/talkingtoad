@@ -33,11 +33,10 @@ user replaces the old image in the post by hand.
 - [x] **Completeness + substance guards** — `tests/test_issue_help_completeness.py` (2026-09-02).
 - [x] **Rendered** in `IssueHelpPanel` and the PDF help box (2026-09-02).
 - [x] **Retired confidence vocabulary gone**; `LEGACY_VOCABULARY` is empty (2026-09-02).
-- [ ] **Owner read-through.** The copy was written and cold-reviewed by Claude against the
-  checkers; the reading level for your clients is your call. Read a category tab's explanations
-  end to end and edit `issueHelp.json` directly (then `python scripts/generate_issue_help_py.py`).
-- [ ] **Panel explainers** for the non-issue features (FAQ generator, schema factory, image
-  optimizer, GEO report) — the V4 plan's second half; not part of Phase 2.
+- [x] **Owner read-through** — done 2026-09-03. Owner: "I'm happy with the explanations." The V4 content pass is closed; the ~120 pre-2026-05 codes it was
+  scoped to backfill were completed in Phase 2.
+> **Panel explainers** for the non-issue features are Phase 7 below — verified
+> 2026-09-03 that four of the six panels have none.
 
 ## Phase 3 — reliability of the happy path
 
@@ -54,27 +53,80 @@ user replaces the old image in the post by hand.
 - [x] **Compare card** with struck-through delta and reason — 2026-09-02.
 - [x] **Re-check all pages in place** and the **WordPress audit** button — 2026-09-02.
 - [x] **Fix Focus third state** `not_checked` — 2026-09-02.
-- [ ] **Striking-distance queries** come only from the GSC priority seed; persisting `top_queries`
-  in the ledger (PB3's original intent) would give every scan a target query.
+## Phase 5 — the numbers on screen disagree with each other (4)
 
-## Adjacent, when touched
+Every item here is a contradiction the operator can see: two figures about the same thing that
+do not match. That is the most expensive kind of defect this app has, because it costs trust in
+the figures that *are* right. Do these first.
 
-- [ ] **`FixInlinePanel` maps `TITLE_H1_MISMATCH → seo_title` but the backend fix map does not** —
-  the inline fix for that code likely fails server-side; the parity test excludes it. Decide
-  which side is right and drop the exclusion. (Promoted from the archive 2026-09-02.)
-- [ ] `checks_not_run` from `/scan-page` reaches no UI beyond the Page Audit note; the Results
-  summary for a single-page job does not say which 24 checks could not run.
-- [ ] Fix Focus mutations are read-modify-write on one blob (last writer wins); Performance
-  Bundle PB4/PB5/PB7/PB9 remain after PB3; dimension-pass concurrency floor (~33 images) unpinned.
-- [ ] Category tiles / PDF per-page rows show stored counts beside a scored score (`info_detail`).
-- [ ] Prevalence tiers by today's catalogue, lists by stored impact (P8).
-- [ ] `/pages?min_severity=info` is level-blind.
-- [ ] Nested card containers (E6): choose between nested candidates deliberately.
-- [ ] `rechecked` is a field no consumer reads — wire or delete.
-- [ ] `page_size_limit_kb` defined twice; `cryptography` pinned by venv match, not audit.
-- [ ] GSC ingest: unmatched rows stored as silent orphans; fold-collision last-wins.
-- [ ] Resolve-then-fetch TOCTOU in `is_ssrf_safe` (needs IP pinning — a design change).
-- [ ] Playwright render budget vs the per-request guard (not measurable without Playwright).
+- [ ] **P5.1 — `FixInlinePanel` maps `TITLE_H1_MISMATCH → seo_title`, the backend fix map does
+  not.** The inline fix for that code likely fails server-side, and the parity test *excludes*
+  the code rather than failing. Decide which side is right, wire it, delete the exclusion.
+  **Done when:** the parity test covers every code with no exclusion list, and an inline fix for
+  `TITLE_H1_MISMATCH` either applies or is not offered. **Size:** small — the test hook exists.
+- [ ] **P5.2 — category tiles and PDF per-page rows show STORED counts beside a SCORED score.**
+  `info_detail` charges fewer rows than it stores, so a tile can read "12 info" beside a score
+  computed from 4. LEARNINGS logs this as open risk (3) of the `info_detail` change. **Done
+  when:** every surface showing a count beside a score shows the same population, or labels
+  which it is showing.
+- [ ] **P5.3 — `/pages?min_severity=info` is level-blind.** Same family: the filter does not know
+  about `info_detail`, so it returns rows the score excluded. **Done when:** the filter and the
+  score agree on what "info" means for that job.
+- [ ] **P5.4 — prevalence tiers by today's catalogue, lists tier by stored impact (P8).** After a
+  recalibration across an impact boundary, an old job's prevalence table and its own issue list
+  disagree by a code. **Done when:** one of the two is chosen deliberately and the other follows,
+  with a test that pins the agreement across a simulated recalibration.
+
+## Phase 6 — things the app knows and does not say (3)
+
+Disclosure gaps. Each is a fact already computed and then dropped — the P25 shape this codebase
+keeps hitting, and the reason four separate bugs this week were invisible until someone looked
+in SQLite.
+
+- [ ] **P6.1 — `checks_not_run` reaches no UI beyond the Page Audit note.** A single-page job's
+  Results summary does not say which 24 checks could not run, so a clean-looking summary is
+  partly "not checked". **Done when:** the summary states the count and names them on demand.
+- [ ] **P6.2 — `rechecked` is a field no consumer reads.** Wire it or delete it; a field that
+  travels and is never read is a claim nobody can check. **Done when:** it is rendered somewhere
+  or gone from the model.
+- [ ] **P6.3 — GSC ingest stores unmatched rows as silent orphans, and a fold collision is
+  last-wins.** Performance data that matched nothing is indistinguishable from performance data
+  that did not exist. **Done when:** the ingest reports "matched N of M" and a collision is
+  recorded rather than overwritten.
+
+## Phase 7 — the V4 second half (1)
+
+- [ ] **P7.1 — panel explainers for the non-issue features.** Verified 2026-09-03: `GEOReportPanel`
+  and `GSCInsightsPanel` have them; **`FaqSchemaModal`, `GeoSettingsModal`, `ImageAnalysisPanel`
+  and `BatchOptimizePanel` have none**. The 170 issue codes all carry the seven-part explainer;
+  these four tools carry nothing, so the app teaches a nonprofit what `META_DESC_TOO_LONG` means
+  and not what the FAQ generator is for. **Done when:** each of the four carries the tool shape
+  from `PLAN-V4.0.md` (what it is · why it is useful · good vs bad · how it can mislead · how to
+  use it). **Size:** medium, and it is writing, not engineering.
+
+## Phase 8 — engineering debt with no user symptom (4)
+
+Real, worth doing, and nothing breaks tomorrow if they wait.
+
+- [ ] **P8.1 — Fix Focus mutations are read-modify-write on one blob** (last writer wins). Two
+  browser tabs, or one operator and one background job, silently lose an edit.
+- [ ] **P8.2 — nested card containers (E6):** choose between nested candidates deliberately
+  rather than taking whichever the upward walk stops at first.
+- [ ] **P8.3 — `page_size_limit_kb` is defined twice**, and `cryptography` is pinned by venv
+  match rather than audit.
+- [ ] **P8.4 — striking-distance queries come only from the GSC priority seed.** Persisting
+  `top_queries` in the ledger (PB3's original intent) would give every scan a target query
+  instead of only the seeded ones.
+- [ ] Performance Bundle PB4/PB5/PB7/PB9 remain after PB3; the dimension-pass concurrency floor
+  (~33 images) is unpinned. Carried with P8.4 as the same area.
+
+## Parked — needs a decision, not a fix (2)
+
+- [ ] **Resolve-then-fetch TOCTOU in `is_ssrf_safe`.** Closing it needs IP pinning, which is a
+  design change to every outbound call, not a patch. Recorded so it is a choice rather than an
+  oversight.
+- [ ] **Playwright render budget vs the per-request guard** — not measurable without Playwright
+  in the loop, so there is nothing to test against today.
 
 ## Dropped (and why)
 

@@ -273,10 +273,17 @@ uvicorn api.main:app --reload --port 8000
 # Frontend
 cd frontend && npm run dev
 
-# Tests
-pytest tests/ -v
+# Tests — run them from the project venv, not system Python.
+./venv/bin/python -m pytest tests/ -q
 ```
 
+> **Use `./venv/bin/python`, not bare `pytest`/`python3`.** The venv holds exactly the
+> pinned set; system Python has drifted versions and no `uvicorn`, so
+> `tests/test_declared_environment.py` fails there — two red tests that look like a
+> dependency problem and are only the wrong interpreter. A whole session was reported as
+> "2 pre-existing failures" on that basis (2026-09-03); under the venv the suite is fully
+> green. CI installs `requirements.txt` fresh on 3.11 and 3.14, so it never sees this.
+>
 > If `uvicorn` is not on your PATH, use `./venv/bin/uvicorn` — the project venv has it;
 > system Python may not. A backend that is not listening on :8000 shows up as **HTTP 500
 > on every page**, because Vite's `/api` proxy returns 500 rather than a connection error.
