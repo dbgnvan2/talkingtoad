@@ -41,6 +41,11 @@ class Prevalence:
     human_description: str
     category: str
     severity: str
+    # P5.4: impact and severity are the values STORED on the job's rows, not
+    # today's `derive_impact`/`spec.severity`. Every other surface reads the
+    # stored value, and re-deriving made an old job's prevalence table disagree
+    # with its own issue list after any recalibration (P8).
+    impact: int
     pages_affected: int
     indexable_pages: int
     share: float
@@ -75,8 +80,8 @@ def count_indexable_pages(
     """
     urls = {u.rstrip("/") for u in page_urls if u}
     hidden = {
-        u.rstrip("/") for code, u in issue_rows
-        if code in _NON_INDEXABLE_CODES and u
+        row[1].rstrip("/") for row in issue_rows
+        if row[0] in _NON_INDEXABLE_CODES and row[1]
     }
     return max(0, len(urls) - len(urls & hidden))
 
@@ -87,9 +92,14 @@ def compute_prevalence(
 ) -> list[Prevalence]:
     """Per-code site prevalence, most-prevalent first. Pure; no I/O.
 
-    ``issue_rows`` is ``(issue_code, page_url)``. Codes that fire once by design
-    — site-scoped codes and job-level codes — get no entry: a "share" for them
-    is meaningless and would read as a 0.4% problem.
+    ``issue_rows`` is ``(issue_code, page_url, impact, severity)`` — the last two
+    read from the STORED finding, not re-derived (P5.4). Codes that fire once by
+    design — site-scoped codes and job-level codes — get no entry: a "share" for
+    them is meaningless and would read as a 0.4% problem.
+
+    A code the catalogue no longer knows still gets a row. Its findings are in
+    the lists and charge the health score, so dropping it here made the two
+    tables disagree on live data: six §7-deleted codes hold 4,559 rows.
     """
     if indexable_pages <= 0:
         return []
@@ -100,27 +110,48 @@ def compute_prevalence(
     tiers = sorted(cfg["tiers"], key=lambda t: -float(t["min_share"]))
 
     pages_by_code: dict[str, set[str]] = {}
-    for code, url in issue_rows:
+    # The stored judgement per code. Where a job holds more than one impact for a
+    # code — a rescan under a new model — the MAXIMUM wins: prevalence exists to
+    # escalate, and taking the max can never demote a code below a value some row
+    # in this job actually carries. Deterministic, so iteration order is not a
+    # hidden input.
+    stored: dict[str, tuple[int, str, str]] = {}
+    for row in issue_rows:
+        code, url = row[0], row[1]
+        impact = int(row[2] or 0) if len(row) > 2 else 0
+        severity = (row[3] if len(row) > 3 else None) or "info"
         if not code or not url:
             continue
         spec = _CATALOGUE.get(code)
-        if spec is None or spec.scope == "site":
+        # An unknown code has page URLs, which is what page-scoped means; only a
+        # code the catalogue KNOWS can be declared site-scoped.
+        if spec is not None and spec.scope == "site":
             continue
         if code in job_level:
             continue
         pages_by_code.setdefault(code, set()).add(url.rstrip("/"))
+        prev = stored.get(code)
+        if prev is None or impact > prev[0]:
+            stored[code] = (impact, severity, row[4] if len(row) > 4 else "")
 
     out: list[Prevalence] = []
     for code, urls in pages_by_code.items():
-        spec = _CATALOGUE[code]
+        spec = _CATALOGUE.get(code)
+        impact, severity, stored_category = stored[code]
         affected = len(urls)
         share = affected / indexable_pages
         tier = _classify(code, affected, share, tiers, never, always)
         out.append(Prevalence(
+            # Description and category are LABELS and stay with the catalogue, so
+            # improved wording reaches an old report. Impact and severity are
+            # judgements and come from the row. Where the catalogue has forgotten
+            # the code it can supply neither, and the stored values are the only
+            # honest source.
             code=code,
-            human_description=spec.human_description or code,
-            category=spec.category,
-            severity=spec.severity,
+            human_description=(spec.human_description or code) if spec else code,
+            category=spec.category if spec else (stored_category or "metadata"),
+            severity=severity,
+            impact=impact,
             pages_affected=affected,
             indexable_pages=indexable_pages,
             share=share,
@@ -198,7 +229,7 @@ async def build_prevalence(store, job_id: str) -> list[Prevalence]:
     suppressed = set(await _gs()) if _gs else set()
 
     rows = [
-        (i.issue_code, i.page_url)
+        (i.issue_code, i.page_url, i.impact or 0, i.severity, i.category or "")
         for i in issues
         if i.page_url and i.issue_code not in suppressed
     ]
@@ -214,6 +245,7 @@ def as_dicts(prevalences: list[Prevalence]) -> list[dict]:
             "human_description": p.human_description,
             "category": p.category,
             "severity": p.severity,
+            "impact": p.impact,
             "pages_affected": p.pages_affected,
             "indexable_pages": p.indexable_pages,
             "share": round(p.share, 4),

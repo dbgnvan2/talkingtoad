@@ -860,15 +860,19 @@ async def _prevalence_for_display(store, job, job_id: str) -> list:
     rows = await _prevalence_for(store, job_id)
     if not rows:
         return rows
-    # Info detail (2026-09-01): same rule as the lists. A prevalence row is
-    # code-level (no stored impact), so the tier comes from the catalogue —
-    # the same value every row of that code was stored with.
+    # Info detail (2026-09-01): same rule as the lists — and, since P5.4, the same
+    # VALUE. The comment here used to say a prevalence row was "code-level (no
+    # stored impact), so the tier comes from the catalogue — the same value every
+    # row of that code was stored with". That last clause is only true until a
+    # recalibration, which is exactly when it matters: `derive_impact` returns
+    # today's number and the lists use the row's. A row now carries its stored
+    # impact, so both sides read the same one.
     level = job.settings.info_detail
     if level != "all":
-        from api.crawler.checkers.registry import derive_impact, info_row_excluded
+        from api.crawler.checkers.registry import info_row_excluded
         rows = [r for r in rows
                 if not (getattr(r, "severity", None) == "info"
-                        and info_row_excluded(derive_impact(r.code), level))]
+                        and info_row_excluded(int(getattr(r, "impact", 0) or 0), level))]
     try:
         from api.services.domain_filter import _rule_sets
         rules = await store.get_domain_filters(job.target_url)

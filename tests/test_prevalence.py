@@ -27,8 +27,20 @@ from api.services.prevalence import (
 )
 
 
-def _rows(code: str, n: int, prefix: str = "https://x/p") -> list[tuple[str, str]]:
-    return [(code, f"{prefix}{i}") for i in range(n)]
+def _rows(code: str, n: int, prefix: str = "https://x/p") -> list[tuple]:
+    """(code, url, impact, severity, category) — the shape build_prevalence passes.
+
+    Impact and severity come from the catalogue HERE because these fixtures stand
+    in for a freshly-crawled job, where stored and derived agree by construction.
+    The point of P5.4 is what happens when they stop agreeing, and
+    tests/test_prevalence_agreement.py is where that is pinned.
+    """
+    from api.crawler.checkers.registry import derive_impact, severity_from_impact
+
+    spec = _CATALOGUE.get(code)
+    impact = derive_impact(code) if spec else 0
+    return [(code, f"{prefix}{i}", impact, severity_from_impact(impact),
+             spec.category if spec else "metadata") for i in range(n)]
 
 
 # ── E4.4a — scoring must not move (written first) ──────────────────────────
@@ -128,9 +140,23 @@ class TestExclusions:
         prev = compute_prevalence([(code, "https://x/a")], 100)
         assert not any(p.code == code for p in prev)
 
-    def test_e4_1b_unknown_code_ignored_not_crashed(self):
-        prev = compute_prevalence([("NOT_A_REAL_CODE", "https://x/a")], 100)
-        assert prev == []
+    def test_e4_1b_unknown_code_is_kept_not_dropped(self):
+        """SUPERSEDED by P5.4 (2026-09-04). This asserted `prev == []` — that a
+        code the catalogue does not know is silently ignored.
+
+        That expectation was the defect. Six codes deleted in the §7 merge hold
+        4,559 rows in the live database; those rows appear in the issue lists,
+        are counted in `by_severity` and charge the health score, and prevalence
+        dropped them without a word. A code the catalogue has forgotten is still
+        a finding that was made.
+
+        The half worth keeping — it must not crash — is kept.
+        """
+        prev = compute_prevalence(
+            [("NOT_A_REAL_CODE", "https://x/a", 3, "info", "metadata")], 100)
+        assert len(prev) == 1
+        assert prev[0].code == "NOT_A_REAL_CODE"
+        assert prev[0].impact == 3 and prev[0].severity == "info"
 
     def test_e4_2a_never_escalate_codes_stay_scattered(self):
         prev = compute_prevalence(_rows("EXTERNAL_LINK_SKIPPED", 90), 100)
