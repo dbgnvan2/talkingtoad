@@ -103,33 +103,43 @@ describe('FixInlinePanel', () => {
   // tests could not see that the branch was unreachable in production. These
   // render WITHOUT the prop and drive the mode off the server response.
   describe('predefined one-click fixes (no prop, as Results.jsx renders it)', () => {
-    it('enters one-click mode from the fetch response for NOT_IN_SITEMAP', async () => {
+    // Both one-click codes, not just the sitemap one. Covering a single field let
+    // `field === 'sitemap_include'` special-casing survive on either side, which
+    // would leave JSON_LD_MISSING with an empty textarea and a disabled button —
+    // the exact behaviour P5.1b exists to remove.
+    it.each([
+      ['NOT_IN_SITEMAP',  'sitemap_include',     'always',  /not in your XML sitemap/],
+      ['JSON_LD_MISSING', 'schema_article_type', 'Article', /No structured data found/],
+    ])('enters one-click mode from the fetch response for %s', async (code, field, value, desc) => {
       global.fetch.mockImplementation(() =>
         mockFetchResponse(wpValueResponse({
-          field: 'sitemap_include', currentValue: null, predefinedValue: 'always',
+          field, currentValue: null, predefinedValue: value,
         }))
       )
       renderWithProviders(
-        <FixInlinePanel jobId="j1" pageUrl="https://example.com" issueCode="NOT_IN_SITEMAP" onClose={() => {}} />
+        <FixInlinePanel jobId="j1" pageUrl="https://example.com" issueCode={code} onClose={() => {}} />
       )
       await waitFor(() => {
-        expect(screen.getByText(/not in your XML sitemap/)).toBeInTheDocument()
+        expect(screen.getByText(desc)).toBeInTheDocument()
       })
       // The free-text editor must NOT also be on screen — the value is not typed.
       expect(screen.queryByPlaceholderText(/Enter new/)).not.toBeInTheDocument()
     })
 
-    it('sends the predefined value from the response, not an empty string', async () => {
+    it.each([
+      ['NOT_IN_SITEMAP',  'sitemap_include',     'always'],
+      ['JSON_LD_MISSING', 'schema_article_type', 'Article'],
+    ])('sends %s\'s predefined value from the response, not an empty string', async (code, field, value) => {
       global.fetch
         .mockImplementationOnce(() =>
           mockFetchResponse(wpValueResponse({
-            field: 'sitemap_include', currentValue: null, predefinedValue: 'always',
+            field, currentValue: null, predefinedValue: value,
           }))
         )
         .mockImplementationOnce(() => mockFetchResponse({ success: true }))
 
       renderWithProviders(
-        <FixInlinePanel jobId="j1" pageUrl="https://example.com" issueCode="NOT_IN_SITEMAP" onClose={() => {}} />
+        <FixInlinePanel jobId="j1" pageUrl="https://example.com" issueCode={code} onClose={() => {}} />
       )
       await waitFor(() => {
         expect(screen.getByText(/Apply to WordPress/)).toBeInTheDocument()
@@ -141,7 +151,7 @@ describe('FixInlinePanel', () => {
       })
       const applyCall = global.fetch.mock.calls.find(([url]) => url === '/api/fixes/apply-one')
       expect(applyCall, 'apply-one was never called').toBeDefined()
-      expect(JSON.parse(applyCall[1].body).proposed_value).toBe('always')
+      expect(JSON.parse(applyCall[1].body).proposed_value).toBe(value)
     })
 
     // The other direction, and specifically with an EMPTY current value. The

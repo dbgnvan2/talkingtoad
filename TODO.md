@@ -1,6 +1,6 @@
 ---
 status: current
-last_reviewed: 2026-09-02
+last_reviewed: 2026-09-03
 ---
 # TalkingToad — TODO (the live plan)
 
@@ -53,17 +53,43 @@ user replaces the old image in the post by hand.
 - [x] **Compare card** with struck-through delta and reason — 2026-09-02.
 - [x] **Re-check all pages in place** and the **WordPress audit** button — 2026-09-02.
 - [x] **Fix Focus third state** `not_checked` — 2026-09-02.
-## Phase 5 — the numbers on screen disagree with each other (4)
+## Phase 5 — the numbers on screen disagree with each other (4 — 1 done)
 
 Every item here is a contradiction the operator can see: two figures about the same thing that
 do not match. That is the most expensive kind of defect this app has, because it costs trust in
 the figures that *are* right. Do these first.
 
-- [ ] **P5.1 — `FixInlinePanel` maps `TITLE_H1_MISMATCH → seo_title`, the backend fix map does
-  not.** The inline fix for that code likely fails server-side, and the parity test *excludes*
-  the code rather than failing. Decide which side is right, wire it, delete the exclusion.
-  **Done when:** the parity test covers every code with no exclusion list, and an inline fix for
-  `TITLE_H1_MISMATCH` either applies or is not offered. **Size:** small — the test hook exists.
+- [x] **P5.1 — the inline fix path could not succeed for any code** (2026-09-03). The item as
+  written was stale: `8d96b6d` (2026-08-10) had already put `TITLE_H1_MISMATCH` in the backend
+  map and removed the parity exclusion. The conclusion was right and understated. `apply-one`
+  handed `apply_fix` a record with no `field` and no `wp_post_id`, so **all ten** codes the panel
+  offers returned `No fix spec for field ''`; and `/wp-value` returned `value` while both
+  consumers read `current_value`, so the editor opened blank. Both suites were green throughout —
+  no success-path pytest existed, and every vitest mock was written from the component, so it
+  agreed with the component about a key the server never sent (P27). Fixed: the backend derives
+  the field from `_CODE_TO_FIELD` and ignores any body `field`, resolves the post, and returns
+  400 `CODE_NOT_FIXABLE` / 404 `POST_NOT_FOUND` / 400 `UNKNOWN_FIELD`; `wp-value` returns
+  `current_value`; vitest mocks come from one fixture pinned to the live endpoint.
+  `tests/test_inline_fix_contract.py` (14 tests), every guard verified red by deleting the code
+  it guards.
+  - [x] **P5.1b** (folded in on owner approval) — `NOT_IN_SITEMAP` and `JSON_LD_MISSING` never
+    reached their one-click branch, because it was gated on a `predefinedValue` prop that
+    `Results.jsx` (the only call site) never passed. `wp-value` now publishes
+    `predefined_value` from `PREDEFINED_FIX_VALUES` and the panel switches mode on it;
+    `apply_fix` fills a blank proposal from that constant **keyed on the field**, so it can
+    never rescue a blank `seo_title` from the guard that stops an empty write clearing live
+    content.
+  - *Cold sweep found 8 further findings in the fix itself — all fixed and mutation-verified,
+    logged in `LEARNINGS.md`.* The two worth remembering: the blank→constant substitution had
+    been put in the **shared** `apply_fix`, which silently changed the batch path (a stored fix
+    whose value an operator deliberately cleared would have started applying the default); and
+    the predefined-value tests read `PREDEFINED_FIX_VALUES` for their oracle, so flipping
+    `sitemap_include` to `"never"` — which would make the one-click fix *exclude* the page from
+    the sitemap — left all 4997 tests green.
+  - **Deliberately not fixed:** `FixInlinePanel.jsx`'s fallback description
+    `` `This will set the value to "${predefined}"…` `` is unreachable today, because
+    `PREDEFINED_DESCRIPTIONS` covers both fields that can produce a non-null `predefined_value`.
+    Kept as the defensive default for a third predetermined field; it is not claimed as tested.
 - [ ] **P5.2 — category tiles and PDF per-page rows show STORED counts beside a SCORED score.**
   `info_detail` charges fewer rows than it stores, so a tile can read "12 info" beside a score
   computed from 4. LEARNINGS logs this as open risk (3) of the `info_detail` change. **Done

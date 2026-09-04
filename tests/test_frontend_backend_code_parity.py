@@ -34,9 +34,15 @@ def _js_set(text: str, name: str) -> set[str]:
 
 def _js_object_keys(text: str, name: str) -> set[str]:
     """Extract the keys from `const NAME = { KEY: 'x', ... }`."""
+    return set(_js_object_map(text, name))
+
+
+def _js_object_map(text: str, name: str) -> dict[str, str]:
+    """Extract the full key→value map from `const NAME = { KEY: 'value', ... }`."""
     m = re.search(name + r"\s*=\s*\{(.*?)\}", text, re.S)
     assert m, f"{name} not found"
-    return set(re.findall(r"^\s*([A-Z0-9_]+)\s*:", m.group(1), re.M))
+    return dict(re.findall(r"^\s*([A-Z0-9_]+)\s*:\s*['\"]([a-z0-9_]+)['\"]",
+                           m.group(1), re.M))
 
 
 def test_ai_suggestion_codes_match_backend():
@@ -66,6 +72,40 @@ def test_cln6_1_title_h1_mismatch_is_backend_fixable():
 
     assert _CODE_TO_FIELD.get("TITLE_H1_MISMATCH") == "seo_title"
     assert "TITLE_H1_MISMATCH" in get_fixable_codes()
+
+
+def test_inline_fix_field_VALUES_match_the_backend_map():
+    """The mapped field, not just the key, must agree with `_CODE_TO_FIELD`.
+
+    `apply-one` now derives the field server-side and ignores any `field` in the
+    body, so the WRITE side cannot be misled by a stale client. The READ side still
+    can: `FixInlinePanel` puts its own `CODE_TO_FIELD[code]` in the
+    `/api/fixes/wp-value?field=` query string. With only the key set compared, a
+    frontend entry of `META_DESC_TOO_LONG: 'og_description'` passes — the panel then
+    shows the social-share text, trims it to 157 chars, and `apply-one` writes that
+    into the meta description. Silent, and it looks like the fix worked.
+    """
+    js = _js_object_map(_FIXPANEL.read_text(), "CODE_TO_FIELD")
+    assert js, "CODE_TO_FIELD parsed as empty — the regex no longer matches the file"
+    drift = {code: (field, _CODE_TO_FIELD.get(code))
+             for code, field in js.items() if _CODE_TO_FIELD.get(code) != field}
+    assert not drift, (
+        "FixInlinePanel CODE_TO_FIELD maps codes to different fields than the "
+        f"backend. {{code: (frontend, backend)}} = {drift}"
+    )
+
+
+def test_inline_fix_fields_are_real_backend_fields():
+    """Every field the panel names must exist in `_FIELD_SPECS`.
+
+    /api/fixes/wp-value returns 400 UNKNOWN_FIELD for anything else, so a typo here
+    is a fix panel that can only ever show an error.
+    """
+    from api.services.wp_shared import _FIELD_SPECS
+
+    js = _js_object_map(_FIXPANEL.read_text(), "CODE_TO_FIELD")
+    unknown = {c: f for c, f in js.items() if f not in _FIELD_SPECS}
+    assert not unknown, f"FixInlinePanel names fields the backend does not have: {unknown}"
 
 
 def test_no_deleted_codes_linger_in_frontend():

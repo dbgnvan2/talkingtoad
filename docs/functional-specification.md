@@ -1983,7 +1983,53 @@ Re-checks broken targets and auto-clears resolved issues.
 Clear target URLs, surgical anchor removal, and issue resolution marking.
 
 ### 5.9 Generic inline fix
-Generic single-fix dispatcher (`/apply-one`) for any fixable issue code.
+Generic single-fix dispatcher (`/apply-one`) for any fixable issue code, plus the
+current-value lookup (`/wp-value`) that fills its editor. Both are called only by
+`FixInlinePanel.jsx`; the contract between them is pinned by
+`tests/test_inline_fix_contract.py` (P5.1, 2026-09-03).
+
+**Field resolution is the backend's.** `apply-one` takes `{job_id, page_url, issue_code,
+proposed_value}` and derives the field from `wp_shared._CODE_TO_FIELD`. It deliberately
+ignores any `field` in the request body: accepting one would let a stale client bundle
+write the wrong Yoast/Rank Math meta key. The **read** side is not symmetrical — the panel
+still puts its own `CODE_TO_FIELD[code]` in the `/wp-value?field=` query string — so
+`test_inline_fix_field_VALUES_match_the_backend_map` compares the mapped *fields*, not
+just the code set. Without it, a frontend entry of `META_DESC_TOO_LONG: 'og_description'`
+would show the social-share text in the editor and write it into the meta description,
+silently. A code outside the map is
+refused **400 `CODE_NOT_FIXABLE`** before any WordPress call; a page URL that resolves to
+no post is **404 `POST_NOT_FOUND`**. The endpoint resolves the post itself and hands
+`apply_fix` a complete record (`field`, `wp_post_id`, `wp_post_type`, `proposed_value`) —
+`apply_fix` refuses a record missing either of the first two, so until 2026-09-03 the
+endpoint built a record that could never apply and every inline fix returned
+`success: false, error: "No fix spec for field ''"`.
+
+**`/wp-value` returns `{page_url, field, current_value, predefined_value}`.** The value
+key is `current_value` — the name the concept carries in `Fix.current_value`, the `fixes`
+table column and `FixManager.jsx`. It was previously `value`, which no consumer read, so
+the editor opened blank and the `TITLE_TOO_LONG` auto-proposal had nothing to trim. A
+field outside `_FIELD_SPECS` is **400 `UNKNOWN_FIELD`** rather than a null value, so a bad
+field name cannot be mistaken for an empty one.
+
+**One-click fixes.** `predefined_value` is non-null only for the fields whose value is
+predetermined rather than typed (`PREDEFINED_FIX_VALUES` — `sitemap_include`,
+`schema_article_type`, reached by `NOT_IN_SITEMAP` and `JSON_LD_MISSING`). The panel
+switches to its one-click branch on that key. Previously the branch was reachable only
+through a `predefinedValue` prop that the sole call site (`Results.jsx`) never passed, so
+those two codes opened an empty textarea and then failed `apply_fix`'s empty-value guard.
+`apply-one` fills a blank proposal from `PREDEFINED_FIX_VALUES` **keyed on the field**, so
+the substitution can never rescue a blank `seo_title` or `meta_description` — writing an
+empty string to a free-text field would silently clear live content, and that guard
+stands. The substitution lives in the **endpoint**, not in the shared `apply_fix`: that
+function is also the batch path (`fix_manager_router` applies stored rows whose
+`proposed_value` an operator can clear via `PATCH /api/fixes/{fix_id}`), and there a blank
+must keep meaning "do not apply" rather than silently reverting to the default.
+
+The vitest mocks for `/wp-value` are built from one fixture
+(`frontend/src/test/wpValueResponse.js`) whose key set is pinned to the live endpoint by
+`test_the_vitest_fixture_matches_the_endpoint`. Before this, each vitest case hand-wrote
+its own mock from the component, so seven green tests asserted the shape of a response the
+server did not send (LEARNINGS P27).
 
 ### 5.10 Verified links (`/api/verified-links`)
 Mark external URLs as known-good to bypass bot-blocking skipped lists.

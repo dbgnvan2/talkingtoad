@@ -109,15 +109,17 @@ class _WPHarness:
         self.wp = wp if wp is not None else _FakeWP()
         self._post_info = post_info
         self._seo_plugin = seo_plugin
+        # Exposed so a test can assert WHICH url was resolved, and that an early
+        # refusal really did happen before any authenticated round-trip.
+        self.find_post = AsyncMock(return_value=self._post_info)
+        self.detect_plugin = AsyncMock(return_value=self._seo_plugin)
         self._patches = [
             patch("api.routers.link_router._CREDS_PATH", creds_path),
             patch("api.routers.fixes_shared._CREDS_PATH", creds_path),
             patch("api.routers.link_router.WPClient.from_credentials_file",
                   return_value=self.wp),
-            patch("api.routers.link_router.detect_seo_plugin",
-                  AsyncMock(return_value=self._seo_plugin)),
-            patch("api.routers.link_router.find_post_by_url",
-                  AsyncMock(return_value=self._post_info)),
+            patch("api.routers.link_router.detect_seo_plugin", self.detect_plugin),
+            patch("api.routers.link_router.find_post_by_url", self.find_post),
         ]
 
     def __enter__(self) -> "_WPHarness":
@@ -172,6 +174,66 @@ class TestApplyOneBuildsAUsableRecord:
         )
         assert record["wp_post_type"] == "page"
         assert record["proposed_value"] == "A trimmed title"
+
+    @pytest.mark.asyncio
+    async def test_apply_one_resolves_the_page_it_was_asked_about(
+        self, api_client, auth_headers, seeded_job, creds
+    ):
+        """3.1c — the highest-consequence one-token slip on this path.
+
+        `job` is in scope where find_post_by_url is called, so
+        `find_post_by_url(wp, job.target_url)` is a plausible refactor typo — and it
+        would make every inline fix on the site overwrite the HOME PAGE's title.
+        Nothing else in this file inspects the call args, so nothing else would see it.
+        """
+        api_client, job_id = seeded_job
+        page = "https://example.com/programs/youth"
+        with _WPHarness(creds) as h, patch(
+            "api.routers.link_router.apply_fix", AsyncMock(return_value=(True, None)),
+        ):
+            await api_client.post(
+                "/api/fixes/apply-one",
+                json={
+                    "job_id": job_id, "page_url": page,
+                    "issue_code": "TITLE_TOO_LONG", "proposed_value": "x",
+                },
+                headers=auth_headers,
+            )
+        h.find_post.assert_awaited_once()
+        assert h.find_post.await_args.args[1] == page, (
+            "apply-one resolved a different page than the request named — the fix "
+            f"would be written to the wrong post. Resolved: {h.find_post.await_args.args[1]!r}"
+        )
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("post_info,expected_endpoint", [
+        ({"id": 12, "type": "page"}, "pages/12"),
+        ({"id": 812, "type": "post"}, "posts/812"),
+    ])
+    async def test_apply_one_honours_the_resolved_post_type(
+        self, api_client, auth_headers, seeded_job, creds, post_info, expected_endpoint
+    ):
+        """3.1d — every other test uses a `page`, so hardcoding "page" survives them.
+
+        Most META_DESC_MISSING rows on a nonprofit site are blog POSTS. With the
+        type hardcoded, apply_fix builds `pages/812` and WordPress answers
+        rest_post_invalid_id on every one of them.
+        """
+        api_client, job_id = seeded_job
+        wp = _FakeWP()
+        with _WPHarness(creds, wp=wp, post_info=post_info):
+            r = await api_client.post(
+                "/api/fixes/apply-one",
+                json={
+                    "job_id": job_id, "page_url": _PAGE,
+                    "issue_code": "TITLE_TOO_LONG", "proposed_value": "Trimmed",
+                },
+                headers=auth_headers,
+            )
+        assert r.json()["success"] is True, r.json()
+        assert wp.patches[0][0] == expected_endpoint, (
+            f"wrote to {wp.patches[0][0]}, expected {expected_endpoint}"
+        )
 
     @pytest.mark.asyncio
     async def test_apply_one_derives_the_field_from_the_backend_map_not_the_body(
@@ -273,7 +335,7 @@ class TestApplyOneRefusesUnfixableCodes:
         """
         api_client, job_id = seeded_job
         spy = AsyncMock(return_value=(True, None))
-        with _WPHarness(creds), patch("api.routers.link_router.apply_fix", spy):
+        with _WPHarness(creds) as h, patch("api.routers.link_router.apply_fix", spy):
             r = await api_client.post(
                 "/api/fixes/apply-one",
                 json={
@@ -288,6 +350,11 @@ class TestApplyOneRefusesUnfixableCodes:
         assert r.json()["error"]["code"] == "CODE_NOT_FIXABLE"
         assert "H1_MISSING" in r.json()["error"]["message"]
         spy.assert_not_awaited()
+        # The test's NAME promises "before any WordPress call", so assert that and
+        # not just the one spy — moving the guard inside the client block, after
+        # detect_seo_plugin, would otherwise keep every assertion above green.
+        h.detect_plugin.assert_not_awaited()
+        h.find_post.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_every_code_the_panel_offers_is_accepted(self, api_client, auth_headers,
@@ -333,8 +400,15 @@ class TestWpValueResponseContract:
 
         panel = (Path(__file__).resolve().parent.parent / "frontend" / "src"
                  / "components" / "FixInlinePanel.jsx").read_text()
-        keys = set(re.findall(r"data\.(\w+)\s*\?\?", panel))
-        assert keys, "FixInlinePanel no longer reads a value off the wp-value response"
+        # Both read shapes: `data.current_value ?? ''` AND
+        # `data.predefined_value != null` — the key the whole one-click branch turns
+        # on was invisible to a `??`-only pattern. `data.error` / `data.success`
+        # belong to the apply-one response, not this one.
+        keys = (set(re.findall(r"data\.(\w+)\s*\?\?", panel))
+                | set(re.findall(r"data\.(\w+)\s*[!=]=", panel))) - {"error", "success"}
+        assert keys >= {"current_value", "predefined_value"}, (
+            f"FixInlinePanel stopped reading a wp-value key this test knows about: {keys}"
+        )
 
         with _WPHarness(creds), patch(
             "api.routers.link_router.get_current_value",
@@ -351,9 +425,10 @@ class TestWpValueResponseContract:
                 f"FixInlinePanel.jsx reads data.{key} from /api/fixes/wp-value, "
                 f"but the response carries {sorted(body)}"
             )
-            assert body[key] == "Living Systems — Home", (
-                f"data.{key} did not carry the WordPress value"
-            )
+        assert body["current_value"] == "Living Systems — Home", (
+            "current_value did not carry the WordPress value — a response that "
+            "always returns None would satisfy a presence-only check"
+        )
 
     @pytest.mark.asyncio
     async def test_the_vitest_fixture_matches_the_endpoint(
@@ -388,6 +463,27 @@ class TestWpValueResponseContract:
             "the vitest wp-value fixture drifted from the endpoint.\n"
             f"  only in fixture:  {sorted(fixture_keys - set(r.json()))}\n"
             f"  only in response: {sorted(set(r.json()) - fixture_keys)}"
+        )
+
+    def test_no_vitest_case_hand_writes_a_wp_value_mock(self):
+        """3.4c — the pin protects the fixture; this protects its use.
+
+        The fixture's docstring says "do not add a key to a mock inline". A
+        convention is not a check, and inline mocks are exactly how seven cases came
+        to assert a response shape the server never sent. Nothing stops the next one
+        but this.
+        """
+        from pathlib import Path
+        import re
+
+        suite = (Path(__file__).resolve().parent.parent / "frontend" / "src"
+                 / "components" / "__tests__" / "FixInlinePanel.test.jsx").read_text()
+        inline = [ln.strip() for ln in suite.splitlines()
+                  if re.search(r"\b(current_value|predefined_value)\s*:", ln)
+                  and "wpValueResponse" not in ln]
+        assert not inline, (
+            "FixInlinePanel.test.jsx hand-writes a wp-value mock instead of using "
+            f"wpValueResponse(): {inline}"
         )
 
     @pytest.mark.asyncio
@@ -429,25 +525,48 @@ class TestWpValueResponseContract:
 # ---------------------------------------------------------------------------
 
 
-class TestPredefinedOneClickFixes:
-    @pytest.mark.asyncio
-    async def test_wp_value_publishes_the_predefined_value_for_one_click_fields(
-        self, api_client, auth_headers, creds
-    ):
-        """3.7 — asserts against PREDEFINED_FIX_VALUES, never the literal "always".
+# (field, issue_code, yoast meta key) for every predetermined-value fix. Every test
+# below runs over BOTH — an earlier version covered only sitemap_include, and
+# `JSON_LD_MISSING` (the other code P5.1b names) could be special-cased out of the
+# feature on either side with the whole suite green.
+_ONE_CLICK = [
+    ("sitemap_include",     "NOT_IN_SITEMAP",   "_yoast_wpseo_sitemap-include"),
+    ("schema_article_type", "JSON_LD_MISSING",  "_yoast_wpseo_schema_article_type"),
+]
 
-        A test spelling the literal would stay green while the constant moved and
-        the two sides drifted (P32).
+
+class TestPredefinedOneClickFixes:
+    def test_the_predefined_values_are_what_wordpress_accepts(self):
+        """3.7a — pin the CONSTANTS themselves, spelled out.
+
+        Every other assertion here reads PREDEFINED_FIX_VALUES to avoid hardcoding
+        a value that might move (P32). That is right for the plumbing and wrong for
+        the payload: the constant IS what gets written, so with only module-derived
+        oracles someone could set sitemap_include to "never" — a plausible slip,
+        since Yoast's field takes always/never/- — and every one-click fix would
+        EXCLUDE the page from the sitemap it was flagged for missing, with a green
+        suite. These two literals are the anchor.
         """
+        assert PREDEFINED_FIX_VALUES == {
+            "sitemap_include":     "always",   # Yoast: always | never | -
+            "schema_article_type": "Article",  # Yoast schema article type
+        }
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("field,_code,_meta", _ONE_CLICK)
+    async def test_wp_value_publishes_the_predefined_value_for_one_click_fields(
+        self, api_client, auth_headers, creds, field, _code, _meta
+    ):
+        """3.7 — the value reaches the panel for BOTH one-click fields."""
         with _WPHarness(creds), patch(
             "api.routers.link_router.get_current_value", AsyncMock(return_value=None),
         ):
             r = await api_client.get(
-                f"/api/fixes/wp-value?page_url={_PAGE}&field=sitemap_include",
+                f"/api/fixes/wp-value?page_url={_PAGE}&field={field}",
                 headers=auth_headers,
             )
         assert r.status_code == 200, r.text
-        assert r.json()["predefined_value"] == PREDEFINED_FIX_VALUES["sitemap_include"]
+        assert r.json()["predefined_value"] == PREDEFINED_FIX_VALUES[field]
 
     @pytest.mark.asyncio
     async def test_wp_value_predefined_is_null_for_a_free_text_field(
@@ -465,14 +584,15 @@ class TestPredefinedOneClickFixes:
         assert r.json()["predefined_value"] is None
 
     @pytest.mark.asyncio
+    @pytest.mark.parametrize("field,code,meta_key", _ONE_CLICK)
     async def test_apply_one_fills_a_blank_predefined_value_from_the_constant(
-        self, api_client, auth_headers, seeded_job, creds
+        self, api_client, auth_headers, seeded_job, creds, field, code, meta_key
     ):
-        """3.8 — NOT_IN_SITEMAP with no body value must still reach WordPress.
+        """3.8 — a one-click code with no body value must still reach WordPress.
 
         For a predetermined field an empty body is a missing constant, not a
         missing edit. Asserted through the real apply_fix on the meta actually
-        written.
+        written, for both codes.
         """
         api_client, job_id = seeded_job
         wp = _FakeWP()
@@ -481,17 +601,59 @@ class TestPredefinedOneClickFixes:
                 "/api/fixes/apply-one",
                 json={
                     "job_id": job_id, "page_url": _PAGE,
-                    "issue_code": "NOT_IN_SITEMAP", "proposed_value": "",
+                    "issue_code": code, "proposed_value": "",
                 },
                 headers=auth_headers,
             )
         assert r.status_code == 200, r.text
         assert r.json()["success"] is True, r.json()
         assert wp.patches == [(
-            "pages/12",
-            {"meta": {"_yoast_wpseo_sitemap-include":
-                      PREDEFINED_FIX_VALUES["sitemap_include"]}},
-        )], f"wrong WordPress write: {wp.patches!r}"
+            "pages/12", {"meta": {meta_key: PREDEFINED_FIX_VALUES[field]}},
+        )], f"wrong WordPress write for {code}: {wp.patches!r}"
+
+    @pytest.mark.asyncio
+    async def test_apply_one_does_not_override_a_supplied_predefined_value(
+        self, api_client, auth_headers, seeded_job, creds
+    ):
+        """3.8b — the substitution must fire on BLANK only.
+
+        Written unconditionally (`if field in PREDEFINED_FIX_VALUES:`) it would
+        discard a value the caller did supply, and 3.8 would not notice.
+        """
+        api_client, job_id = seeded_job
+        wp = _FakeWP()
+        with _WPHarness(creds, wp=wp):
+            await api_client.post(
+                "/api/fixes/apply-one",
+                json={
+                    "job_id": job_id, "page_url": _PAGE,
+                    "issue_code": "JSON_LD_MISSING", "proposed_value": "NewsArticle",
+                },
+                headers=auth_headers,
+            )
+        assert wp.patches == [(
+            "pages/12", {"meta": {"_yoast_wpseo_schema_article_type": "NewsArticle"}},
+        )], f"the caller's value was discarded: {wp.patches!r}"
+
+    @pytest.mark.asyncio
+    async def test_apply_fix_itself_still_refuses_a_blank_predefined_value(self):
+        """3.8c — the substitution is the ENDPOINT's, not the shared service's.
+
+        apply_fix is also the batch path (fix_manager_router applies stored rows,
+        and PATCH /api/fixes/{fix_id} lets an operator clear a proposed_value).
+        There a blank must keep meaning "do not apply" rather than silently
+        reverting to the default — so the substitution must NOT live in apply_fix.
+        """
+        from api.services.wp_fixer import apply_fix
+
+        ok, err = await apply_fix(
+            _FakeWP(),
+            {"field": "sitemap_include", "wp_post_id": 12,
+             "wp_post_type": "page", "proposed_value": ""},
+            "yoast",
+        )
+        assert ok is False
+        assert "empty" in (err or "").lower(), err
 
     @pytest.mark.asyncio
     async def test_apply_one_blank_value_on_a_free_text_field_is_still_refused(

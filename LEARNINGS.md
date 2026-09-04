@@ -50,6 +50,24 @@
     reasons over — and is it told? **Does narrowing the scan raise the finding count?** Thread
     completeness in as data, and report the suppressed state as "skipped, covered N of M" — never as
     zero, which every surface renders as a clean bill of health.
+13. **Two-sided contracts (P27/P13):** for any request/response shape built by one side and read
+    by the other, does at least one test **read one side and assert against the other side's live
+    output**? Two tests that each describe one side agree with each other forever — that is how
+    `/api/fixes/wp-value` returned `value` to a panel reading `current_value` through seven green
+    vitest cases. A mock authored from the consumer tests the consumer against itself. Pin the
+    fixture to the endpoint, don't just tidy it.
+14. **Other-direction tests (P27):** when a guard has a plausible *wrong* implementation, does the
+    "must still work" test use an input the wrong implementation would get **wrong**? A test whose
+    input both implementations handle identically proves nothing. Verify by writing the wrong fix
+    and confirming the test goes red.
+15. **Oracles vs payloads (P32):** deriving a test's expected value from the module under test
+    avoids a brittle literal — but when **the constant IS what gets written** (a meta value, a
+    threshold that ships, a string sent to an external API), a module-derived oracle pins nothing:
+    change the constant and the test changes with it. Spell those out, with a comment saying what
+    the external system accepts. Derive the plumbing; pin the payload.
+16. **Scope of a guard:** is a fix being added to a shared function to serve one caller? Enumerate
+    the other callers and say what changes for each. A blank/default substitution that is right for
+    an interactive endpoint is often wrong for a batch path, where a cleared value is a decision.
 
 ## Pattern index
 
@@ -170,6 +188,24 @@ this index is the one-line meaning.
 ## Fix log
 
 Newest first. Format: **Issue → Root cause → What would have caught it → Fix → Pattern.**
+
+- **2026-09-03 — the inline fix had never applied, for any code, and both test suites were green.**
+  - *Issue:* every "Fix" button in the Results view returned `success: false, error: "No fix spec for field ''"`. Not one of the ten codes `FixInlinePanel` offers could be applied to WordPress. Separately, the editor opened **blank** even when WordPress held a value, so `TITLE_TOO_LONG` — a fix that exists only to trim the current title — proposed an empty string. Found while auditing TODO P5.1, whose two stated premises were both already fixed and whose conclusion was right for reasons it did not name.
+  - *Root cause A:* `apply_one_endpoint` built `{page_url, issue_code, proposed_value}` and handed it to `apply_fix`, which reads `fix["field"]` and `fix["wp_post_id"]` and returns early on each. It was the **only one of four `apply_fix` call sites** that got this wrong; the other three build the full record by hand. A shared service with an undeclared record contract, satisfied by three callers and not the fourth.
+  - *Root cause B:* `/api/fixes/wp-value` returned `{"value": ...}`; both consumers read `data.current_value`. `current_value` is the name the concept already carries in `Fix.current_value`, the `fixes` table column and `FixManager.jsx` — the endpoint was the outlier, and nothing sat on the seam.
+  - *What would have caught it:* a single success-path test on either endpoint. There were none — both had only error-path tests (`NO_CREDENTIALS`, `JOB_NOT_FOUND`, `DOMAIN_MISMATCH`), so **no test had ever looked at either response body**. An endpoint whose failure modes are tested and whose success is not is not covered; it is covered against the easy half.
+  - *The part worth keeping:* **seven vitest cases asserted the shape of a response the server does not send.** Each mocked `mockFetchResponse({ current_value: 'Old Title' })` — written from the component, so the mock and the component agreed with each other about a key that never existed on the wire. The suite could not have gone red no matter how wrong the endpoint was. This is P27, and the mechanism is worth naming precisely: **a mock authored from the consumer tests the consumer against itself.** The fix is not a better mock but a *pinned* one — the response fixture now lives in one file and a pytest asserts its key set equals the live endpoint's, so a rename on either side breaks the build.
+  - *Fix:* the backend derives the field from `_CODE_TO_FIELD` and **ignores any `field` in the request body** (accepting one would make a stale client bundle authoritative over the meta key it writes); resolves the post; returns 400 `CODE_NOT_FIXABLE` / 404 `POST_NOT_FOUND` / 400 `UNKNOWN_FIELD` instead of a null or a WordPress error. `wp-value` returns `current_value` and `predefined_value`. 14 tests in `tests/test_inline_fix_contract.py`, **each verified red by deleting the code it guards** — including the two "other direction" cases, which exist because the plausible *wrong* fix passes the obvious test.
+  - *A miss of my own, caught by mutation and not by review:* the P5.1b other-direction test ("a free-text field stays in the editor") used a **non-empty** current value, so the classic wrong implementation — switch to one-click mode when there is nothing to edit, `if (!cur)` — passed it. That mutation is wrong for exactly the `*_MISSING` codes, whose entire meaning is that WordPress holds no value. Re-written over `['META_DESC_MISSING', ''], ['TITLE_MISSING', '']` it kills the mutation. **An other-direction test must use the input the wrong implementation would get right by accident** — mine used the one input where both implementations agree.
+  - *What the cold sweep then found in my own fix — eight findings, all real, each verified by writing the wrong implementation and watching the suite stay green:*
+    - **The oracle rule has an exception I had backwards.** Every predefined-value test read `PREDEFINED_FIX_VALUES` rather than spelling `"always"`, on the stated grounds that a literal would drift. That is right for plumbing and wrong when **the constant *is* the payload**: with only module-derived oracles, changing `sitemap_include` to `"never"` — a plausible slip, since Yoast's field takes `always|never|-` — makes every one-click fix *exclude* the page from the sitemap it was flagged for missing, with 4997 tests green. Pin the payload constant literally; derive everything else.
+    - **I tested one member of a two-member feature.** `sitemap_include`/`NOT_IN_SITEMAP` was covered on both sides; `schema_article_type`/`JSON_LD_MISSING` — the other code the same spec paragraph names — appeared in zero tests. `if field == "sitemap_include"` passed the whole suite on either side.
+    - **Every test used the same post shape**, so hardcoding `wp_post_type="page"` survived. Blog posts are where most `META_DESC_MISSING` rows live on a nonprofit site; every one would have failed with `rest_post_invalid_id`.
+    - **Nothing asserted *which* URL was resolved.** `job` is in scope at the call, so `find_post_by_url(wp, job.target_url)` is a one-token refactor slip that would make every inline fix overwrite the home page's title — the highest-consequence failure available on the path, and invisible to 22 tests.
+    - **A test whose name promised more than it asserted.** "refused before any WordPress call" spied only `apply_fix`; moving the guard inside the client block, after `detect_seo_plugin`, kept it green.
+    - **I put a fix in a shared function to serve one caller.** The blank→constant substitution went into `apply_fix`, which is also the batch path — where an operator clearing a stored `proposed_value` must still mean "do not apply", and now silently reverted to the default instead. Moved to the endpoint that wanted it. **A guard written for one caller belongs at that caller, not in the function three others share.**
+  - *And a miss of my own that mutation caught, not review:* the P5.1b other-direction test ("a free-text field stays in the editor") used a **non-empty** current value, so the classic wrong implementation — switch to one-click mode when there is nothing to edit, `if (!cur)` — passed it. That mutation is wrong for exactly the `*_MISSING` codes, whose entire meaning is that WordPress holds no value. Re-written over `['META_DESC_MISSING', ''], ['TITLE_MISSING', '']` it dies. **An other-direction test must use the input the wrong implementation would get right by accident** — mine used the one input where both implementations agree.
+  - *Pattern:* P27 (a test that cannot fail against the defect it names), P13 (two implementations of one rule that drift), P25 (`field` sent by the client, read by nobody), P32 (an oracle computed from the code under test). Checklist items 13-16 are the corollaries.
 
 - **2026-09-03 — the recorded-debt batch: two defaults that swallowed a signal, and a redundancy kept on a rationale nobody checked.**
   - **D1 — a branch that decided the wrong question.** The crawl splits on `is_html` / `is_asset`, and a response with **no `content-type` header** fell to the "unknown binary" arm where no checks run at all. A bare 503 or 500 from a misconfigured server — the case where the status matters most — was crawled, stored, and reported as nothing. The content-type branch is there to choose which *content* checks apply; it had quietly acquired the power to decide whether the *status* was heard. Found while building a test fixture: the fixture was what I was debugging, and the product defect was underneath it. **A branch that selects an analysis must not also gate a fact that does not depend on the analysis.**

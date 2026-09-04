@@ -403,14 +403,12 @@ async def apply_fix(
     endpoint = f"{'pages' if wp_post_type == 'page' else 'posts'}/{wp_post_id}"
     proposed = fix.get("proposed_value", "")
 
-    # For a field whose value is predetermined (sitemap_include, schema_article_type)
-    # a blank proposal is a missing constant, not a missing edit — the user is never
-    # asked to type one. Fill it from the single source rather than refusing the
-    # request. Deliberately keyed on the field, so it can never rescue a blank
-    # seo_title / meta_description from the guard below.
-    if not proposed.strip() and field in PREDEFINED_FIX_VALUES:
-        proposed = PREDEFINED_FIX_VALUES[field]
-
+    # NOTE: a blank proposal is NOT filled in from PREDEFINED_FIX_VALUES here.
+    # /apply-one does that for itself (link_router), because this function is also
+    # the batch path: `fix_manager_router` applies stored rows whose proposed_value
+    # the user can deliberately clear via PATCH /api/fixes/{fix_id}, and there a
+    # blank must keep meaning "don't apply this" rather than silently reverting to
+    # the default.
     # Guard: never write an empty string to a text field — it would silently clear live content
     if field != "indexable" and not proposed.strip():
         return False, "Proposed value is empty — edit the fix before applying"

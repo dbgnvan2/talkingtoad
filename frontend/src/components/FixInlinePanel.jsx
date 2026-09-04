@@ -58,11 +58,12 @@ export default function FixInlinePanel({ jobId, pageUrl, issueCode, issueExtra, 
   const fieldLabel = FIELD_LABELS[field] ?? field
   const limits = FIELD_LIMITS[field]
   // The fix value for sitemap_include / schema_article_type is predetermined, not
-  // typed. `predefinedValue` is a prop no caller passes (Results.jsx:1682 renders
-  // this panel with four props, and it is the only call site), so the one-click
-  // branch was unreachable in production and those two codes opened an empty
-  // textarea they could never satisfy. The server now publishes the value on the
-  // wp-value response and this state picks it up; the prop is kept as an override.
+  // typed. `predefinedValue` is a prop no caller passes — Results.jsx is the only
+  // call site and it passes jobId/pageUrl/issueCode/issueExtra/onClose — so the
+  // one-click branch was unreachable in production and those two codes opened an
+  // empty textarea they could never satisfy. The server now publishes the value on
+  // the wp-value response and this state picks it up; the prop is kept as an
+  // override (and as the vitest suite's direct way into the branch).
   const [predefined,    setPredefined]    = useState(predefinedValue ?? null)
   const isPredefined = predefined != null
 

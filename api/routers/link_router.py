@@ -388,13 +388,23 @@ async def apply_one_endpoint(
                     f"No WordPress post found for {body.page_url}",
                     404,
                 )
+            # A field whose value is predetermined is never typed by the user, so
+            # a blank body is a missing constant rather than a missing edit. Keyed
+            # on the FIELD, so it can never rescue a blank seo_title from
+            # apply_fix's guard against clearing live content. Scoped to this
+            # endpoint on purpose — the batch path must keep treating a cleared
+            # value as "do not apply".
+            proposed = body.proposed_value or ""
+            if not proposed.strip():
+                proposed = PREDEFINED_FIX_VALUES.get(field, "")
+
             fix_record = {
                 "page_url": body.page_url,
                 "issue_code": body.issue_code,
                 "field": field,
                 "wp_post_id": post_info["id"],
                 "wp_post_type": post_info["type"],
-                "proposed_value": body.proposed_value or "",
+                "proposed_value": proposed,
             }
             ok, err = await apply_fix(wp, fix_record, seo_plugin)
     except WPAuthError as exc:
