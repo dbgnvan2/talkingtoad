@@ -237,6 +237,13 @@ def check_page(
     sitemap_urls: set[str] | None = None,
     favicon_emitted: bool = False,
     hsts_checked_hosts: set[str] | None = None,
+    # NOTE (P8.3, gate finding 3): a default argument is evaluated once at
+    # import, so this IS the "copy, not reference" pattern that item's test 3.3
+    # rejects — one level down. It is inert on every real path: the engine
+    # always passes the value explicitly (engine.py:917), so this default is
+    # shadowed and exists only for direct callers in tests. Left as a default
+    # rather than a sentinel because the alternative adds a branch to a hot
+    # function to fix something nothing reaches.
     page_size_limit_kb: int = _DEFAULT_PAGE_SIZE_LIMIT_KB,
     suppress_h1_strings: list[str] | None = None,
     suppress_banner_h1: bool = False,

@@ -7,6 +7,7 @@ doesn't match the crawl job's target domain or the request URL's domain.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 from datetime import datetime, timezone
@@ -24,6 +25,19 @@ os.environ.setdefault("RATE_LIMIT_ENABLED", "false")
 os.environ.setdefault("AUTH_TOKEN", "test-token")
 
 AUTH = {"Authorization": "Bearer test-token"}
+
+# Each of these binds its own `_CREDS_PATH` at import; the domain guard runs in
+# all of them. Kept as an explicit list so adding a router without adding it here
+# fails loudly in CI rather than silently on a machine that happens to have the
+# real credentials file.
+_MODULES_HOLDING_CREDS_PATH = (
+    "api.routers.fixes_shared",
+    "api.routers.fix_manager_router",
+    "api.routers.orphaned_media_router",
+    "api.routers.batch_optimizer_router",
+    "api.routers.title_router",
+    "api.routers.image_router",
+)
 
 MISMATCHED_CREDS = {
     "site_url": "https://other-site.com",
@@ -91,8 +105,17 @@ class TestJobIdEndpoints:
         # depending on what other tests did to the cwd state.
         creds_path = tmp_path / "wp-credentials.json"
         creds_path.write_text(json.dumps(MISMATCHED_CREDS))
-        with patch("api.routers.fixes_shared._CREDS_PATH", creds_path), \
-             patch("api.routers.fix_manager_router._CREDS_PATH", creds_path):
+        # Every router that imports `_CREDS_PATH` binds its OWN copy at module
+        # load, so patching `fixes_shared` alone does not reach
+        # orphaned_media_router or batch_optimizer_router. Those two passed
+        # locally only because a real wp-credentials.json sits in the repo root
+        # of a dev machine — in CI, where it does not exist, they returned 400
+        # NO_CREDENTIALS instead of 403 DOMAIN_MISMATCH and had been red for
+        # every run. A test that passes because of one machine's filesystem is
+        # not testing the domain guard.
+        with contextlib.ExitStack() as stack:
+            for module in _MODULES_HOLDING_CREDS_PATH:
+                stack.enter_context(patch(f"{module}._CREDS_PATH", creds_path))
             yield
 
     async def test_generate_fixes_rejects_mismatch(self, seeded):
@@ -122,7 +145,13 @@ class TestUrlOnlyEndpoints:
     def _mock_creds(self, tmp_path):
         creds_path = tmp_path / "wp-credentials.json"
         creds_path.write_text(json.dumps(MATCHING_CREDS))
-        with patch("api.routers.fixes_shared._CREDS_PATH", creds_path):
+        # Same reason as the fixture above: `title_router` and `image_router`
+        # bind their own `_CREDS_PATH`, so patching `fixes_shared` alone left
+        # them reading the real file — present on a dev machine, absent in CI,
+        # where these returned 400 NO_CREDENTIALS instead of 403.
+        with contextlib.ExitStack() as stack:
+            for module in _MODULES_HOLDING_CREDS_PATH:
+                stack.enter_context(patch(f"{module}._CREDS_PATH", creds_path))
             yield
 
     async def test_trim_title_one_rejects_wrong_url_domain(self, seeded):

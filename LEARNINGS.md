@@ -104,6 +104,12 @@
     deciding what happens when two inputs land on one — so they inherited the database's answer
     (last write wins) and lost a page's clicks. When a key is intentionally lossy, the collision
     is a case to specify, not an edge.
+25. **"The suite is green" has an environment attached.** A local pass proves the suite passes
+    *here*. Before claiming green, run it the way the thing that ships runs it — for this repo:
+    with `wp-credentials.json` moved aside, and knowing that any package outside
+    `requirements.txt` is absent in CI. Check `gh run list` rather than inferring. A test that
+    depends on an undeclared package or a machine-local file is green here and red there, and the
+    gap is invisible from inside.
 
 ## Pattern index
 
@@ -238,6 +244,15 @@ this index is the one-line meaning.
 ## Fix log
 
 Newest first. Format: **Issue → Root cause → What would have caught it → Fix → Pattern.**
+
+- **2026-09-04 — I reported "the suite is green" after every push, and CI was red for every one of them.**
+  - *Issue:* the Phase 8 gate checked something I never had: `gh run list`. Every push this session — and several before it — left CI failing. I had been reporting "5,1xx passed, build clean" from my own venv and treating that as the whole story.
+  - *Root cause, mine:* `tests/test_performance_fold.py` (which I wrote in P6.3) patches `google.oauth2.credentials.Credentials`. **`google-auth` is not in `requirements.txt`** — it is an optional GSC dependency my venv happens to carry. CI installs `requirements.txt` and nothing else, so four tests failed there and passed here. The repo had already solved this exact problem — `tests/test_gsc_integration.py` carries a `requires_google` marker and a comment explaining why it is per-class rather than per-file — and I did not look for it before writing a test that patches the same library.
+  - *Root cause, older and worse:* `tests/test_wp_domain_validation.py` patched `_CREDS_PATH` on two modules while **six routers bind their own copy at import**. Those tests passed locally only because a real `wp-credentials.json` sits in the repo root of a dev machine. In CI, where it does not exist, the endpoints returned `400 NO_CREDENTIALS` instead of `403 DOMAIN_MISMATCH` — so the tests guarding the WordPress **domain guard**, a security boundary, had never actually exercised it in the environment that ships.
+  - *What would have caught it:* running the suite with `wp-credentials.json` moved aside, which takes ten seconds and is now how I verify. Or reading CI once. Neither is clever; both are things I did not do because the local number was green and I stopped there.
+  - *The pattern, and it is the session's own lesson turned on me:* I have spent this whole session finding tests that pass for the wrong reason — a mock agreeing with the component, a fixture that seeds no pages, an assertion whose input both implementations handle identically. **"The suite passes" is itself such a claim, and it has an environment attached.** A green run on a machine carrying 24 undeclared packages and a credentials file is not evidence about the machine that ships. LEARNINGS already said the venv is what makes local runs trustworthy; it does not follow that local runs are sufficient.
+  - *Fix:* the four google-dependent tests take the repo's existing `requires_google` marker, on the class that drives the Google client only. The credential fixtures patch every module that binds `_CREDS_PATH`, listed explicitly so adding a router without adding it here fails loudly. Verified by running the full suite with `wp-credentials.json` removed: 5190 passed.
+  - *Pattern:* P28 (a test that touches the real environment), P27 (a test that cannot fail where it matters). Checklist item 25.
 
 - **2026-09-04 — a page that earned 150 clicks was stored as 50, and the ingest reported success.**
   - *Issue (P6.3):* `match_key` deliberately folds www/scheme/trailing-slash, so a GSC domain property routinely resolves several source URLs onto one crawled page. Both ingest paths wrote them as separate records under one storage key, and the ledger's `ON CONFLICT` overwrites the GSC columns — last row wins. Measured: 100 clicks + 50 clicks stored as `(50, 500)`. `/api/gsc/ingest` also persisted URLs matching no crawled page under their raw form (a key page-priority never reads) and counted them in `ingested`, so **a wholly failed join returned the same shape as a perfect one**.

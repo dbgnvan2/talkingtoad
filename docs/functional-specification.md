@@ -2170,6 +2170,34 @@ server did not send (LEARNINGS P27).
 > — runs **after** the fold, once per folded row. Running it per page, as it did, would carry a
 > stored value forward onto each folding URL and then sum it once per URL: 40 sessions became 80.
 
+> **Phase 8 — engineering debt with no user symptom (2026-09-04).** Four changes with no
+> visible defect, and each turned out to have one underneath.
+>
+> **Fix Focus writes are transactional.** Every mutation was load → change in memory →
+> `update_job(fix_focus=whole_snapshot)`, so the blob was the unit of the write and the whole
+> blob was what got lost: two panels un-ticking different items left one restored.
+> `store.mutate_fix_focus` does the read-modify-write inside `BEGIN IMMEDIATE`, handing the
+> mutation the *current* snapshot. `verify-page` re-crawls **before** taking the lock, and
+> `regenerate` merges inside it — a rebuild that carries ticks forward has something to lose,
+> unlike a first build.
+>
+> **A stacked-link group is reported from the innermost card that contains it**, not the
+> innermost card the ancestor walk reached first. Containers are visited deepest-first and an
+> ancestor is skipped for an href a descendant claimed, which also stops the double-report by
+> rule rather than by the `non_card_classes` list.
+>
+> **`page_size_limit_kb` has one home.** The engine's default resolves from
+> `registry._DEFAULT_PAGE_SIZE_LIMIT_KB` through a `default_factory` — a plain default argument
+> is evaluated once at import and is still a copy — and the two docs that quote 300 are pinned
+> to the constant by a test. `cryptography` moved 48 → 50.0.1 on evidence: a green suite plus a
+> Fernet encrypt/decrypt through the real credential path, verified on a fresh 3.11 install.
+>
+> **The ledger stores the queries it is given.** `performance_ledger.gsc_top_queries` holds
+> `{query, impressions}` from a bundle's `top_queries`, folded by the same rule as every other
+> count (impressions per query add). Striking distance reads the ledger first and the scan-time
+> priority seed second, so a job that ingested performance data but uploaded no CSV can now name
+> a target query; `deferred` no longer claims those queries were dropped.
+
 ### 5.10 Verified links (`/api/verified-links`)
 Mark external URLs as known-good to bypass bot-blocking skipped lists.
 

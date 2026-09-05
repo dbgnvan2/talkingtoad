@@ -273,21 +273,48 @@ in SQLite.
   - *Gate finding acted on:* the id check ran one way only, so an entry no panel renders would
     have passed everything. Both directions now, mutation-verified.
 
-## Phase 8 — engineering debt with no user symptom (4)
+## Phase 8 — engineering debt with no user symptom (4 — ALL DONE)
 
 Real, worth doing, and nothing breaks tomorrow if they wait.
 
-- [ ] **P8.1 — Fix Focus mutations are read-modify-write on one blob** (last writer wins). Two
-  browser tabs, or one operator and one background job, silently lose an edit.
-- [ ] **P8.2 — nested card containers (E6):** choose between nested candidates deliberately
-  rather than taking whichever the upward walk stops at first.
-- [ ] **P8.3 — `page_size_limit_kb` is defined twice**, and `cryptography` is pinned by venv
-  match rather than audit.
-- [ ] **P8.4 — striking-distance queries come only from the GSC priority seed.** Persisting
-  `top_queries` in the ledger (PB3's original intent) would give every scan a target query
-  instead of only the seeded ones.
-- [ ] Performance Bundle PB4/PB5/PB7/PB9 remain after PB3; the dimension-pass concurrency floor
-  (~33 images) is unpinned. Carried with P8.4 as the same area.
+- [x] **P8.1 — a second writer silently un-did the first one's ticks** (2026-09-04). Measured:
+  two panels each un-ticking a different item left `{'H1_MISSING': 'checked'}` — tab B's stale
+  write restored what tab A had cleared. The likelier trigger needs one person: `verify-page`
+  held the snapshot across a live re-crawl. Fixed with `store.mutate_fix_focus` (read-modify-write
+  inside `BEGIN IMMEDIATE`) **and** by moving the rescan outside the lock — that half is about
+  ordering, and a correct lock around a stale read still loses the tick.
+  - *Gate finding, fixed:* `regenerate` still merged the copy it read at request start. My
+    structural guard could not see it because the write lived inside the exempt builder, and the
+    exemption's reason ("a first build has nothing to lose") does not cover a rebuild that merges
+    state.
+- [x] **P8.2 — the walk stopped at the first card, not the right one** (2026-09-04). Two anchors
+  to one href split across nested cards reported **`[]`** — the finding disappeared. The choice
+  was made by `break`, not by a rule. Now the container is the innermost card that *contains* the
+  group, so `non_card_classes` — an editorial list the module says "the next theme will always
+  defeat" — stops being what makes the check correct.
+- [x] **P8.3 — one home for the page-size limit, and a pin chosen on evidence** (2026-09-04).
+  The number had **four** homes, not two. `default_factory`, because `= _DEFAULT_PAGE_SIZE_LIMIT_KB`
+  looks right and still bakes in a copy. `cryptography` 48→50.0.1, accepted on behaviour: a green
+  suite plus a real Fernet round-trip, since the helpers no-op without a key. The gate verified it
+  on a **fresh 3.11 venv from requirements.txt alone** — the leg that ships.
+- [x] **P8.4 — the query was supplied, and thrown away** (2026-09-04). The bundle sent
+  `top_queries`, the ingest reported them `deferred`, and striking distance showed
+  `target_query=None` with a brief telling a nonprofit to target "its main search query" without
+  naming one. Now persisted in the ledger (`gsc_top_queries`), folded by P6.3's arithmetic, read
+  ahead of the scan-time seed, and no longer reported as deferred.
+- [ ] **Performance Bundle PB4/PB5/PB7/PB9** remain after PB3 — separate bundle sections with
+  their own contracts, explicitly out of P8.4's scope.
+- [ ] **The dimension-pass concurrency floor (~33 images) is unpinned.** Carried alongside P8.4
+  and deliberately not done there: a different subsystem and a coverage question, not a data-flow
+  one. Recorded so it is not lost with the item that carried it.
+- [ ] **P8.5 — CI had been red for every push, and nothing said so.** Found by the Phase 8 gate,
+  2026-09-04. Two causes, one mine: `tests/test_performance_fold.py` (new in P6.3) patched
+  `google.oauth2.credentials`, which is **not** in `requirements.txt`, so four tests failed on
+  every CI run while passing locally. The rest were older: `tests/test_wp_domain_validation.py`
+  patched `_CREDS_PATH` on two modules while six routers bind their own copy, so those tests
+  passed only because a real `wp-credentials.json` sits in a dev machine's repo root. Both fixed;
+  the suite now passes with that file removed. **Open:** re-check CI is actually green after this
+  push, and consider a guard that fails locally when a test depends on an undeclared package.
 
 ## Parked — needs a decision, not a fix (2)
 

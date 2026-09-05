@@ -27,6 +27,8 @@ Two defects of different shapes:
 
 from __future__ import annotations
 
+import importlib.util
+
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, patch
 
@@ -38,6 +40,19 @@ from api.models.performance import PerformanceRecord
 
 BASE = "https://e.com"
 PAGE = f"{BASE}/about"
+
+# CI installs requirements.txt only, and google-auth is NOT declared there — it
+# is an optional GSC dependency. The tests below that drive `/api/gsc/ingest`
+# patch `google.oauth2.credentials.Credentials`, so they cannot run in CI and
+# turned it red for four runs while the local venv (which carries the package)
+# stayed green. That is the failure mode this repo already documented in
+# tests/test_gsc_integration.py, and this reuses its marker rather than a
+# module-level importorskip: the fold arithmetic below needs no Google library
+# at all, and skipping the whole file would hide it in exactly the environment
+# that ships.
+_HAS_GOOGLE = importlib.util.find_spec("googleapiclient") is not None
+requires_google = pytest.mark.skipif(
+    not _HAS_GOOGLE, reason="optional google-* packages not installed")
 
 
 def _rec(url, **kw) -> PerformanceRecord:
@@ -223,6 +238,7 @@ async def _gsc_ingest(api_client, auth_headers, store, rows=None):
             f"/api/gsc/ingest?site_url={BASE}&job_id=j", headers=auth_headers)
 
 
+@requires_google
 class TestTheGscPathAdoptsItsSiblingsContract:
     async def test_gsc_ingest_holds_out_urls_that_match_no_crawled_page(
         self, api_client, auth_headers, test_store

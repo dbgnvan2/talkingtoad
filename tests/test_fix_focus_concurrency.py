@@ -179,6 +179,53 @@ class TestTwoWritersDoNotLoseEachOther:
         )
 
 
+class TestRegenerateAlsoKeepsTicks:
+    async def test_a_tick_during_a_regenerate_is_not_discarded(
+        self, api_client, auth_headers, test_store
+    ):
+        """3.8 — the gate's finding 2, as a test.
+
+        `regenerate` rebuilds from current issues and merges the operator's ticks
+        forward. My structural guard could not see it: the write lexically lived
+        inside `_load_or_build_fix_focus`, exempt because "a first build has
+        nothing to lose" — true of a build, false of a REBUILD that merges state.
+
+        The staleness is made exact rather than raced: the route is handed a job
+        whose `fix_focus` is the pre-tick copy (which is what reading it before a
+        concurrent write means), while the store holds the tick. Merging the
+        stale copy loses it; merging inside the transaction keeps it.
+        """
+        import copy as _copy
+
+        from api.services.fix_focus import set_checked
+
+        await _seeded(test_store)
+        await api_client.get("/api/crawl/j/fix-focus", headers=auth_headers)
+
+        stale_job = await test_store.get_job("j")
+        stale_job.fix_focus = _copy.deepcopy(stale_job.fix_focus)   # the pre-tick read
+
+        # The concurrent tick, applied through the store after that read.
+        await test_store.mutate_fix_focus(
+            "j", lambda s: set_checked(s, P1, "H1_MISSING", checked=True, at="t1"))
+
+        real_get_job = test_store.get_job
+
+        async def _stale_get_job(job_id):
+            return stale_job if job_id == "j" else await real_get_job(job_id)
+
+        with patch.object(test_store, "get_job", _stale_get_job):
+            r = await api_client.post("/api/crawl/j/fix-focus/regenerate",
+                                      headers=auth_headers)
+        assert r.status_code == 200, r.text
+
+        ticks = _ticks((await real_get_job("j")).fix_focus)
+        assert ticks["H1_MISSING"] == "checked", (
+            f"regenerate merged the copy it read at request start, discarding a "
+            f"tick that had landed since: {ticks}"
+        )
+
+
 class TestTheOperatorAndTheBackgroundJob:
     async def test_a_tick_made_during_a_verify_is_not_discarded(
         self, api_client, auth_headers, test_store

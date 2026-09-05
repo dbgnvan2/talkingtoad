@@ -2559,7 +2559,25 @@ async def _load_or_build_fix_focus(job, store, *, regenerate: bool = False) -> d
         scoring_model_version=job.scoring_model_version,
     )
     if regenerate and job.fix_focus:
-        snapshot = merge_checked_state(snapshot, job.fix_focus)
+        # P8.1 gate finding 2: a REBUILD is not a first build. It merges the
+        # operator's ticks forward, so it has something to lose — a tick landing
+        # during the rebuild window is dropped by the exact mechanism P8.1 fixed
+        # (narrower than verify-page's, since there is no network in it, but the
+        # same class). §2.3's exemption was written for the first build, whose
+        # rationale ("nothing to lose") does not cover this. The merge therefore
+        # happens inside the transaction, against whatever the snapshot says by
+        # then, rather than against the copy read at request start.
+        fresh = snapshot
+
+        def _merge(current: dict) -> dict:
+            merged = merge_checked_state(fresh, current)
+            current.clear()
+            current.update(merged)
+            return merged
+
+        merged = await store.mutate_fix_focus(job.job_id, _merge)
+        if merged is not None:
+            return merged
     await store.update_job(job.job_id, fix_focus=snapshot)
     return snapshot
 
