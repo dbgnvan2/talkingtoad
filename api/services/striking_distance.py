@@ -44,8 +44,10 @@ async def build_striking_distance(store: Any, job_id: str) -> dict:
     ledger = await _ledger_by_key(store, pages)
     info_detail = job.settings.info_detail if job is not None else "all"
 
-    # Target queries live only in the GSC priority seed the job was started
-    # with (the ledger carries none). Match on the same join key.
+    # Target queries: the LEDGER first (per-period, moves with the data), then
+    # the scan-time priority seed as a fallback (frozen at start). Both are kept
+    # because the seed is the only path that worked before P8.4 and jobs still
+    # use it; the precedence is chosen rather than left to lookup order.
     seed_queries: dict[str, list[str]] = {}
     seed = (job.priority_seed or {}) if job is not None else {}
     for row in seed.get("pages", []) or []:
@@ -71,7 +73,10 @@ async def build_striking_distance(store: Any, job_id: str) -> dict:
         pos, imps = float(latest.gsc_avg_position_mo or 0), int(latest.gsc_impressions_mo or 0)
         if not (lo <= pos <= hi) or imps < floor:
             continue
-        queries = seed_queries.get(ledger_key(page.url), [])
+        ledger_queries = [
+            q["query"] for q in (latest.gsc_top_queries or []) if q.get("query")
+        ]
+        queries = ledger_queries or seed_queries.get(ledger_key(page.url), [])
         query = queries[0] if queries else None
         out.append({
             "url": page.url,

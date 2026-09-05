@@ -162,7 +162,19 @@ async def test_unmatched_urls_surfaced(client_store):
     assert body["unmatched_urls"] == ["https://example.org/ghost"]
 
 
-async def test_deferred_reports_query_and_site_payloads(client_store):
+async def test_deferred_reports_the_site_payload_but_no_longer_top_queries(client_store):
+    """SUPERSEDED IN PART by P8.4 (2026-09-04).
+
+    This asserted `"top_queries" in body["deferred"]` — that per-URL queries were
+    accepted and dropped. They are stored now (`performance_ledger.gsc_top_queries`),
+    and striking distance reads them, so continuing to report them as deferred
+    would make the response lie in the other direction: a producer reading it
+    would keep re-sending data it believes was lost.
+
+    The SITE-level half is unchanged and still asserted — `gtm_audit` and
+    `ga4_site_search_terms` genuinely are not stored, and claiming otherwise
+    would be the same lie reversed.
+    """
     client, store = client_store
     await _seed_job(store)
     bundle = _bundle(
@@ -172,7 +184,10 @@ async def test_deferred_reports_query_and_site_payloads(client_store):
     )
     body = (await client.post("/api/performance/ingest",
                               params={"job_id": "job1"}, json=bundle)).json()
-    assert "top_queries" in body["deferred"]
+    assert "top_queries" not in body["deferred"], (
+        "per-URL queries are stored since P8.4; reporting them as deferred tells "
+        "the producer to re-send data that was kept"
+    )
     assert "site" in body["deferred"]
 
 

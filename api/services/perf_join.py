@@ -119,6 +119,22 @@ def fold_performance_rows(
         # bare floats with every consumer doing arithmetic on them, so widening
         # them to express "unmeasured" is a contract change — TODO P6.3b.
 
+        # P8.4 — queries fold by the same rule as every other count: two URL
+        # variants of one page are two slices of that page's traffic, so a query
+        # present in both ends with the SUM of its impressions, and the list is
+        # re-sorted. Taking one slice's list would silently pick a different
+        # target query depending on which URL the producer listed first.
+        totals: dict[str, int] = {}
+        for r in recs:
+            for q in (r.gsc_top_queries or ()):
+                name = (q or {}).get("query")
+                if name:
+                    totals[name] = totals.get(name, 0) + int(q.get("impressions") or 0)
+        merged.gsc_top_queries = [
+            {"query": name, "impressions": imps}
+            for name, imps in sorted(totals.items(), key=lambda kv: (-kv[1], kv[0]))
+        ] or None
+
         sessions = merged.ga4_sessions_mo
         if sessions:
             merged.ga4_engagement_rate_mo = (merged.ga4_engaged_sessions_mo or 0) / sessions

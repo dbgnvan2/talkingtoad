@@ -244,6 +244,13 @@ async def ingest_bundle(bundle: PerformanceBundle, job_id: str):
             ga4_conversions_mo=ga4.conversions if ga4 else None,
             ga4_ai_referral_sessions_mo=_ai_referral(ga4) if ga4 else None,
             source_generated_at=bundle.generated_at,
+            # P8.4 — only the query and its impressions: clicks/ctr/position per
+            # query have no consumer, and a column of unread data is what P6.2
+            # deleted. Ordered by impressions, which is what picks the target.
+            gsc_top_queries=[
+                {"query": q.query, "impressions": q.impressions}
+                for q in sorted(gsc.top_queries, key=lambda q: -(q.impressions or 0))
+            ] if (gsc and gsc.top_queries) else None,
         )))
 
     records, folded = fold_performance_rows(resolved)
@@ -277,9 +284,12 @@ async def ingest_bundle(bundle: PerformanceBundle, job_id: str):
 
     await store.save_performance_records(records)
 
+    # P8.4 — `deferred` names what was accepted but NOT stored. Per-URL
+    # top_queries are stored now, so claiming otherwise would make the response
+    # lie in the other direction: a producer reading it would keep re-sending
+    # data it believes was lost. The SITE-level query report below genuinely is
+    # still not stored.
     deferred: list[str] = []
-    if any(p.gsc and p.gsc.top_queries for p in bundle.pages):
-        deferred.append("top_queries")
     if bundle.site and (bundle.site.gtm_audit or bundle.site.ga4_site_search_terms):
         deferred.append("site")
 

@@ -34,5 +34,12 @@ class PerformanceRecord(BaseModel):
     ga4_engagement_rate_mo: float | None = None
     ga4_conversions_mo: int | None = None
     ga4_ai_referral_sessions_mo: int | None = None
+    # P8.4 — the queries the producer sent for this URL, `[{query, impressions}]`
+    # ordered by impressions. Striking distance needs ONE query to name in its
+    # rewrite brief and previously had only the scan-time priority seed, so a job
+    # that ingested performance data but uploaded no CSV could never have one.
+    # Only the query and its impressions are kept: clicks/ctr/position per query
+    # have no consumer, and a column of unread data is what P6.2 deleted.
+    gsc_top_queries: list[dict] | None = None
     index_state: str | None = None
     source_generated_at: str | None = None  # the bundle's generated_at (freshness, PB8)

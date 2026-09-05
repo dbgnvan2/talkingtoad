@@ -201,6 +201,7 @@ class SQLiteJobStore:
             ("ga4_ai_referral_sessions_mo", "INTEGER"),
             ("index_state",                 "TEXT"),
             ("source_generated_at",         "TEXT"),
+            ("gsc_top_queries",             "TEXT"),
         ]
         for col, col_type in perf_columns:
             try:
@@ -1952,8 +1953,8 @@ class SQLiteJobStore:
                 gsc_avg_position_mo, recorded_at,
                 ga4_sessions_mo, ga4_engaged_sessions_mo, ga4_engagement_rate_mo,
                 ga4_conversions_mo, ga4_ai_referral_sessions_mo, index_state,
-                source_generated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                source_generated_at, gsc_top_queries)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                ON CONFLICT(url, period) DO UPDATE SET
                    created_at = COALESCE(excluded.created_at, created_at),
                    last_technical_improvement_at = COALESCE(excluded.last_technical_improvement_at, last_technical_improvement_at),
@@ -1976,7 +1977,10 @@ class SQLiteJobStore:
                    ga4_conversions_mo = COALESCE(excluded.ga4_conversions_mo, ga4_conversions_mo),
                    ga4_ai_referral_sessions_mo = COALESCE(excluded.ga4_ai_referral_sessions_mo, ga4_ai_referral_sessions_mo),
                    index_state = COALESCE(excluded.index_state, index_state),
-                   source_generated_at = COALESCE(excluded.source_generated_at, source_generated_at)""",
+                   source_generated_at = COALESCE(excluded.source_generated_at, source_generated_at),
+                   -- P8.4: nullable, so COALESCE like GA4 — a later bundle
+                   -- carrying no queries must not erase the ones we have.
+                   gsc_top_queries = COALESCE(excluded.gsc_top_queries, gsc_top_queries)""",
             [
                 (
                     r.url, r.period, r.created_at, r.last_technical_improvement_at,
@@ -1985,6 +1989,7 @@ class SQLiteJobStore:
                     r.ga4_sessions_mo, r.ga4_engaged_sessions_mo, r.ga4_engagement_rate_mo,
                     r.ga4_conversions_mo, r.ga4_ai_referral_sessions_mo, r.index_state,
                     r.source_generated_at,
+                    json.dumps(r.gsc_top_queries) if r.gsc_top_queries else None,
                 )
                 for r in records
             ],
@@ -1997,7 +2002,8 @@ class SQLiteJobStore:
         "url, period, created_at, last_technical_improvement_at, "
         "gsc_clicks_mo, gsc_impressions_mo, gsc_ctr_mo, gsc_avg_position_mo, recorded_at, "
         "ga4_sessions_mo, ga4_engaged_sessions_mo, ga4_engagement_rate_mo, "
-        "ga4_conversions_mo, ga4_ai_referral_sessions_mo, index_state, source_generated_at"
+        "ga4_conversions_mo, ga4_ai_referral_sessions_mo, index_state, source_generated_at, "
+        "gsc_top_queries"
     )
 
     async def get_performance_records(
@@ -2035,6 +2041,7 @@ class SQLiteJobStore:
                 ga4_engagement_rate_mo=row[11], ga4_conversions_mo=row[12],
                 ga4_ai_referral_sessions_mo=row[13], index_state=row[14],
                 source_generated_at=row[15],
+                gsc_top_queries=json.loads(row[16]) if row[16] else None,
             )
             for row in rows
         ]
