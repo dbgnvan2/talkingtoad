@@ -110,6 +110,12 @@
     `requirements.txt` is absent in CI. Check `gh run list` rather than inferring. A test that
     depends on an undeclared package or a machine-local file is green here and red there, and the
     gap is invisible from inside.
+26. **Check both directions of a contract.** `test_declared_environment.py` had checked that the
+    installed set satisfies `requirements.txt` since long before this session, and it read as
+    "dependencies are covered". Nothing checked that the code needs no *more* than the file
+    declares, which is the direction CI actually breaks on. When a test asserts A ⊆ B, ask
+    whether B ⊆ A matters too — here one half had been guarded for months while the other cost a
+    day of red builds.
 
 ## Pattern index
 

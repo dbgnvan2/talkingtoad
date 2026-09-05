@@ -50,7 +50,11 @@ PAGE = f"{BASE}/about"
 # module-level importorskip: the fold arithmetic below needs no Google library
 # at all, and skipping the whole file would hide it in exactly the environment
 # that ships.
-_HAS_GOOGLE = importlib.util.find_spec("googleapiclient") is not None
+# Guarded on `google` — the module these tests actually patch. The first
+# version guarded `googleapiclient`, a sibling from the same stack, which
+# reads as covered and is not: tests/test_declared_dependencies.py rejects
+# a guard on a different module for exactly that reason.
+_HAS_GOOGLE = importlib.util.find_spec("google") is not None
 requires_google = pytest.mark.skipif(
     not _HAS_GOOGLE, reason="optional google-* packages not installed")
 

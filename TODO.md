@@ -325,9 +325,18 @@ Real, worth doing, and nothing breaks tomorrow if they wait.
     vite/esbuild version decision, and the build plus 396 vitest tests depend on the answer —
     not a change to make at the end of an unrelated phase. **Done when:** `npm ci` succeeds in
     CI and the e2e job runs.
-  - **Open:** a guard that fails locally when a test depends on a package outside
-    `requirements.txt`. `tests/test_declared_environment.py` checks the installed set satisfies
-    the file; nothing checks the reverse — that the tests need nothing more.
+  - **Done (2026-09-05):** `tests/test_declared_dependencies.py` checks the reverse direction —
+    that the code needs only what `requirements.txt` declares, resolving "would this install in
+    CI" through the dependency closure with declared extras honoured. It scans `patch("a.b.c")`
+    strings as well as imports, because the outage arrived as a patch target. `api/` must declare
+    its **module-level** imports (an ImportError at startup); a lazy import inside an
+    optional feature, or a `try: import … except ImportError:` block, is allowed — that is how
+    `gsc.py` and `js_renderer.py` are legitimately written. A test may use an undeclared package
+    only if the same file skips on **that module name**; guarding a sibling is what let this
+    through the first time. Verified by reproducing the original outage.
+  - *It found one thing immediately:* `authority.py` imports `yaml` at module level and every
+    provider of PyYAML in the tree is extras-gated — it arrived only through
+    `uvicorn[standard]`. Now declared, for the reason the file already gives for pydantic.
 
 ## Parked — needs a decision, not a fix (2)
 

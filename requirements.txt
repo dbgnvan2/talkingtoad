@@ -19,6 +19,15 @@ fastapi~=0.136.0
 # every api/models module imports it at module level.
 pydantic~=2.7
 uvicorn[standard]~=0.46.0
+# Declared explicitly rather than relied on transitively, for the same reason
+# pydantic is above: api/crawler/checkers/authority.py imports it at MODULE
+# level, so its absence is an ImportError at startup, not a degraded feature.
+# It currently arrives only through uvicorn's `standard` extra — every other
+# provider in the tree is extras-gated too — which means dropping that extra, or
+# uvicorn dropping pyyaml from it, would break the authority checker with
+# nothing in this file to explain why. Surfaced by
+# tests/test_declared_dependencies.py while it was being written.
+pyyaml~=6.0
 
 # HTTP client — also used as async test client via httpx.AsyncClient
 httpx~=0.28.0
