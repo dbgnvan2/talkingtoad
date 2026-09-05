@@ -12,6 +12,8 @@ from uuid import uuid4
 
 from pydantic import BaseModel, Field, computed_field
 
+from api.crawler.checkers.registry import _CATALOGUE
+
 
 Severity = Literal["critical", "warning", "info"]
 
@@ -38,16 +40,20 @@ IssueCategory = Literal[
     "schema",
 ]
 
+# Every category some issue code actually emits, derived rather than hand-kept
+# (2026-09-05 sweep §2). The hand list carried `duplicate` long after CLN1
+# established that no checker emits it, so `get_summary` seeded a counter that
+# could only ever report 0 and the CSV export offered a category the product
+# does not have. Derivation deletes that class of drift instead of the one
+# instance; `tests/test_architecture_constraints.py` asserts both directions.
+#
+# The name is older than the meaning. Phase 2 (performance, mobile, schema) is
+# unbuilt, so every emitted category is a Phase 1 one and the CSV's `phase`
+# column is constant "1" — true before this change and unchanged by it. Retiring
+# that column is a contract change for anything parsing the export, so it is
+# recorded in TODO rather than folded into a hygiene sweep.
 PHASE_1_CATEGORIES: frozenset[str] = frozenset(
-    [
-        "broken_link", "metadata", "heading", "redirect",
-        "crawlability", "duplicate", "sitemap", "security", "url_structure",
-        "image", "ai_readiness",
-        # Agent-readiness Phase 1 task-side categories
-        "rendering", "semantic_html",
-        # Analytics & Measurement (2026-08-06 spec)
-        "analytics",
-    ]
+    spec.category for spec in _CATALOGUE.values()
 )
 
 

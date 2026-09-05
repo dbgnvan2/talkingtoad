@@ -656,3 +656,60 @@ def test_every_crawl_launching_endpoint_is_rate_limited():
     assert all("CRAWL_START_LIMIT" in d for d in limits.values()), (
         f"crawl-launching endpoints must share CRAWL_START_LIMIT, got: {limits}"
     )
+
+
+# ===================================================================
+# The issue-category set must not outlive the checkers (2026-09-05 sweep §2)
+# ===================================================================
+
+
+class TestTheCategorySetTracksTheCatalogue:
+    """`PHASE_1_CATEGORIES` was a hand-kept frozenset in `api/models/issue.py`,
+    read by the CSV export and by the store's per-category counters. It carried
+    `duplicate` — a category CLN1 established no checker emits — so the store
+    seeded a counter that could only ever report 0, and every reader of the set
+    was told about a category the product does not have.
+
+    Deriving it from `_CATALOGUE` deletes the drift rather than the symptom
+    (CLN2's treatment). These two assertions are what stops a hand list coming
+    back: either direction failing means the set and the checkers disagree.
+    """
+
+    def test_every_category_in_the_set_is_emitted_by_some_code(self):
+        from api.crawler.checkers.registry import _CATALOGUE
+        from api.models.issue import PHASE_1_CATEGORIES
+
+        emitted = {spec.category for spec in _CATALOGUE.values()}
+        dead = sorted(PHASE_1_CATEGORIES - emitted)
+        assert not dead, (
+            f"{dead} is in PHASE_1_CATEGORIES and no issue code emits it — the "
+            f"store seeds a counter that can only report 0"
+        )
+
+    def test_every_emitted_category_is_in_the_set(self):
+        from api.crawler.checkers.registry import _CATALOGUE
+        from api.models.issue import PHASE_1_CATEGORIES
+
+        emitted = {spec.category for spec in _CATALOGUE.values()}
+        missing = sorted(emitted - PHASE_1_CATEGORIES)
+        assert not missing, (
+            f"{missing} is emitted by a checker and missing from the set — its "
+            f"issues are absent from the per-category counters entirely"
+        )
+
+    def test_the_set_is_not_vacuously_consistent(self):
+        """The adversarial case for the two tests above.
+
+        If the derivation ever yields an EMPTY set — `_CATALOGUE` renamed, the
+        attribute moved — both parity assertions pass, and they pass for the
+        worst possible reason: no category is counted anywhere and the CSV calls
+        every issue phase 2. So this names categories the product has always
+        emitted, which is a fact about the app rather than a restatement of the
+        derivation.
+        """
+        from api.models.issue import PHASE_1_CATEGORIES
+
+        for category in ("metadata", "heading", "broken_link", "security"):
+            assert category in PHASE_1_CATEGORIES, (
+                f"{category} is missing — the category set has collapsed"
+            )
