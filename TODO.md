@@ -118,12 +118,11 @@ the figures that *are* right. Do these first.
     advisor's membership check moved a `limit=50` window, so a URL that validated before the change
     400'd after — a P9 underneath (membership was answered over the top 50 pages of a 500-page
     crawl), now fixed and tested.
-- [ ] **P5.2b — `PHASE_1_CATEGORIES` still contains `duplicate`** (surfaced 2026-09-04, not fixed).
-  CLN1 removed it from `CATEGORY_DISPLAY` in August because no checker emits it, but the store's
-  list still seeds it, so every summary carries three `by_category*` entries for a category that
-  cannot exist. Harmless — no surface renders it — and out of P5.2's scope, which was about which
-  population a count shows, not which keys the map has. **Done when:** the store derives its
-  category list from the registry rather than its own copy (the CLN2 single-source treatment).
+- [x] **P5.2b — `PHASE_1_CATEGORIES` contained `duplicate`** (closed 2026-09-05). Now derived:
+  `frozenset(spec.category for spec in _CATALOGUE.values())`. Two parity tests assert both
+  directions plus a third against a vacuously-empty derivation. Noted while doing it: because
+  every emitted category is in the set, the CSV export's `phase` column is constant `"1"` —
+  true before this change, and a contract question of its own (below).
 - [x] **P5.3 — the filter agreed with the score and never said so** (2026-09-04). The premise was
   stale for the third item running: the store has filtered on the kept info count since
   2026-09-01. What it did instead was quieter and, by this repo's own rule, worse — at `key` a
@@ -145,10 +144,9 @@ the figures that *are* right. Do these first.
     same document fixes at 0 in exactly that case — reimplemented against `hidden` and the spec
     amended at the fold); and a **false claim in a commit message** ("recorded in TODO" for
     something never recorded — this bullet is that record).
-- [ ] **P5.3b — `SummaryPanel.jsx:1` imports `React` unused** under the new JSX transform
-  (flagged by the QA gate, 2026-09-04; pre-existing, not from this cycle). Harmless while the
-  build uses `eslint --quiet`, which reports errors only. **Done when:** the import is dropped, or
-  the file is confirmed to need it.
+- [x] **P5.3b — the unused `React` import** (closed 2026-09-05). The item named one file; the
+  pattern was **23**, against 27 components that already shipped without it. Removed from all 23
+  — the class, not the instance — verified by `vitest` (396 green) and a real `npm run build`.
 - [x] **P5.4 — prevalence judged an old job by today's catalogue** (2026-09-04). `compute_prevalence`
   took `(code, url)` pairs, so the stored impact and severity were **discarded at the boundary**
   and everything was re-derived from `_CATALOGUE`/`derive_impact` while the lists, the counts and
@@ -167,13 +165,14 @@ the figures that *are* right. Do these first.
     keeping the catalogue for known codes — passed all 28 tests, because the only severity
     assertion used a code the catalogue had *forgotten* and so exercised just the `else` branch.
     Test 4.5c now covers a known code whose stored severity differs.
-- [ ] **P5.4b — `_CATALOGUE[code].severity` is a hand-kept literal** (surfaced 2026-09-04 by the
+- [x] **P5.4b — `_CATALOGUE[code].severity` was a hand-kept literal** (surfaced 2026-09-04 by the
   P5.4 spec §6, recorded here at the gate's request). Nothing pins it to
   `severity_from_impact(derive_impact(code))`; all 170 agree today by convention alone.
   `test_issue_help_completeness` pins *issueHelp* to the derived value, so the catalogue's own
   field is the third copy of one rule and the only untested one (P13, and LEARNINGS checklist 17).
-  **Done when:** one assertion pins the catalogue's severity to the derived value, or the field is
-  computed rather than stored.
+  **Closed 2026-09-05:** `test_r5_severity.py` now pins all 170, with an adversarial half that
+  fails if the comparison ever becomes the derivation against itself. `test_r5_severity.py`'s own
+  docstring claimed such a parity test already existed — it did not, and the claim is corrected.
 
 ## Phase 6 — things the app knows and does not say (3 — ALL DONE)
 
@@ -247,12 +246,16 @@ in SQLite.
   `test_gsc_ctr_with_no_impressions_stays_zero_deliberately`, so it reads as a decision.
   **Done when:** the two fields can express "unmeasured", or the 0.0 is documented as the
   contract with its reason.
-- [ ] **P6.3c — orphan performance rows already in the ledger are not migrated** (decided
-  2026-09-04 in P6.3 §3.4; transcribed here). Rows written before P6.3 under raw GSC URLs are
-  keyed by URLs no consumer reads, so they are invisible rather than wrong. A destructive
-  migration to tidy invisible rows is the trade the 2026-09-03 collapse warned about.
-  **Done when:** a reason to touch them exists — e.g. a ledger-size problem — or the decision
-  is confirmed and closed.
+- [x] **P6.3c — the misfiled ledger rows are re-keyed** (closed 2026-09-05). **The deferral's
+  premise was wrong and I never measured it.** "Invisible" was true; "rather than wrong" was not.
+  Of 344 distinct ledger URLs, 242 were GSC data for pages that DO exist in the crawl, stored
+  under the raw spelling — the app held that data and showed none of it.
+  `scripts/migrate_rekey_performance_ledger.py` re-keys, never deletes, merges collisions through
+  the shipped `fold_performance_rows`, and is dry-run by default. Applied: 395 rows onto 394 keys,
+  9 merges, clicks and impressions conserved exactly, readable rows **60 → 445**.
+  Two things the dry run caught that review had not: the target among several crawled spellings
+  was being chosen by cursor order (it had picked a 3-job spelling over a 65-job one), and the
+  hand-rolled merge took `gsc_top_queries` from one slice instead of folding them.
 
 ## Phase 7 — the V4 second half (1 — ALL DONE)
 
@@ -302,12 +305,24 @@ Real, worth doing, and nothing breaks tomorrow if they wait.
   `target_query=None` with a brief telling a nonprofit to target "its main search query" without
   naming one. Now persisted in the ledger (`gsc_top_queries`), folded by P6.3's arithmetic, read
   ahead of the scan-time seed, and no longer reported as deferred.
+- [ ] **The CSV export's `phase` column can only say `"1"`** (surfaced 2026-09-05 while deriving
+  `PHASE_1_CATEGORIES`; pre-existing). `phase` is `"1" if issue.category in PHASE_1_CATEGORIES
+  else "2"`, and every emitted category is in that set because Phase 2 (performance, mobile,
+  schema) is unbuilt — so the column is a constant presented as a classification (P12). Left
+  alone deliberately: removing or changing a column is a contract change for anything parsing the
+  export, which is not a hygiene-sweep decision. **Done when:** the column is retired with a note
+  in `docs/api.md`, or Phase 2 categories exist and it starts meaning something.
 - [ ] **Performance Bundle PB4/PB5/PB7/PB9** remain after PB3 — separate bundle sections with
   their own contracts, explicitly out of P8.4's scope.
-- [ ] **The dimension-pass concurrency floor (~33 images) is unpinned.** Carried alongside P8.4
-  and deliberately not done there: a different subsystem and a coverage question, not a data-flow
-  one. Recorded so it is not lost with the item that carried it.
-- [ ] **P8.5 — CI had been red for every push, and nothing said so.** Found by the Phase 8 gate,
+- [x] **The dimension-pass concurrency floor is pinned** (closed 2026-09-05). As arithmetic over
+  the constants — `6 x floor(45/8)` = 30 against a cap of 150 — plus a test that reads the four
+  values out of `docs/thresholds.md` and compares them to the live constants. No clock: a timing
+  assertion is what turned CI intermittently red on 2026-09-03. The archive's "~33" was the
+  unrounded `6 x 45/8`; the guaranteed floor is 30.
+- [x] **P8.5 — CI had been red for every push, and nothing said so.** Closed 2026-09-05: all
+  four jobs green, and `tests/test_declared_dependencies.py` now fails the build if `api/` or a
+  test needs anything `requirements.txt` does not provide (it immediately found `pyyaml`, which
+  was arriving only as a transitive of `uvicorn[standard]`). Found by the Phase 8 gate,
   2026-09-04. Two causes, one mine: `tests/test_performance_fold.py` (new in P6.3) patched
   `google.oauth2.credentials`, which is **not** in `requirements.txt`, so four tests failed on
   every CI run while passing locally. The rest were older: `tests/test_wp_domain_validation.py`

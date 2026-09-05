@@ -116,6 +116,30 @@
     declares, which is the direction CI actually breaks on. When a test asserts A ⊆ B, ask
     whether B ⊆ A matters too — here one half had been guarded for months while the other cost a
     day of red builds.
+27. **A deferral's premise is a claim about data — measure it before you record it.** P6.3c was
+    deferred with the words *"invisible rather than wrong"*, which sounded like a judgement and
+    was actually an unmeasured assertion about 344 rows. Measured a day later: 242 of them were
+    performance data for pages that DO exist in the crawl, held by the app and shown nowhere. The
+    words were half right, and the half that was wrong was the half that decided not to act. If a
+    "not worth doing" rests on a claim about what is in the database, run the query first — it is
+    one query, and it is the difference between a decision and a guess.
+28. **The dry run is not a formality — read its sample, not just its count.** The re-key
+    migration's counts looked right and its first sample line was wrong: the home page's data was
+    being sent to `https://www.livingsystems.ca` (3 jobs) rather than `https://livingsystems.ca/`
+    (65). The cause was `out[key] = url` in a loop, so the target among several spellings was
+    whichever the cursor yielded last — item 24's collision question, one file over, and the same
+    P8.2 shape as choosing the first candidate an upward walk stops at. **When a map is
+    many-to-one, the winner is a decision that must be written down and tested under both
+    insertion orders**; a single ordering cannot tell a rule from an accident.
+29. **A migration that re-implements a shipped rule has already drifted.** The same script's
+    merge paraphrased `fold_performance_rows`: it summed the counts and weighted the position
+    correctly, and took `gsc_top_queries` from one slice where the real fold sums each query's
+    impressions across slices. The copy was wrong before it ever ran. If a rule exists in the
+    app, a script must call it — even when calling it costs an import and a model round-trip.
+30. **An item that names one file is a sample, not a census.** "SummaryPanel.jsx imports React
+    unused" was recorded from one file; the pattern was 23, next to 27 files that already shipped
+    without it. Before fixing what a TODO names, grep for the shape — then fix the class or say
+    plainly why only the instance.
 
 ## Pattern index
 

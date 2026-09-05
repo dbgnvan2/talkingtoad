@@ -2162,9 +2162,36 @@ server did not send (LEARNINGS P27).
 > gave), `matched` (of those, URLs resolving to a crawled page), `ingested` (ledger rows
 > written — fewer than `matched` when URLs fold), `unmatched_urls`, `invalid_urls`, and
 > `folded_urls` (storage key → the URLs that collapsed onto it, only where more than one did; a
-> fold of one is not a fold). Unmatched rows are held out, not stored. Rows written under raw
-> URLs before this change are left in place — invisible rather than wrong, and a destructive
-> migration to tidy invisible rows is not worth its risk (TODO P6.3c).
+> fold of one is not a fold). Unmatched rows are held out, not stored.
+>
+> **The rows written under raw URLs before this change were re-keyed (2026-09-05).** They were
+> deferred as *"invisible rather than wrong"*, and that reasoning was never measured. Measured,
+> it was half true: of 344 distinct ledger URLs, 37 were already on the crawled-page key, 65
+> genuinely matched no crawled page, and **242 were GSC data for pages that exist in the crawl**,
+> stored under the raw spelling while the pages were keyed without the trailing slash. Striking
+> distance, page-priority and the Authority Matrix all look rows up by the crawled page's exact
+> URL, so the app held that data and showed none of it — invisible, and wrong.
+>
+> `scripts/migrate_rekey_performance_ledger.py` re-points each recoverable row onto the
+> crawled-page key. It **never deletes**: a row is re-keyed or left alone. The 65 unmatched rows
+> are left alone — nothing establishes which page they belong to, and inventing a key is a
+> fabrication. Where a re-key lands on an occupied `(url, period)` the rows **merge** through
+> `fold_performance_rows`, the same implementation the ingest paths use, because two rows for one
+> page in one period are two slices of it. `created_at` is settled as the earliest of the merged
+> rows (a first-seen date) and `last_technical_improvement_at` as the latest.
+>
+> Where several crawled spellings share a `match_key` — three such keys in the development store
+> — the target is **the spelling the most crawled pages use**, ties broken shortest-then-
+> lexicographic. The first implementation took whichever spelling the cursor yielded last, and
+> the dry run's sample is what exposed it: it had chosen `https://www.livingsystems.ca` (3 jobs)
+> over `https://livingsystems.ca/` (65 jobs, and the form ND3/LR canonicalised to), which would
+> have sent the home page's performance data to the spelling almost nothing reads.
+>
+> The script is **dry-run by default**, prints its counts and a sample before writing, backs the
+> database up before `--apply` and refuses to proceed if the backup fails, and is idempotent.
+> Applied to the development store: 395 rows re-keyed onto 394 keys, 9 merges, clicks and
+> impressions conserved exactly (968 / 128,097), and ledger rows a consumer can read rose from
+> **60 to 445**.
 >
 > The bundle path's read-merge — a bundle is authoritative only for the sections it carries (P8)
 > — runs **after** the fold, once per folded row. Running it per page, as it did, would carry a
@@ -2197,6 +2224,31 @@ server did not send (LEARNINGS P27).
 > count (impressions per query add). Striking distance reads the ledger first and the scan-time
 > priority seed second, so a job that ingested performance data but uploaded no CSV can now name
 > a target query; `deferred` no longer claims those queries were dropped.
+
+> **The deferral sweep — three hand-kept copies, retired (2026-09-05).** Each was a list
+> maintained beside the thing it described, agreeing with it by convention alone.
+>
+> **`PHASE_1_CATEGORIES` is derived from the catalogue**, not hand-kept. It carried `duplicate`
+> long after CLN1 established no checker emits it, so `get_summary` seeded a per-category counter
+> that could only ever report 0. Two tests assert both directions — no member without a code, no
+> code without a member — plus a third naming categories the product has always emitted, because
+> an empty derivation would satisfy both parity assertions for the worst possible reason. The
+> CSV export's `phase` column is constant `"1"` (Phase 2 is unbuilt), which was true before this
+> change and is recorded in TODO rather than fixed inside a hygiene sweep.
+>
+> **Every catalogue `severity` literal is pinned to `severity_from_impact(derive_impact(code))`.**
+> `make_issue` derives severity at runtime, and the existing parity test pins the *frontend* help
+> entry, so 169 of 170 stored literals were unchecked and a drifted one would have been silent.
+>
+> **The image dimension pass's measurable floor is asserted as arithmetic**, not by a clock:
+> `CONCURRENCY x floor(BUDGET_S / TIMEOUT_S)` = 30 against a cap of 150, so the pass is designed
+> to fall short and `images_measured` / `images_measurable` are load-bearing. A test reads the
+> four values out of `docs/thresholds.md` and compares them to the live constants, so neither the
+> numbers nor the prose can move alone. Timing assertions were deliberately avoided — one turned
+> CI intermittently red two days earlier.
+>
+> **The unused `React` import** left by the automatic JSX transform was removed from 23 files.
+> 27 components already shipped without it.
 
 ### 5.10 Verified links (`/api/verified-links`)
 Mark external URLs as known-good to bypass bot-blocking skipped lists.
