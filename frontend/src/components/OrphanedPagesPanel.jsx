@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import { getOrphanedPages } from '../api.js'
 import Spinner from './Spinner.jsx'
 

@@ -1,5 +1,5 @@
 import PanelExplainer from './PanelExplainer.jsx'
-import React, { useState } from 'react'
+import { useState } from 'react'
 import { getPagePriority } from '../api.js'
 import CitabilityBadge from './CitabilityBadge.jsx'
 

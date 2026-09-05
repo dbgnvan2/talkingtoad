@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import { getPages } from '../api.js'
 
 export default function Top10Pages({ jobId, onPageClick }) {

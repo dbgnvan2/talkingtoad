@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import { useState } from 'react'
 import { getOrphanedMedia } from '../api.js'
 
 export default function OrphanedImagesPanel({ jobId, domain }) {

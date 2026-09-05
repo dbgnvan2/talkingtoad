@@ -1,4 +1,3 @@
-import React from 'react'
 import { getCategoryHelp } from '../data/categoryHelp.js'
 
 /**

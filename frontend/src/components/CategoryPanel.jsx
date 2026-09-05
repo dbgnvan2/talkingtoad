@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useToast } from '../contexts/ToastContext.jsx'
 import { getResultsByCategory, verifyBrokenLinks, markBrokenLinkFixed, getOrphanedMedia, authHeaders, addDomainFilter, removeDomainFilter } from '../api.js'
 import { FIXABLE_LINK_CODES } from './FixBrokenLinkPanel.jsx'

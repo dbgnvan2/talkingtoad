@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import { getResults } from '../api.js'
 import SeverityBadge from './SeverityBadge.jsx'
 

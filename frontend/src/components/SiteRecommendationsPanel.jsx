@@ -1,4 +1,3 @@
-import React from 'react'
 
 // Renders the AI site-wide recommendations. Each recommendation is an object
 // { priority, category, recommendation, impact } (see api/services/ai_analyzer.py).

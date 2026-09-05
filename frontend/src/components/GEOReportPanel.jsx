@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useToast } from '../contexts/ToastContext.jsx'
 import { generateGeoReport, getGeoAiModel, setGeoAiModel, generateGeoRewritePrompt, generateGeoFaq, generateEntitySchema } from '../api.js'
 import { authHeaders } from '../api.js'

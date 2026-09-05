@@ -1,6 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent, act, waitFor } from '@testing-library/react'
-import React from 'react'
 import { ToastProvider, useToast } from '../ToastContext.jsx'
 
 // Helper component that exposes toast actions via buttons

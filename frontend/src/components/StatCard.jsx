@@ -1,4 +1,4 @@
-import React, { memo } from 'react'
+import { memo } from 'react'
 import { useTheme } from '../contexts/ThemeContext.jsx'
 
 function StatCard({ label, value, color = 'text-gray-800', sub = null }) {

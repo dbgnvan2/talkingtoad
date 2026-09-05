@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import { getPages } from '../api.js'
 import Spinner from './Spinner.jsx'
 import CitabilityBadge from './CitabilityBadge.jsx'
