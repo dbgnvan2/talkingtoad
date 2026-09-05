@@ -313,8 +313,21 @@ Real, worth doing, and nothing breaks tomorrow if they wait.
   every CI run while passing locally. The rest were older: `tests/test_wp_domain_validation.py`
   patched `_CREDS_PATH` on two modules while six routers bind their own copy, so those tests
   passed only because a real `wp-credentials.json` sits in a dev machine's repo root. Both fixed;
-  the suite now passes with that file removed. **Open:** re-check CI is actually green after this
-  push, and consider a guard that fails locally when a test depends on an undeclared package.
+  the suite now passes with that file removed.
+  - **Verified after the fix (run 33933…):** `pytest 3.14 — development` ✅,
+    `pytest 3.11 — ships` ✅, `docker build` ✅. Both test legs are green for the first time in
+    this session's history.
+  - **Still red, and NOT from this work: the `e2e` job has never passed since it was added**
+    (`63ab034`, 2026-09-02). `npm ci` refuses because `frontend/package-lock.json` has no
+    `esbuild` entry while CI resolves `vite@^5.2.0` to a build requiring `esbuild@0.28.2`;
+    locally `esbuild@0.21.5` is installed and `npm install --package-lock-only` changes nothing,
+    so the lock and the resolution disagree only in CI. Deliberately not fixed here: it needs a
+    vite/esbuild version decision, and the build plus 396 vitest tests depend on the answer —
+    not a change to make at the end of an unrelated phase. **Done when:** `npm ci` succeeds in
+    CI and the e2e job runs.
+  - **Open:** a guard that fails locally when a test depends on a package outside
+    `requirements.txt`. `tests/test_declared_environment.py` checks the installed set satisfies
+    the file; nothing checks the reverse — that the tests need nothing more.
 
 ## Parked — needs a decision, not a fix (2)
 
