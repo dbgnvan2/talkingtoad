@@ -1608,28 +1608,41 @@ def _find_stacked_links(soup: BeautifulSoup, page_url: str = "") -> list[dict]:
                             article_count=article_count)
     )
 
+    # P8.2 — which of several nested cards reports a group used to be decided by
+    # `break` in a per-anchor upward walk: the innermost card ancestor won,
+    # because `.parents` walks outward. Nothing stated that as a rule, and its
+    # failure mode was silence. Measured: two anchors to one href split across
+    # two `entry-card` divs inside one `card` reported NOTHING — each anchor's
+    # walk halted at its own inner card, neither held a group, and the finding
+    # disappeared. parser.py already recorded the symptom (a default WordPress
+    # block theme reporting zero, Elementor reporting each defect twice) and
+    # defended it with `non_card_classes`, an editorial list this module's own
+    # docstring says the next theme will defeat.
+    #
+    # The rule now matches what is being detected — "2+ anchors to one href
+    # inside one card" — so the container is the innermost card that ACTUALLY
+    # CONTAINS such a group, not the innermost card full stop. Containers are
+    # visited deepest-first and an ancestor is skipped for an href a descendant
+    # already reported, which also removes the double-report by rule rather than
+    # by list.
+    containers = [
+        el for el in body.find_all(True)
+        if _is_card_container(
+            el, card_classes, card_tags, non_card_classes,
+            page_text_len=page_text_len,
+            article_count=article_count,
+            card_candidate_count=card_candidate_count,
+            max_card_links=max_card_links,
+            max_card_text_fraction=max_card_text_fraction,
+            min_page_text_for_fraction=min_page_text_for_fraction,
+        )
+    ]
+    containers.sort(key=lambda el: len(list(el.parents)), reverse=True)
+
     groups: list[dict] = []
-    seen_containers: set[int] = set()
+    claimed: dict[str, list] = {}     # href -> containers that already reported it
 
-    for anchor in soup.find_all("a", href=True):
-        # Walk up to the nearest container that looks like a card.
-        container = None
-        for parent in anchor.parents:
-            if _is_card_container(
-                parent, card_classes, card_tags, non_card_classes,
-                page_text_len=page_text_len,
-                article_count=article_count,
-                card_candidate_count=card_candidate_count,
-                max_card_links=max_card_links,
-                max_card_text_fraction=max_card_text_fraction,
-                min_page_text_for_fraction=min_page_text_for_fraction,
-            ):
-                container = parent
-                break
-        if container is None or id(container) in seen_containers:
-            continue
-        seen_containers.add(id(container))
-
+    for container in containers:
         by_href: dict[str, list] = {}
         for a in container.find_all("a", href=True):
             href = (a.get("href") or "").strip()
@@ -1644,6 +1657,11 @@ def _find_stacked_links(soup: BeautifulSoup, page_url: str = "") -> list[dict]:
         for href, anchors in by_href.items():
             if len(anchors) < min_size:
                 continue
+            # Deepest-first, so anything already claiming this href is inside
+            # this container: it is the same finding, seen from further out.
+            if any(container in c.parents for c in claimed.get(href, ())):
+                continue
+            claimed.setdefault(href, []).append(container)
             groups.append({
                 "href": href,
                 "count": len(anchors),
