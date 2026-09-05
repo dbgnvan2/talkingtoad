@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import asyncio
 import time
+from unittest.mock import patch
 
 import httpx
 import pytest
@@ -117,7 +118,28 @@ class TestTheReportedCase:
 
     async def test_repeated_requests_to_one_host_are_actually_spaced(self):
         """`_EXT_PER_HOST_DELAY_S` had no test at all — setting it to 0.0 left
-        the whole suite green (cold sweep)."""
+        the whole suite green (cold sweep).
+
+        Asserts the TOTAL elapsed span, not every individual gap. A per-gap
+        floor is not measurable on a shared CI runner: the 3.11 leg failed on
+        gaps `[0.325, 0.176, 0.256]` — one gap 12% under an 0.8x floor while the
+        others absorbed it — and passed on an immediate re-run. An intermittently
+        red CI is worse than a slightly weaker assertion, because it teaches
+        people to stop reading CI, which is the habit that cost this repo a day
+        of unnoticed red builds on 2026-09-04.
+
+        The aggregate keeps the property that matters and that jitter cannot
+        fake: N requests to one host cannot complete in less than roughly
+        (N-1) x delay unless the sleep is not happening.
+
+        The floor is computed from a PATCHED delay, not the live constant. My
+        first version derived it from `engine._EXT_PER_HOST_DELAY_S`, so setting
+        that constant to 0.0 made the floor 0 and `span >= 0` trivially true —
+        the test could no longer catch the exact defect the cold sweep found, and
+        neither could the per-gap version it replaced. Mutation caught that
+        before it shipped. Whether the SHIPPED value is non-zero is a separate
+        property, and has its own test below.
+        """
         import time as _t
 
         from api.crawler import engine
@@ -128,16 +150,37 @@ class TestTheReportedCase:
             stamps.append(_t.monotonic())
             return httpx.Response(200, headers={"content-type": "text/html"})
 
-        with respx.mock(assert_all_called=False) as mock:
+        delay = 0.25   # asserted against, so a zeroed constant cannot satisfy it
+        with patch.object(engine, "_EXT_PER_HOST_DELAY_S", delay), \
+                respx.mock(assert_all_called=False) as mock:
             _site(mock, _home(n=4))
             mock.route(host="short.test").mock(side_effect=clock)
             await _crawl("job-spacing")
 
         assert len(stamps) >= 4, stamps
         gaps = [b - a for a, b in zip(stamps, stamps[1:])]
-        delay = engine._EXT_PER_HOST_DELAY_S
-        assert all(g >= delay * 0.8 for g in gaps), (
-            f"requests to one host were not spaced by ~{delay}s: {gaps}")
+        span = stamps[-1] - stamps[0]
+        floor = (len(stamps) - 1) * delay * 0.8
+        assert span >= floor, (
+            f"{len(stamps)} requests to one host completed in {span:.3f}s; "
+            f"spacing them by {delay}s needs at least {floor:.3f}s. "
+            f"gaps: {[round(g, 3) for g in gaps]}")
+
+    def test_the_shipped_per_host_delay_is_not_zero(self):
+        """The other half, and the cold sweep's actual finding: "setting it to
+        0.0 left the whole suite green".
+
+        The test above proves the MECHANISM honours whatever delay it is given.
+        This proves the value we ship is a real one. Two properties, two tests —
+        conflating them is what made the first version unable to fail.
+        `docs/thresholds.md:49` owns the number.
+        """
+        from api.crawler import engine
+
+        assert engine._EXT_PER_HOST_DELAY_S >= 0.25, (
+            f"the shipped per-host delay is {engine._EXT_PER_HOST_DELAY_S}s; "
+            "docs/thresholds.md says 0.25 s"
+        )
 
     def test_the_spacing_sleep_is_outside_the_global_semaphore(self):
         """D6 — a STRUCTURAL guard, and honest about being one.
