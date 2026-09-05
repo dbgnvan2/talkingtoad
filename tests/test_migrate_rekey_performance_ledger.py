@@ -1,6 +1,6 @@
 """§1 — re-keying the misfiled ledger rows onto the crawled-page key.
 
-Spec: docs/pending/2026-09-05_deferral-sweep.md §1
+Spec: docs/functional-specification.md §5.9 (the 2026-09-05 re-key)
 
 Every test builds its own database under `tmp_path` through the REAL store, so
 the schema is the shipped one by construction — including `gsc_top_queries`,
@@ -284,6 +284,59 @@ class TestRunningItAgain:
         assert p.read_bytes() == before, "the dry run modified the database"
         assert "DRY RUN" in capsys.readouterr().out
         assert not list(tmp_path.glob("*.bak")), "the dry run took a backup it did not need"
+
+    def test_apply_takes_a_backup_first(self, tmp_path, monkeypatch):
+        """The 2026-09-05 QA gate's finding: every test drove `plan()` and
+        `apply_moves()` directly or the dry-run default, so the guard rails on
+        the one destructive path were the least-tested code in a destructive
+        script. The backup is also named to match the `.pre-origin-collapse`
+        backups beside it — the gate went looking for one under that convention
+        and reported it missing when it was not."""
+        p = _fresh(tmp_path)
+        db = sqlite3.connect(p)
+        _pages(db, f"{SITE}/a")
+        _ledger(db, f"{SITE}/a/", clicks=7, imps=100)
+        db.commit()
+        db.close()
+        before = p.read_bytes()
+
+        monkeypatch.setattr("sys.argv", ["m", "--db", str(p), "--apply"])
+        assert main() == 0
+
+        backups = list(tmp_path.glob(f"{p.name}.pre-rekey-*.bak"))
+        assert len(backups) == 1, (
+            f"expected one backup named after the database; found "
+            f"{[b.name for b in backups]} beside {[f.name for f in tmp_path.iterdir()]}"
+        )
+        assert backups[0].read_bytes() == before, (
+            "the backup is not the pre-apply state"
+        )
+        assert _row(sqlite3.connect(p), f"{SITE}/a")["gsc_clicks_mo"] == 7, (
+            "the apply did not actually run"
+        )
+
+    def test_apply_refuses_when_the_backup_cannot_be_written(self, tmp_path, monkeypatch):
+        """The refusal must fail SAFE: no backup, no write. A migration that
+        proceeds after its backup fails is the one case where a mistake is
+        unrecoverable."""
+        p = _fresh(tmp_path)
+        db = sqlite3.connect(p)
+        _pages(db, f"{SITE}/a")
+        _ledger(db, f"{SITE}/a/", clicks=7, imps=100)
+        db.commit()
+        db.close()
+        before = p.read_bytes()
+
+        def _no(*a, **k):
+            raise OSError("disk full")
+
+        monkeypatch.setattr("scripts.migrate_rekey_performance_ledger.shutil.copy2", _no)
+        monkeypatch.setattr("sys.argv", ["m", "--db", str(p), "--apply"])
+        assert main() == 1, "a failed backup did not stop the migration"
+        assert p.read_bytes() == before, (
+            "the database was modified after the backup failed — the refusal "
+            "branch does not fail safe"
+        )
 
 
 # ── The ambiguity the first dry run exposed ─────────────────────────────────

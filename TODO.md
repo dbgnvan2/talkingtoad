@@ -305,6 +305,11 @@ Real, worth doing, and nothing breaks tomorrow if they wait.
   `target_query=None` with a brief telling a nonprofit to target "its main search query" without
   naming one. Now persisted in the ledger (`gsc_top_queries`), folded by P6.3's arithmetic, read
   ahead of the scan-time seed, and no longer reported as deferred.
+- [ ] **Three pre-existing eslint warnings** on files the 2026-09-05 sweep touched only at the
+  import line — unused `hasIssues`, `originalScore`, `DEFAULT_SETTINGS`. Raised by the QA gate as
+  non-blocking and verified identical at `origin/main`, so they predate the sweep and are not its
+  doing. Not fixed with it: the sweep changed one line per file, and deleting live bindings is a
+  different change needing its own look at whether each is genuinely dead.
 - [ ] **The CSV export's `phase` column can only say `"1"`** (surfaced 2026-09-05 while deriving
   `PHASE_1_CATEGORIES`; pre-existing). `phase` is `"1" if issue.category in PHASE_1_CATEGORIES
   else "2"`, and every emitted category is in that set because Phase 2 (performance, mobile,

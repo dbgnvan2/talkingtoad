@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """Re-key performance-ledger rows onto the crawled-page key they belong to.
 
-Spec: docs/pending/2026-09-05_deferral-sweep.md §1
+Spec: docs/functional-specification.md §5.9 (the performance ingest fold,
+      2026-09-05 re-key). Written against docs/pending/2026-09-05_deferral-sweep.md,
+      which was folded into the master and deleted on completion.
 
 Before P6.3 (2026-09-04), `/api/gsc/ingest` stored a GSC row under its RAW url
 when the join to a crawled page failed. `match_key` folds www / scheme /
@@ -129,9 +131,9 @@ def _merge(target: str, recs: list[PerformanceRecord]) -> PerformanceRecord:
     then settled explicitly — `created_at` is a first-seen date, so the EARLIEST
     is the true one, and `last_technical_improvement_at` is a most-recent date.
     """
-    ordered = sorted(recs, key=lambda r: (r.recorded_at is None, r.recorded_at or ""),
-                     reverse=False)
-    ordered = sorted(ordered, key=lambda r: r.recorded_at or "", reverse=True)
+    # Freshest `recorded_at` first; a row with none sorts last, because "" is the
+    # smallest string under a descending sort.
+    ordered = sorted(recs, key=lambda r: r.recorded_at or "", reverse=True)
     merged, _folded = fold_performance_rows(
         [(target, r.url, r) for r in ordered]
     )
@@ -246,7 +248,12 @@ def main() -> int:
         print("\nDRY RUN — nothing written. Re-run with --apply to write.")
         return 0
 
-    backup = path.with_suffix(f".pre-rekey-{datetime.now(timezone.utc):%Y%m%dT%H%M%SZ}.bak")
+    # `with_suffix` REPLACES `.db`, producing `talkingtoad.pre-rekey-….bak` — which
+    # breaks the `talkingtoad.db.pre-origin-collapse.….bak` convention beside it and
+    # is why the 2026-09-05 QA gate went looking for the backup and reported it
+    # missing. A backup an independent reviewer cannot find is barely a backup.
+    stamp = f"{datetime.now(timezone.utc):%Y%m%dT%H%M%SZ}"
+    backup = path.with_name(f"{path.name}.pre-rekey-{stamp}.bak")
     try:
         shutil.copy2(path, backup)
     except OSError as exc:
