@@ -254,6 +254,13 @@ Matrix): 180-day technical-improvement staleness and 20% traffic-decay drop.
 | IMG_POOR_COMPRESSION — weight that overrides the pixel floor | 50 KB | `min_bytes_for_bpp`, `api/crawler/image_analyzer.py` |
 | Image dimension pass — overall time budget | 45 s | `TT_IMAGE_DIMENSION_BUDGET_S` env, `api/crawler/engine.py` |
 | Image dimension pass — per-image timeout | 8 s | `TT_IMAGE_DIMENSION_TIMEOUT_S` env, `api/crawler/engine.py` |
+
+> **Derived floor (2026-09-05):** the three rows above imply a worst case of
+> `concurrency x floor(budget / timeout)` = **30** images measured on a page where every
+> download takes the full per-image timeout, against a cap of 150 — so the pass is designed to
+> fall short and `images_measured` / `images_measurable` must both be surfaced.
+> `tests/test_image_dimensions.py::TestTheMeasurableFloorFollowsFromTheConstants` reads these
+> rows and compares them to the live constants, so the numbers and this prose cannot move apart.
 | Image dimension pass — assumed size when HEAD gives none | 150 KB | `api/crawler/engine.py` |
 | Broken-link source pages listed per issue | 50 | `TT_BROKEN_LINK_SOURCE_CAP` env, `api/crawler/engine.py`, `api/crawler/checkers/links.py` |
 | Performance-data staleness (report presentation) | 60 days | `TT_PERF_STALE_DAYS` env, `api/services/page_priority.py` |

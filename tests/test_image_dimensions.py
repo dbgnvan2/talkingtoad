@@ -421,3 +421,84 @@ class TestTheShippedBoundsAreTheOnesTested:
         assert result.images_measured == 40, (
             f"the shipped defaults truncated an ordinary site: measured "
             f"{result.images_measured} of {result.images_measurable}")
+
+
+# ---------------------------------------------------------------------------
+# The measurable floor (2026-09-05 sweep §2)
+# ---------------------------------------------------------------------------
+
+
+class TestTheMeasurableFloorFollowsFromTheConstants:
+    """`docs/TODO-ARCHIVE.md` recorded the derivation and nothing asserted it:
+    with `CONCURRENCY=6`, `TIMEOUT_S=8` and `BUDGET_S=45`, a page whose images
+    all take the full per-image timeout gets `6 x floor(45/8)` = 30 of them
+    measured, against a cap of 150. The pass is *designed* to fall short, which
+    is why `images_measured` / `images_measurable` are surfaced at all.
+
+    Deliberately not a wall-clock test. Asserting concurrency by timing is what
+    turned CI red intermittently on 2026-09-03; "unpinned" meant the numbers
+    could move without anyone re-checking the relationship, and that is what is
+    pinned here.
+    """
+
+    # The prose rows in docs/thresholds.md that quote each constant.
+    _ROWS = {
+        "concurrent downloads": "_IMAGE_DIMENSION_CONCURRENCY",
+        "overall time budget": "_IMAGE_DIMENSION_BUDGET_S",
+        "per-image timeout": "_IMAGE_DIMENSION_TIMEOUT_S",
+        "max images measured": "_IMAGE_DIMENSION_MAX_COUNT",
+    }
+
+    @pytest.mark.parametrize("label,const", sorted(_ROWS.items()))
+    def test_the_documented_value_is_the_shipped_one(self, label, const):
+        """Read the sentence, compare it to the code. Two assertions each
+        restating 45 would agree with each other forever (LEARNINGS item 13)."""
+        import re
+        from pathlib import Path
+
+        from api.crawler import engine
+
+        text = (Path(__file__).resolve().parent.parent / "docs/thresholds.md").read_text()
+        row = next((l for l in text.splitlines()
+                    if l.startswith("|") and label in l), None)
+        assert row, f"docs/thresholds.md no longer documents {label!r} — update this test"
+        value_cell = row.split("|")[2]
+        documented = float(re.search(r"([\d,]+)", value_cell).group(1).replace(",", ""))
+        assert documented == float(getattr(engine, const)), (
+            f"thresholds.md says {label} is {documented}, the engine uses "
+            f"{getattr(engine, const)}"
+        )
+
+    def test_the_pass_can_fall_short_of_the_cap(self):
+        """The property the floor exists to express.
+
+        If the constants ever imply a floor at or above the count cap, the
+        shortfall becomes unreachable and `images_measured` turns into a field
+        that always equals `images_measurable` — a disclosure that can only say
+        one thing (P12). The panel's "measured 31 of 37" line would then be
+        decoration.
+        """
+        import math
+
+        from api.crawler import engine
+
+        floor = engine._IMAGE_DIMENSION_CONCURRENCY * math.floor(
+            engine._IMAGE_DIMENSION_BUDGET_S / engine._IMAGE_DIMENSION_TIMEOUT_S)
+        assert floor >= engine._IMAGE_DIMENSION_CONCURRENCY, (
+            "the budget cannot fit even one round of downloads — every image "
+            "on every page would time out"
+        )
+        assert floor < engine._IMAGE_DIMENSION_MAX_COUNT, (
+            f"the constants now guarantee {floor} measurements against a cap of "
+            f"{engine._IMAGE_DIMENSION_MAX_COUNT}: the pass can no longer fall "
+            f"short, so re-check whether the disclosure still means anything"
+        )
+
+    def test_the_result_can_express_the_shortfall(self):
+        """The floor matters only because the number reaches the operator."""
+        import dataclasses
+
+        from api.crawler.engine import CrawlResult
+
+        fields = {f.name for f in dataclasses.fields(CrawlResult)}
+        assert {"images_measured", "images_measurable"} <= fields
