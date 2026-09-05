@@ -40,7 +40,7 @@ aiosqlite~=0.22.0
 # Fernet encryption for stored GSC OAuth tokens (api/routers/gsc.py).
 # Imported lazily, so the dependency check cannot see it; without it the
 # security model's encrypted-token path silently falls back to raw JSON.
-cryptography~=48.0.0
+cryptography~=50.0.1
 python-dotenv~=1.2.0
 
 # PDF parsing
