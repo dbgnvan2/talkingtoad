@@ -318,6 +318,58 @@ class SQLiteJobStore:
             rows = await cursor.fetchall()
         return [_row_to_job(dict(r)) for r in rows]
 
+    async def mutate_fix_focus(self, job_id: str, mutate):
+        """Read-modify-write the Fix Focus snapshot inside ONE transaction.
+
+        Every mutation used to be `load -> change in memory -> update_job(
+        fix_focus=whole_snapshot)`. Two writers holding the same snapshot each
+        wrote their whole copy, so the second silently restored what the first
+        had changed — measured with two panels un-ticking different items
+        (P8.1). The blob is the unit of the write, so the whole blob is what gets
+        lost.
+
+        `mutate(snapshot)` is called with the CURRENT snapshot, read inside the
+        lock — wrapping a snapshot the caller loaded earlier would change
+        nothing, because the staleness happens before the transaction. Its
+        return value is returned to the caller, so a route can still answer with
+        the item it changed. Raising rolls the whole thing back.
+
+        `BEGIN IMMEDIATE` takes the write lock up front, so a concurrent writer
+        waits and then re-reads rather than racing. Do NOT do slow work inside
+        `mutate` — `verify-page` re-crawls a page first and applies the result
+        here afterwards, precisely so the network fetch is outside the lock.
+        """
+        db = self._db
+        assert db is not None
+        await db.execute("BEGIN IMMEDIATE")
+        try:
+            async with db.execute(
+                "SELECT fix_focus FROM crawl_jobs WHERE job_id = ?", (job_id,),
+            ) as cursor:
+                row = await cursor.fetchone()
+            if row is None:
+                await db.rollback()
+                return None
+            snapshot = json.loads(row[0]) if row[0] else None
+            if snapshot is None:
+                await db.rollback()
+                return None
+            result = mutate(snapshot)
+            await db.execute(
+                "UPDATE crawl_jobs SET fix_focus = ? WHERE job_id = ?",
+                (json.dumps(snapshot), job_id),
+            )
+            await db.commit()
+        except BaseException:
+            # Defensive. `mutate` raising happens BEFORE the UPDATE, so there is
+            # normally nothing to undo — the "half-applied change is not
+            # persisted" property holds by ordering, and a mutation test
+            # confirmed this branch is not what enforces it. Keeping the commit
+            # inside the try at least makes the rollback cover a failing commit.
+            await db.rollback()
+            raise
+        return result
+
     async def update_job(self, job_id: str, **fields: Any) -> None:
         """Update specific fields on a job record.
 

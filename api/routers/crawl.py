@@ -2608,17 +2608,21 @@ async def check_fix_focus_item(
     job = await store.get_job(job_id)
     if job is None:
         return _err("JOB_NOT_FOUND", "No crawl job found with the given ID.", 404)
-    snapshot = await _load_or_build_fix_focus(job, store)
-    item = set_checked(
-        snapshot, body.page_url, body.issue_code,
-        checked=body.checked, at=_now_iso() if body.checked else None,
+    # Ensure a snapshot exists, then mutate it inside the store's transaction —
+    # never write back a snapshot loaded out here. Two panels each holding their
+    # own copy used to overwrite one another's ticks silently (P8.1).
+    await _load_or_build_fix_focus(job, store)
+    at = _now_iso() if body.checked else None
+    item = await store.mutate_fix_focus(
+        job_id,
+        lambda snap: set_checked(
+            snap, body.page_url, body.issue_code, checked=body.checked, at=at),
     )
     if item is None:
         return _err(
             "ITEM_NOT_FOUND",
             f"No Fix Focus item for {body.issue_code} on {body.page_url}.", 404,
         )
-    await store.update_job(job_id, fix_focus=snapshot)
     return item
 
 
@@ -2633,7 +2637,13 @@ async def verify_fix_focus_page(
     job = await store.get_job(job_id)
     if job is None:
         return _err("JOB_NOT_FOUND", "No crawl job found with the given ID.", 404)
-    snapshot = await _load_or_build_fix_focus(job, store)
+    # The re-crawl below is a live fetch taking seconds. The snapshot used to be
+    # read HERE, held across it, and written afterwards — so anything the
+    # operator ticked while it was in flight was discarded. That case is about
+    # ORDERING, not locking: a correct lock around a stale read still loses the
+    # tick. Build if needed, fetch, then apply the reconciliation to whatever the
+    # snapshot says by then.
+    await _load_or_build_fix_focus(job, store)
     rescan = await rescan_url(job_id, url=url, store=store)
     if isinstance(rescan, JSONResponse):
         return rescan
@@ -2658,9 +2668,12 @@ async def verify_fix_focus_page(
     # Phase 4 U4.5: codes the single-page path cannot evaluate are neither
     # verified nor still present — they were not checked, and the snapshot
     # must say so rather than over-claim in either direction.
-    outcome = apply_verify(snapshot, rescan["url"], present_codes=present_codes,
-                           unchecked_codes=rescan.get("carried_over_codes") or [])
-    await store.update_job(job_id, fix_focus=snapshot)
+    outcome = await store.mutate_fix_focus(
+        job_id,
+        lambda snap: apply_verify(
+            snap, rescan["url"], present_codes=present_codes,
+            unchecked_codes=rescan.get("carried_over_codes") or []),
+    )
     return {"url": rescan["url"], "reconciled": True,
             "page_status": rescan["status_code"], **outcome}
 
