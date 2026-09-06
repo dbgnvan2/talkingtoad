@@ -358,30 +358,21 @@ Real, worth doing, and nothing breaks tomorrow if they wait.
     provider of PyYAML in the tree is extras-gated — it arrived only through
     `uvicorn[standard]`. Now declared, for the reason the file already gives for pydantic.
 
-## Parked — needs a decision, not a fix (5)
+## Parked — needs a decision, not a fix (4)
 
-- [ ] **Three open decisions inside the v2 audit spec**, all recorded as blocking acceptance
-  criteria in `docs/pending/2026-09-06_v2-audit-implementation.md` so the implementer cannot
-  quietly pick one: whether `LOW_INBOUND_LINKS` additionally requires `archives_skipped == False`;
-  whether `is_decorative` suppresses `IMG_MISSING_DIMENSIONS`; and whether "no entity node on the
-  representative page" is *not applicable* or *not checked* for the two new entity codes. Each is
-  a judgement about what the product should claim, not a fix.
+- [ ] **Should `skip_wp_archives` still default to on?** Raised by the v2 audit decisions
+  (2026-09-06): `LOW_INBOUND_LINKS` was deliberately left ungated on `archives_skipped`, on the
+  reasoning that search engines see the archives whether or not this tool does, and a page linked
+  only from archives really is weakly linked. That reasoning applies to the default itself, which
+  currently hides those pages' outbound links from every crawl and is disclosed rather than fixed.
+  Changing it moves finding counts on every existing site, so it needs a before/after on a real
+  crawl and its own decision — not a clause in someone else's spec.
 - [ ] **A post-hoc reconciliation between `IMG_MISSING_DIMENSIONS` and measured CLS.** The static
   proxy and `CWV_CLS_POOR` can disagree, and the only honest reconciliation retracts stored
   findings in the web-vitals persist path and moves the health score — a change to stored
   findings and scoring, so it needs its own spec rather than a clause in someone else's.
   For now the spec requires the explainer to say that the measured score is the authority
   where one exists.
-- [ ] **The exported report carries an evidence tier only for `ai_readiness` codes.** The help
-  drawer shows one for all 170, from `issueHelp.json`'s own `confidence` field; the PDF and Excel
-  show `Evidence: …` from `Issue.confidence_label`, fed by `_AI_READINESS_CONFIDENCE`, which
-  `test_confidence_entries_only_for_ai_readiness_category` holds to that category in both
-  directions. So `IMG_ALT_MISSING`, `ORPHAN_PAGE` and every `CWV_*` finding are tier-less in the
-  export, and three of the five new v2 codes would join them — including the one resting on a WCAG
-  clause. `authority.yaml` records the basis for all 170 but has no runtime consumer, so it cannot
-  fill the gap. Either accept the scope or carry a tier into the export for every category; the v2
-  spec §1.2 states the choice.
-
 - [ ] **Resolve-then-fetch TOCTOU in `is_ssrf_safe`.** Closing it needs IP pinning, which is a
   design change to every outbound call, not a patch. Recorded so it is a choice rather than an
   oversight.
