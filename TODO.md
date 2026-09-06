@@ -372,13 +372,15 @@ Real, worth doing, and nothing breaks tomorrow if they wait.
   findings and scoring, so it needs its own spec rather than a clause in someone else's.
   For now the spec requires the explainer to say that the measured score is the authority
   where one exists.
-- [ ] **No evidence tier is rendered for non-`ai_readiness` codes.** `Issue.confidence_label` is fed
-  by `_AI_READINESS_CONFIDENCE`, which `test_confidence_entries_only_for_ai_readiness_category`
-  holds to that one category in both directions — so `IMG_ALT_MISSING`, `ORPHAN_PAGE` and every
-  `CWV_*` finding render no tier on screen or in the PDF, and three of the five new v2 codes would
-  join them, including the one resting on a WCAG clause. `authority.yaml` records the basis for all
-  170 but has no runtime consumer, so it cannot fill the gap as written. Either accept the scope or
-  wire `authority_for` into the issue serialiser; the v2 spec §1.2 states the choice.
+- [ ] **The exported report carries an evidence tier only for `ai_readiness` codes.** The help
+  drawer shows one for all 170, from `issueHelp.json`'s own `confidence` field; the PDF and Excel
+  show `Evidence: …` from `Issue.confidence_label`, fed by `_AI_READINESS_CONFIDENCE`, which
+  `test_confidence_entries_only_for_ai_readiness_category` holds to that category in both
+  directions. So `IMG_ALT_MISSING`, `ORPHAN_PAGE` and every `CWV_*` finding are tier-less in the
+  export, and three of the five new v2 codes would join them — including the one resting on a WCAG
+  clause. `authority.yaml` records the basis for all 170 but has no runtime consumer, so it cannot
+  fill the gap. Either accept the scope or carry a tier into the export for every category; the v2
+  spec §1.2 states the choice.
 
 - [ ] **Resolve-then-fetch TOCTOU in `is_ssrf_safe`.** Closing it needs IP pinning, which is a
   design change to every outbound call, not a patch. Recorded so it is a choice rather than an
