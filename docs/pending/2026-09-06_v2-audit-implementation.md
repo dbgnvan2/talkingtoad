@@ -17,6 +17,20 @@
 >
 > Two owner decisions were confirmed unchanged: all P0 codes stay **info/Notable** (severity is a derived claim about SEO effect size, not about legal exposure — accessibility weight belongs in the explainer copy, and `_IMPACT_OVERRIDES` is the lever if that is ever revisited), and the **AEO relabel stays copy-only** (§4).
 
+
+> **Revision r2 (2026-09-06)** — a second, independent failure-pattern sweep over r1 found nine more, three of them blocking. Two were introduced *by* r1's own fixes, which is why they are called out here rather than folded in silently:
+> 1. **A fifth registration surface was missing, and r1 asserted it did not exist.** `api/crawler/checkers/data/authority.yaml` holds exactly 170 entries — one per catalogue code — enforced by `tests/test_authority.py`. r1's §1 said "the `_IssueSpec` has no `authority` field today, so the citation lives in the explainer": the field's absence is true, the conclusion was wrong, and following it would have turned the suite red and labelled the one standards-backed new check a heuristic. A **sixth** surface, `_AI_READINESS_CONFIDENCE`, is also required for the two `ai_readiness` codes. Both are now in §0. (§0.2, §0.4, §1.2)
+> 2. **The measured-CLS suppression r1 added cannot exist where r1 wired it.** `CWV_CLS_POOR` is produced only by `api/services/web_vitals.py`, from opt-in post-crawl CrUX field data over the top-N pages; at per-page check time no CLS exists for any page, ever. r1 also made it an acceptance criterion, which would have forced a green test over a branch the run path cannot reach. Replaced with an honest limitation. (§1.1, §7)
+> 3. **The Decisions surface's storage could not meet its own stated requirement** — "survive a rescan", keyed per job, when a rescan mints a new `job_id`. Now keyed on `domain`, with the test specified as a real rescan. (§3)
+> 4. Decorative images are not addressed by `IMG_MISSING_DIMENSIONS` — the same class as this repo's 156-finding `IMG_ALT_MISSING` false positive. (§1.1)
+> 5. `IMG_LAZYLOAD_MISSING` (P1) re-implemented a parser predicate one field away from the two r1 told it to reuse. (§5)
+> 6. `LOW_INBOUND_LINKS`'s suppression has **four** disclosure homes, not two, none of which render a `crawlability` finding — and `orphan_detection` is a persisted column, so r1's "rename/extend" would blank historical jobs. (§1.5)
+> 7. `CONTRAST_RATIO_LOW` has no computed-style producer and implies an undeclared dependency — moved to P2 beside `V2-MOBILE`, which was already deferred for the same reason. (§5, §6)
+> 8. Codes 3 and 4 inherit a representative-page scope that silently no-ops when the entity node is not on the homepage. (§1.3, §1.4)
+> 9. "measured" was used in two senses across §0.3 and §1. (§0.3)
+>
+> The distribution is worth recording: §1, the only section with prior review, still yielded three findings, and §3/§5, the least reviewed, yielded four. Read that as the review having been thorough, not those sections being clean.
+
 ---
 
 ## 0. Read this first — invariants you must not break
@@ -28,6 +42,7 @@ The repo is extremely strict, and the CI/parity tests will reject a wrong regist
    - `_CALIBRATION` (the `(confidence, effect_size, measured)` tuple — this **derives** the impact)
    - `_ISSUE_SCORING` (the `(impact, effort)` tuple — impact **must equal** `derive_impact(code)`)
    - `_CATALOGUE` (the `_IssueSpec` — category, description, recommendation, scope, `needs_full_crawl`, the four help text fields, fixability)
+   - `_AI_READINESS_CONFIDENCE` — **required for every `ai_readiness` code** (`Established` / `Reasonable proxy` / `Heuristic`), enforced by `tests/test_architecture_constraints.py::test_every_ai_readiness_code_has_confidence_label`. It covers 75 of 170 codes, so it is easy to miss; both new entity codes need an entry, and it must agree with the `_CALIBRATION` confidence.
    `make_issue()` raises `KeyError` for an unregistered code. There is no silent fallback.
 3. **Severity and impact are DERIVED, never hand-set to a different value.**
    - `derive_impact(code)` = `_IMPACT_OVERRIDES[code]` if present, else `_MEASURED_MATRIX[eff]` if `measured` else `_IMPACT_MATRIX[(confidence, eff)]`.
@@ -35,12 +50,19 @@ The repo is extremely strict, and the CI/parity tests will reject a wrong regist
    - `_IMPACT_MATRIX` = Heuristic{0,1,2,3} / Reasonable proxy{0,2,4,6} / Established{0,2,6,9} for {none,small,moderate,large}.
    - `severity_from_impact(impact)` = critical ≥8, warning ≥4, else info.
    - `test_r5_severity.py` pins all codes' stored severity to `severity_from_impact(derive_impact(code))`.
+   - **Do not confuse two senses of "measured".** In `_CALIBRATION` it is the third tuple element, selecting `_MEASURED_MATRIX` (which scores *lower* at the top end: moderate → 3, not 6). Elsewhere in this spec it means "derived from a real measurement of the live site". `CWV_CLS_POOR` is measured in the second sense and `False` in the first. All five new codes are `False`.
    So: **pick the `_CALIBRATION` tuple, and let the impact fall out of the matrix.** The table in §1 gives the correct tuple and its resulting impact/severity — do not change the tuple without changing the spec.
 4. **Four files stay in sync** (parity tests fail otherwise):
    - `_CATALOGUE` / `_ISSUE_SCORING` / `_CALIBRATION` (registry.py)
    - `frontend/src/data/issueHelp.json` (authored, seven-part explainer — style in `docs/explanation-style-guide.md`)
    - the generated Python help copy (`api/services/issue_help_data.py` — regenerate via its generator script)
    - `docs/issue-codes.md` (regenerate via `python scripts/generate_issue_codes_doc.py`)
+   - **`api/crawler/checkers/data/authority.yaml` — one entry per catalogue code, no exceptions.** It currently holds exactly 170, and `tests/test_authority.py::test_v1_every_catalogue_code_declares_a_basis` asserts `set(_CATALOGUE) - all_codes()` is empty. This is the file that decides whether a finding renders as evidence-backed or as a heuristic — `authority.is_heuristic()` returns `True` for an unknown code, so a missing entry does not just fail a test, it *mislabels the check in the panel and the PDF*.
+     Each entry declares `basis: citation | heuristic | observation`, and `test_v1_entry_is_well_formed` is parametrized over every code:
+     - `citation` requires `source`, `source_type` (one of vendor / standard / industry / research), an `https://` `url`, and a `claim`. The URL must also appear in `data/url_verification.yaml` with status 200 and a `checked_on` under 180 days old — run `python scripts/verify_authority_urls.py` after adding one.
+     - `heuristic` requires a `rationale` of ≥ 60 characters and **must not** carry a `url`.
+     - `observation` requires a `method` of ≥ 60 characters saying what was measured *and what it does not establish*, and must not carry a `url`.
+     - A code labelled `Established` in `_AI_READINESS_CONFIDENCE` must have `basis: citation` with `source_type` vendor or standard (`test_v1_established_codes_carry_a_citation`). Where the threshold is ours rather than the source's, say so in `threshold_note` — `ORPHAN_PAGE`'s entry is the model, and it documents its own P31 suppression there.
    Also `frontend/src/data/categories.generated.json` (regenerate via `python scripts/generate_categories_json.py`) when categories change.
 5. **`CATEGORY_DISPLAY`** in registry.py is the single source for category order+labels; its key set must equal the set of categories `_CATALOGUE` emits (`tests/test_frontend_backend_code_parity.py`). Adding a category ⇒ add it to BOTH `IssueCategory` (in `api/models/issue.py`) and `CATEGORY_DISPLAY`.
 6. **`needs_full_crawl=True`** on any code that cannot be produced by a single-page scan. It is read by `tests/test_single_page_scan_discloses_inert_checks.py`; do not mirror the list anywhere else.
@@ -87,17 +109,21 @@ Codes 3 and 4 are site facts of exactly this kind. Emit them from inside `_check
 
 *Read the signal that already exists — do not add a parallel one.* `api/crawler/parser.py` already stores `rendered_width` / `rendered_height` on each image record via `_parse_dimension`, which returns `None` for missing, empty and unparseable values alike. The check is `img["rendered_width"] is None or img["rendered_height"] is None` over `page.images`. Adding a new `images_missing_dimensions` field to `ParsedPage` would create a **third** reading of the same attributes — `_detect_decorative` already has its own `int(tag.get("width", 999))` — and the repo keeps `tests/test_checker_agreement.py` precisely because divergent duplicate predicates are a live defect class here. If a new field is genuinely unavoidable, it ships with an agreement test against `rendered_width`/`rendered_height`.
 
-*Reconcile with measured CLS.* `CWV_CLS_POOR` already exists (Established/moderate → impact 6) and is a **measured** value from the performance bundle. `IMG_MISSING_DIMENSIONS` is a static proxy for the same outcome, so a page with a good measured CLS and undeclared dimensions is a known false positive. Required: when a measured CLS is available for the page **and** is not poor, suppress `IMG_MISSING_DIMENSIONS` for that page; state the suppression in the explainer ("the measured value wins"). Where no measurement exists, emit the proxy and name its tier. A test must cover both branches.
+*Do not attempt a measured-CLS suppression at check time — it is not buildable there.* r1 required suppressing this code when the page has a good measured CLS. That cannot work as wired: `CWV_CLS_POOR` is emitted only by `api/services/web_vitals.py::collect_web_vitals`, which runs **after** the crawl, behind an opt-in API-key-gated endpoint, over the top-N pages, from CrUX **field** data that exists only for URLs with enough traffic to anonymise. At per-page check time during a crawl, no CLS is available for any page — so the suppression branch would be permanently dead, and a test of it would be green over code the run path cannot reach (P27 / P21's conditionally-dead corollary). For a nonprofit site, CrUX coverage is close to zero regardless.
+
+  Do this instead: **emit the proxy unconditionally and be honest in the explainer** — say that this is a markup check, that a measured Core Web Vitals score is the authority where one exists, and that the two can disagree. A post-hoc reconciliation (retracting stored `IMG_MISSING_DIMENSIONS` rows in the web-vitals persist path at `api/routers/crawl.py`, and moving the health score) is a real option but a **materially larger change** touching stored findings and scoring — it is out of scope here and belongs in its own spec.
+
+*Decide and record: decorative images.* `parser.py` already computes `is_decorative` per image (`role="presentation"`, `aria-hidden`, `alt=""`, sub-32px). Tracking pixels, spacers and theme decorations routinely declare no dimensions and shift nothing. This is precisely the class that produced this repo's 156-finding `IMG_ALT_MISSING` false positive — where an "adversarial" test pinned the wrong answer because the expected value came from the implementation rather than the standard (P32). Decide **before implementing** whether `is_decorative` suppresses this code, write down where the decision came from, and put the case in the adversarial list either way.
 
 *Honest caveat for the explainer:* a theme may reserve space via CSS, so the finding means "no intrinsic dimensions declared in the markup", which *usually* causes layout shift — review, not certain CLS.
 
-*Adversarial test:* an `<img>` with `width` set but `height` missing (or vice-versa) **must** count; an `<img>` with both present must not; an `<img>` with `width="" height=""` must count; an `<img>` with `width="100px"` and `height="60"` must not (both parse); a page with a good measured CLS must not emit.
+*Adversarial test:* an `<img>` with `width` set but `height` missing (or vice-versa) **must** count; an `<img>` with both present must not; an `<img>` with `width="" height=""` must count; an `<img>` with `width="100px"` and `height="60"` must not (both parse); plus the decorative case, per the decision recorded above.
 
 **2. `FORM_FIELD_NO_LABEL`** — for every `<input>` (excluding `type` in `{submit, button, reset, image, hidden}`), `<select>` and `<textarea>` that has **no proper label**, emit one finding with `extra={"count": N, "examples": [{type, id or name}…][:5]}`. A *proper* label is: a `<label>` whose `for` equals the field's `id`, a wrapping `<label>`, `aria-label`, or `aria-labelledby`. **`placeholder` and `title` do NOT count** (WCAG 1.3.1 / 3.3.2).
 
 This is the deliberate difference from `INTERACTIVE_NO_ACCESSIBLE_NAME`, which *does* accept `placeholder` and `title` as names (`api/crawler/parser.py`, the `unnamed_interactive` signal) because it targets agent operability, not WCAG label compliance. Two codes, two questions, answered differently on purpose. Document the relationship in **both** explainers so they are not read as duplicates, and add an agreement test in `tests/test_checker_agreement.py` pinning the intended divergence: an input carrying only `placeholder` fires `FORM_FIELD_NO_LABEL` and does **not** fire `INTERACTIVE_NO_ACCESSIBLE_NAME`.
 
-Cite the WCAG clause in the explainer's evidence line. The `_IssueSpec` has no `authority` field today; adding one is out of scope here, so the citation lives in the seven-part explainer.
+**Its authority entry is not optional and not free-text.** r1 said the citation "lives in the seven-part explainer" because `_IssueSpec` has no `authority` field. That was wrong — the record lives in `api/crawler/checkers/data/authority.yaml` (§0.4), and this is the one new code whose basis is a normative standard. Its entry is `basis: citation`, `source_type: standard`, W3C WAI / WCAG 2.2 SC 1.3.1 (and 3.3.2), with the URL added to `url_verification.yaml` via `scripts/verify_authority_urls.py`. `IMG_ALT_MISSING`'s existing entry is the model. Without it, `authority.is_heuristic()` returns `True` and the product tells the user a WCAG conformance failure is our guesswork — and acceptance criterion 14 cannot be met, because that criterion is powered by this file.
 
 *Adversarial test:* an input with only `placeholder` must still flag; an input with a `<label for="…">` must not; a `type="hidden"` input must not; a submit button must not.
 
@@ -106,7 +132,7 @@ Cite the WCAG clause in the explainer's evidence line. The `_IssueSpec` has no `
 > **The casing half of this check was withdrawn at review.** The draft would have flagged a `legalName` that is "a non-canonical casing of `name`". `cross_page.py` already normalises casing *and* legal suffixes away before comparing organisation names (`_normalise_org_name`, `_ENTITY_LEGAL_SUFFIXES`), annotated "so a casing/suffix-only difference is NOT a false 'inconsistent' (adversarial P7)". Shipping the casing rule would have had two checks give opposite answers about the same node — the shape where whoever implements it writes a test pinning whichever answer they happen to believe. `legalName` is also already in `placeholder_fields`, so its *content* is under E5's eye.
 > The code is renamed to match what it now does. If a casing rule is wanted later it is a change to `_normalise_org_name`'s contract, argued on its own, with an agreement test — not a second opinion emitted beside the first.
 
-*Adversarial test:* `legalName` present → no flag (whatever its casing); `legalName` absent → flag; `name` absent → no flag (nothing to compare); three pages carrying the same node → exactly one finding.
+*Adversarial test:* `legalName` present → no flag (whatever its casing); `legalName` absent → flag; `name` absent → no flag (nothing to compare); three pages carrying the same node → exactly one finding; **the entity node on `/about` and not on the homepage → see the representative-page caveat below.**
 
 **4. `LOCAL_BUSINESS_FIELD_INCOMPLETE`** — when a node is a `LocalBusiness` (or `Organization`+`Place`), flag each **missing** field from a configured list. One **site-scoped** finding listing which are absent: `extra={"missing": ["areaServed", …]}`.
 
@@ -116,7 +142,13 @@ Cite the WCAG clause in the explainer's evidence line. The `_IssueSpec` has no `
 
 Complements — does not overlap — `ENTITY_NAP_INCOMPLETE`, whose required set (`url`, `logo`, `address`, `telephone`, `email`, address subfields) shares no member with this one. A test must assert the two sets are disjoint, so a later edit to either config list cannot silently create a double-count.
 
-*Adversarial test:* all configured fields present → no flag; only `geo` missing → flag with `["geo"]`; `geo` present with `latitude` only → flag; a plain `Organization` (not a premises type) → no flag; three pages carrying the node → exactly one finding.
+*Adversarial test:* all configured fields present → no flag; only `geo` missing → flag with `["geo"]`; `geo` present with `latitude` only → flag; a plain `Organization` (not a premises type) → no flag; three pages carrying the node → exactly one finding; **the entity node on `/about` and not on the homepage → see the representative-page caveat below.**
+
+### Representative-page caveat — codes 3 and 4 (decide before implementing)
+
+`_check_entity_values` picks `rep` as the page matching the start URL whenever one exists, and falls back to "the shallowest page carrying an entity node" **only when no page matches the start URL**. So on a site whose `Organization`/`LocalBusiness` node lives on `/about` but not on the homepage, the representative page yields no entity nodes and codes 3 and 4 **silently never fire** — no finding, no disclosure, indistinguishable from a pass (P3/P31).
+
+This is pre-existing behaviour that the new codes inherit rather than a defect they introduce, so fixing `_check_entity_values`'s fallback is optional and out of scope. What is **not** optional: decide whether "no entity node on the representative page" is *not applicable* or *not checked*, say which in the spec, and put the case in both adversarial lists. A silent nothing is the one answer that is not allowed.
 
 **5. `LOW_INBOUND_LINKS`** — a page with **exactly one** inbound internal link from the link graph (`ORPHAN_PAGE` = zero, and stays untouched). Emit on the weak page, `extra={"referring_url": …}`.
 
@@ -124,7 +156,14 @@ Complements — does not overlap — `ENTITY_NAP_INCOMPLETE`, whose required set
 
 - `check_cross_page(..., link_graph_complete: bool = True)` (`cross_page.py`) — emit `LOW_INBOUND_LINKS` **inside the existing `if link_graph_complete:` block**, next to `_check_orphan_pages`. Do not add a second flag.
 - `api/crawler/engine.py` sets it from `orphan_status`, which is `skipped_single_page` / `skipped_partial_scan` / `skipped_truncated` / `complete`.
-- **Extend the disclosure.** The `orphan_detection` dict and its `orphan_detection_skipped` log event are orphan-only in name and in copy. A suppressed `LOW_INBOUND_LINKS` renders as zero findings, which every surface reads as a clean bill of health. Rename/extend the disclosure so it names **both** suppressed checks, and carry that through to whatever the results page and the PDF render from it. Ship the gate and the honest status in the same change: *"skipped: partial scan, covered N of M pages"*, never a silent zero.
+- **Extend the disclosure — and note it has four homes, not two, none of which will show this code.** A suppressed `LOW_INBOUND_LINKS` renders as zero findings, which every surface reads as a clean bill of health. The `orphan_detection` disclosure is currently authored in four independent places, all of them ORPHAN_PAGE-specific:
+  - `api/services/coverage_notes.py::orphan_coverage_note` (`_ORPHAN_SKIP_WHY`) — the export surfaces, PDF and Excel;
+  - `frontend/src/components/OrphanedPagesPanel.jsx` (`SKIP_REASONS`, `SkippedNotice`, `CompletenessFootnote`);
+  - `frontend/src/pages/Results.jsx`;
+  - `frontend/src/api.js`, which literally filters `i.issue_code === 'ORPHAN_PAGE'` and feeds the orphan panel.
+
+  `LOW_INBOUND_LINKS` is a `crawlability` finding, so it renders in the ordinary category list (`CategoryPanel`) — which carries **no coverage disclosure at all**. Extending only the four above puts the honest status where this code is not shown, and leaves a silent zero where it is. `CategoryPanel` (or the crawlability list) is therefore a **required** disclosure surface for this change, and the wording must be shared with the existing note rather than authored a fifth time — this repo's own rule against one fact reaching two surfaces in two phrasings.
+- **Do not rename `orphan_detection`.** It is a persisted SQLite column (`api/services/sqlite_store.py`), read back for stored jobs. Renaming it blanks the disclosure on every historical job unless a migration ships with it — and the commit immediately before this one (`cafdf6e`) is a migration incident. Extend the payload; leave the key alone.
 - **Test at the boundary that narrows, not only at the checker** (P31 corollary / P25). A checker test proves the flag *works*; only an engine test proves the flag is *set*. Intercept `check_cross_page` and assert `link_graph_complete=False` arrives for a partial scan, a `max_pages` truncation, and single-page mode.
 
 *Decide and record: `archives_skipped`.* `skip_wp_archives` is on by default and is **disclosed rather than gated** for orphans, because gating on a default-on setting would disable the check on every crawl. That trade-off is weaker here: a *second* inbound link is much more likely to live on a skipped archive than a *first* one, so `LOW_INBOUND_LINKS` is materially noisier under the same caveat. Before implementing, decide explicitly whether it additionally requires `archives_skipped == False`, and write the decision into the spec — do not leave it to the implementer.
@@ -182,7 +221,11 @@ SiteDecision {
 - `GET /api/crawl/{job_id}/decisions` → `{decisions: [SiteDecision…], generated_at, …}` — returns all bank items with their trigger-flag and status (an item whose trigger is false still appears, with `derived_from: []` — "not triggered by this crawl" is stated, never hidden).
 - `POST /api/crawl/{job_id}/decisions/{key}/resolve` → toggles `status`; persists. Reversible.
 
-**Storage:** persist `status`/`resolved_at` in the job store (SQLite) — add a `decisions` table or a JSON column on the job; follow the store's existing patterns. Unresolved state must survive a rescan.
+**Storage: key on `domain`, not on `job_id`.** The requirement is that resolutions survive a rescan — and a rescan is a **new job**: `rescan_job` routes to the shared launch path, which mints `job_id=str(uuid4())`. A `decisions` table keyed on the job, or a JSON column on the job row, is discarded by definition and cannot meet the requirement, so neither of r1's two suggested options is usable.
+
+"Follow the store's existing patterns" is ambiguous in the harmful direction here, so be explicit: the store's **job-keyed** tables (`issues`, `images`, `links`) are per-crawl, while its **durable** ones are domain- or globally-keyed — `domain_issue_filters` (on `domain`), `suppressed_issue_codes`, `exempt_anchor_urls`, `ignored_image_patterns` (`api/services/job_store_base.py`). Those are the pattern to follow. Key the decision state on `domain` + `key`.
+
+The trap this leaves for the test is worth naming: whoever implements job-keyed storage also writes its round-trip test, and the natural way to write it is to resolve and re-read the **same** `job_id` — which passes while the requirement fails. The test must therefore be: resolve on job A → run a **real rescan** → assert the **new** job's `GET /decisions` reports it resolved.
 
 **Frontend:** a "Decisions" panel/tab on the results page (a sibling of the existing panels). Lists each decision with its trigger evidence and a resolve toggle. Explicitly labeled "Not part of your health score."
 
@@ -206,8 +249,8 @@ Google's AI-optimization guide (2026-07-10) explicitly states it does **not** us
 ## 5. P1 — summarized (implement after P0 is green and pushed)
 
 - **`FORM_ERROR_NO_ANNOUNCE`** (`accessibility`) — `("Heuristic","small",False)` → 1 info/Low. Form with client-side validation attributes (`required`, `pattern`, etc.) but no `aria-describedby`/`role=alert` on the error path. Clearly heuristic.
-- **`IMG_LAZYLOAD_MISSING`** (`performance`) — `("Reasonable proxy","small",False)` → 2 info. Non-first `<img>` (in document order) without `loading="lazy"`. Heuristic (below-fold is approximate). State the tier.
-- **`CONTRAST_RATIO_LOW`** (`accessibility`) — `("Established","small",False)` → 2 info, effort 3. Text/background contrast < WCAG 4.5:1, **computed styles only** — post-crawl, opt-in (like the WordPress audit), never a silent skip; "not measured" renders as *not checked*.
+- **`IMG_LAZYLOAD_MISSING`** (`performance`) — `("Reasonable proxy","small",False)` → 2 info. Non-first `<img>` (in document order) that is **not lazy-loaded**. Heuristic (below-fold is approximate). State the tier.
+  **Read `is_lazy_loaded`, do not re-derive it.** `api/crawler/parser.py` already computes it per image, and it is *broader* than `loading="lazy"`: it also accepts a `data:` placeholder in `src` and any of `_LAZY_SRC_ATTRS` (`data-src`, `data-lazy-src`, `data-original`, `data-lazy`, `data-echo`). A WordPress theme lazy-loading via `data-src` — common across this tool's entire audience, and the reason those attributes are handled at all — would otherwise be flagged as missing lazy-load while the parser record says it is lazy. `is_lazy_loaded` sits in the same dict literal as the `rendered_width`/`rendered_height` §1 tells you to reuse; the same agreement-test rule applies.
 - **`FOCUS_INDICATOR_REMOVED`** (`accessibility`) — `("Heuristic","small",False)` → 1 info. `outline:none`/`outline:0` without a replacement focus style. Heuristic.
 - **`V2-ANALYTICS`** — an opt-in, read-only "Analytics configuration audit" (conversion events, cross-domain/outbound measurement, 404 event), mirroring `api/services/wp_audit.py`'s capability-probe + `not_inspected` boundary.
 
@@ -215,6 +258,7 @@ Google's AI-optimization guide (2026-07-10) explicitly states it does **not** us
 
 - **`TYPO_SUSPECTED`** — dictionary spellcheck over URL slugs (item 7 `/dontation_form/`). High false-positive risk (names, loanwords). Default off via a scan setting. Requires a design decision on the dictionary + a measured FP rate before it ships.
 - **`V2-MOBILE`** — tap-target size / mobile usability via the render path. Needs measurement infrastructure.
+- **`CONTRAST_RATIO_LOW`** (`accessibility`) — **moved here from P1 at review.** Text/background contrast < WCAG 4.5:1 needs computed styles, and nothing in the repo produces them: the only render capability is `api/services/js_renderer.py`, which returns rendered **HTML**, and nothing under `api/` reads CSS or calls `getComputedStyle`. It also implies `playwright`, which is **not in `requirements.txt`** — `js_renderer` guards it behind `HAS_PLAYWRIGHT`, while CI installs `requirements.txt` and nothing else on 3.11 and 3.14. That is the shape of this repo's most recent fix-log entry (2026-09-04), where a test needing an undeclared dependency was green locally and red in CI for a whole session. `V2-MOBILE` was already deferred for exactly this gap; keeping this in P1 gave one problem two answers in adjacent sections. Before it ships it needs: the measurement source, the `requirements.txt` change, and the skip-marker precedent (`requires_google` in `tests/test_gsc_integration.py`).
 
 ---
 
@@ -228,14 +272,17 @@ Google's AI-optimization guide (2026-07-10) explicitly states it does **not** us
 6. The two entity codes are `scope="site"` and emit **once** per crawl — proved by a multi-page fixture carrying the same node on every page, asserting exactly one finding of each.
 7. `LOW_INBOUND_LINKS` emits only inside the existing `if link_graph_complete:` block. A partial scan, a `max_pages` truncation and single-page mode each yield **no** finding **and** a stated suppression that names the check — never a silent zero. An engine-level test intercepts `check_cross_page` and asserts `link_graph_complete=False` arrives in all three cases (P31 corollary: test the stage that narrows, not only the gate).
 8. The `archives_skipped` decision for `LOW_INBOUND_LINKS` is written into this spec **before** implementation begins, not left to the implementer.
-9. `IMG_MISSING_DIMENSIONS` reads `page.images`' existing `rendered_width`/`rendered_height`, and is suppressed on any page with an available, non-poor **measured** CLS. Both branches are tested.
-10. `LOCAL_BUSINESS_FIELD_INCOMPLETE`'s field list lives in `api/config/entity_values.json` (not in Python), `priceRange` is absent from the shipped default, and the default list is recorded in `docs/thresholds.md`.
-11. Three agreement tests exist in `tests/test_checker_agreement.py`: `IMG_MISSING_DIMENSIONS` against `rendered_width`/`rendered_height`; `FORM_FIELD_NO_LABEL` against `INTERACTIVE_NO_ACCESSIBLE_NAME` (pinning the intended placeholder divergence); and `LOCAL_BUSINESS_FIELD_INCOMPLETE`'s configured field set disjoint from `nap_required_fields`.
-12. The stale `PHASE_1_CATEGORIES` comment in `api/models/issue.py` is corrected in the same change (§2).
-13. The Decisions surface ships with `tests/test_decisions_surface.py` (contract) written and passing **before** its frontend panel exists; the panel is added only after.
-14. Heuristic/lower-confidence findings name their evidence tier on screen and in the PDF; a measurement that could not be made renders *not checked*, never clean (repo P2 rule).
-15. `SCORING_MODEL_VERSION` = `2026-09-06-r7` and `ISSUE_EMISSION_VERSION` = `2026-09-06-e2` are bumped; `docs/functional-specification.md` and `docs/thresholds.md` are folded; `PLAN-V4.0.md` tallies any shipped V4 explainer; `git push origin main` after each item.
-16. Full suite green on **both** interpreters (3.11 and 3.14) via `./venv/bin/python -m pytest tests/ -q`.
+9. `IMG_MISSING_DIMENSIONS` reads `page.images`' existing `rendered_width`/`rendered_height`. **No measured-CLS suppression is implemented** (§1.1 — it cannot exist at check time); the explainer states that a measured Core Web Vitals score is the authority where one exists.
+10. The decorative-image decision (§1.1) and the representative-page decision (§1.3/§1.4) are both written into this spec **before** implementation, and each appears in the relevant adversarial list.
+11. `LOCAL_BUSINESS_FIELD_INCOMPLETE`'s field list lives in `api/config/entity_values.json` (not in Python), `priceRange` is absent from the shipped default, and the default list is recorded in `docs/thresholds.md`.
+12. `api/crawler/checkers/data/authority.yaml` has an entry for each of the five new codes, well-formed per §0.4; `FORM_FIELD_NO_LABEL`'s is `basis: citation` / `source_type: standard` citing WCAG 1.3.1; `scripts/verify_authority_urls.py` has been run and `url_verification.yaml` updated; `tests/test_authority.py` is green. `_AI_READINESS_CONFIDENCE` has an entry for both `ai_readiness` codes.
+13. Three agreement tests exist in `tests/test_checker_agreement.py`: `IMG_MISSING_DIMENSIONS` against `rendered_width`/`rendered_height`; `FORM_FIELD_NO_LABEL` against `INTERACTIVE_NO_ACCESSIBLE_NAME` (pinning the intended placeholder divergence); and `LOCAL_BUSINESS_FIELD_INCOMPLETE`'s configured field set disjoint from `nap_required_fields`.
+14. The stale `PHASE_1_CATEGORIES` comment in `api/models/issue.py` is corrected in the same change (§2).
+15. Decision state is keyed on `domain`, not `job_id`, and its round-trip test performs a **real rescan** and asserts the **new** job reports the resolution (§3). The Decisions surface ships with `tests/test_decisions_surface.py` (contract) written and passing **before** its frontend panel exists; the panel is added only after.
+16. `LOW_INBOUND_LINKS`'s suppression is disclosed on the surface that actually renders it (`CategoryPanel` / the crawlability list), sharing wording with the existing note; `orphan_detection` is **not** renamed (§1.5).
+17. Heuristic/lower-confidence findings name their evidence tier on screen and in the PDF; a measurement that could not be made renders *not checked*, never clean (repo P2 rule).
+18. `SCORING_MODEL_VERSION` = `2026-09-06-r7` and `ISSUE_EMISSION_VERSION` = `2026-09-06-e2` are bumped; `docs/functional-specification.md` and `docs/thresholds.md` are folded; `PLAN-V4.0.md` tallies any shipped V4 explainer; `git push origin main` after each item.
+19. Full suite green on **both** interpreters (3.11 and 3.14) via `./venv/bin/python -m pytest tests/ -q`.
 
 ## 8. Explicit non-goals
 

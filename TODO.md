@@ -360,6 +360,19 @@ Real, worth doing, and nothing breaks tomorrow if they wait.
 
 ## Parked — needs a decision, not a fix (2)
 
+- [ ] **Three open decisions inside the v2 audit spec**, all recorded as blocking acceptance
+  criteria in `docs/pending/2026-09-06_v2-audit-implementation.md` so the implementer cannot
+  quietly pick one: whether `LOW_INBOUND_LINKS` additionally requires `archives_skipped == False`;
+  whether `is_decorative` suppresses `IMG_MISSING_DIMENSIONS`; and whether "no entity node on the
+  representative page" is *not applicable* or *not checked* for the two new entity codes. Each is
+  a judgement about what the product should claim, not a fix.
+- [ ] **A post-hoc reconciliation between `IMG_MISSING_DIMENSIONS` and measured CLS.** The static
+  proxy and `CWV_CLS_POOR` can disagree, and the only honest reconciliation retracts stored
+  findings in the web-vitals persist path and moves the health score — a change to stored
+  findings and scoring, so it needs its own spec rather than a clause in someone else's.
+  For now the explainer says the measured score is the authority where one exists.
+
+
 - [ ] **Resolve-then-fetch TOCTOU in `is_ssrf_safe`.** Closing it needs IP pinning, which is a
   design change to every outbound call, not a patch. Recorded so it is a choice rather than an
   oversight.
