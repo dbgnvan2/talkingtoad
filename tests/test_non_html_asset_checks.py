@@ -345,6 +345,78 @@ async def test_nh11d_size_checks_are_inert_on_html(store):
     assert not (codes & {"PDF_TOO_LARGE", "IMG_OVERSIZED"})
 
 
+# ── NH12 — the job's limit reaches the check, from each endpoint ───────────
+#
+# nh11c pins the PARAMETER: pass 1024, get 1024's behaviour. It says nothing
+# about whether the three call sites pass the job's value at all — delete one
+# of those lines and every nh11 test stays green. This intercepts the boundary
+# function and reads the kwarg, per the repo's rule that a control which is not
+# passed is decoration.
+
+async def _job_with_image_limit(store, limit_kb: int):
+    from api.models.job import CrawlJob, CrawlSettings
+    from api.models.page import CrawledPage
+    job = CrawlJob(target_url=BASE, status="complete",
+                   settings=CrawlSettings(img_size_limit_kb=limit_kb))
+    await store.create_job(job)
+    await store.save_pages([CrawledPage(job_id=job.job_id, url=PDF_URL,
+                                        status_code=200)])
+    return job
+
+
+@pytest.fixture
+def captured_asset_limit(monkeypatch):
+    """Record img_size_limit_kb as it arrives at check_asset, then restore."""
+    from api.routers import crawl as crawl_router
+    seen: list[int] = []
+    real = crawl_router.check_asset
+
+    def spy(result, *, img_size_limit_kb, **kw):
+        seen.append(img_size_limit_kb)
+        return real(result, img_size_limit_kb=img_size_limit_kb, **kw)
+
+    monkeypatch.setattr(crawl_router, "check_asset", spy)
+    return seen
+
+
+async def test_nh12_rescan_url_passes_the_jobs_image_limit(store, captured_asset_limit):
+    from api.routers.crawl import rescan_url
+    job = await _job_with_image_limit(store, 512)
+    with respx.mock(assert_all_mocked=False, assert_all_called=False) as rx:
+        rx.get(PDF_URL).mock(return_value=httpx.Response(
+            200, content=_pdf_bytes(), headers={"content-type": "application/pdf"}))
+        rx.route().mock(return_value=httpx.Response(200, text="ok"))
+        await rescan_url(job.job_id, url=PDF_URL, store=store)
+    assert captured_asset_limit == [512], (
+        f"the endpoint did not hand the job's own limit to the size check: "
+        f"{captured_asset_limit}")
+
+
+async def test_nh12b_page_details_passes_the_jobs_image_limit(store, captured_asset_limit):
+    from api.routers.crawl import get_page_details
+    job = await _job_with_image_limit(store, 768)
+    with respx.mock(assert_all_mocked=False, assert_all_called=False) as rx:
+        rx.get(PDF_URL).mock(return_value=httpx.Response(
+            200, content=_pdf_bytes(), headers={"content-type": "application/pdf"}))
+        rx.route().mock(return_value=httpx.Response(200, text="ok"))
+        await get_page_details.__wrapped__(
+            request=None, job_id=job.job_id, url=PDF_URL, code=None, store=store)
+    assert captured_asset_limit == [768], captured_asset_limit
+
+
+async def test_nh12c_single_page_scan_passes_the_jobs_image_limit(store, captured_asset_limit):
+    from api.models.job import CrawlSettings
+    from api.routers.crawl import _run_single_page_scan
+    with respx.mock(assert_all_mocked=False, assert_all_called=False) as rx:
+        rx.get(PDF_URL).mock(return_value=httpx.Response(
+            200, content=_pdf_bytes(), headers={"content-type": "application/pdf"}))
+        rx.route().mock(return_value=httpx.Response(200, text="ok"))
+        await _run_single_page_scan(
+            url=PDF_URL, authenticated=False, store=store,
+            reuse_settings=CrawlSettings(single_page=True, img_size_limit_kb=384))
+    assert captured_asset_limit == [384], captured_asset_limit
+
+
 # ── NH7 / NH8 — the crawl path ─────────────────────────────────────────────
 
 INDEX = (f"<!DOCTYPE html><html lang='en'><head><title>Home Page Of The Test "
@@ -353,7 +425,10 @@ INDEX = (f"<!DOCTYPE html><html lang='en'><head><title>Home Page Of The Test "
          "</p></body></html>")
 
 
-async def _crawl_with_pdf(pdf: bytes):
+async def _crawl_with_pdf(pdf: bytes, content_length: int | None = None):
+    pdf_headers = {"content-type": "application/pdf"}
+    if content_length is not None:
+        pdf_headers["content-length"] = str(content_length)
     with respx.mock(assert_all_mocked=False, assert_all_called=False) as rx:
         rx.get(f"{BASE}robots.txt").mock(return_value=httpx.Response(
             200, text="User-agent: *\nDisallow:\n"))
@@ -361,7 +436,7 @@ async def _crawl_with_pdf(pdf: bytes):
         rx.get(BASE).mock(return_value=httpx.Response(
             200, text=INDEX, headers={"content-type": "text/html"}))
         rx.get(PDF_URL).mock(return_value=httpx.Response(
-            200, content=pdf, headers={"content-type": "application/pdf"}))
+            200, content=pdf, headers=pdf_headers))
         rx.route().mock(return_value=httpx.Response(200, text="ok"))
         settings = CrawlSettings(crawl_delay_ms=0, max_pages=10)
         return await run_crawl("pdfjob", BASE, settings)
@@ -398,6 +473,22 @@ async def test_nh8c_both_paths_agree_on_a_pdf(store):
     crawl_codes = {i.code for i in crawl.issues if PDF_URL in (i.page_url or "")}
     res = await _rescan(store, PDF_URL, _pdf_bytes(), "application/pdf")
     rescan_codes = {i.issue_code for i in res.issues}
+    assert crawl_codes == rescan_codes, (
+        f"crawl-only: {sorted(crawl_codes - rescan_codes)}; "
+        f"rescan-only: {sorted(rescan_codes - crawl_codes)}")
+
+
+async def test_nh8d_both_paths_agree_on_an_OVERSIZED_pdf(store):
+    """The agreement test above ran on a 400-byte fixture, so it could not see
+    PDF_TOO_LARGE going missing from the rescan path — which is exactly the gap
+    the QA gate found in the first half of this fix. This one declares 11 MB on
+    both paths, so the size code is inside the compared set."""
+    crawl = await _crawl_with_pdf(_pdf_bytes(), content_length=_OVERSIZE)
+    crawl_codes = {i.code for i in crawl.issues if PDF_URL in (i.page_url or "")}
+    res = await _rescan_with_length(store, PDF_URL, _pdf_bytes(),
+                                    "application/pdf", _OVERSIZE)
+    rescan_codes = {i.issue_code for i in res.issues}
+    assert "PDF_TOO_LARGE" in crawl_codes, "the fixture no longer trips the size limit"
     assert crawl_codes == rescan_codes, (
         f"crawl-only: {sorted(crawl_codes - rescan_codes)}; "
         f"rescan-only: {sorted(rescan_codes - crawl_codes)}")

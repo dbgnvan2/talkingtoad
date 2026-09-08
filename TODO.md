@@ -360,6 +360,16 @@ Real, worth doing, and nothing breaks tomorrow if they wait.
 
 ## Parked — needs a decision, not a fix (5)
 
+<!-- Adjacent, found by the 2026-09-08 QA gate while reviewing the non-HTML
+     asset fix; pre-existing, not caused by it, and not swept into it. -->
+
+
+- [ ] **The 200 KB image limit is a literal in three places, and `thresholds.md` points at the
+  wrong one.** `engine.py:110`, `engine.py:280` and `registry.py:2614` each spell 200; the
+  2026-09-08 fix made `registry._IMAGE_SIZE_LIMIT_KB` the router path's fallback, so the doc's
+  pointer at `engine.py:110` is now stale as well as duplicated. The sibling
+  `page_size_limit_kb` already has the cure (one definition, live-linked from the doc). Cheap,
+  but it moves a documented threshold, so it is its own change. Raised as NB-4.
 - [ ] **Read PDF body text, or keep saying we do not.** As of 2026-09-08 a PDF is audited as an
   asset: internal Title and Subject (`DOCUMENT_PROPS_MISSING`), file size (`PDF_TOO_LARGE`) and
   URL hygiene. The body is never decoded, so `word_count` is NULL and every content, metadata
