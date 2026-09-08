@@ -358,7 +358,18 @@ Real, worth doing, and nothing breaks tomorrow if they wait.
     provider of PyYAML in the tree is extras-gated — it arrived only through
     `uvicorn[standard]`. Now declared, for the reason the file already gives for pydantic.
 
-## Parked — needs a decision, not a fix (4)
+## Parked — needs a decision, not a fix (5)
+
+- [ ] **Read PDF body text, or keep saying we do not.** As of 2026-09-08 a PDF is audited as an
+  asset: internal Title and Subject (`DOCUMENT_PROPS_MISSING`), file size (`PDF_TOO_LARGE`) and
+  URL hygiene. The body is never decoded, so `word_count` is NULL and every content, metadata
+  and AI-readiness check is *skipped* — see §4.18 and §10.2. That is the honest behaviour and
+  it is also a gap: on livingsystems.ca five policy documents, including the ones a prospective
+  student is most likely to be sent, get no content assessment at all. `pypdf` is already a
+  dependency and already reads these files' text in the test fixture. Doing it properly means
+  deciding which checks a PDF's text should feed (readability? headings have no equivalent;
+  thin content? a one-page form is not thin by mistake), and it moves finding counts and the
+  health score on every site with documents — so it is a spec, not a patch.
 
 - [ ] **Should `skip_wp_archives` still default to on?** Raised by the v2 audit decisions
   (2026-09-06): `LOW_INBOUND_LINKS` was deliberately left ungated on `archives_skipped`, on the

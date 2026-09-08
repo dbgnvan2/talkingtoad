@@ -2028,6 +2028,69 @@ does. `clean_text` now transliterates typography (em dash, ellipsis, arrow, curl
 before the Latin-1 encode — the authored copy carries 500+ em dashes and every one printed as
 `?` until the sweep caught it.
 
+### 4.18 Non-HTML responses are audited as assets, on every path (2026-09-08)
+
+Reported by the owner: *"The code reported six pages as blank, but they're PDFs,
+and they are not blank at all."* Job `52a5aa00` (livingsystems.ca) carried six
+`CONTENT_NOT_EXTRACTABLE_NO_TEXT` findings — "Page has no visible text" — on
+four policy PDFs, one URL that 301s to a PDF, and `/locations.kml`. Every one of
+those documents is full of text. TalkingToad does not decode a PDF body into
+words, so `word_count` is NULL and `assess_extractability()` read that as "no
+text content". Alongside them came the rest of the HTML suite —
+`TITLE_MISSING`, `H1_MISSING`, `META_DESC_MISSING`, `LANG_MISSING`,
+`MISSING_VIEWPORT_META`, `CANONICAL_SELF_MISSING`,
+`SOCIAL_PREVIEW_METADATA_MISSING`, `ANALYTICS_TAG_MISSING`, `JSON_LD_MISSING`,
+`PAGE_SIZE_LARGE`: **59 false findings of the 63 on those six URLs.**
+
+**The rule.** A response that declares itself as something other than HTML gets
+the checks that apply to an asset — file size (`check_asset`), URL hygiene
+(`check_url_structure`) and, for a PDF, `DOCUMENT_PROPS_MISSING` — and no HTML
+check, **whichever path reached it**. The predicate is
+`issue_checker.is_non_html_response(page)`: true when the Content-Type is not
+HTML, or when there was no Content-Type *and* no HTML body was parsed. An HTML
+content type keeps the full suite even when the body turns out to be empty, so
+a genuinely text-free HTML page still reports
+`CONTENT_NOT_EXTRACTABLE_NO_TEXT`; an unset content type on a record that does
+carry parsed HTML also keeps it, so the gate can only ever remove checks from a
+response that was not HTML.
+
+**Why it took a button press to appear.** `run_crawl` had always branched on the
+content type, and a crawl of the same site 30 minutes earlier reported those six
+URLs correctly. `_fetch_and_check_page` — the shared path behind Rescan,
+**Re-check all pages**, single-page scan and page-details — had no such branch,
+so `POST /{job_id}/recheck-all` walked all 150 stored URLs through the HTML
+suite and rewrote the six. The gate now lives in `check_page` itself rather than
+in one caller's branch, which is the only place that covers surfaces not yet
+written (P16).
+
+**Two findings at the same seam, fixed in the same change.**
+
+- The rescan path never ran `check_url_structure`, and `URL_UPPERCASE` is not
+  `needs_full_crawl`, so the re-check **deleted four real `URL_UPPERCASE`
+  findings and an `INTERNAL_REDIRECT_301` and wrote them to the fixed-issues
+  ledger as RESOLVED** at 2026-09-08 03:50 — checks recorded as fixes without
+  ever being run (P1/P6). The URLs still carry capitals. Every path that audits
+  a URL now runs the URL-structure checks.
+- `DOCUMENT_PROPS_MISSING` had **never fired on a real crawl**: it lives inside
+  `check_page`, which the engine's asset branch did not call. 0 occurrences on
+  crawl-only job `7b28539b`; 4 on `52a5aa00`, and only after the re-check. The
+  August AF5 fix made the parser compute `pdf_metadata` before its non-HTML
+  early return *so that this code could fire*, and its test asserted it by
+  calling `check_page` directly — one layer below the crawl that never called it
+  (P16). The engine's asset branch now calls `check_page`, whose gate returns
+  only the asset-appropriate findings. The check also keys on the parsed PDF
+  metadata rather than on a `.pdf` URL suffix, so the WordPress attachment URL
+  that 301s to a PDF without an extension is no longer skipped (4 findings for
+  5 PDFs).
+
+**Not changed.** TalkingToad still does not extract PDF body text; a check that
+cannot see the text must not report on it. PDF text extraction is recorded in
+`TODO.md` as a feature. Affected stored jobs are corrected by re-running the
+re-check, not by editing the database.
+
+→ `tests/test_non_html_asset_checks.py` (18 cases: the checker, the router
+boundary, and the crawl, plus the dual-path agreement assertion).
+
 ## 5. Fix capabilities
 
 Fixes are organised into routers; all WP-touching endpoints validate domain credentials.
@@ -3099,6 +3162,7 @@ Features either not shipped, partially working, or with documented caveats.
   one backend process but not across restarts.
 - **CONTENT_CLOAKING_DETECTED requires Playwright.** Silently skipped if missing.
 - **STATISTICS_COUNT_LOW** and **QUOTATIONS_MISSING** evaluate a bounded 1500-word window to prevent unbounded over-counting from long footers or appendices.
+- **PDF and other non-HTML documents are audited as assets, not as pages.** TalkingToad reads a PDF's internal Title and Subject and its file size; it does **not** decode the body into text. So a PDF is checked for `DOCUMENT_PROPS_MISSING`, `PDF_TOO_LARGE` and URL hygiene, and every content, metadata and markup check is skipped rather than answered from an absence (§4.18). A PDF's readability to an AI system is therefore *not evaluated*, which is not the same as passing.
 
 ### 10.3 Planned for v4.0 & Deferred Infrastructure
 

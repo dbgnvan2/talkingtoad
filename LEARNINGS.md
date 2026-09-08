@@ -140,6 +140,17 @@
     unused" was recorded from one file; the pattern was 23, next to 27 files that already shipped
     without it. Before fixing what a TODO names, grep for the shape — then fix the class or say
     plainly why only the instance.
+31. **"Which paths reach this check?" is a question about reachability, not about fields.**
+    Item 18 says to enumerate surfaces by grepping. It was written for a field rendered in one
+    place; the same failure happens to *checks*. Two paths decide what applies to a URL — the
+    crawl engine and `_fetch_and_check_page` (Rescan, Re-check all pages, single-page scan,
+    page-details) — and only the engine asked what the URL is, so one button press charged six
+    PDFs with 59 findings that only an HTML document can earn. In the same seam
+    `DOCUMENT_PROPS_MISSING` had never fired on a real crawl, because it lives in the function
+    the engine's asset branch does not call, and its test proved it one layer below the crawl.
+    **Before believing a check runs, grep for its caller on the path that ships, and put the
+    guard in the shared function rather than in the one caller you were looking at.** When two
+    runs of the same input disagree, the defect is in the path, not in the check.
 
 ## Pattern index
 
@@ -274,6 +285,16 @@ this index is the one-line meaning.
 ## Fix log
 
 Newest first. Format: **Issue → Root cause → What would have caught it → Fix → Pattern.**
+
+- **2026-09-08 — six PDFs full of text were reported as blank, and one button press put them there.**
+  - *Issue:* the owner asked why six pages were reported blank when they are PDFs and are not blank at all. Job `52a5aa00` carried six `CONTENT_NOT_EXTRACTABLE_NO_TEXT` — "Page has no visible text" — on four policy PDFs, a URL that 301s to a PDF, and `/locations.kml`, plus `TITLE_MISSING`, `H1_MISSING`, `META_DESC_MISSING`, `LANG_MISSING`, `MISSING_VIEWPORT_META`, `CANONICAL_SELF_MISSING`, `SOCIAL_PREVIEW_METADATA_MISSING`, `ANALYTICS_TAG_MISSING`, `JSON_LD_MISSING` and `PAGE_SIZE_LARGE`. **59 of the 63 findings on those six URLs were false.** TalkingToad never decodes a PDF body into words, so `word_count` is NULL and `assess_extractability()` read that as "no text content" — the finding was never a measurement of the document.
+  - *Root cause — the guard existed, at one front end only (P16).* `run_crawl` branches on the content type and sends a PDF to `check_asset`. `_fetch_and_check_page` — the shared path behind Rescan, **Re-check all pages**, single-page scan and page-details — had no such branch. Job `7b28539b`, a crawl of the same site 30 minutes earlier, has **byte-identical `crawled_pages` rows** for all six URLs and the correct findings on them; the difference is one press of "Re-check all pages", which walked all 150 stored URLs through the HTML suite. **Two paths answered "what applies to this URL?" and only one asked what the URL is.**
+  - *What made it findable, and what nearly hid it:* two jobs of the same site, minutes apart, with the same page rows and different findings. That comparison is the whole diagnosis; without a second job the six findings look like a checker bug and the search goes into `extractability.py`, which is correct code. **When two runs of one input disagree, the defect is in the path, not in the check.**
+  - *The second defect, in the same function, worse than the first:* the rescan path never ran `check_url_structure`, and `URL_UPPERCASE` is not `needs_full_crawl` — so the re-check **deleted four real `URL_UPPERCASE` findings and an `INTERNAL_REDIRECT_301` and wrote them to `fixed_issues` as RESOLVED** (03:50:29–03:50:46). The URLs still carry capitals today. A check that did not run was recorded as a fix (P1/P6). This one produced no visible error at all: false positives are argued with, a false *resolution* is believed.
+  - *The third, and it indicts a fix from nine days earlier:* `DOCUMENT_PROPS_MISSING` had **never fired on a real crawl** — 0 in the crawl-only job, 4 only after the re-check. It lives inside `check_page`, which the engine's asset branch did not call. The August AF5 fix moved `pdf_metadata` computation above the parser's non-HTML early return *specifically so this code could fire*, and its test asserted it by calling `check_page` directly — **one layer below the crawl that never calls it.** AF5 fixed the link it was looking at and the chain stayed broken at the next one. A test at the library says nothing about the surface; checklist item 18 exists for exactly this and applies to *reachability*, not only to fields.
+  - *Fix:* the gate moves into `check_page` itself (`is_non_html_response`), so every caller inherits it, including ones not yet written. It fires when the Content-Type is not HTML, or when there is no Content-Type **and** no HTML body was parsed — an HTML type keeps the full suite even on an empty body, so a genuinely text-free HTML page still reports `CONTENT_NOT_EXTRACTABLE_NO_TEXT`. The engine's asset branch now calls `check_page` too (reviving the PDF check), the rescan path runs `check_url_structure`, and `DOCUMENT_PROPS_MISSING` keys on the parsed PDF metadata rather than a `.pdf` suffix — the attachment URL that 301s to a PDF was silently skipped, 4 findings for 5 PDFs. `tests/test_non_html_asset_checks.py`, 18 cases across the checker, the router boundary and the crawl, plus a dual-path agreement test; five mutations run with the verbatim originals, each red on the named test.
+  - *Not fixed, deliberately:* PDF body text is still not extracted, and a check that cannot see the text must not report on it. Recorded in `TODO.md` and in §10.2 as a stated limitation rather than left to look like a pass.
+  - *Pattern:* P16 (a guard at one front end only), P1/P6 (an unrun check recorded as a permanent positive), P13 (two implementations of one rule, drifting), P31 (a suppressed check must be reported as skipped, not as zero). Checklist item 31.
 
 - **2026-09-04 — I reported "the suite is green" after every push, and CI was red for every one of them.**
   - *Issue:* the Phase 8 gate checked something I never had: `gh run list`. Every push this session — and several before it — left CI failing. I had been reporting "5,1xx passed, build clean" from my own venv and treating that as the whole story.

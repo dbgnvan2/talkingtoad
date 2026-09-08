@@ -251,7 +251,12 @@ The frontend build pipeline (`npm run build`) runs `eslint --quiet` before `vite
    d. Fetch the page (`httpx.AsyncClient`, 5s timeout, 10 redirect max)
    e. Handle errors: redirect loops, timeouts, login redirects
    f. Parse HTML: extract all fields into `ParsedPage`
-   g. Run per-page issue checks (`check_page()`)
+   g. Run per-page issue checks (`check_page()`). A response that is not HTML takes the
+      asset path instead — `check_asset()` for file size, plus `check_page()`, whose own
+      `is_non_html_response()` gate returns only the checks a non-HTML document can fail
+      (`DOCUMENT_PROPS_MISSING`). The gate lives in `check_page` rather than in this
+      branch so the router paths — rescan, re-check-all, single-page scan, page-details —
+      inherit it; see functional spec §4.18.
    h. Queue new internal URLs discovered via links
    i. Collect external links and image URLs for post-crawl checking
 7. Check all external links (HEAD/GET)
