@@ -358,18 +358,23 @@ Real, worth doing, and nothing breaks tomorrow if they wait.
     provider of PyYAML in the tree is extras-gated — it arrived only through
     `uvicorn[standard]`. Now declared, for the reason the file already gives for pydantic.
 
-## Parked — needs a decision, not a fix (5)
+## Parked — needs a decision, not a fix (6)
 
 <!-- Adjacent, found by the 2026-09-08 QA gate while reviewing the non-HTML
      asset fix; pre-existing, not caused by it, and not swept into it. -->
 
 
-- [ ] **The 200 KB image limit is a literal in three places, and `thresholds.md` points at the
-  wrong one.** `engine.py:110`, `engine.py:280` and `registry.py:2614` each spell 200; the
-  2026-09-08 fix made `registry._IMAGE_SIZE_LIMIT_KB` the router path's fallback, so the doc's
-  pointer at `engine.py:110` is now stale as well as duplicated. The sibling
-  `page_size_limit_kb` already has the cure (one definition, live-linked from the doc). Cheap,
-  but it moves a documented threshold, so it is its own change. Raised as NB-4.
+- [ ] **The 200 KB image limit is a literal in three places, and `thresholds.md` points at a
+  line that has none of them.** Verified 2026-09-08: `registry.py:2614`
+  (`_IMAGE_SIZE_LIMIT_KB`), `engine.py:280` (`CrawlSettings.img_size_limit_kb`) and
+  `api/models/job.py:51` (the API model's `Field(default=200)`) each spell 200 independently,
+  and `docs/thresholds.md:87` cites `engine.py:110`, which is Pillow's decompression-bomb
+  ceiling and holds no such literal. The 2026-09-08 fix made `registry._IMAGE_SIZE_LIMIT_KB`
+  the router path's fallback, so the doc is now stale about which definition is load-bearing as
+  well as pointing at the wrong file. The sibling `page_size_limit_kb` already has the cure
+  (one definition, live-linked from the doc). Cheap, but it moves a documented threshold, so it
+  is its own change. Raised as NB-4 by the QA gate; the first version of this entry named
+  `engine.py:110` as one of the three spellers, which the re-gate corrected.
 - [ ] **Read PDF body text, or keep saying we do not.** As of 2026-09-08 a PDF is audited as an
   asset: internal Title and Subject (`DOCUMENT_PROPS_MISSING`), file size (`PDF_TOO_LARGE`) and
   URL hygiene. The body is never decoded, so `word_count` is NULL and every content, metadata
