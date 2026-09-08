@@ -2043,9 +2043,15 @@ text content". Alongside them came the rest of the HTML suite —
 `PAGE_SIZE_LARGE`: **59 false findings of the 63 on those six URLs.**
 
 **The rule.** A response that declares itself as something other than HTML gets
-the checks that apply to an asset — file size (`check_asset`), URL hygiene
+the checks that apply to an asset — file size (`check_asset`: `PDF_TOO_LARGE`,
+`IMG_OVERSIZED`, against the job's own `img_size_limit_kb`), URL hygiene
 (`check_url_structure`) and, for a PDF, `DOCUMENT_PROPS_MISSING` — and no HTML
-check, **whichever path reached it**. The predicate is
+check, **whichever path reached it**. The independent gate on the first half of
+this change observed that the sentence over-promised: the router path had gained
+the URL checks and not the size checks, so a re-check of an oversized PDF still
+dropped `PDF_TOO_LARGE` — the same disagreement, one check over. Both now run on
+both paths, and `tests/test_non_html_asset_checks.py` asserts the whole finding
+set is identical between a crawl and a re-check of the same URL. The predicate is
 `issue_checker.is_non_html_response(page)`: true when the Content-Type is not
 HTML, or when there was no Content-Type *and* no HTML body was parsed. An HTML
 content type keeps the full suite even when the body turns out to be empty, so

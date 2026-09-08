@@ -283,6 +283,68 @@ async def test_nh9b_rescan_runs_url_structure_checks_on_html_too(store):
     assert {"URL_UPPERCASE", "URL_HAS_UNDERSCORES"} <= codes
 
 
+# ── NH11 — asset SIZE limits, on every path (QA gate NB-2, 2026-09-08) ─────
+#
+# The first half of this fix gave the router path the URL-structure checks and
+# left check_asset behind, so PDF_TOO_LARGE and IMG_OVERSIZED stayed
+# crawl-only — the same path disagreement, one check over. The agreement test
+# below could not see it because its fixture PDF is 400 bytes.
+
+_OVERSIZE = 11 * 1024 * 1024  # over _PDF_SIZE_LIMIT (10 MB)
+
+
+async def _rescan_with_length(store, url, body, content_type, content_length):
+    """A HEAD-sized response: check_asset reads content-length, not the body,
+    so an 11 MB PDF is declared rather than transferred."""
+    with respx.mock(assert_all_mocked=False, assert_all_called=False) as rx:
+        rx.get(url).mock(return_value=httpx.Response(
+            200, content=body,
+            headers={"content-type": content_type,
+                     "content-length": str(content_length)}))
+        rx.route().mock(return_value=httpx.Response(200, text="ok"))
+        return await _fetch_and_check_page(
+            url=url, job_id="j", store=store, base_url=BASE)
+
+
+async def test_nh11_rescan_reports_an_oversized_pdf(store):
+    res = await _rescan_with_length(store, PDF_URL, _pdf_bytes(),
+                                    "application/pdf", _OVERSIZE)
+    assert "PDF_TOO_LARGE" in {i.issue_code for i in res.issues}, (
+        "a re-check of an 11 MB PDF dropped the size finding the crawl "
+        "reports — the same class as the URL_UPPERCASE loss")
+
+
+async def test_nh11b_rescan_reports_an_oversized_image(store):
+    res = await _rescan_with_length(store, BASE + "hero.jpg", b"\xff\xd8\xff",
+                                    "image/jpeg", 900 * 1024)
+    assert "IMG_OVERSIZED" in {i.issue_code for i in res.issues}
+
+
+async def test_nh11c_the_jobs_own_image_limit_is_used(store):
+    """Not the module default: a job configured to 1 MB must not have its
+    900 KB image flagged by a path that assumed 200 KB."""
+    with respx.mock(assert_all_mocked=False, assert_all_called=False) as rx:
+        rx.get(BASE + "hero.jpg").mock(return_value=httpx.Response(
+            200, content=b"\xff\xd8\xff",
+            headers={"content-type": "image/jpeg",
+                     "content-length": str(900 * 1024)}))
+        rx.route().mock(return_value=httpx.Response(200, text="ok"))
+        res = await _fetch_and_check_page(
+            url=BASE + "hero.jpg", job_id="j", store=store, base_url=BASE,
+            img_size_limit_kb=1024)
+    assert "IMG_OVERSIZED" not in {i.issue_code for i in res.issues}
+
+
+async def test_nh11d_size_checks_are_inert_on_html(store):
+    """Adversarial: check_asset now runs on every rescan, HTML included. An
+    HTML page declaring 11 MB is PAGE_SIZE_LARGE's business, not PDF_TOO_LARGE's.
+    """
+    res = await _rescan_with_length(store, BASE + "big/", HTML.encode(),
+                                    "text/html", _OVERSIZE)
+    codes = {i.issue_code for i in res.issues}
+    assert not (codes & {"PDF_TOO_LARGE", "IMG_OVERSIZED"})
+
+
 # ── NH7 / NH8 — the crawl path ─────────────────────────────────────────────
 
 INDEX = (f"<!DOCTYPE html><html lang='en'><head><title>Home Page Of The Test "

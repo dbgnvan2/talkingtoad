@@ -37,7 +37,8 @@ from api.crawler.engine import (
 )
 from api.crawler.content_discovery import discover_scope, resolve_scope_urls
 from api.crawler.fetcher import is_ssrf_safe, fetch_page, make_client, make_ssrf_guarded_client, _RESCAN_TIMEOUT
-from api.crawler.issue_checker import Issue as EngIssue, check_page, check_url_structure, collapse_per_target_occurrences, issue_for_status, issue_scope, make_issue
+from api.crawler.issue_checker import Issue as EngIssue, check_asset, check_page, check_url_structure, collapse_per_target_occurrences, issue_for_status, issue_scope, make_issue
+from api.crawler.checkers.registry import _IMAGE_SIZE_LIMIT_KB
 from api.crawler.normaliser import normalise_url
 from api.crawler.parser import ParsedPage as EngPage, parse_page
 from api.models.issue import PHASE_1_CATEGORIES, Issue
@@ -251,6 +252,7 @@ async def _fetch_and_check_page(
     bypass_cache: bool = False,
     authenticated: bool = False,
     check_external_links: bool = True,
+    img_size_limit_kb: int = _IMAGE_SIZE_LIMIT_KB,
 ) -> _PageCheckResult | JSONResponse:
     """Fetch a URL, parse it, run issue checks and external link checks.
 
@@ -392,6 +394,14 @@ async def _fetch_and_check_page(
     # Spec:  docs/functional-specification.md#418-non-html-responses-are-audited-as-assets-on-every-path-2026-09-08
     # Tests: tests/test_non_html_asset_checks.py
     eng_issues = eng_issues + check_url_structure(url)
+    # Likewise the asset size limits (PDF_TOO_LARGE, IMG_OVERSIZED), which the
+    # crawl runs for every non-HTML fetch and this path did not — so a
+    # re-check of an oversized PDF dropped the finding the same way it dropped
+    # URL_UPPERCASE. Inert on HTML: check_asset only fires for a PDF or image
+    # content type. Raised as NB-2 by the 2026-09-08 QA gate against the first
+    # half of this fix, which is the same path-disagreement class.
+    eng_issues = eng_issues + check_asset(
+        result, img_size_limit_kb=img_size_limit_kb)
 
     # ── External link checks ──────────────────────────────────────────
     verified_link_urls: set[str] = set()
@@ -1786,6 +1796,8 @@ async def rescan_url(
         suppress_h1_strings=suppress_h1s,
         suppress_banner_h1=True,
         bypass_cache=True,
+        img_size_limit_kb=(job.settings.img_size_limit_kb if job.settings
+                           else _IMAGE_SIZE_LIMIT_KB),
     )
     if isinstance(check, JSONResponse):
         return check
@@ -2117,6 +2129,8 @@ async def get_page_details(
         # the panel calls this once per issue code. The broken-link codes are
         # reported un-evaluated below rather than silently absent.
         check_external_links=False,
+        img_size_limit_kb=(job.settings.img_size_limit_kb if job.settings
+                           else _IMAGE_SIZE_LIMIT_KB),
     )
     if isinstance(check, JSONResponse):
         return check
@@ -2336,6 +2350,8 @@ async def _run_single_page_scan(
         suppress_banner_h1=suppress_banner,
         bypass_cache=bypass_cache,
         authenticated=authenticated,
+        img_size_limit_kb=(job.settings.img_size_limit_kb if job.settings
+                           else _IMAGE_SIZE_LIMIT_KB),
     )
     if isinstance(check, JSONResponse):
         await store.update_job(job_id, status="failed", error_message="Fetch/parse failed")
