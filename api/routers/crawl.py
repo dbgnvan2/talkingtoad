@@ -37,7 +37,7 @@ from api.crawler.engine import (
 )
 from api.crawler.content_discovery import discover_scope, resolve_scope_urls
 from api.crawler.fetcher import is_ssrf_safe, fetch_page, make_client, make_ssrf_guarded_client, _RESCAN_TIMEOUT
-from api.crawler.issue_checker import Issue as EngIssue, check_page, collapse_per_target_occurrences, issue_for_status, issue_scope, make_issue
+from api.crawler.issue_checker import Issue as EngIssue, check_page, check_url_structure, collapse_per_target_occurrences, issue_for_status, issue_scope, make_issue
 from api.crawler.normaliser import normalise_url
 from api.crawler.parser import ParsedPage as EngPage, parse_page
 from api.models.issue import PHASE_1_CATEGORIES, Issue
@@ -383,6 +383,15 @@ async def _fetch_and_check_page(
         exempt_anchor_urls=exempt_urls or None,
         ignored_image_patterns=ignored_img_patterns or None,
     )
+    # The crawl runs these for every URL it fetches (engine.py:749); this path
+    # did not, and URL_UPPERCASE/URL_TOO_LONG are not `needs_full_crawl`, so a
+    # rescan deleted them and wrote them to the fixed-issues ledger as RESOLVED
+    # without ever evaluating them. Job 52a5aa00, 2026-09-08 03:50: five
+    # findings marked fixed on URLs that still carry capitals today: a check
+    # that never ran, recorded as a permanent positive (P1/P6).
+    # Spec:  docs/functional-specification.md#418-non-html-responses-are-audited-as-assets-on-every-path-2026-09-08
+    # Tests: tests/test_non_html_asset_checks.py
+    eng_issues = eng_issues + check_url_structure(url)
 
     # ── External link checks ──────────────────────────────────────────
     verified_link_urls: set[str] = set()

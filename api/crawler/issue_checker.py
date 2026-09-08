@@ -231,6 +231,79 @@ def citation_source_issues(pages: list, inaccessible_urls: set) -> list:
     return out
 
 
+def _pdf_document_property_issues(page: ParsedPage) -> list:
+    """DOCUMENT_PROPS_MISSING for a PDF whose internal Title or Subject is blank.
+
+    Purpose: the one per-page check that applies to a PDF rather than to HTML.
+    Spec:    docs/functional-specification.md#418-non-html-responses-are-audited-as-assets-on-every-path-2026-09-08
+    Tests:   tests/test_pdf_metadata.py, tests/test_non_html_asset_checks.py
+
+    Keyed on ``pdf_metadata`` rather than on a ``.pdf`` URL suffix: the parser
+    populates that field only when the response's content type says PDF, and
+    a WordPress attachment URL that 301s to a PDF (livingsystems.ca's
+    ``/ls-student-statement-of-rights-…``) carries no extension at all, so the
+    old suffix test silently skipped it.
+    """
+    meta = page.pdf_metadata
+    if meta is None:
+        return []
+    if meta.get("title") and meta.get("subject"):
+        return []
+    return [make_issue("DOCUMENT_PROPS_MISSING", page.url, extra=meta)]
+
+
+def is_non_html_response(page: ParsedPage) -> bool:
+    """Did this response positively declare itself as something other than HTML?
+
+    Purpose: one predicate for "run asset checks, not HTML checks", shared by
+             the crawl engine and every router path.
+    Spec:    docs/functional-specification.md#418-non-html-responses-are-audited-as-assets-on-every-path-2026-09-08
+    Tests:   tests/test_non_html_asset_checks.py
+
+    True in exactly two cases:
+
+    * the Content-Type says something that is not HTML (``application/pdf``,
+      the KML type, ``text/plain`` …); or
+    * there was no Content-Type at all **and** no HTML body was parsed — the
+      badly-configured static host that serves a PDF with no header.
+
+    False for an HTML content type even when the body turned out to be empty:
+    an HTML page with no text is a real finding (CONTENT_NOT_EXTRACTABLE_NO_TEXT
+    exists for it) and must keep firing. False for an unset content type on a
+    record that does carry parsed HTML, which is how every hand-built
+    ``ParsedPage`` in the test suite is shaped — so this can only ever remove
+    checks from a response that was not HTML.
+    """
+    ct = (page.content_type or "").lower()
+    if ct:
+        return "html" not in ct
+    return not getattr(page, "is_html_response", True)
+
+
+def _check_non_html_page(page: ParsedPage) -> list:
+    """The per-page checks that apply to a response that is not HTML.
+
+    Purpose: keep HTML-only checks off PDFs, KML, plain text and binaries.
+    Spec:    docs/functional-specification.md#418-non-html-responses-are-audited-as-assets-on-every-path-2026-09-08
+    Tests:   tests/test_non_html_asset_checks.py
+
+    A PDF has no <title>, <h1>, meta description, lang attribute, viewport,
+    canonical, OG tags, analytics tag or JSON-LD, and the crawler does not
+    decode its body into words — so ``word_count`` is None and the
+    extractability assessment reads it as "no visible text". Running the HTML
+    suite over one produces findings that are all false: on job 52a5aa00,
+    59 of the 63 findings on six non-HTML URLs, including six pages reported
+    as blank that were full of text.
+
+    File-size limits for assets live in :func:`check_asset` (PDF_TOO_LARGE,
+    IMG_OVERSIZED), and URL-structure checks in :func:`check_url_structure`;
+    both are called alongside this by every path that crawls or re-checks a
+    URL, so this function deliberately holds only the document-properties
+    check.
+    """
+    return _pdf_document_property_issues(page)
+
+
 def check_page(
     page: ParsedPage,
     *,
@@ -265,6 +338,25 @@ def check_page(
     """
     issues: list[Issue] = []
     url = page.url
+
+    # ── Non-HTML responses take the asset path, whoever the caller is ───────
+    # The engine gated its own branch on the content type (engine.py:843); the
+    # router's _fetch_and_check_page did not, so rescan / "Re-check all pages"
+    # / single-page scan / page-details ran this whole HTML suite over PDFs.
+    # One press of the button rewrote six non-HTML URLs with 59 false findings,
+    # among them CONTENT_NOT_EXTRACTABLE_NO_TEXT — "no visible text" — on four
+    # policy PDFs that are full of text (P16: the branch existed at one front
+    # end only). Checklist item 16 — the callers are run_crawl and the three
+    # router endpoints behind _fetch_and_check_page (rescan-url, which
+    # recheck-all drives; page-details; single-page scan).
+    #
+    # See is_non_html_response for exactly when this fires — an HTML page with
+    # an empty body still takes the full suite.
+    # Spec:  docs/functional-specification.md#418-non-html-responses-are-audited-as-assets-on-every-path-2026-09-08
+    # Tests: tests/test_non_html_asset_checks.py
+    if is_non_html_response(page):
+        return _check_non_html_page(page)
+
     # Page type drives the freshness cadence (R2.x #6). Computed once; defaults
     # to "unknown" if classification errors so checks still run.
     try:
@@ -798,11 +890,10 @@ def check_page(
         except Exception as e:
             logger.warning("citation_check_error", extra={"url": url, "error": str(e)})
 
-    # PDF Metadata
-    if url.lower().endswith(".pdf") and page.pdf_metadata is not None:
-        meta = page.pdf_metadata
-        if not meta.get("title") or not meta.get("subject"):
-            issues.append(make_issue("DOCUMENT_PROPS_MISSING", url, extra=meta))
+    # PDF Metadata — for an HTML response this cannot fire (`pdf_metadata` is
+    # only populated when the content type says PDF); a real PDF reaches the
+    # same check through _check_non_html_page above.
+    issues.extend(_pdf_document_property_issues(page))
 
     # ── v2.1 GEO Analyzer static checks ─────────────────────────────────────
     _run_geo_checks(page, url, issues)

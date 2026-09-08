@@ -928,14 +928,36 @@ async def run_crawl(
                 if any(i.code == "FAVICON_MISSING" for i in page_issues):
                     favicon_emitted = True
 
-            elif is_asset:
-                log.info("asset_crawled", extra={"url": url, "content_type": ct})
-                page_issues = check_asset(result, img_size_limit_kb=settings.img_size_limit_kb)
-
             else:
-                # Unknown binary (video, font, etc.) — record status only, no checks
-                log.debug("binary_skipped", extra={"url": url, "content_type": ct})
-                page_issues = []
+                # Non-HTML: size limits from check_asset, plus the per-page
+                # checks that apply to an asset — today that is only
+                # DOCUMENT_PROPS_MISSING, and check_page's own content-type
+                # gate is what keeps the HTML suite out (issue_checker.py).
+                #
+                # That check has never fired on a real crawl: it lives inside
+                # check_page, which this branch did not call, so AF5's fix
+                # (compute pdf_metadata before the non-HTML early return, so
+                # DOCUMENT_PROPS_MISSING *can* fire) stopped one link short —
+                # 0 findings on crawl-only job 7b28539b, 4 on job 52a5aa00
+                # only after a re-check went through the router path (P16).
+                # Its test asserted the code by calling check_page directly,
+                # one layer below the crawl that never called it.
+                #
+                # Spec:  docs/functional-specification.md#418-non-html-responses-are-audited-as-assets-on-every-path-2026-09-08
+                # Tests: tests/test_non_html_asset_checks.py
+                if is_asset:
+                    log.info("asset_crawled", extra={"url": url, "content_type": ct})
+                else:
+                    # Unknown binary (video, font, etc.) — status recorded; the
+                    # calls below yield nothing for it.
+                    log.debug("binary_skipped", extra={"url": url, "content_type": ct})
+                page_issues = check_asset(
+                    result, img_size_limit_kb=settings.img_size_limit_kb)
+                try:
+                    page_issues = page_issues + check_page(page)
+                except Exception as exc:
+                    log.warning("asset_check_exception",
+                                extra={"url": url, "error": str(exc)})
 
             all_issues.extend(page_issues)
 

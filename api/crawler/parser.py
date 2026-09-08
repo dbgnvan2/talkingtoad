@@ -200,6 +200,26 @@ class ParsedPage:
     # GEO.5.2 FAQ_SCHEMA_MISSING check and the FAQ_ANSWERS_NOT_IN_HTML check.
     faq_blocks: list[dict] | None = None
 
+    # The response's Content-Type, lower-cased, parameters stripped (the
+    # fetcher already normalises it). Carried on the page so `check_page` can
+    # refuse HTML-only checks on a PDF or a KML file whatever the caller —
+    # the engine gated its own branch on the content type, and every router
+    # path (rescan, re-check-all, single-page scan, page-details) did not, so
+    # one press of "Re-check all pages" reported four PDFs and a KML file as
+    # having no visible text (P16 — a capability added at one front end only).
+    # Spec:  docs/functional-specification.md#418-non-html-responses-are-audited-as-assets-on-every-path-2026-09-08
+    # Tests: tests/test_non_html_asset_checks.py
+    # None/"" means "unknown"; see is_html_response for what happens then.
+    content_type: str | None = None
+
+    # False when parse_page took its non-HTML early return — there was no HTML
+    # body to parse, so every HTML field on this record is a default rather
+    # than a measurement. Read together with content_type: a server that sends
+    # a PDF with no Content-Type header at all lands here, and "unknown type,
+    # no HTML body" must not be audited as an HTML page whose title is missing.
+    # Defaults True so a hand-built ParsedPage behaves exactly as before.
+    is_html_response: bool = True
+
 
 # Derived from the single AI-bot source of truth (api/services/ai_bots.py) so the
 # X-Robots-Tag AI-directive parser and the robots.txt AI-bot checker can't diverge
@@ -309,6 +329,8 @@ def parse_page(
             status_code=result.status_code,
             response_size_bytes=size_bytes,
             pdf_metadata=pdf_metadata,
+            content_type=result.content_type,
+            is_html_response=False,
             title=None,
             meta_description=None,
             og_title=None,
@@ -500,6 +522,8 @@ def parse_page(
         code_breakdown=_code_breakdown,
         has_json_ld=_has_json_ld_script(soup),
         pdf_metadata=pdf_metadata,
+        content_type=result.content_type,
+        is_html_response=True,
         # v1.9 Image Intelligence
         image_data=_extract_image_data(soup, page_url),
         # Analytics & Measurement (analytics category — 2026-08-06 spec)
